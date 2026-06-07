@@ -1,5 +1,8 @@
 # Review Core — the shared adversarial-review engine (illustrative reference)
 
+<!-- Agents: do NOT read at runtime — the skills are self-contained. This is a human/maintainer overview only. -->
+
+
 > **The SKILLS are authoritative.** A plugin skill cannot reliably read this file at runtime, so each
 > review skill INLINES the rules it needs. This file is a human-readable overview; if it ever
 > disagrees with a skill, **the skill wins.** Do not treat it as a spec to sync against.

@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build-Test-Verify — execute the locked PLAN one step at a time, where VERIFY is adversarial and proof-based (never "looks right"). Reads contract.md as the invariant before every step; any deviation STOPS and asks. Reconciliation is a deterministic PASS/FAIL gate against the contract's independent gold figure; INVARIANT assertions can't be deferred; Playwright auth is discovered not guessed; prod = read-only. A step's box is checked only after its verify passes. Trigger after the plan is locked, or when the user says "build it", "compass build", or invokes the Compass orchestrator.
+description: Build-Test-Verify — execute the locked PLAN one step at a time, verify adversarial and proof-based (never "looks right"). Reads contract.md as the invariant before each step; deviation STOPS. Reconciliation is a deterministic PASS/FAIL gate vs the independent gold; a step's box is checked only after its verify passes. Trigger after the plan locks, or on "build it", "compass build", or the Compass orchestrator.
 ---
 
 # compass:build

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Ship — deploy the CLOSED build and prove it in production. Optional final stage; only runs if the contract did NOT mark deploy out of scope. Follows the repo's own deploy path, then confirms the contract's observability signal actually EMITS in prod and re-runs reconciliation against the independent gold figure on prod data. Trigger after compass:review-build closes, or when the user says "ship it", "deploy", "compass ship".
+description: Ship (optional) — deploy the CLOSED build and prove it in prod — deploy via the repo's own path, re-run reconciliation on prod data, confirm the observability signal emits. Skipped if the contract marks deploy out of scope. Trigger after compass:review-build closes, or on "ship it", "deploy", "compass ship".
 ---
 
 # compass:ship

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Turn a locked CONTRACT into a detailed, industry-standard engineering plan a top engineer could build right the first time. STRICT PREREQUISITE — first scan and deeply understand the existing LIVE codebase (or, for greenfield, the chosen stack). Each step has its own verify command; every INVARIANT maps to a NON-deferred bound-asserting check; migrations dry-run on a copy; dependency installs are explicit steps. Trigger after the contract is locked, or when the user says "make the plan", "compass plan", or invokes the Compass orchestrator.
+description: Turn a locked CONTRACT into an industry-standard engineering plan. STRICT PREREQUISITE — first scan and deeply understand the existing live codebase (or, greenfield, the chosen stack) before planning. Each step gets a verify command; every INVARIANT a non-deferred bound-asserting check; migrations dry-run on a copy. Trigger after the contract locks, or on "make the plan", "compass plan", or the Compass orchestrator.
 ---
 
 # compass:plan

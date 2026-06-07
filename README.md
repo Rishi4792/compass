@@ -60,7 +60,4 @@ A compass keeps you pointed true no matter the terrain. Same idea here: the cont
 
 ---
 
-*State for each build lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md` — and `.claude/builds/CURRENT` points to the active build so resume never has to guess.*
-
-## Verify, honestly
-Compass never claims correctness on an LLM eyeballing output. The verify ladder climbs from the cheapest real proof to the costliest: typecheck → DB query → page HTML → API → **Playwright** (assert DOM text + computed CSS; prod = read-only) → Chrome MCP (last resort, because it locks across projects). Screenshots are layout sanity only — numbers are asserted against the DB value, design tokens against computed CSS.
+*State for each build lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — and `.claude/builds/CURRENT` points to the active build so resume never has to guess.*

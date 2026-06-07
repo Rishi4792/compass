@@ -1,6 +1,6 @@
 ---
 name: contract
-description: Define a build's CONTRACT — the single locked spec that becomes the invariant for the whole build. Runs as an interview (AskUserQuestion), refusing to finish until every required section for the chosen project facets is filled — data derivation, schema, scale, dependencies, reconciliation-to-an-INDEPENDENT-gold-figure, acceptance INVARIANTs, and (web) auth + UI tokens. Trigger when starting any non-trivial feature/build, or when the user says "define the contract", "compass contract", "spec this out", or invokes the Compass orchestrator.
+description: Define a build's CONTRACT — the locked spec that becomes the invariant for the whole build. An AskUserQuestion interview that won't finish until every required section for the chosen facets is filled, incl. reconciliation to an independent gold figure and measurable INVARIANTs. Trigger when starting a non-trivial build, or on "define the contract", "compass contract", "spec this out", or the Compass orchestrator.
 ---
 
 # compass:contract

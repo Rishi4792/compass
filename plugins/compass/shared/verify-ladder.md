@@ -1,5 +1,8 @@
 # Verify Ladder — the shared "prove it" protocol (illustrative reference)
 
+<!-- Agents: do NOT read at runtime — the skills are self-contained. This is a human/maintainer overview only. -->
+
+
 > **The SKILLS are authoritative.** Each skill that verifies inlines the essentials; this file is a
 > human-readable overview. If it disagrees with a skill, the skill wins.
 >

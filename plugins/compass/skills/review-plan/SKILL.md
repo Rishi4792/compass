@@ -1,6 +1,6 @@
 ---
 name: review-plan
-description: Review-2 (FULL) — adversarially pressure-test the engineering PLAN before the build begins. Multi-agent fan-out across traceability, INVARIANT-assertion coverage (non-deferred), DB/migration + dry-run, dependencies, API, blast-radius/regression, rollback, test-plan, reconciliation feasibility, performance/scale, security/RBAC, and a secret-leak quick check. Converges on two consecutive clean rounds; cap 3; cap-without-convergence escalates UP to the contract. Trigger after compass:plan or when the user says "review the plan".
+description: Review-2 (FULL) — adversarially pressure-test the PLAN before build via a multi-agent fan-out (traceability, invariants, migration, deps, blast-radius, rollback, tests, reconciliation, perf, security, secrets). Two clean rounds; cap 3; un-converged escalates to the contract. Trigger after compass:plan, or on "review the plan", or the Compass orchestrator.
 ---
 
 # compass:review-plan  (Review-2 · FULL)
@@ -13,21 +13,26 @@ Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `
 ## Engine
 - **Ledger** (create if absent): same columns as the other reviews.
 - **Material** = new Critical/Major. **Clean round** = zero new material AND the deterministic checks re-ran green. **Proof-of-work:** the footer carries evidence or it doesn't count — `> Round N (R2): checks=\`<cmd>\` exit=0; new Crit/Maj=0. Clean? yes`. **Converged = two consecutive clean rounds.** Cap **3**.
-- Round 1 broad; rounds 2+ diff-scoped review but **re-run the full checks** before calling clean. A fix is closed only when its Validation command is **re-run with fresh output**. **Agent agreement is not evidence.**
+- **Fan-out economy:** round 1 spawns all groups; **rounds 2+ spawn ONLY the agent groups whose surface the last round's fixes touched** — the full deterministic suite still re-runs every round (that, not re-spawning every agent, is what guards un-reviewed surfaces). A confirming clean round with no new fixes = just the suite re-run + footer. A fix is closed only when its Validation command is **re-run with fresh output**; agent agreement is not evidence.
 - **Cap 3 un-converged = NOT converged** → contract likely under-specified → **`compass.sh supersede .claude/builds/<slug> contract` then STOP and escalate to `compass:contract`** with the open questions.
 
 ## Grounding
 Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped requirement = CRITICAL. **Every INVARIANT → a NON-deferred bound-asserting check** (missing/vague/deferred = CRITICAL).
 
-## Streams (fan out)
-1. **Traceability** · 2. **INVARIANT-assertion coverage** (non-deferred, exact bound) · 3. **DB/migration** — safe, reversible, rolling-deploy-safe, and the **dry-run-on-a-copy step is real** · 4. **Dependencies** — installs/pins are explicit steps with verifies · 5. **API** — back-compat, idempotency · 6. **Blast radius/regression** — each risk has a guarding test · 7. **Rollback & rollout** — undo without data loss · 8. **Test plan** — deterministic tests incl. reconciliation, (web) tokens + a11y, idempotency · 9. **Reconciliation feasibility** — the query can recompute toward the **independent** gold; **greenfield carve-out:** no data yet → reconciliation is a post-data acceptance check, don't bounce the plan · 10. **Performance/scale** at the contract's volume + concurrency · 11. **Security/RBAC/cost** · 12. **Secret-leak quick check** — no planned harness embeds a real cookie/JWT/key (must read from env).
+## Streams — fan out as 6 agents (each emits ONE ledger row per check it covers; coverage = the checks, not the agent count)
+- **[A] Spec coverage:** traceability (every requirement → step) · INVARIANT-assertion coverage (each → a non-deferred exact-bound check) · test plan (deterministic tests incl. reconciliation, web tokens + a11y, idempotency).
+- **[B] Data & migration:** DB/migration safe, reversible, rolling-deploy-safe with a real dry-run-on-a-copy step · reconciliation feasibility — the query recomputes toward the **independent** gold (greenfield carve-out: no data yet → post-data acceptance check, don't bounce the plan).
+- **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
+- **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
+- **[E] Security/RBAC/cost** — *independent agent* (keep separate; the adversarial independence is load-bearing).
+- **[F] Secret-leak** — *independent agent*: no planned harness embeds a real cookie/JWT/key (`compass.sh secret-scan`).
 
 ## Procedure → emit
-Round 1 fan-out → ledger + fixes; apply to `plan.md`; rounds 2+ diff-scoped + re-run. Two clean rounds → `progress.md` = `Plan LOCKED`. **EMIT RECEIPT**:
+Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only the groups the fixes touched, plus the full suite re-run + footer (a confirming round with no new fixes = suite re-run only). Two clean rounds → `progress.md` = `Plan LOCKED`. **EMIT RECEIPT**:
 ```
 ## RECEIPT — review-plan · <slug> · PASS
 - [x] gate: plan receipt OK
-- [x] 12 streams run; every INVARIANT → non-deferred bound-asserting check
+- [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)
 - [x] secret-scan of planned harness: `compass.sh secret-scan .` → 0 hits

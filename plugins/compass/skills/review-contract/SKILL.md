@@ -1,6 +1,6 @@
 ---
 name: review-contract
-description: Review-1 (LIGHT) — adversarially pressure-test a CONTRACT before it locks. A single focused pass. Checks completeness for the chosen facets, ambiguity, testability, reconciliation-pinned-independent-and-exact, internal consistency, edge states, feasibility. Converges on one clean pass; cap 2. Trigger after compass:contract, or when the user says "review the contract", "pressure-test this spec", or invokes the Compass orchestrator.
+description: Review-1 (LIGHT) — adversarially pressure-test a CONTRACT before it locks — completeness, ambiguity, testability, reconciliation pinned/independent/exact, consistency, edge states, feasibility. One clean pass; cap 2. Trigger after compass:contract, or on "review the contract", "pressure-test this spec", or the Compass orchestrator.
 ---
 
 # compass:review-contract  (Review-1 · LIGHT)
@@ -30,7 +30,7 @@ Run the streams; log + apply fixes (surface intent questions, don't guess). One 
 ```
 ## RECEIPT — review-contract · <slug> · PASS
 - [x] gate: contract receipt OK (compass.sh gate → PASS)
-- [x] 7 streams run; ledger updated
+- [x] all streams run; ledger updated
 - [x] reconciliation independent+exact: grep `contract.md` → gold=<literal> provenance=<artifact>; tol=<…>
 - [x] 0 open Critical/Major; progress.md = Contract LOCKED
 ```

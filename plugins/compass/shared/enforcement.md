@@ -1,5 +1,8 @@
 # Compass enforcement — receipts, gates, and the gate script (read once)
 
+<!-- Agents: do NOT read at runtime — the skills inline the one command they need. Human/maintainer overview only. -->
+
+
 > Human reference. The skills inline the one command they need. The point: enforcement is a
 > **deterministic script with an exit code**, not a checkbox the model grades itself on.
 
