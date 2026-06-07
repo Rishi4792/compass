@@ -2,14 +2,19 @@
   "name": "compass",
   "owner": { "name": "Rishi Kapoor" },
   "metadata": {
-    "description": "Compass — build true to spec, with zero drift. A contract-first build lifecycle (define → review → plan → review → build → review) where a locked contract is the invariant every step is checked against.",
+    "description": "Compass — build true to spec, with zero drift. A contract-first build lifecycle where a locked contract is the invariant every step is checked against, enforced by a real gate script (not prose).",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "compass",
       "source": "./plugins/compass",
-      "description": "Contract-first build lifecycle: define a locked contract, turn it into an engineering plan, build it, with three adversarial reviews (contract, plan, build) and zero drift from the agreed spec. Elegant user-driven gates and clean cross-session handoff."
+      "description": "Contract-first build lifecycle for Claude Code: define a locked contract, plan against the live codebase, build, and pass three adversarial reviews — with deterministic gates (a real script blocks on missing proof), reconciliation to an independent gold figure, user-driven gates, a human sign-off, and clean cross-session resume. Seven stages: contract, review, plan, review, build, review, ship.",
+      "homepage": "https://github.com/Rishi4792/compass",
+      "repository": "https://github.com/Rishi4792/compass",
+      "license": "MIT",
+      "author": { "name": "Rishi Kapoor" },
+      "keywords": ["contract-first", "zero-drift", "adversarial-review", "build-test-verify", "reconciliation", "engineering-plan", "lifecycle"]
     }
   ]
 }
