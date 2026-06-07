@@ -1,0 +1,7 @@
+{
+  "name": "compass",
+  "version": "0.1.0",
+  "description": "Build true to spec, zero drift. A contract-first lifecycle: define a locked contract (the invariant), turn it into an engineering plan grounded in the real prod codebase, then build — with three adversarial reviews (contract, plan, build), elegant user-driven gates, and clean cross-session handoff. Every step is checked against the contract; any deviation stops and asks.",
+  "author": { "name": "Rishi Kapoor" },
+  "keywords": ["contract", "spec", "engineering-plan", "adversarial-review", "zero-drift", "build-test-verify", "lifecycle"]
+}

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"Compass: context is about to compact. If a Compass build is active, pause at the current clean step boundary — update .claude/builds/<slug>/progress.md (stage, status, first unchecked plan.md step, open ledger items) and print the Compass resume block so the user can continue in a new terminal with /compass resume. Do not pause mid-write or mid-verify.\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}
