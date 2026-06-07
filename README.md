@@ -9,36 +9,35 @@ It exists because the #1 failure in AI-assisted building is **drift**: the thing
 ## The lifecycle
 
 ```
-① contract ──▶ ② review-contract ──▶ [CONTRACT LOCKED]
-                                       │
-        ┌──────────────────────────────┘
+① contract ─▶ ② review-contract ─▶ [contract-LOCKED]
+                                     │
+        ┌────────────────────────────┘
         ▼
-③ plan ──▶ ④ review-plan ──▶ [PLAN LOCKED]
-                              │
-        ┌──────────────────────┘
+③ plan ─▶ ④ review-plan ─▶ [plan-LOCKED]
+                            │
+        ┌───────────────────┘
         ▼
-⑤ build ──▶ ⑥ review-build ──▶ [CLOSED]
+⑤ build ─▶ ⑥ review-build ─(human sign-off)▶ [CLOSED] ─▶ ⑦ ship (optional) ─▶ [SHIPPED]
 ```
 
-Between every hop is a **user-driven gate** (Approve / Revise / Pause / Show full artifact) — Compass never auto-advances. Reviews loop to convergence first: the light review on **one clean pass**, the full reviews on **two consecutive clean rounds**.
+Between every hop is a **user-driven gate** (Approve / Revise / **Amend contract** / Pause / Show) — Compass never auto-advances. Reviews loop to convergence first: the light review on **one clean pass**, the full reviews on **two consecutive clean rounds**.
 
-## The six skills
+## The skills
 
 | # | Skill | What it does |
 |---|-------|--------------|
-| ① | `/compass:contract` | Interviews you (ask-user-tool) until the spec is airtight: data derivation, schema, scale, auth, dependencies, UI/UX tokens, features, **reconciliation-to-a-goal**, and **measurable** acceptance goals. Won't finish with gaps. |
-| ② | `/compass:review-contract` | **Review-1 (light)** — pressure-tests the spec for completeness, ambiguity, testability, reconciliation-pinned. One clean pass; cap 2. |
-| ③ | `/compass:plan` | **Scans the live codebase first** (or the chosen stack, for greenfield), then turns the contract into an industry-standard, step-by-step plan — each step with its own verify command, every INVARIANT mapped to a bound-asserting check. |
-| ④ | `/compass:review-plan` | **Review-2 (full)** — multi-agent: traceability, INVARIANT-assertion coverage, migration safety, blast radius, rollback, tests, reconciliation feasibility, performance, security. Two clean rounds; cap 3. |
-| ⑤ | `/compass:build` | **Build-Test-Verify**, one step at a time. Verify is adversarial and proof-based — never "looks right"; a step's box is checked only after its verify passes. |
-| ⑥ | `/compass:review-build` | **Review-3 (full)** — final adversarial sweep; reconciliation + design-fidelity streams; every "it works" backed by a re-run check. Two clean rounds; cap 5. |
+| ① | `/compass:contract` | Interviews you until the spec is airtight, for the chosen **facets** (`web` / `pipeline` / `library`, composable): data derivation, schema, scale, dependencies, **reconciliation to an *independent* gold figure**, measurable acceptance INVARIANTs, and (web) auth + UI tokens + a11y. Won't finish with gaps. |
+| ② | `/compass:review-contract` | **Review-1 (light)** — pressure-tests completeness, ambiguity, testability, and that reconciliation is pinned, *independent*, and exact. One clean pass; cap 2. |
+| ③ | `/compass:plan` | **Scans the live codebase first** (or the chosen stack, for greenfield), then writes a step-by-step plan — each step a verify command, every INVARIANT a non-deferred bound-asserting check, every migration a dry-run-on-a-copy. |
+| ④ | `/compass:review-plan` | **Review-2 (full)** — traceability, INVARIANT coverage, migration/dry-run, dependencies, blast radius, rollback, tests, reconciliation feasibility, perf, security, secret-leak. Two clean rounds; cap 3. |
+| ⑤ | `/compass:build` | **Build-Test-Verify**, one step at a time. Reconciliation is a script `PASS/FAIL`; a step's box is checked only after its verify passes. |
+| ⑥ | `/compass:review-build` | **Review-3 (full)** — feature/regression/RBAC/perf + reconciliation, design+a11y, exercised rollback, wired observability, idempotency, secret-scan. Ends with a **human sign-off** on the evidence. Two clean rounds; cap 5. |
+| ⑦ | `/compass:ship` | Optional — deploys via the repo's own path, then re-runs reconciliation on prod data and confirms the observability signal actually emits. Skipped if the contract marks deploy out of scope. |
 
-### Two engines shared across the skills
-- **Verify ladder** — cheapest real proof first, by project type. Web: typecheck → DB query → curl+cookie HTML → API → **Playwright** → Chrome MCP (last resort). Pipeline/CLI: exit code → golden-file diff → asserts → numeric reconciliation → determinism. Never claim correctness on agent agreement.
-- **Review core** — fan-out streams, one issue ledger, and a convergence loop. The light contract review stops on **one clean pass**; the full plan/build reviews on **two consecutive clean rounds** — and a round only counts as clean if its evidence (the actual command + exit + counts) is recorded, not just asserted. Hitting a cap un-converged escalates UP a level (it never fakes "done").
-
-### The teeth — receipts & gates
-Each stage **emits a receipt** (the real commands it ran + a checklist + PASS/FAIL) to `receipts.md`, and the next stage **refuses to start** without it. Reconciliation is a hard `PASS|FAIL` gate (exact match by default) that blocks close; a committed secret blocks close; rollback must be exercised on a copy, not just asserted. Enforcement lives in artifacts a later step checks — not in prose the model grades itself against.
+### Two engines + the teeth
+- **Verify ladder** — cheapest real proof first, by facet. Web: typecheck → DB query → curl+cookie HTML → API → **Playwright** (assert DOM text + computed CSS; prod read-only) → Chrome MCP (last resort). Pipeline/CLI: exit code → golden-file diff → asserts → numeric reconciliation → determinism. Never correctness on agent agreement.
+- **Review core** — fan-out streams, one ledger, a convergence loop. Light review = one clean pass; full = two consecutive clean rounds, and a round counts as clean only if its evidence (command + exit + counts) is recorded. Cap un-converged escalates UP (and *supersedes* downstream receipts) — never fakes done.
+- **The teeth = a real script, not prose.** Each stage emits a receipt to `receipts.md` carrying the actual commands + outputs; the next stage's Step-0 runs **`scripts/compass.sh gate`**, which **exits non-zero** if the prior receipt is absent, FAIL, has an unchecked box, or was superseded — a hard error the build can't step past. Reconciliation (`compass.sh reconcile`) and secret-scan (`compass.sh secret-scan`) are deterministic `PASS/FAIL` gates that block close. Escalation calls `compass.sh supersede` so the re-reviews it triggers actually re-run.
 
 ## Use it three ways
 - **Full pipeline:** `/compass:start` — runs the whole lifecycle with gates.

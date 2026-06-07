@@ -1,49 +1,41 @@
 ---
 name: plan
-description: Turn a locked CONTRACT into a detailed, industry-standard engineering plan a top engineer could build right the first time. STRICT PREREQUISITE — first scan and deeply understand the existing LIVE codebase (or, for greenfield, the chosen stack/conventions). Produces plan.md as an executable step checklist where each step has its own verify command, every INVARIANT maps to a bound-asserting check that may NOT be deferred, and migrations are dry-run on a copy. Trigger after the contract is locked, or when the user says "make the plan", "compass plan", or invokes the Compass orchestrator.
+description: Turn a locked CONTRACT into a detailed, industry-standard engineering plan a top engineer could build right the first time. STRICT PREREQUISITE — first scan and deeply understand the existing LIVE codebase (or, for greenfield, the chosen stack). Each step has its own verify command; every INVARIANT maps to a NON-deferred bound-asserting check; migrations dry-run on a copy; dependency installs are explicit steps. Trigger after the contract is locked, or when the user says "make the plan", "compass plan", or invokes the Compass orchestrator.
 ---
 
 # compass:plan
 
-Convert `contract.md` into the plan the world's best engineers would expect — enough to deliver it **right the first time**.
+Convert `contract.md` into the plan the world's best engineers would deliver right the first time.
 
 ## Step 0 — gate
-Read `.claude/builds/CURRENT` → slug → `receipts.md`. **If the `review-contract` receipt is absent or FAIL (contract not LOCKED), STOP** and offer `compass:review-contract` (or `compass:contract`). Read `contract.md` — the invariant for everything below.
+Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP** (contract not LOCKED), offer `compass:review-contract`. Read `contract.md` — the invariant below.
 
-## ⛔ STRICT PREREQUISITE — understand the codebase FIRST (Phase 0)
-A plan ungrounded in real code is fiction. Scan and write findings INTO the plan:
-1. **Repo guidance + tooling** (PREFER existing workflows): `CLAUDE.md` (+nested), `.claude/`, `architecture.md`, `invariants.md`, `CONTEXT.md`, CI, `package.json` scripts, `Makefile`, test/migration/seed/perf/load/OOM scripts, deploy/predeploy hooks, `render.yaml`/CI config.
-2. **Real blast radius** — read the *actual* code for every area the contract touches: files, readers/writers, API routes, jobs, DB tables/relations, and which **existing workflows depend on them** (direct + indirect). Name the features that could regress.
-3. **Real infra constraints** — DB plan/size, instances, caching/precompute, worker/memory ceiling, RBAC matrix, cost invariants. Read them; don't assume.
-4. **Confirm derivation + reconciliation against reality** — does the live schema/data support the stated gold figure? If not, surface it (the contract may need to bounce back).
-
-**Greenfield branch:** no existing code → Phase 0 inventories the chosen stack, scaffolding, conventions, and the test/deploy tooling you'll set up, and says "greenfield: no prod code." Don't fabricate a blast radius.
+## ⛔ Phase 0 — understand the codebase FIRST (write findings INTO the plan; cite real paths)
+1. **Repo guidance + tooling** (PREFER existing workflows): `CLAUDE.md`, `.claude/`, architecture/invariants docs, CI, package scripts, Makefile, test/migration/seed/perf/OOM scripts, deploy hooks.
+2. **Real blast radius** — read the *actual* code for every area the contract touches; name files, readers/writers, routes, jobs, DB tables, and the **existing workflows that depend on them** (direct + indirect) that could regress. **Rewrite the INDEX `touches` line with this real file list**, and if it overlaps another in-flight build, surface it and ask.
+3. **Real infra constraints** — DB plan/size, instances, caching, memory ceiling, RBAC, cost invariants. Read, don't assume.
+4. **Confirm reconciliation against reality** — can the reproducing query recompute toward the pinned gold? If not, surface it (the contract may bounce back).
+**Greenfield:** no code → inventory the chosen stack/scaffolding/conventions/tooling and say "greenfield."
 
 ## The plan (`plan.md`)
-1. **Traceability** — a row per contract requirement → the plan step(s). Nothing dropped.
-2. **INVARIANT → assertion map** — every INVARIANT mapped to the **exact verify command that asserts its specific bound**. **An INVARIANT's assertion may NOT be deferred** (see step 8) — it runs at build time or the plan is incomplete.
-3. **Files to change/add** — exact paths (from Phase 0).
-4. **Workflows touched** — named blast radius + features that could regress.
-5. **DB / migration** — changes; migration + rollback; lock/index behaviour; backfills; forward/back compatibility during a rolling deploy. **Every migration step includes a DRY-RUN: apply forward + roll back on a restored copy/branch DB and assert row-count + checksum identical, BEFORE the prod apply** — "reversible" on paper is not reverted-on-a-copy.
-6. **API** — endpoints, request/response, backward compatibility, validation, idempotency.
-7. **Code invariants** — rules the implementation must hold (contract + repo invariants).
-8. **Step-by-step checklist** — ordered, atomic steps. Each step: what it does · which contract requirement it serves · its **VERIFY command** (from the project-type rungs) · a checkbox. A step's verify may be **"deferred — proven by step N / post-deploy check X"** ONLY for **non-INVARIANT** steps and only with a named later proof; a deferred verify with no named proof, or any deferred INVARIANT assertion, is a defect.
-9. **Test plan** — unit/integration/migration/API/UI(or golden-file)/permission/regression/perf, mapped to features, incl. the **reconciliation** check and (web) **design-token** checks.
-10. **Rollout & rollback** — deploy order, flags, the exact revert path.
-11. **Assumptions & open risks** — explicit, each with how it'll be validated.
+1. **Traceability** — every contract requirement → step(s).
+2. **INVARIANT → assertion map** — each INVARIANT → the exact command asserting its bound. **An INVARIANT's assertion may NOT be deferred.**
+3. **Files to change/add** (real paths) · **Workflows touched** + regression risks.
+4. **DB / migration** — changes; **every migration includes a DRY-RUN step: apply forward + roll back on a restored copy/branch DB, assert row-count + checksum identical, BEFORE prod**; reversibility; rolling-deploy compatibility.
+5. **Dependencies** — any install/upgrade/lockfile/version-pin change is its **own explicit step with its own verify** (don't let it be improvised).
+6. **API** — shape, backward compatibility, idempotency. · **Code invariants.**
+7. **Step checklist** — ordered, atomic. Each: what · which requirement · **VERIFY command** (project-facet rungs) · checkbox. A verify may be **"deferred — proven by step N / post-deploy X"** ONLY for **non-INVARIANT** steps with a named later proof.
+8. **Test plan** — unit/integration/migration/API/UI-or-golden-file/permission/regression/perf + reconciliation + (web) design-token + a11y + an **idempotency test** (run twice → identical end-state).
+9. **Rollout & rollback** (exact revert path) · **Assumptions/open risks** (each with how it's validated).
 
-## Procedure
-1. Read `contract.md`. 2. Phase 0. 3. Write `plan.md`. 4. `progress.md` = ② Plan draft, next = Review-2. 5. **EMIT RECEIPT**:
-   ```
-   ## RECEIPT — plan · <slug> · PASS
-   - [x] contract LOCKED receipt present
-   - [x] Phase 0 grounded with cited paths (or greenfield declared)
-   - [x] every contract requirement traced to a step
-   - [x] every INVARIANT mapped to a NON-deferred bound-asserting check
-   - [x] every migration has a dry-run-on-copy step
-   - [x] progress.md = Plan draft
-   ```
-6. **Standalone STOP:** suggest `compass:review-plan`; don't invoke it. Under the orchestrator, hand to the gate.
-
-## Done when
-Receipt PASS: Phase 0 real, every requirement traced, every INVARIANT has a non-deferred bound-asserting check, migrations dry-run on a copy, every step has a verify (or non-INVARIANT deferred-with-named-proof). A deviation from `contract.md` found here = STOP and surface.
+## Emit
+`progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
+```
+## RECEIPT — plan · <slug> · PASS
+- [x] gate: review-contract receipt OK
+- [x] Phase 0 grounded — cited paths: <…> (or greenfield); INDEX touches updated
+- [x] every contract requirement traced to a step
+- [x] every INVARIANT → NON-deferred bound-asserting check
+- [x] every migration has a dry-run-on-copy step; dependency changes are explicit steps
+```
+Self-check: `compass.sh scan-receipt .claude/builds/<slug> plan`. **Standalone STOP:** suggest `compass:review-plan`; don't invoke it. A deviation from `contract.md` found here = STOP and surface.

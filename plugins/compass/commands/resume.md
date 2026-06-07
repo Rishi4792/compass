@@ -8,8 +8,11 @@ Continue a Compass build that was paused or interrupted. State is on disk, so cl
 
 ## Procedure
 1. **Read `.claude/builds/CURRENT`** to get the active slug. If it's missing, read `.claude/builds/INDEX` (or list `.claude/builds/*/`) and ask the user which build to resume (don't guess).
-2. Read that build's `receipts.md` (the last emitted receipt tells you which stage actually completed and whether it PASSed), `progress.md` (the cursor), and — if building — `plan.md` (its **checkboxes are the authoritative** progress; if `progress.md` and the checkboxes disagree, trust the checkboxes). Read `contract.md` (the invariant) and `review-ledger.md` (open issues).
-3. State in ONE line where things stand — e.g. "Resuming — plan LOCKED, building step 4/11 (next: add the reconciliation query)." Do not recite the files.
+2. Read that build's `receipts.md`, `progress.md`, and — if building — `plan.md`. Disambiguate the stage:
+   - The **last PASS receipt** tells you the last *completed* stage. A `build · IN-PROGRESS · step k/n` receipt (or an absent build receipt with some `plan.md` boxes checked) means the build is **mid-flight, not done** — resume at the first unchecked step. An absent build receipt with zero boxes checked means build never started.
+   - **`plan.md` checkboxes are authoritative** for build progress; if `progress.md` disagrees, trust the checkboxes. `progress.md` status qualifies the stage (`contract-LOCKED` vs `plan-LOCKED`, `in-review (Rn)`, etc.).
+   - Read `contract.md` (the invariant) and `review-ledger.md` (open issues).
+3. State in ONE line where things stand — e.g. "Resuming — plan-LOCKED, building step 4/11 (next: the reconciliation query)." Do not recite the files.
 4. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
 
 ## Note

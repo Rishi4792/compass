@@ -12,7 +12,7 @@
 ## The ledger (`review-ledger.md`) — created by whichever review runs first
 Rows append-only; only the `Status` cell updates in place. Stable columns (identical in all three reviews):
 
-`Issue ID | Review (R1/R2/R3) | Round # | Affected area | Failure mode | Impacted invariant | Severity | Root cause | Concrete fix | Validation command | Owner stream | Status`
+`Issue ID | Review (R1/R2/R3) | Round # | Affected area | Failure mode | Impacted invariant | Severity | Root cause | Fix | Validation | Owner stream | Status`
 
 ## Convergence — computed from evidence, not self-assertion
 - **Material issue** = a new **Critical or Major**. (Minors are logged, don't reset convergence.)

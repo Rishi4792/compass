@@ -1,43 +1,44 @@
 ---
 name: contract
-description: Define a build's CONTRACT — the single locked spec that becomes the invariant for the whole build. Runs as an interview (AskUserQuestion), refusing to finish until every required section for the project type is filled and unambiguous — data derivation, schema, scale, dependencies, reconciliation-to-a-goal (exact by default), acceptance INVARIANTs, and (web) auth + UI tokens. Trigger when starting any non-trivial feature/build, or when the user says "define the contract", "compass contract", "spec this out", or invokes the Compass orchestrator.
+description: Define a build's CONTRACT — the single locked spec that becomes the invariant for the whole build. Runs as an interview (AskUserQuestion), refusing to finish until every required section for the chosen project facets is filled — data derivation, schema, scale, dependencies, reconciliation-to-an-INDEPENDENT-gold-figure, acceptance INVARIANTs, and (web) auth + UI tokens. Trigger when starting any non-trivial feature/build, or when the user says "define the contract", "compass contract", "spec this out", or invokes the Compass orchestrator.
 ---
 
 # compass:contract
 
-The contract is the **single source of truth** — the invariant every later step is checked against. A vague contract guarantees drift. This skill **interviews** until the spec is airtight, then writes `contract.md`.
+The contract is the **single source of truth** — the invariant every later step is checked against. A vague contract guarantees drift. Interview until airtight, then write `contract.md`. (Entry point — no prerequisite gate.)
 
-## Hard rule
-**Do not finish until every required section for the project type is filled and unambiguous.** Push back on thin answers. An incomplete contract is a failed contract.
+## 1. Folder, index, facets
+- Create `.claude/builds/<slug>/`. Write the slug to `.claude/builds/CURRENT`; append to `.claude/builds/INDEX`: `<slug> · <goal> · status=draft · facets=<…> · touches=<rough paths, refined by plan>`.
+- **Project facets (one OR MORE — composable):** `web` · `pipeline` · `library`. A CRM with a data sync is `web + pipeline` → both facets' sections and verify rungs apply. (touches here is a coarse pre-filter; plan rewrites it with the real file list.)
+- Optional **budget**: token/time ceiling for the whole build (Compass surfaces "approaching budget" rather than grinding silently).
 
-## Procedure
-1. **Build folder & index.** Create `.claude/builds/<feature-slug>/`. Write the slug to `.claude/builds/CURRENT` (active build) AND append a line to `.claude/builds/INDEX` (`<slug> · <one-line goal> · status=draft · touches=<top-level paths it will change>`). If INDEX already lists a build whose `touches` overlaps this one, **surface it and ask** before continuing — two builds editing the same files can collide.
+## 2. Interview (AskUserQuestion) — fill or mark explicit N/A (silent omission = defect)
+**All facets:** Goal & scope · Data derivation · Schema/output shape · Scale (volume, concurrency) · Dependencies/integrations (incl. version pins) · Features (as behaviors "when X → Y") · Acceptance & accuracy goals (measurable; mark non-negotiables **INVARIANT**) · Idempotency/failure & retry · Rollback (what "revert" means; what must not be lost) · Observability (the exact metric/log that proves it's correct in prod) · Non-goals (e.g. "docs/changelog out of scope" — state it).
 
-2. **Pick the Project Type** (it switches which sections are required): **web-app** · **data-pipeline / CLI** · **library**.
+**Reconciliation goal (REQUIRED when the build outputs any number; INVARIANT by default):**
+- **Gold figure must be INDEPENDENT** — a *published / audited / human-signed* number (data-room Excel, gold MIS, board figure), pinned as a **literal** in `contract.md`. **It may NOT be computed by the reproducing query** (a query agreeing with itself proves nothing). Name its provenance.
+- **Reproducing query/command** to recompute `actual`; note whether it shares logic with the build query (if so, the gate only catches display drift, not query bugs — say so).
+- **Tolerance = exact at the figure's displayed precision** (counts → exact 0; currency shown to ₹Cr 1-dp → exact at 0.1 Cr; rates/latency → the stated bound IS the tolerance). A *looser* band than displayed precision needs a written justification + user sign-off.
+- **Known bug-class checklist** the reproducing query must pass: no duplicate-stage double-count · no join fan-out multiplication · correct source table.
 
-3. **Interview with AskUserQuestion.** Ask only what's missing; confirm sensible defaults rather than asking open-ended. **Each required section must be filled or explicitly `N/A` (silent omission = defect; explicit N/A = a decision).**
-   - **All types:** Goal & scope · Data derivation · Schema/output shape · Scale (volume, concurrency) · Dependencies/integrations · Features (as behaviors "when X → Y") · Acceptance & accuracy goals (measurable; mark non-negotiables **INVARIANT**) · Idempotency/failure & retry · Rollback (what "revert" means, what must not be lost) · Observability (the exact metric/log that proves it's still correct in prod) · Non-goals/constraints.
-   - **Reconciliation goal (REQUIRED whenever the build outputs any number; INVARIANT by default):** name the **gold source**, the **exact target figure**, the **reproducing query/command**, and the **tolerance — which DEFAULTS TO 0 (exact match).** A non-zero band is allowed ONLY with a written justification and is flagged for the user to sign off. "Close to actual" is not acceptable by default.
-   - **web-app also requires:** Auth model (who logs in, session mechanism, how a test harness authenticates) · UI/UX (exact design tokens — colors/type/spacing; flow; empty/loading/error states; optionally a **reference artifact path** if a visual diff target exists). Tokens get VERIFIED later — they aren't decoration.
-   - **data-pipeline/CLI also requires:** Input-data contract · Determinism (same input → identical output) · Output schema · Run reproducibility. (Auth/UI tokens → N/A.)
+**`web` also:** Auth model (who logs in, session mechanism, how a test harness authenticates) · UI/UX (exact tokens — colors/type/spacing; flow; empty/loading/error; optional **reference artifact path** for a visual diff; a11y target — contrast/focus/keyboard).
+**`pipeline` also:** Input-data contract · Determinism (same input → identical output) · Output schema · Reproducibility.
 
-4. **Testability + deferred-flag cap.** Every requirement needs a concrete check. An item may be flagged "resolve in plan" ONLY if non-INVARIANT and non-acceptance AND it names who/when/how. **Zero deferred flags on INVARIANT or acceptance items** — they block the lock until pinned.
+## 3. Testability + deferred-flag cap
+Every requirement needs a concrete check. A "resolve in plan" flag is allowed ONLY for non-INVARIANT, non-acceptance items, naming who/when/how. **Zero deferred flags on INVARIANT/acceptance items.**
 
-5. **Write `contract.md`** (mark INVARIANTs). **Update `progress.md`** (stage ① Contract draft, next = Review-1).
+## 4. Write + emit
+- Write `contract.md` (version it: `v1` + a CHANGELOG section — later **amendments** bump the version and re-lock). Update `progress.md` (stage ① Contract draft).
+- **EMIT RECEIPT** to `receipts.md` — fill each box with what you actually did:
+  ```
+  ## RECEIPT — contract · <slug> · PASS
+  - [x] facets: <web|pipeline|library …>
+  - [x] all required sections for those facets filled or explicit N/A
+  - [x] reconciliation: gold=<literal> provenance=<published artifact, NOT self-computed>; tol=<displayed precision>
+  - [x] no deferred flag on any INVARIANT/acceptance item
+  - [x] CURRENT + INDEX + progress.md written
+  ```
+- **Self-check:** run `compass.sh scan-receipt .claude/builds/<slug> contract` (must exit 0).
 
-6. **EMIT RECEIPT** — append to `.claude/builds/<slug>/receipts.md`:
-   ```
-   ## RECEIPT — contract · <slug> · PASS
-   - [x] project type: <web-app|data-pipeline|library>
-   - [x] all required sections filled or explicit N/A
-   - [x] reconciliation pinned (gold/figure/query/tolerance) or N/A (no numbers)
-   - [x] tolerance = 0 exact  (or: band <t> justified, awaiting user sign-off)
-   - [x] no deferred flag on any INVARIANT/acceptance item
-   - [x] CURRENT + INDEX + progress.md written
-   ```
-   (Any box you cannot check → status FAIL, list what's missing, do not hand on.)
-
-7. **Standalone STOP.** Suggest `compass:review-contract` and **STOP — do not invoke it yourself.** Under the orchestrator, hand to the gate.
-
-## Done when
-The receipt is PASS: every required section filled/N/A, reconciliation pinned at exact tolerance (or a justified band awaiting sign-off), no deferred flag on an INVARIANT, CURRENT/INDEX/progress.md/receipt written. Then it must pass `compass:review-contract` to become the locked invariant.
+## 5. STOP
+Standalone: suggest `compass:review-contract` and **STOP — don't invoke it.** Under the orchestrator, hand to the gate. The receipt boxes ARE the done-criteria — if any can't be honestly checked, set status FAIL and fix it first.
