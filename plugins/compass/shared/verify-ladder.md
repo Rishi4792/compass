@@ -17,7 +17,7 @@
 | 2 | DB query | data truth at SOURCE (counts, sums, reconciliation) | yes |
 | 3 | Page HTML via curl+cookie | renders, 200, markers present | yes |
 | 4 | API response | request/response contract | yes |
-| 5 | **Playwright** — assert DOM text / computed CSS | the *actual* user flow + what the user sees | **yes** (own browser/run; persists as regression test) |
+| 5 | **Playwright** — assert DOM text / computed CSS, + screenshot read-back vs the captured design intent | the *actual* user flow + what the user sees + whether it matches the imagined design | **yes** (own browser/run; persists as regression test) |
 | 6 | Chrome MCP | exploratory only | **NO** — locks across projects; last resort |
 
 **data-pipeline / CLI:** exit code → **golden-file diff** of output → unit/`pytest` asserts → **numeric reconciliation to tolerance** → determinism check (same input twice → identical output) → idempotent re-run.
@@ -25,7 +25,9 @@
 
 ## Critical rules (all project types)
 - **Rung 2 (data at source) does NOT prove the UI/output shows it.** Any claim about a number/page/token a user reads cannot stop below the UI rung (web: rung 5).
-- **Screenshots / output-eyeballing are layout sanity ONLY — never a numeric or token check.** A model can't tell ₹12.4 from ₹12.7Cr or `#0A84FF` from `#0A7AFF`. Numbers → assert exact DOM text vs the rung-2 value. Tokens → assert computed CSS (`getComputedStyle(el).color === 'rgb(10,132,255)'`).
+- **Two kinds of UI check — use both, don't substitute one for the other:**
+  - *Exact things* (a number, a hex, a spacing value) → an **exact assertion**, never a screenshot. A model can't tell ₹12.4 from ₹12.7Cr or `#0A84FF` from `#0A7AFF`. Numbers → assert DOM text vs the rung-2 value. Tokens → assert computed CSS (`getComputedStyle(el).color === 'rgb(10,132,255)'`).
+  - *Design-intent fidelity* (layout, hierarchy, spacing rhythm, "does it match what we imagined") → a **screenshot read-back vs the design intent captured in the contract** (a mockup image, reference URL, or described visual). Claude views the screenshot, compares it to the reference, and **names any drift from intent** — this is the gestalt judgment an exact assertion cannot make, and it is a REQUIRED check for any web build, not optional. (If there's no captured design intent, that's a contract gap → flag it.)
 - **An INVARIANT's assertion may NOT be deferred** — it must run and assert its exact bound before the step's box is checked.
 
 ## Rung 5 (Playwright) — the hard parts, handled

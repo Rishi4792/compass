@@ -21,7 +21,7 @@ The contract is the **single source of truth** — the invariant every later ste
 - **Tolerance = exact at the figure's displayed precision** (counts → exact 0; currency shown to ₹Cr 1-dp → exact at 0.1 Cr; rates/latency → the stated bound IS the tolerance). A *looser* band than displayed precision needs a written justification + user sign-off.
 - **Known bug-class checklist** the reproducing query must pass: no duplicate-stage double-count · no join fan-out multiplication · correct source table.
 
-**`web` also:** Auth model (who logs in, session mechanism, how a test harness authenticates) · UI/UX (exact tokens — colors/type/spacing; flow; empty/loading/error; optional **reference artifact path** for a visual diff; a11y target — contrast/focus/keyboard).
+**`web` also:** Auth model (who logs in, session mechanism, how a test harness authenticates) · UI/UX: exact tokens (colors/type/spacing); flow; empty/loading/error; a11y target (contrast/focus/keyboard); **DESIGN INTENT — required: capture what the feature should look like, so the build can be checked for zero drift from it.** A mockup/screenshot path, a reference URL, or a precise described visual (layout, hierarchy, what each region shows). This is the ground truth review-build eyeballs the live screenshot against — without it, "no design drift" can't be verified.
 **`pipeline` also:** Input-data contract · Determinism (same input → identical output) · Output schema · Reproducibility.
 
 ## 3. Testability + deferred-flag cap
