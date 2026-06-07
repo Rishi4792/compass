@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"systemMessage\":\"Compass: context is about to compact. If a Compass build is active, write .claude/builds/<slug>/progress.md FIRST (compaction cannot be deferred) — stage, status, the first UNCHECKED plan.md step, and open ledger items — and never leave a step checkbox set whose verify did not finish. Then print the Compass resume block so the user can continue in a new terminal with /compass:resume.\"}'"
+            "command": "echo '{\"systemMessage\":\"Compass reminder (advisory — this hook cannot write for you and compaction cannot be deferred): if a Compass build is active, the safety net is per-step discipline — progress.md should already be fresh after the last completed step, and no plan.md box should be checked whose verify did not finish. Before continuing, update .claude/builds/<slug>/progress.md (stage, status, first UNCHECKED step, open ledger items) and print the Compass resume block for /compass:resume.\"}'"
           }
         ]
       }

@@ -34,12 +34,15 @@ Between every hop is a **user-driven gate** (Approve / Revise / Pause / Show ful
 | ⑥ | `/compass:review-build` | **Review-3 (full)** — final adversarial sweep; reconciliation + design-fidelity streams; every "it works" backed by a re-run check. Two clean rounds; cap 5. |
 
 ### Two engines shared across the skills
-- **Verify ladder** — cheapest real proof first: typecheck → DB query → curl+cookie HTML → API → **Playwright** → Chrome MCP (last resort). Never claim correctness on agent agreement.
-- **Review core** — fan-out streams, one issue ledger, and a convergence loop that stops only on **2 consecutive clean rounds**. Hitting a cap un-converged escalates UP a level (it never fakes "done").
+- **Verify ladder** — cheapest real proof first, by project type. Web: typecheck → DB query → curl+cookie HTML → API → **Playwright** → Chrome MCP (last resort). Pipeline/CLI: exit code → golden-file diff → asserts → numeric reconciliation → determinism. Never claim correctness on agent agreement.
+- **Review core** — fan-out streams, one issue ledger, and a convergence loop. The light contract review stops on **one clean pass**; the full plan/build reviews on **two consecutive clean rounds** — and a round only counts as clean if its evidence (the actual command + exit + counts) is recorded, not just asserted. Hitting a cap un-converged escalates UP a level (it never fakes "done").
+
+### The teeth — receipts & gates
+Each stage **emits a receipt** (the real commands it ran + a checklist + PASS/FAIL) to `receipts.md`, and the next stage **refuses to start** without it. Reconciliation is a hard `PASS|FAIL` gate (exact match by default) that blocks close; a committed secret blocks close; rollback must be exercised on a copy, not just asserted. Enforcement lives in artifacts a later step checks — not in prose the model grades itself against.
 
 ## Use it three ways
 - **Full pipeline:** `/compass:start` — runs the whole lifecycle with gates.
-- **Any single stage:** run e.g. `/compass:plan` or `/compass:review-build` directly. Each skill is standalone and does its own prerequisite check — if its input file is missing it STOPs and points you to the right earlier stage (it never fabricates the missing artifact).
+- **Any single stage:** run e.g. `/compass:plan` or `/compass:review-build` directly. Each downstream skill does its own Step-0 prerequisite check — if the prior stage's receipt is missing or FAIL it STOPs and points you to the right earlier stage (it never fabricates the missing artifact). (`contract` is the entry point, so it has no prerequisite.)
 - **Resume anytime:** `/compass:resume` — picks up from `progress.md`. State is file-based, so closing the terminal loses nothing.
 
 ## Install

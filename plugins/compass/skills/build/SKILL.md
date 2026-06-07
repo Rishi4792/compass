@@ -1,39 +1,51 @@
 ---
 name: build
-description: Build-Test-Verify — execute the locked PLAN one step at a time, where VERIFY is adversarial and proof-based (never "looks right"). Reads contract.md as the invariant before every step; any deviation STOPS and asks. Uses the verify-ladder (cheapest real proof first; assert DOM text / computed CSS for UI; Playwright over Chrome MCP; prod = read-only). Updates plan.md checkboxes and progress.md so the build is resumable. Trigger after the plan is locked, or when the user says "build it", "compass build", or invokes the Compass orchestrator.
+description: Build-Test-Verify — execute the locked PLAN one step at a time, where VERIFY is adversarial and proof-based (never "looks right"). Reads contract.md as the invariant before every step; any deviation STOPS and asks. Uses the project-type verify rungs (assert DOM text / computed CSS for UI; reconciliation is a hard PASS/FAIL gate; Playwright auth is discovered not guessed; prod = read-only). A step's box is checked only after its verify passes. Trigger after the plan is locked, or when the user says "build it", "compass build", or invokes the Compass orchestrator.
 ---
 
 # compass:build
 
-Execute the locked `plan.md` step by step. The loop per step is **Build → Test → Verify**, and **Verify is adversarial** — you are trying to prove the step is WRONG, and only when you can't, with a real check, is it done.
+Execute the locked `plan.md` step by step. The loop is **Build → Test → Verify**, and **Verify is adversarial** — you try to prove the step WRONG; only when you can't, with a real check, is it done.
 
-## Prerequisite check (Step 0)
-Read `.claude/builds/CURRENT` → slug → `plan.md` AND `contract.md`. **If `plan.md` is absent, STOP** — say so and offer `compass:plan`. **Never improvise a build from the contract or the prompt** — that is the exact drift Compass exists to prevent. `plan.md` checkboxes are the authoritative record of build progress; `progress.md` is a pointer (on conflict, trust the checkboxes).
+## Step 0 — gate
+Read `.claude/builds/CURRENT` → slug → `receipts.md`. **If the `review-plan` receipt is absent or FAIL (plan not LOCKED), STOP** and offer `compass:review-plan`/`compass:plan`. **Never improvise a build from the contract or the prompt** — that is the exact drift Compass prevents. `plan.md` checkboxes are the AUTHORITATIVE record of build progress; `progress.md` is a pointer (on conflict, trust the checkboxes).
 
-## The invariant (read before every step)
-Before each step, re-read the relevant part of `contract.md`. **If a step would deviate from the contract — even slightly — STOP and ask.** Do not "improve" beyond the contract silently.
+## The invariant (before every step)
+Re-read the relevant part of `contract.md`. **If a step would deviate — even slightly — STOP and ask.** Never "improve" beyond the contract silently.
 
-## The per-step loop
-For each unchecked step in `plan.md`, in order:
-1. **Build** — make the change exactly as the step specifies. No scope creep beyond the step.
+## Per-step loop (for each unchecked step, in order)
+1. **Build** — exactly as specified. No scope creep.
 2. **Test** — run/add the deterministic test the plan named.
-3. **Verify (adversarial)** — pick the **lowest verify-ladder rung that genuinely proves the step**, and try to break it. Inlined ladder essentials (full spec in `shared/verify-ladder.md`):
-   - typecheck/build → **DB query** (counts/sums/**reconciliation to the gold figure**) → page HTML via curl+cookie → API response → **Playwright** (assert DOM text + computed CSS; screenshot is layout-sanity only) → Chrome MCP (last resort).
-   - **Never claim done on reading code or agent agreement.** Record the exact command + its fresh output.
-   - **Rung 2 proves the data, not that the UI shows it.** Any claim about a page/number/token a user sees cannot stop below Playwright.
-   - **Screenshots are never a numeric or token check** — assert exact DOM text vs the rung-2 value; assert computed CSS vs the contract's tokens.
-   - **Playwright: prod = read-only asserts ONLY; any write-flow runs against local/staging.** First assertion must fail loudly if redirected to login (so a bad cookie can't fake a pass).
-   - For any step implementing a contract **INVARIANT**, the verify MUST assert its exact bound (the ±X%, the <Ns, the RBAC rule) — not a generic "it works."
-4. **Only after verify fully passes**, check the step's box in `plan.md` and record the proof, then update `progress.md` (current step, next step). **Never check a box before its verify passes** — so an interrupted verify always resumes as "pending," never falsely "done."
-5. **If verify fails:** diagnose root cause (don't layer patches). Fix, re-verify.
+3. **Verify (adversarial)** — lowest project-type rung that genuinely proves it; try to break it. Essentials (skill authoritative; `shared/verify-ladder.md` is an overview):
+   - **web:** typecheck → DB query (counts/sums/reconciliation) → page HTML → API → **Playwright** (assert DOM text + computed CSS) → Chrome MCP (last resort). **pipeline/CLI:** exit code → golden-file diff → unit asserts → **numeric reconciliation** → determinism (same input twice → identical) → idempotent re-run.
+   - **Never claim done on reading code or agent agreement.** Record the exact command + fresh output.
+   - **Rung 2 / source data does NOT prove the UI/output shows it** — a number/page/token a user reads cannot stop below the UI rung. **Screenshots are layout-sanity only** — assert exact DOM text vs the rung-2 value; assert computed CSS vs the contract tokens.
+   - **INVARIANT steps:** the verify MUST run and assert the exact bound (±X%, <Ns, RBAC). **An INVARIANT assertion may NOT be deferred.**
+   - **Reconciliation = a HARD GATE, not an opinion.** Run the contract's reproducing query and emit `RECONCILE: actual=<x> gold=<y> tol=<t> PASS|FAIL`. **FAIL means the build cannot close — no severity discretion.** Default tolerance is exact (0) unless the contract carries a justified, user-signed band.
+   - **Playwright auth:** discover the scheme from the repo (or STOP and ask — never guess); read the token from **env, never commit it**; assert a **positive authed-only DOM element with real data** (a blank 200 shell = FAIL). **Prod = read-only asserts only;** a write-flow runs against local/staging, or — if none exists — a reversible **create→assert→delete probe on a test-tagged row with teardown in `finally`**, or is marked **UNVERIFIED — no non-prod env** and surfaced.
+4. **Only after verify fully passes**, check the step's box in `plan.md`, record the proof, and update `progress.md` (current/next step). **Never check a box before its verify passes** — an interrupted verify always resumes as "pending," never falsely "done."
+5. **Verify fails** → diagnose root cause (no patch-layering), fix, re-verify.
 
 ## Escalation (don't force it)
-- Same step fails repeatedly → the **plan likely has a flaw** → STOP and escalate to `compass:plan`.
-- The build reveals the **contract's premise was false** (e.g. the named gold source doesn't actually reconcile) → STOP and escalate directly to `compass:contract` — don't churn the plan around a wrong contract.
-- **Irrecoverable mid-build failure** → leave the committed work in a **known-good, revertible state**, record the cursor in `progress.md`, and surface it. Never leave a half-applied build with no record.
+- Step fails repeatedly → **plan flaw** → STOP, escalate to `compass:plan`.
+- The build reveals the **contract's premise is false** (e.g. the named gold source can't reconcile) → STOP, escalate to `compass:contract` — don't churn the plan around a wrong contract.
+- **Irrecoverable mid-build failure** → leave committed work in a **known-good, revertible state**, record the cursor in `progress.md`, surface it. Never a half-applied build with no record.
 
-## Resumability & auto-pause
-State lives in files: `plan.md` checkboxes (authoritative progress), `progress.md` (pointer), `review-ledger.md` (open issues). On low context the pre-compact hook fires — write `progress.md` FIRST (before finishing anything else), since compaction can't be deferred. Never pause with a box checked whose verify didn't complete.
+## Auto-pause
+On low context the pre-compact hook fires a *reminder* (it can't write for you, and compaction can't be deferred) — the real safety net is per-step discipline: progress.md is fresh after every step and a box is never checked before its verify passes, so a lost compaction costs at most one step.
+
+## EMIT RECEIPT (when all steps checked)
+```
+## RECEIPT — build · <slug> · PASS
+- [x] review-plan LOCKED receipt was present
+- [x] every plan.md step checked, each with recorded fresh proof
+- [x] every INVARIANT asserted at its exact bound (none deferred)
+- [x] RECONCILE: actual=<x> gold=<y> tol=<t> PASS   (or N/A — no numbers)
+- [x] (web) design tokens asserted via computed CSS
+- [x] no secret committed in any verify spec
+- [x] progress.md current
+```
+**Standalone STOP:** suggest `compass:review-build`; don't invoke it.
 
 ## Done when
-Every step in `plan.md` is checked with a recorded real proof, all named tests pass, and **every contract acceptance INVARIANT is demonstrated with an actual check that asserts its specific bound** (incl. reconciliation to the gold figure and design tokens) — not asserted. Then hand to `compass:review-build` (Review-3). **Standalone STOP:** suggest it; don't invoke it yourself.
+Receipt PASS: every step checked with a real recorded proof, all named tests pass, every acceptance INVARIANT demonstrated at its exact bound, **RECONCILE PASS** (if numbers), tokens asserted (web). Then hand to `compass:review-build`.

@@ -49,3 +49,38 @@
 | F24 | `verify-ladder.md` | Ladder is web-app-shaped (DB/cookie/HTTP); for a CLI/library/pipeline rungs 2–5 don't map. And rung 2 (DB) proves data, not that the UI shows it. | State the real rule is "any deterministic check"; the six rungs are the web-app instance. Add: rung 2 proves data at source, not display — UI/number/token claims cannot stop below rung 5. | FIXED |
 | F25 | `review-core.md` | "Append-only ledger" contradicts "apply fixes / mark closed." | Clarify: rows are append-only; the Status cell is updated in place. | FIXED |
 | F26 | `commands` | Resume tells user to `cd` to "build root," but `.claude/builds/` is relative to the PROJECT root where `.claude/` lives. | Resume block says `cd` to the project root (where `.claude/` lives), not the build folder. | FIXED |
+
+---
+
+# ROUND 2 — second adversarial pass (2026-06-07)
+
+> Two fresh independent agents re-attacked the revised plugin. Theme: the rewrite fixed the *mechanics*, but the guarantees are still **prose the model grades itself against — no teeth.** Plus a few contradictions the rewrite introduced. Status: OPEN.
+
+## 🔴 CRITICAL
+| # | Area | Problem | Fix | Status |
+|---|------|---------|-----|--------|
+| G1 | all skills + engines | **No enforcement teeth.** Every "must re-run the suite / assert the bound / update progress" is a 700-word prose rule the model can self-certify without proof and silently cherry-picks under length pressure. The expensive-but-invisible rules (full-suite re-run, INVARIANT assertion, progress.md) die first — exactly Rishi's "patch reported fixed but wasn't" failure. | Each skill must EMIT a machine-checkable **receipt** (exact commands run + fresh output/exit/counts + a checklist) into progress.md/ledger; the **next stage's Step-0 refuses to start if the prior receipt is missing or has an unchecked critical box.** Moves enforcement from prose to an artifact a later step gates on. | FIXED |
+| G2 | `review-core`, reviews | **Convergence has no proof-of-work.** "2 clean rounds" is computed from a footer line the model writes about itself — it can declare clean without re-running anything. | Each round footer must embed the real evidence (`suite=<cmd> exit=0 passed=412`, `reconcile=<query>→₹1,208Cr Δ0.0%`) or write a `round-N.log`; a "Clean? yes" with no command+exit line is automatically NOT clean. | FIXED |
+| G3 | `contract`, `review-build`, `build` | **Reconciliation still has no hard gate** + the example "±1%" normalizes a non-zero band, against Rishi's "close to actual is never acceptable." | Default tolerance = **0 / exact**; any band needs written justification + user sign-off. Make reconciliation a deterministic boolean: build emits `RECONCILE: actual=x gold=y tol=t PASS|FAIL`; **FAIL blocks CLOSED**, no severity discretion. | FIXED |
+| G4 | `plan`, `build` | **F11/F20 now contradict each other:** F20 lets any step's verify be "deferred," F11 needs every INVARIANT asserted at build time. An INVARIANT's assertion can be deferred → never asserted. | One line in plan + build: **an INVARIANT's assertion may NOT be deferred** — deferral is for non-INVARIANT steps only. | FIXED |
+
+## 🟠 MAJOR
+| # | Area | Problem | Fix | Status |
+|---|------|---------|-----|--------|
+| G5 | `shared/*` vs skills | **Dual-primacy / duplication drift.** shared/*.md claims "source of truth"; skills inline the rules and are what actually runs. A maintainer edits one, they silently diverge. | Mark `shared/*.md` "illustrative reference — the skills are authoritative"; drop the unrealistic "keep both in sync" instruction. | FIXED |
+| G6 | reviews | **No skill writes the `in-review` status** the orchestrator lists → during a long (multi-round) review, progress.md still says "draft/LOCKED" and resume misreports the stage. | Each review sets `status = in-review (Rn)` at its START, not only at convergence. | FIXED |
+| G7 | `verify-ladder`, `build` | **Playwright auth still hand-waved.** Claude doesn't know the project's auth scheme; "not redirected to login" passes on an SPA's blank 200 shell; "writes go to staging" is dead for prod-only projects (most of Rishi's). | Add "discover the auth scheme or STOP and ask"; assert a **positive authed-only DOM element with real data** (blank 200 = FAIL); prod-only writes use a reversible create→assert→delete probe on a test-tagged row, or are marked UNVERIFIED and surfaced. | FIXED |
+| G8 | `verify-ladder`, `review-build` | **Secret-leak risk:** minting a real prod cookie into a kept regression spec commits a secret (Rishi's `render_secret_leak` class). No stream audits the harness. | Token read from env at runtime, never committed; add a **secret-leak scan stream** to review-build (+ quick check in review-plan) that blocks close on any committed cookie/JWT/key. | FIXED |
+| G9 | `contract`, reviews, `verify-ladder` | **Non-web / data-pipeline builds are still web-shaped** — yet that's where Rishi's flagship reconciliation cases live. Required sections (auth, design tokens, RBAC) and the inlined six rungs assume a web app. | Add a **project-type fork** (web-app \| data-pipeline/CLI \| library); for pipeline/CLI swap in input-data-contract / determinism / output-schema / reconciliation / reproducibility sections and inline non-web verify rungs (exit code, golden-file diff, pytest assert, numeric tolerance). | FIXED |
+| G10 | `review-build`, `start` | **DoD = "verify passed" only:** rollback is "reversible" by assertion (never exercised), observability is written once and never confirmed to emit. And single-`CURRENT` can't handle two overlapping builds on the same repo. | review-build must **exercise rollback on a copy** and **confirm the observability signal emits**; replace `CURRENT` with a builds **INDEX** (slug+status+touched paths) + a Phase-0 overlap check. | FIXED |
+| G11 | greenfield | **Greenfield reconciliation infinite-bounce:** review-plan demands the query reproduce the gold figure, but greenfield has no data yet → escalates to contract → contract can't fix → loop. | Greenfield carve-out: reconciliation becomes a **post-data acceptance check**, not a plan-feasibility gate. | FIXED |
+
+## 🟡 MINOR
+| # | Area | Problem | Fix | Status |
+|---|------|---------|-----|--------|
+| G12 | `hooks`, ledger | F16 overclaim: the hook only prints advisory text — it does NOT write progress.md. The real safety net is "box checked only after verify passes." | Correct the claim; lean the guarantee on box-discipline + continuous per-step progress.md writes. | FIXED |
+| G13 | `review-build` | Design-fidelity "visual diff vs a reference" is a permanent no-op — no stage ever produces the reference. | Drop the clause, or have the contract's UI/UX section optionally name a reference artifact path. | FIXED |
+| G14 | `plan`, `review-plan`, `review-build` | Migrations are "reversible" by assertion, never dry-run. | Require forward+back on a restored copy/branch DB, asserting row-count + checksum identical, before the prod apply. | FIXED |
+| G15 | inlined ledger headers | The three reviews describe the ledger's review column differently (`Review(R1)` / `(R2)` / `(R3)`) → the created file's header depends on which ran first. | Standardize all three to `Review (R1/R2/R3)`. | FIXED |
+| G16 | `README`, `contract` wording | README "two engines" omits the light-review one-pass rule; "every skill has a Step-0 prerequisite check" is false for contract (the entry point). | Add "(full reviews; light = one clean pass)"; reword to "every *downstream* skill." | FIXED |
+| G17 | `verify-ladder` | Write-probes need guaranteed teardown even on failure, or repeated runs pollute prod/staging. | One line: write-probes clean up in a `finally`/teardown, test-tagged, idempotent. | FIXED |

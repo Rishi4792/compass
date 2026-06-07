@@ -1,44 +1,49 @@
 ---
 name: plan
-description: Turn a locked CONTRACT into a detailed, industry-standard engineering plan a top engineer could build right the first time. STRICT PREREQUISITE — first scan and deeply understand the existing LIVE codebase (or, for a greenfield build, the chosen stack/conventions) before writing any plan. Produces plan.md as an executable step-by-step checklist where each step has its own verify command and every contract INVARIANT becomes a named assertion. Trigger after the contract is locked, or when the user says "make the plan", "compass plan", or invokes the Compass orchestrator.
+description: Turn a locked CONTRACT into a detailed, industry-standard engineering plan a top engineer could build right the first time. STRICT PREREQUISITE — first scan and deeply understand the existing LIVE codebase (or, for greenfield, the chosen stack/conventions). Produces plan.md as an executable step checklist where each step has its own verify command, every INVARIANT maps to a bound-asserting check that may NOT be deferred, and migrations are dry-run on a copy. Trigger after the contract is locked, or when the user says "make the plan", "compass plan", or invokes the Compass orchestrator.
 ---
 
 # compass:plan
 
-Convert `contract.md` into the engineering plan the world's best engineers would expect — enough that they deliver it **right the first time**, with no surprises.
+Convert `contract.md` into the plan the world's best engineers would expect — enough to deliver it **right the first time**.
 
-## Prerequisite check (Step 0)
-Read `.claude/builds/CURRENT` → the slug → its `contract.md`. **If `contract.md` is absent, STOP** — offer to run `compass:contract`. Never plan against a missing contract. The contract is the invariant for everything below.
+## Step 0 — gate
+Read `.claude/builds/CURRENT` → slug → `receipts.md`. **If the `review-contract` receipt is absent or FAIL (contract not LOCKED), STOP** and offer `compass:review-contract` (or `compass:contract`). Read `contract.md` — the invariant for everything below.
 
-## ⛔ STRICT PREREQUISITE — understand the codebase FIRST (do not skip)
+## ⛔ STRICT PREREQUISITE — understand the codebase FIRST (Phase 0)
+A plan ungrounded in real code is fiction. Scan and write findings INTO the plan:
+1. **Repo guidance + tooling** (PREFER existing workflows): `CLAUDE.md` (+nested), `.claude/`, `architecture.md`, `invariants.md`, `CONTEXT.md`, CI, `package.json` scripts, `Makefile`, test/migration/seed/perf/load/OOM scripts, deploy/predeploy hooks, `render.yaml`/CI config.
+2. **Real blast radius** — read the *actual* code for every area the contract touches: files, readers/writers, API routes, jobs, DB tables/relations, and which **existing workflows depend on them** (direct + indirect). Name the features that could regress.
+3. **Real infra constraints** — DB plan/size, instances, caching/precompute, worker/memory ceiling, RBAC matrix, cost invariants. Read them; don't assume.
+4. **Confirm derivation + reconciliation against reality** — does the live schema/data support the stated gold figure? If not, surface it (the contract may need to bounce back).
 
-**Before writing a single line of plan, scan and deeply understand the existing code.** A plan written without grounding in the real code is fiction — the #1 cause of "the plan didn't match reality." Do this Phase 0 and *write what you found into the plan*:
+**Greenfield branch:** no existing code → Phase 0 inventories the chosen stack, scaffolding, conventions, and the test/deploy tooling you'll set up, and says "greenfield: no prod code." Don't fabricate a blast radius.
 
-1. **Inventory the repo's guidance + tooling** (and PREFER existing workflows over inventing new ones): `CLAUDE.md` (+ nested), `.claude/`, `architecture.md`, `invariants.md`, `CONTEXT.md`, CI scripts, `package.json` scripts, `Makefile`, test runners, migration tooling, seed/perf/load/OOM scripts, deploy/predeploy hooks, `render.yaml`/CI config.
-2. **Map the real blast radius** — for every area the contract touches, read the *actual* code: files, modules, readers, writers, API routes, jobs, DB tables/relations, and which **existing workflows depend on them**. Trace direct AND indirect dependencies. Name the existing features that could regress.
-3. **Discover the real infra constraints** from the repo — DB plan/size, instance count, caching/precompute layer, worker/memory ceiling, RBAC matrix, cost-control invariants. Read them; do NOT assume.
-4. **Confirm the contract's data-derivation + reconciliation against reality** — does the live schema/data actually support the stated derivation/gold-figure? If not, that's a finding to surface (the contract may need to bounce back).
-
-**Greenfield branch:** if there is no existing codebase, Phase 0 instead inventories the chosen stack, the scaffolding/boilerplate, the conventions you'll follow, and the test/deploy tooling you'll set up — and says explicitly "greenfield: no prod code to scan." Don't fabricate a blast radius that doesn't exist.
-
-Only after this grounding do you write the plan. **Cite real file paths and real constraints — no generic placeholders.**
-
-## The plan (industry-standard, executable)
-Write `plan.md` in the build folder. It must include:
-1. **Traceability** — a row per contract requirement → the plan step(s) that deliver it. Nothing dropped.
-2. **INVARIANT → assertion map** — every contract INVARIANT (reconciliation ±X%, page <Ns, RBAC rule) mapped to the **exact verify command that asserts its specific bound**. An INVARIANT with no named assertion is an incomplete plan.
+## The plan (`plan.md`)
+1. **Traceability** — a row per contract requirement → the plan step(s). Nothing dropped.
+2. **INVARIANT → assertion map** — every INVARIANT mapped to the **exact verify command that asserts its specific bound**. **An INVARIANT's assertion may NOT be deferred** (see step 8) — it runs at build time or the plan is incomplete.
 3. **Files to change/add** — exact paths (from Phase 0).
-4. **Codebases & workflows touched** — the named blast radius + which existing features could regress.
-5. **DB / schema / migration** — changes, migration + rollback strategy, lock/index behaviour, backfills, forward/back compatibility during a rolling deploy.
-6. **API / contract** — endpoints, request/response shape, backward compatibility, validation, idempotency.
-7. **Code invariants** — the rules the implementation must hold (from the contract + the repo's own invariants).
-8. **Step-by-step checklist** — ordered, atomic steps. **Each step has: what it does · which contract requirement it serves · its VERIFY command · a done/in-progress/pending checkbox.** A step whose result can't be checked at build time may set verify = **"deferred — proven by step N / post-deploy check X"**, stated explicitly; a deferred verify with no named later proof is itself a defect. This checklist is what makes the build resumable.
-9. **Test plan** — unit/integration/migration/API/UI/permission/regression/perf tests, mapped to features, incl. the **reconciliation** check and the **design-token** checks.
+4. **Workflows touched** — named blast radius + features that could regress.
+5. **DB / migration** — changes; migration + rollback; lock/index behaviour; backfills; forward/back compatibility during a rolling deploy. **Every migration step includes a DRY-RUN: apply forward + roll back on a restored copy/branch DB and assert row-count + checksum identical, BEFORE the prod apply** — "reversible" on paper is not reverted-on-a-copy.
+6. **API** — endpoints, request/response, backward compatibility, validation, idempotency.
+7. **Code invariants** — rules the implementation must hold (contract + repo invariants).
+8. **Step-by-step checklist** — ordered, atomic steps. Each step: what it does · which contract requirement it serves · its **VERIFY command** (from the project-type rungs) · a checkbox. A step's verify may be **"deferred — proven by step N / post-deploy check X"** ONLY for **non-INVARIANT** steps and only with a named later proof; a deferred verify with no named proof, or any deferred INVARIANT assertion, is a defect.
+9. **Test plan** — unit/integration/migration/API/UI(or golden-file)/permission/regression/perf, mapped to features, incl. the **reconciliation** check and (web) **design-token** checks.
 10. **Rollout & rollback** — deploy order, flags, the exact revert path.
 11. **Assumptions & open risks** — explicit, each with how it'll be validated.
 
 ## Procedure
-1. Read `contract.md`. 2. Run Phase 0. 3. Write `plan.md`. 4. Update `progress.md` (stage ② Plan draft, next = Review-2). 5. **Standalone STOP:** suggest `compass:review-plan` and stop — don't invoke it. Under the orchestrator, hand to the gate.
+1. Read `contract.md`. 2. Phase 0. 3. Write `plan.md`. 4. `progress.md` = ② Plan draft, next = Review-2. 5. **EMIT RECEIPT**:
+   ```
+   ## RECEIPT — plan · <slug> · PASS
+   - [x] contract LOCKED receipt present
+   - [x] Phase 0 grounded with cited paths (or greenfield declared)
+   - [x] every contract requirement traced to a step
+   - [x] every INVARIANT mapped to a NON-deferred bound-asserting check
+   - [x] every migration has a dry-run-on-copy step
+   - [x] progress.md = Plan draft
+   ```
+6. **Standalone STOP:** suggest `compass:review-plan`; don't invoke it. Under the orchestrator, hand to the gate.
 
 ## Done when
-Phase 0 grounding is real (cited paths + constraints), every contract requirement is traced, every INVARIANT has a named assertion, every step has a verify (or an explicit deferred-with-named-proof), and `plan.md` is written. A deviation from `contract.md` discovered here = STOP and surface (the contract may need to change first).
+Receipt PASS: Phase 0 real, every requirement traced, every INVARIANT has a non-deferred bound-asserting check, migrations dry-run on a copy, every step has a verify (or non-INVARIANT deferred-with-named-proof). A deviation from `contract.md` found here = STOP and surface.

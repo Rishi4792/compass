@@ -12,10 +12,11 @@ Compass builds software **true to spec, with zero drift**. The contract is the i
 All state lives in `.claude/builds/<slug>/`:
 - `contract.md` — the locked invariant.
 - `plan.md` — the executable step checklist with verify commands (its checkboxes are the **authoritative** record of build progress).
-- `review-ledger.md` — open/closed issues across all three reviews (each review creates it if absent).
-- `progress.md` — the cursor: current stage, status (draft / in-review / LOCKED / CLOSED), next action.
+- `review-ledger.md` — open/closed issues across all three reviews (whichever review runs first creates it).
+- `progress.md` — the cursor: current stage, status (`draft` / `in-review (Rn)` / `LOCKED` / `CLOSED`), next action. Reviews set `in-review (Rn)` at their START, so a resume mid-review reports the right stage.
+- `receipts.md` — each stage's emitted **receipt** (commands run + checklist + PASS/FAIL). These are the teeth: a stage's Step-0 **refuses to start** if the prior stage's receipt is absent, FAIL, or has an unchecked box.
 
-**`.claude/builds/CURRENT`** holds the active slug on one line. The contract skill writes it; you update it whenever the user switches builds. **Always read `CURRENT` first** to know which build you're on — never guess by globbing.
+**`.claude/builds/CURRENT`** holds the active slug; **`.claude/builds/INDEX`** lists every build (`slug · goal · status · touches=<paths>`). The contract skill writes both; you update them at gates / when the user switches builds. **Always read `CURRENT` first** — never guess by globbing. Before planning, if INDEX shows another in-flight build whose `touches` overlap, **surface the dependency and ask** (two builds on the same files can collide on a moving base).
 
 ## The pipeline (and what gates each hop)
 ```
@@ -39,8 +40,8 @@ Only **Approve** advances. Every later stage reads `contract.md` as the invarian
 Each skill works on its own and does its own prerequisite check — if its required input file is missing it STOPs and offers the right earlier stage (it never fabricates the missing artifact). So the user can run `compass:plan` directly when a `contract.md` exists, or `compass:review-build` on an existing build.
 
 ## Auto-pause (elegant cross-session handoff)
-When context runs low (the pre-compact hook fires) OR the user picks **Pause**:
-1. **Write `progress.md` FIRST** (compaction can't be deferred) — stage, status, the first unchecked `plan.md` step, open ledger items. Never pause with a step's checkbox set whose verify didn't finish.
+The pre-compact hook fires a *reminder* only — it cannot write files for you, and compaction can't be deferred. The real safety net is per-step discipline (progress.md fresh after every step; a box never checked before its verify passes), so a lost compaction costs at most one step. When the hook fires OR the user picks **Pause**:
+1. **Write `progress.md` first** — stage, status, the first unchecked `plan.md` step, open ledger items. Never pause with a step's checkbox set whose verify didn't finish.
 2. Print the **resume block**:
    ```
    ─── Compass: paused at a clean boundary ───────────────
