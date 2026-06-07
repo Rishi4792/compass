@@ -20,27 +20,27 @@ It exists because the #1 failure in AI-assisted building is **drift**: the thing
 ⑤ build ──▶ ⑥ review-build ──▶ [CLOSED]
 ```
 
-Between every hop is a **user-driven gate** (Approve / Revise / Pause / Show full artifact) — Compass never auto-advances.
+Between every hop is a **user-driven gate** (Approve / Revise / Pause / Show full artifact) — Compass never auto-advances. Reviews loop to convergence first: the light review on **one clean pass**, the full reviews on **two consecutive clean rounds**.
 
 ## The six skills
 
 | # | Skill | What it does |
 |---|-------|--------------|
-| ① | `compass:contract` | Interviews you (ask-user-tool) until the spec is airtight: data derivation, schema, UI/UX, features, **measurable** acceptance goals. Won't finish with gaps. |
-| ② | `compass:review-contract` | **Review-1 (light)** — pressure-tests the spec for completeness, ambiguity, testability. Cap 2. |
-| ③ | `compass:plan` | **Scans the live prod codebase first**, then turns the contract into an industry-standard, step-by-step engineering plan — each step with its own verify command. |
-| ④ | `compass:review-plan` | **Review-2 (full)** — multi-agent: traceability, migration safety, blast radius, rollback, tests, performance, security. Cap 3. |
-| ⑤ | `compass:build` | **Build-Test-Verify**, one step at a time. Verify is adversarial and proof-based — never "looks right". |
-| ⑥ | `compass:review-build` | **Review-3 (full)** — final adversarial sweep; every "it works" backed by a real check. Cap 5. |
+| ① | `/compass:contract` | Interviews you (ask-user-tool) until the spec is airtight: data derivation, schema, scale, auth, dependencies, UI/UX tokens, features, **reconciliation-to-a-goal**, and **measurable** acceptance goals. Won't finish with gaps. |
+| ② | `/compass:review-contract` | **Review-1 (light)** — pressure-tests the spec for completeness, ambiguity, testability, reconciliation-pinned. One clean pass; cap 2. |
+| ③ | `/compass:plan` | **Scans the live codebase first** (or the chosen stack, for greenfield), then turns the contract into an industry-standard, step-by-step plan — each step with its own verify command, every INVARIANT mapped to a bound-asserting check. |
+| ④ | `/compass:review-plan` | **Review-2 (full)** — multi-agent: traceability, INVARIANT-assertion coverage, migration safety, blast radius, rollback, tests, reconciliation feasibility, performance, security. Two clean rounds; cap 3. |
+| ⑤ | `/compass:build` | **Build-Test-Verify**, one step at a time. Verify is adversarial and proof-based — never "looks right"; a step's box is checked only after its verify passes. |
+| ⑥ | `/compass:review-build` | **Review-3 (full)** — final adversarial sweep; reconciliation + design-fidelity streams; every "it works" backed by a re-run check. Two clean rounds; cap 5. |
 
 ### Two engines shared across the skills
 - **Verify ladder** — cheapest real proof first: typecheck → DB query → curl+cookie HTML → API → **Playwright** → Chrome MCP (last resort). Never claim correctness on agent agreement.
 - **Review core** — fan-out streams, one issue ledger, and a convergence loop that stops only on **2 consecutive clean rounds**. Hitting a cap un-converged escalates UP a level (it never fakes "done").
 
 ## Use it three ways
-- **Full pipeline:** `/compass` — runs the whole lifecycle with gates.
-- **Any single stage:** run e.g. `compass:plan` or `compass:review-build` directly. Each skill is standalone; it'll tell you if a prerequisite file is missing.
-- **Resume anytime:** `/compass resume` — picks up from `progress.md`. State is file-based, so closing the terminal loses nothing.
+- **Full pipeline:** `/compass:start` — runs the whole lifecycle with gates.
+- **Any single stage:** run e.g. `/compass:plan` or `/compass:review-build` directly. Each skill is standalone and does its own prerequisite check — if its input file is missing it STOPs and points you to the right earlier stage (it never fabricates the missing artifact).
+- **Resume anytime:** `/compass:resume` — picks up from `progress.md`. State is file-based, so closing the terminal loses nothing.
 
 ## Install
 
@@ -49,11 +49,16 @@ Between every hop is a **user-driven gate** (Approve / Revise / Pause / Show ful
 /plugin install compass@compass
 ```
 
-Then `/compass` to start, or invoke any skill by name.
+Then `/compass:start` to begin, or invoke any stage by name (`/compass:contract`, `/compass:plan`, …).
+
+> Plugin commands are namespaced, so it's `/compass:start`, not `/compass`.
 
 ## Why "Compass"
 A compass keeps you pointed true no matter the terrain. Same idea here: the contract is your true north, and every stage checks the bearing.
 
 ---
 
-*State for each build lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`.*
+*State for each build lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md` — and `.claude/builds/CURRENT` points to the active build so resume never has to guess.*
+
+## Verify, honestly
+Compass never claims correctness on an LLM eyeballing output. The verify ladder climbs from the cheapest real proof to the costliest: typecheck → DB query → page HTML → API → **Playwright** (assert DOM text + computed CSS; prod = read-only) → Chrome MCP (last resort, because it locks across projects). Screenshots are layout sanity only — numbers are asserted against the DB value, design tokens against computed CSS.
