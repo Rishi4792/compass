@@ -1,6 +1,6 @@
 {
   "name": "compass",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Build true to spec, zero drift. A contract-first lifecycle: define a locked contract (the invariant), plan against the real codebase, build, and pass three adversarial reviews — enforced by a real gate script, with reconciliation to an independent gold figure, user-driven gates, a human sign-off, and clean cross-session resume. Every step is checked against the contract; any deviation stops and asks.",
   "author": { "name": "Rishi Kapoor" },
   "homepage": "https://github.com/Rishi4792/compass",

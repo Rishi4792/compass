@@ -3,6 +3,16 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.3.0] — 2026-06-08
+
+Two improvements learned from the first real end-to-end run (a production feature on a live CRM, where the reviews caught a self-introduced IDOR and a shipped-incomplete data-redaction fix).
+
+### Changed
+- **A fix is treated as new code and re-attacked before convergence.** review-build now requires the final clean round to be a genuine *verify-the-fixes* round: any round that applied a fix is not clean by definition, and the independent **Security/RBAC, Secret-leak, and Verification-audit agents re-spawn on every fix diff — regardless of which group the fix belonged to**. A "functional" fix routinely opens a security hole (e.g. a pagination fix that introduces an IDOR); this no longer depends on the user asking for an extra round.
+- **Coverage, not sample — fixes are checked against canonical definitions.** When a fix is defined relative to a canonical set (sensitive/commercial fields, roles, allowed values, redaction targets), review-build now requires the implementation to be **driven by the canonical source itself**, not a hand-maintained copy/regex that can drift, and the test to exercise the **full set**, not a hand-picked sample. A duplicated canonical set is a Major finding.
+
+**Why:** on the first real run, a Round-4 fix passed its own test but had silently drifted from the canonical field list, leaving commercial data visible — caught only because a manual verify round was added. These changes make that catch automatic.
+
 ## [0.2.0] — 2026-06-07
 
 ### Added
