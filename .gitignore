@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 .claude/builds/
+
+# Local session catch-up — never publish
+CONTEXT.md
