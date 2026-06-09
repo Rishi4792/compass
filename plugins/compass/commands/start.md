@@ -16,7 +16,21 @@ All in `.claude/builds/<slug>/`:
 - `progress.md` — the cursor: status ∈ `{draft, in-review (Rn), contract-LOCKED, plan-LOCKED, CLOSED, SHIPPED, ROLLED-BACK}`. Reviews set `in-review (Rn)` at their START.
 - `receipts.md` — each stage's **receipt** (commands + outputs). **The teeth:** every downstream Step-0 runs `compass.sh gate <build-dir> <prior-stage>`, which exits non-zero — a hard, un-skippable error — if the prior receipt is absent, FAIL, has an unchecked `[ ]`, or is SUPERSEDED. Escalation/re-run calls `compass.sh supersede` to void downstream receipts so they must re-run.
 
-**`.claude/builds/CURRENT`** = active slug (cleared on CLOSE so a finished build can't leak its gate); **`.claude/builds/INDEX`** = every build (`slug · goal · status · facets · touches`). Plan rewrites `touches` with the real file list from Phase 0; before planning, if another in-flight build's `touches` overlap, **surface it and ask**.
+**`.claude/builds/CURRENT`** = a non-authoritative *hint* of the last active slug (cleared on CLOSE). With parallel builds it can NOT disambiguate — resume derives identity from the worktree (see resume). **`.claude/builds/INDEX`** = every build (`slug · goal · status · facets · touches`). Plan rewrites `touches` with the real file list from Phase 0; before planning, if another in-flight build's `touches` overlap, **surface it and ask**.
+
+> **State path:** skills resolve state via `compass.sh state-root` (returns the *main checkout's* `.claude/builds`), so a skill running inside a build's worktree still reaches the one canonical state. Never hardcode `.claude/builds` from inside a worktree.
+
+## Parallel builds (worktree isolation — the keystone)
+A repo may run **N builds at once** (incl. one unattended). The rule: **one git worktree per build**, so no two builds share a working directory (this is what stops one build's `git add -A` sweeping another's files). Auto-on when `compass.sh active-builds` shows another in-flight build (or `--parallel`); single-build runs stay in the main checkout unchanged.
+
+On `start` in parallel mode:
+1. `compass.sh gc` — sweep terminal-build worktrees first.
+2. If another build is active **and still in the main checkout**, `compass.sh promote <that-slug>` BEFORE starting the new one (never leave the first build in the shared checkout on a prose warning).
+3. **DB isolation gate:** if this build changes schema, the contract MUST declare `isolation.db_provision`/`db_teardown` (per-worktree DATABASE_URL). `compass.sh check-db-isolation <slug> <has-schema:0|1> <provision-declared:0|1>` REFUSES a schema-touching parallel build with no isolation — concurrent migrations on one dev DB corrupt it.
+4. `compass.sh worktree <slug>` → its folder+branch (runs `db_provision` if declared); `compass.sh install-guard` (once); then `claim` at build start.
+5. Tell the user the worktree path + the one-time `npm ci` / `source .env.compass` step, and that **all build work happens in that worktree** (`cd` there).
+
+**Unattended runs** (`--unattended`): gates write the resume banner and `exit 0` instead of asking; a guard rejection writes a receipt **FAIL** and stops (never retries → no livelock). Only proceed when the prior stage receipt is PASS.
 
 ## The pipeline
 ```

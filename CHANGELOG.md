@@ -3,6 +3,24 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.4.0] — 2026-06-09
+
+Parallel builds, learned from running two Compass builds at once on a live CRM (one of them overnight, unattended). The two shared one working directory, so one build's `git add -A` swept in the other's files and a manual de-commingle was needed at the end. This release makes N builds in one repo safe — and the design was hardened by an 8-stream adversarial review (73 raw → 22 findings, all folded in) before any code was written.
+
+### Added
+- **One git worktree per build (the keystone).** Each parallel build gets its own working folder + branch backed by the same `.git`, so no two builds share a checkout. State stays canonical in the *main* checkout's `.claude/builds` and is reached from any worktree via the new `compass.sh state-root` (no symlink, no migration). Single-build runs are unchanged.
+- **The teeth, extended.** New `compass.sh` subcommands, all deterministic and exit-coded: `state-root`, `active-builds`, `worktree`, `promote`, `worktree-rm`, `assert-worktree`, `claim`, `check-overlap`, `check-db-isolation`, `install-guard`, `audit-staged`, `merged-recon`, `gc`. Covered by a committed smoke test (`compass.smoke.sh`, 16 assertions) that runs in a path with spaces and parentheses.
+- **A single slug-agnostic pre-commit guard** that blocks any staged file outside the active build's claimed file list — inside a worktree it enforces that build's claim; from the main checkout it refuses to commit any in-flight build's claimed file. This is what actually stops the `git add -A` contamination, including on unattended overnight runs.
+- **Enforced cross-build overlap.** `claim` (file-level, expanded via `git ls-files` in the worktree) + `check-overlap` turn the old prose "coordinate additively" warning into a hard gate; shared files surface as an explicit, acknowledged overlap rather than a silent clobber. Builds claim `package-lock.json` and their migration dir so lockfile/migration conflicts surface early, not at merge.
+- **DB-isolation gate.** Worktrees isolate files, not the database — so a contract may declare `isolation.db_provision`/`db_teardown` (a per-worktree `DATABASE_URL`), and `check-db-isolation` REFUSES a schema-touching parallel build that has no isolation (concurrent migrations on one dev DB corrupt it).
+- **Post-merge reconciliation gate.** `merged-recon` re-runs both builds' recorded `RECON-CMD` on the *merged* tree before the second ships — two independently-green branches don't prove the union is green.
+
+### Changed
+- **Resume no longer trusts the global `CURRENT`.** It derives the build from the worktree (cwd/branch) and, in the main checkout, refuses to guess when more than one build is active — the exact ambiguity that resumed the wrong build before. `CURRENT` is demoted to a non-authoritative hint.
+- **Build, ship, contract, start** skills now wire the gates above (worktree assertion, overlap/DB checks at build start, scoped commits with no `git add -A` / `--no-verify`, the merge gate in ship, the isolation block in contract).
+
+**Why:** the parallel run shipped both features, but the shared checkout cost a manual cleanup and the riskiest moment was the unattended run committing with `git add -A`. The adversarial review found the naive "just use worktrees" design left DB corruption, lockfile merges, and a bypassable guard unsolved; v0.4.0 closes those before turn-on.
+
 ## [0.3.0] — 2026-06-08
 
 Two improvements learned from the first real end-to-end run (a production feature on a live CRM, where the reviews caught a self-introduced IDOR and a shipped-incomplete data-redaction fix).

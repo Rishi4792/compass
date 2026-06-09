@@ -8,7 +8,13 @@ description: Build-Test-Verify — execute the locked PLAN one step at a time, v
 Execute the locked `plan.md` step by step. Loop = **Build → Test → Verify**; verify is adversarial (try to prove the step WRONG).
 
 ## Step 0 — gate
-Run `compass.sh gate .claude/builds/<slug> review-plan`. **Non-zero → STOP** (plan not LOCKED), offer `compass:review-plan`. Also: if `CURRENT`'s INDEX line is `status=closed`, STOP and ask which build this is. **Never improvise a build from the contract or prompt.** `plan.md` checkboxes are the AUTHORITATIVE progress record.
+Run `compass.sh gate "$(compass.sh state-root)/<slug>" review-plan`. **Non-zero → STOP** (plan not LOCKED), offer `compass:review-plan`. Also: if the INDEX line is a terminal status, STOP and ask which build this is. **Never improvise a build from the contract or prompt.** `plan.md` checkboxes are the AUTHORITATIVE progress record.
+
+**Parallel-build gate (when `compass.sh active-builds` shows >1):**
+- `compass.sh assert-worktree <slug>` — **non-zero → STOP**; you are in the wrong directory. `cd` to this build's worktree; all build work happens there (a commit from the main checkout would contaminate a sibling).
+- `compass.sh claim <slug> <plan touches globs> --from <new-files-list>` then `compass.sh check-overlap <slug>` — re-run as scope grows. **Non-zero → STOP**: a claimed file collides with a sibling build. Coordinate additively, record `ack:<slug>+<other>:<path>` in the locks `acks` file, then continue. (Unattended: write the resume banner and stop instead of asking.) Always claim `package-lock.json` and your migration dir so the conflict surfaces here, not at merge.
+- If the plan changes schema: `compass.sh check-db-isolation <slug> 1 <provision-declared>` — **non-zero → STOP** (no per-worktree DB isolation; concurrent migrations corrupt the shared dev DB).
+- **Commits:** stage only claimed paths — **never `git add -A`**, **never `--no-verify`** (the pre-commit guard enforces this; a bypass is caught by `compass.sh audit-staged <slug>`).
 
 ## The invariant (before every step)
 Re-read the relevant `contract.md` part. **A step that would deviate — even slightly — STOPS and asks.** Never "improve" beyond the contract silently.
@@ -38,6 +44,7 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 - [x] all plan steps checked, each with recorded fresh proof
 - [x] INVARIANT <id>: `<cmd>` → <actual> vs <bound> PASS   (one line PER invariant, none deferred)
 - [x] RECONCILE: `compass.sh reconcile <actual> <gold> <tol>` → PASS   (or N/A iff contract reconciliation is N/A)
+RECON-CMD: <the exact reproducing-query command>   (verbatim, so a parallel sibling's merged-recon can re-run it on the merged tree)
 - [x] (web) token <name>: getComputedStyle → <rgb> == <hex> PASS
 - [x] secret-scan: `compass.sh secret-scan .` → 0 hits
 ```

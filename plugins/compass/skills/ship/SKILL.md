@@ -13,6 +13,10 @@ If the contract's Non-goals mark **deploy out of scope**, skip — the build is 
 ## Step 0 — gate
 Run `compass.sh gate .claude/builds/<slug> review-build`. **Non-zero → STOP** (build not CLOSED/signed-off), offer `compass:review-build`. Read `contract.md` (deploy/rollback/observability sections are the invariant here).
 
+## Step 0.5 — parallel-build merge gate (only if a sibling build merged into the base first)
+If another Compass build merged after this build's branch diverged, **two independently-green branches do not prove the union is green.** Before merging this build:
+- `compass.sh merged-recon <this-slug> <sibling-slug> <base-branch>` — creates a throwaway worktree at the *merged* tree, requires the branches to merge cleanly (resolve `package-lock.json` / migration-order conflicts first — dep/migration changes serialize; whoever merged first wins, you rebase), then re-runs **both** builds' recorded `RECON-CMD` on the union. **Non-zero → STOP**: the merge broke a contract; fix before merging. Then GC: `compass.sh gc`.
+
 ## Procedure
 1. **Deploy via the repo's own path** — the deploy/predeploy scripts Phase 0 found; never an ad-hoc deploy. Respect the contract's rollout order + flags.
 2. **Post-deploy reconciliation on PROD data** — run the reproducing query against prod (read-only), then `compass.sh reconcile <actual> <gold> <tol>`. **Non-zero = STOP and roll back** via the contract's exact revert path.
