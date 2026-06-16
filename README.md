@@ -3,7 +3,7 @@
 **Build software true to spec, with zero drift.** A contract-first build lifecycle for [Claude Code](https://claude.com/claude-code).
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.1.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.5.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 ---
