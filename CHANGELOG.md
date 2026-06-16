@@ -3,6 +3,22 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.5.0] — 2026-06-16
+
+Design fidelity becomes a brutal, non-negotiable gate, and post-build verification stops being ceremonial. The most important behavioral change since inception: it redefines what "verified" and "done" mean. Built with Compass itself (contract → review → plan → review → build → review → ship); the reviews caught the ceremonial trap twice before it shipped (see below).
+
+### Added
+- **The mockup is the SPEC, not inspiration.** When a mockup exists, the contract now extracts an **itemized, binding Design Spec** (exact tokens, layout, every control, every state). No mockup → the contract must name a design standard (e.g. Stripe-level `frontend-design`); "use your judgment" is rejected. This is the only way to make "no drift" verifiable.
+- **A brutal, non-negotiable design-fidelity gate** in review-build (and per-step in build): render the built UI vs the mockup at every viewport + state, log each difference to a `design-ledger.md`, and **loop until zero open rows — one drift = FAIL.** The bar is **identical** whether the mockup is an HTML file or a flat image; only the technique differs (HTML adds `design-style-diff` token checks + computed-CSS; an image uses disciplined element-by-element side-by-side reading).
+- **Real script teeth (not prose):** four new deterministic `compass.sh` subcommands — `design-drift-gate` (blocks while any drift row is open; a design-scoped build with a missing/empty ledger FAILS — review-not-done ≠ clean), `converge-gate` (won't pass unless BOTH the correctness and design ledgers are clean), `design-style-diff` (a real token diff over real artifacts), and `status` (the where-am-I surface). Covered by new smoke assertions, including a **catch-the-drift fixture** that proves the gate FLAGS a real drift and PASSES the faithful build (both directions, non-circular).
+- **`/compass:status`** — prints build · stage · step k/n · last passed receipt · the single next action + command, on demand.
+
+### Changed
+- **Post-build verify is no longer ceremonial.** review-build now **independently renders the live product on real/representative data** and adversarially reads the actual values + pixels — it does **not** re-run the build's own checks. Every check must be **falsifiable** (able to fail if broken); tautological or screenshot-only "looks right" checks are deleted, not counted. Convergence requires `converge-gate` (both ledgers clean), not just "no new findings."
+- **Clean stage transitions + elegant hand-off.** Every stage ends with a one-line footer (what passed ✓ · next stage · exact command) — Compass never goes quiet mid-build. When a new terminal is needed, it prints exactly one clean, copy-paste-ready block (`cd "<root>" && claude`), nothing interleaved.
+
+**Why:** real builds shipped correct-but-ugly UIs and "all-green but reader-useless" pages because every hard review checked logic and safety while design fidelity was a soft, one-shot screenshot eyeball — and post-build verify mostly re-ran the build's own checks. v0.5.0 makes design a first-class, looping, evidence-backed gate and forces verify to look at the live thing on real data. Fittingly, building it with Compass surfaced the same failure mode twice (invariants asserted by grepping prose; a missing ledger counting as "pass") — both caught and closed by the contract and plan reviews before any code shipped.
+
 ## [0.4.0] — 2026-06-09
 
 Parallel builds, learned from running two Compass builds at once on a live CRM (one of them overnight, unattended). The two shared one working directory, so one build's `git add -A` swept in the other's files and a manual de-commingle was needed at the end. This release makes N builds in one repo safe — and the design was hardened by an 8-stream adversarial review (73 raw → 22 findings, all folded in) before any code was written.

@@ -1,0 +1,15 @@
+---
+description: Show where a Compass build stands — current stage, step k/n, last passed receipt, and the single next action + command. The "where am I / what's next" surface.
+---
+
+# /compass:status
+
+Print, at a glance, where the current Compass build is and what to do next — so a long build never leaves you wondering.
+
+## Procedure
+1. Resolve the build (same identity rule as `/compass:resume`): inside a build's worktree → that slug; else `compass.sh active-builds` (1 → it; >1 → list and ask which; 0 → "no active build"). Resolve state via `compass.sh state-root`.
+2. Run `compass.sh status "<state-root>/<slug>"` — it reads `progress.md` + `plan.md` + `receipts.md` and prints: **Status · Stage · Steps k/n · Last ✓ (last PASS receipt) · Next** (the single next action + its exact command).
+3. Print that block verbatim, then add one plain-English line on what the next action does. Do not recite the files.
+
+## Note
+Read-only. If `.claude/builds/` won't resolve, the user is not at the project root (where `.claude/` lives) — say so and ask for the root.

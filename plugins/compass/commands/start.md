@@ -55,16 +55,19 @@ Only **Approve**/**Amend** advance. Every later stage reads `contract.md` as the
 ## Standalone / budget
 Each skill works alone and self-gates via `compass.sh gate` (missing proof = hard stop, never fabricated). If the contract set a **budget**, surface "approaching budget" and stop-with-summary rather than grinding to a cap.
 
-## Auto-pause
-The pre-compact hook fires an *advisory* reminder only — it can't write for you and compaction can't be deferred. The real safety net is per-step discipline (progress.md fresh after each step; a box never checked before its verify passes; a build IN-PROGRESS receipt per step), so a lost compaction costs at most one step. On the hook OR **Pause**: write `progress.md` first, then print:
+## Clean stage transitions (never go quiet)
+**A long build must never leave the user wondering where it is.** Every stage ends with a one-line **transition footer** before the gate, in this exact shape — what just passed, what's next, and the exact command:
 ```
-─── Compass: paused at a clean boundary ───────────────
-Open a new terminal, run `claude`, and paste:
+✓ <stage> PASSED — <one-line proof>.  Next: <stage> · run `<exact command>`.
+```
+Then present the 5-option gate. After any pause/interrupt, `/compass:status` reprints this. Mid-build, surface step `k/n` after each step. Silence is a defect.
 
-change directory to "<abs PROJECT root, where .claude/ lives>" and then run /compass:resume.
-Stage: <stage> · Next: <the single next action>.
-───────────────────────────────────────────────────────
+## Auto-pause
+The pre-compact hook fires an *advisory* reminder only — it can't write for you and compaction can't be deferred. The real safety net is per-step discipline (progress.md fresh after each step; a box never checked before its verify passes; a build IN-PROGRESS receipt per step), so a lost compaction costs at most one step. On the hook OR **Pause**: write `progress.md` first, then print the **elegant hand-off — exactly one clean, copy-paste-ready fenced block and nothing interleaved** (the shell command to open the build, then the resume command):
 ```
+cd "<abs PROJECT root, where .claude/ lives>" && claude
+```
+Then, on its own line, the command to run once Claude starts: `/compass:resume <slug>` — Stage `<stage>`, Next `<the single next action>`. Nothing else on those lines: the user copies the block clean into a new terminal.
 
 ## Bottom line
 Read `CURRENT`, sequence the stages, gate every hop (script gate + the 5-option user gate), keep the contract as the invariant, prove every "done" with a recorded command, require the human sign-off before CLOSED, and hand off cleanly when context ends.

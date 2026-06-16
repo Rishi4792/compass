@@ -414,10 +414,104 @@ cmd_close() { # <build-dir> <slug>
   ok "build '$slug' closed; CURRENT cleared, locks dropped, worktree GC'd."
 }
 
+# ── v0.5.0: design-fidelity gate + status (the anti-ceremony teeth) ─────────
+# A build is "design-scoped" iff its INDEX `facets=` token list contains `web`
+# (normalized, prose-free — NEVER grep contract.md prose: it says "web" in text).
+is_design_scoped() { # <build-dir>
+  local dir="$1" slug sr idxline facets
+  slug="$(basename "$dir")"; sr="$(state_root 2>/dev/null || true)"
+  [ -n "$sr" ] && [ -f "$sr/INDEX" ] || return 1
+  idxline="$(grep -E "^${slug} " "$sr/INDEX" 2>/dev/null | head -1)"
+  facets="$(printf '%s' "$idxline" | sed -nE 's/.*facets=([^ ·]*).*/\1/p')"
+  printf '%s' "$facets" | grep -qE '(^|[+,])web([+,]|$)'
+}
+
+# Open rows in a ledger = markdown table data rows whose Status (last real cell)
+# does NOT contain CLOSED/FIXED/RESOLVED/N/A. Header + separator rows skipped.
+ledger_open_rows() { # <ledger-file> [severity-filter-regex]
+  local f="$1" sevre="${2:-}"
+  [ -f "$f" ] || { echo 0; return; }
+  awk -F'|' -v sevre="$sevre" '
+    /^\|/ {
+      if ($0 ~ /^\|[-: ]+\|/) next                       # separator
+      hdr=0; for(i=1;i<=NF;i++){c=$i; gsub(/^[ \t]+|[ \t]+$/,"",c); if(c=="ID"||c=="Status"||c=="Sev"||c=="Severity")hdr=1}
+      if(hdr) next                                        # header
+      if (sevre!="") { ok=0; for(i=1;i<=NF;i++){c=toupper($i); gsub(/^[ \t]+|[ \t]+$/,"",c); if(c ~ sevre)ok=1} if(!ok)next }
+      last=$(NF-1); gsub(/^[ \t]+|[ \t]+$/,"",last)
+      if (toupper(last) ~ /CLOSED|FIXED|RESOLVED|N\/A/) next
+      n++
+    } END{print n+0}' "$f"
+}
+
+cmd_design_drift_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh design-drift-gate <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local ledger="$dir/design-ledger.md"
+  if is_design_scoped "$dir"; then
+    [ -f "$ledger" ] || die "design-scoped build but design-ledger.md MISSING — design review not done (≠ clean)."
+    grep -qiE 'design-review:[[:space:]]*complete' "$ledger" || die "design-ledger.md has no 'design-review: complete' marker — review not finished."
+    local open; open="$(ledger_open_rows "$ledger")"
+    [ "$open" -gt 0 ] 2>/dev/null && die "design-drift ledger has $open OPEN row(s) — one drift = FAIL, cannot converge."
+    ok "design-drift ledger complete + 0 open rows."
+  else
+    [ -f "$ledger" ] || { ok "no web facet — design gate N/A."; return 0; }
+    local open; open="$(ledger_open_rows "$ledger")"
+    [ "$open" -gt 0 ] 2>/dev/null && die "design-drift ledger has $open OPEN row(s)."
+    ok "design-drift ledger clean."
+  fi
+}
+
+cmd_converge_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh converge-gate <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local corr; corr="$(ledger_open_rows "$dir/review-ledger.md" 'CRITICAL|MAJOR')"
+  [ "$corr" -gt 0 ] 2>/dev/null && die "correctness ledger has $corr OPEN Critical/Major — cannot converge."
+  cmd_design_drift_gate "$dir" >/dev/null || die "design-drift gate not clean — cannot converge."
+  ok "converge-gate: correctness AND design ledgers both clean."
+}
+
+cmd_design_style_diff() { # <ref.html> <build.html> <token>
+  local ref="${1:-}" build="${2:-}" token="${3:-}"
+  [ -n "$ref" ] && [ -n "$build" ] && [ -n "$token" ] || die "usage: compass.sh design-style-diff <ref> <build> <token>"
+  [ -f "$ref" ] || die "no ref file: $ref"; [ -f "$build" ] || die "no build file: $build"
+  local rv bv
+  rv="$( { grep -oE -- "${token}[[:space:]]*:[[:space:]]*[^;\"'}]*" "$ref" || true; } | head -1 | sed -E "s/.*:[[:space:]]*//" | tr -d ' ')"
+  [ -n "$rv" ] || { echo "design-style-diff: token '$token' not declared in REF — usage error." >&2; exit 2; }
+  bv="$( { grep -oE -- "${token}[[:space:]]*:[[:space:]]*[^;\"'}]*" "$build" || true; } | head -1 | sed -E "s/.*:[[:space:]]*//" | tr -d ' ')"
+  [ -n "$bv" ] || { echo "DRIFT: token '$token' MISSING in build (ref=$rv)." >&2; exit 1; }
+  [ "$rv" = "$bv" ] || { echo "DRIFT: '$token' ref=$rv build=$bv." >&2; exit 1; }
+  ok "design-style-diff: '$token' matches ($rv)."
+}
+
+cmd_status() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh status <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local slug; slug="$(basename "$dir")"
+  local p="$dir/progress.md"
+  local status stage next total done_ lastpass
+  status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
+  stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
+  next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
+  total="$(grep -cE '^[[:space:]]*- \[[ x]\] \*\*S' "$dir/plan.md" 2>/dev/null || echo 0)"
+  done_="$(grep -cE '^[[:space:]]*- \[x\] \*\*S' "$dir/plan.md" 2>/dev/null || echo 0)"
+  lastpass="$( { grep -E '^## RECEIPT —' "$dir/receipts.md" 2>/dev/null | grep -i 'PASS' | tail -1 | sed -E 's/^## RECEIPT — //'; } || true)"
+  echo "── Compass status: $slug ───────────────────────────"
+  echo "Status:  ${status:-unknown}"
+  echo "Stage:   ${stage:-unknown}"
+  [ "${total:-0}" -gt 0 ] 2>/dev/null && echo "Steps:   ${done_}/${total} checked"
+  echo "Last ✓:  ${lastpass:-none}"
+  echo "Next:    ${next:-unknown}"
+  echo "────────────────────────────────────────────────────"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     state-root)        state_root; echo ;;
+    status)            cmd_status "$@" ;;
+    design-drift-gate) cmd_design_drift_gate "$@" ;;
+    converge-gate)     cmd_converge_gate "$@" ;;
+    design-style-diff) cmd_design_style_diff "$@" ;;
     active-builds)     cmd_active_builds "$@" ;;
     worktree)          cmd_worktree "$@" ;;
     promote)           cmd_promote "$@" ;;

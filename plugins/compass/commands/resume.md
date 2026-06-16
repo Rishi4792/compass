@@ -18,5 +18,12 @@ Continue a Compass build that was paused or interrupted. State is on disk, so cl
 3. State in ONE line where things stand — e.g. "Resuming — plan-LOCKED, building step 4/11 (next: the reconciliation query)." Do not recite the files.
 4. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
 
+## Clean hand-off (when telling the user to open a new terminal)
+Print **exactly one clean, copy-paste-ready fenced block and nothing interleaved**:
+```
+cd "<abs PROJECT root>" && claude
+```
+then, on its own line, `/compass:resume <slug>` to run once Claude starts. No prose mixed into the command lines — the user copies it clean.
+
 ## Note
 If the user `cd`'d into the build folder itself, `.claude/builds/` won't resolve — they should be at the **project root** (where `.claude/` lives). If you can't find `.claude/builds/`, say so and ask for the project root.

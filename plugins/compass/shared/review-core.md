@@ -23,7 +23,7 @@ Rows append-only; only the `Status` cell updates in place. Stable columns (ident
   `> Round N (Rx): suite=\`<cmd>\` exit=0 passed=<k>/<k>; reconcile=\`<query>\`→actual=<x> gold=<y> Δ=<%> PASS. New Crit/Maj=0. Clean? yes`
   A footer that says "Clean? yes" with no command + exit + counts is **automatically not clean.**
 - **Closed issue** = its Validation command was **RE-RUN with fresh output recorded.** Re-reading the diff is not closure.
-- **Converged:** light review (review-contract) = **one clean pass**; full reviews (review-plan, review-build) = **two consecutive clean rounds, the last a verify-the-fixes round.**
+- **Converged:** light review (review-contract) = **one clean pass**; full reviews (review-plan, review-build) = **two consecutive clean rounds, the last a verify-the-fixes round.** For review-build, a round is not clean until **`compass.sh converge-gate` exits 0** — BOTH the correctness ledger AND the design-drift ledger (`design-ledger.md`) clean.
 - **A fix is new code — re-attack it.** Any round that applied a fix is NOT clean by definition (a fix can introduce a new defect, including the class it fixed). The next round must re-attack the fix surface, and the independent security/secret/verification-audit agents re-spawn on any fix diff regardless of which group it belonged to. Convergence needs the final clean round to be that fix-surface re-attack — never a round that only re-ran the suite after a fix.
 
 Round 1 = broad sweep; rounds 2+ diff-scope what you *review* but **still re-run the full suite** before counting a round clean (a regression on an un-reviewed surface must not slip through).
