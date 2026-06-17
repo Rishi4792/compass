@@ -27,8 +27,9 @@ On `start` in parallel mode:
 1. `compass.sh gc` — sweep terminal-build worktrees first.
 2. If another build is active **and still in the main checkout**, `compass.sh promote <that-slug>` BEFORE starting the new one (never leave the first build in the shared checkout on a prose warning).
 3. **DB isolation gate:** if this build changes schema, the contract MUST declare `isolation.db_provision`/`db_teardown` (per-worktree DATABASE_URL). `compass.sh check-db-isolation <slug> <has-schema:0|1> <provision-declared:0|1>` REFUSES a schema-touching parallel build with no isolation — concurrent migrations on one dev DB corrupt it.
-4. `compass.sh worktree <slug>` → its folder+branch (runs `db_provision` if declared); `compass.sh install-guard` (once); then `claim` at build start.
+4. `compass.sh worktree <slug>` → its folder+branch (runs `db_provision` if declared); `compass.sh install-guard` (once); then `claim` at build start. **ALWAYS create worktrees this way — NEVER hand-roll `git worktree add`** (that scatters ad-hoc siblings the guard/GC/doctor don't track). Worktrees live in the centralized home `~/.compass/worktrees/<project-id>/<slug>` (v0.6.0) — out of the project's parent, so the project folder is never confused with a sibling.
 5. Tell the user the worktree path + the one-time `npm ci` / `source .env.compass` step, and that **all build work happens in that worktree** (`cd` there).
+6. **See what else is in flight:** `compass.sh builds` lists every parallel build on this repo. Run `compass.sh doctor` anytime to audit/clean worktrees. **If a sibling merges first, every other build must pass `compass.sh post-merge-check <slug>` (and ship's merged-recon) before it can ship** — base-advanced + blast-radius vs `origin/<base>`.
 
 **Unattended runs** (`--unattended`): gates write the resume banner and `exit 0` instead of asking; a guard rejection writes a receipt **FAIL** and stops (never retries → no livelock). Only proceed when the prior stage receipt is PASS.
 

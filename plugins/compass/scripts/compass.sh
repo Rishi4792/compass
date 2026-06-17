@@ -75,20 +75,23 @@ atomic_write() { # <dest> ; content on stdin
   mv -f "$tmp" "$dest"
 }
 
-# slug → its worktree path  <parent>/<basename>.compass/<slug>
-worktree_path() { # <slug>
-  local root parent base; root="$(main_root)"
-  parent="$(dirname "$root")"; base="$(basename "$root")"
-  printf '%s/%s.compass/%s' "$parent" "$base" "$1"
+# v0.6.0 — centralized worktree home (out of the project's parent; overridable for tests).
+managed_home() { printf '%s' "${COMPASS_WORKTREE_HOME:-$HOME/.compass/worktrees}"; }
+# Stable, collision-safe id for this repo: <basename>-<cksum of abs main-root path>.
+project_id() {
+  local root; root="$(main_root)"
+  printf '%s-%s' "$(basename "$root")" "$(printf '%s' "$root" | cksum | cut -d' ' -f1)"
 }
-
-# Derive slug from the current worktree's top-level dir, else empty.
+# slug → its worktree path  <home>/<project-id>/<slug>  (centralized; no longer a project sibling)
+worktree_path() { # <slug>
+  printf '%s/%s/%s' "$(managed_home)" "$(project_id)" "$1"
+}
+# Derive the build slug from the current worktree's BRANCH (`compass/<slug>`), not its path —
+# location-independent (survives the centralized home + macOS /tmp↔/private symlinks). ONE source
+# of truth: the guard + resume + assert-worktree all go through `compass.sh cwd-slug`.
 cwd_slug() {
-  local top; top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
-  case "$top" in
-    *.compass/*) basename "$top" ;;
-    *) printf '' ;;
-  esac
+  local br; br="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+  case "$br" in compass/*) printf '%s' "${br#compass/}" ;; *) printf '' ;; esac
 }
 
 # ── INDEX / status ─────────────────────────────────────────────────────────
@@ -122,7 +125,13 @@ cmd_active_builds() {
 
 # ── worktree lifecycle ─────────────────────────────────────────────────────
 cmd_worktree() { # <slug> [base]
-  local slug="$1" base="${2:-HEAD}" wt; wt="$(worktree_path "$slug")"
+  local slug="$1" base="${2:-}" wt; wt="$(worktree_path "$slug")"
+  # Default base = the REAL merge target's remote ref (never local main — it may be a feature branch).
+  if [ -z "$base" ]; then
+    if git show-ref --verify --quiet refs/remotes/origin/main; then base="origin/main"
+    elif git symbolic-ref --quiet refs/remotes/origin/HEAD >/dev/null 2>&1; then base="$(git symbolic-ref --short refs/remotes/origin/HEAD)"
+    else base="HEAD"; fi
+  fi
   if git worktree list --porcelain | grep -qxF "worktree $wt"; then ok "worktree exists: $wt"; printf '%s\n' "$wt"; return; fi
   mkdir -p "$(dirname "$wt")"
   if git show-ref --verify --quiet "refs/heads/compass/$slug"; then
@@ -130,7 +139,10 @@ cmd_worktree() { # <slug> [base]
   else
     git worktree add "$wt" -b "compass/$slug" "$base" >&2 || die "git worktree add -b failed for $slug"
   fi
-  ok "worktree ready: $wt (branch compass/$slug)"
+  # Record the base anchor (branch + resolved SHA) in its OWN file so claim's meta-rewrite can't clobber it (RC-2).
+  local ld; ld="$(locks_dir)"; mkdir -p "$ld"
+  { printf 'base_branch=%s\n' "$base"; printf 'base_sha=%s\n' "$(git rev-parse "$base" 2>/dev/null || echo unknown)"; } > "$ld/$slug.base"
+  ok "worktree ready: $wt (branch compass/$slug, base $base)"
   printf '%s\n' "$wt"
 }
 
@@ -241,26 +253,27 @@ SH="$(git config --get compass.scriptpath 2>/dev/null || true)"
 common="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
 state="$(cd "$(dirname "$common")" && pwd)/.claude/builds"; ld="$state/.locks"
 [ -d "$ld" ] || exit 0
-top="$(git rev-parse --show-toplevel)"; staged="$(git diff --cached --name-only)"
+staged="$(git diff --cached --name-only)"
 [ -n "$staged" ] || exit 0
 fail=0
-case "$top" in
-  *.compass/*)   # inside a build worktree → must stay within THAT slug's claim
-    slug="$(basename "$top")"
-    [ -f "$ld/$slug.files" ] || exit 0
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      grep -qxF "$f" "$ld/$slug.files" || { echo "COMPASS-GUARD: '$f' is outside build '$slug' claim — re-run compass.sh claim or unstage it." >&2; fail=1; }
-    done <<< "$staged" ;;
-  *)             # main checkout → must NOT commit any active build's claimed file
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      for cf in "$ld"/*.files; do
-        [ -e "$cf" ] || continue
-        grep -qxF "$f" "$cf" && { echo "COMPASS-GUARD: '$f' is claimed by build '$(basename "$cf" .files)' — commit it from that build's worktree, not the main checkout." >&2; fail=1; }
-      done
-    done <<< "$staged" ;;
-esac
+slug="$("$SH" cwd-slug 2>/dev/null || true)"   # ONE source of truth for "which worktree am I in"
+if [ -n "$slug" ]; then
+  # inside a build worktree → must stay within THAT slug's claim
+  [ -f "$ld/$slug.files" ] || exit 0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    grep -qxF "$f" "$ld/$slug.files" || { echo "COMPASS-GUARD: '$f' is outside build '$slug' claim — re-run compass.sh claim or unstage it." >&2; fail=1; }
+  done <<< "$staged"
+else
+  # main checkout → must NOT commit any active build's claimed file
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    for cf in "$ld"/*.files; do
+      [ -e "$cf" ] || continue
+      grep -qxF "$f" "$cf" && { echo "COMPASS-GUARD: '$f' is claimed by build '$(basename "$cf" .files)' — commit it from that build's worktree, not the main checkout." >&2; fail=1; }
+    done
+  done <<< "$staged"
+fi
 [ "$fail" = 0 ] || { echo "COMPASS-GUARD: commit blocked. (Bypassing with --no-verify is banned; an audit will catch it.)" >&2; exit 1; }
 exit 0
 GUARD
@@ -299,20 +312,30 @@ cmd_merged_recon() { # <slugA> <slugB> <base>
 }
 
 # ── GC ─────────────────────────────────────────────────────────────────────
+# THE shared dirty-safe removal (RP-3 / the v0.5.0 incident): NEVER force — a dirty/unmerged
+# worktree refuses removal and is left intact. Returns 0 removed, 1 kept-dirty.
+safe_remove_worktree() { # <path>
+  git worktree remove "$1" 2>/dev/null
+}
 cmd_gc() {
-  local removed=0
+  local removed=0 kept=0 home; home="$(managed_home)"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    case "$line" in worktree\ *.compass/*) ;; *) continue ;; esac
-    local wt slug st; wt="${line#worktree }"; slug="$(basename "$wt")"
+    local wt; wt="${line#worktree }"
+    case "$wt" in "$home"/*) ;; *.compass/*) ;; *) continue ;; esac   # managed home OR legacy sibling only
+    local slug; slug="$(basename "$wt")"
     case "$slug" in _merged_*) git worktree remove --force "$wt" 2>/dev/null && removed=$((removed+1)); continue ;; esac
-    st="$(build_status "$slug")"
-    if is_terminal "$st"; then
-      git worktree remove --force "$wt" 2>/dev/null && removed=$((removed+1))
-      git branch -D "compass/$slug" 2>/dev/null || true
+    local st; st="$(build_status "$slug")"
+    # orphan (no INDEX entry) OR terminal → eligible; but NEVER force — dirty survives (RP-3).
+    if [ "$st" = "UNKNOWN" ] || is_terminal "$st"; then
+      if safe_remove_worktree "$wt"; then
+        removed=$((removed+1)); git branch -D "compass/$slug" 2>/dev/null || true
+      else
+        kept=$((kept+1)); echo "gc: '$slug' has uncommitted work — LEFT in place (resolve, then gc)." >&2
+      fi
     fi
   done < <(git worktree list --porcelain | grep '^worktree ')
-  ok "gc removed $removed stale worktree(s)."
+  ok "gc removed $removed worktree(s); kept $kept dirty."
 }
 
 # ── existing teeth (unchanged behavior) ────────────────────────────────────
@@ -407,11 +430,19 @@ cmd_close() { # <build-dir> <slug>
     : > "$sr/CURRENT"
   fi
   # Drop the build's locks.
-  if [ -n "$sr" ]; then rm -f "$sr/.locks/$slug.files" "$sr/.locks/$slug.meta" 2>/dev/null || true; fi
-  # Best-effort worktree removal (no-op if none / dirty handled by --force at gc).
-  git worktree list --porcelain 2>/dev/null | grep -qxF "worktree $(worktree_path "$slug" 2>/dev/null)" \
-    && cmd_worktree_rm "$slug" --force >/dev/null 2>&1 || true
-  ok "build '$slug' closed; CURRENT cleared, locks dropped, worktree GC'd."
+  if [ -n "$sr" ]; then rm -f "$sr/.locks/$slug.files" "$sr/.locks/$slug.meta" "$sr/.locks/$slug.base" 2>/dev/null || true; fi
+  # Worktree removal is DIRTY-SAFE (RP-3 / v0.5.0 incident): never --force. Dirty → leave + warn, state still cleared.
+  local wt; wt="$(worktree_path "$slug" 2>/dev/null)"
+  if git worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
+    if safe_remove_worktree "$wt"; then
+      git branch -D "compass/$slug" 2>/dev/null || true
+      ok "build '$slug' closed; CURRENT cleared, locks dropped, worktree removed."
+    else
+      ok "build '$slug' closed; CURRENT cleared, locks dropped. NOTE: worktree has uncommitted work — LEFT at $wt (never force-removed)."
+    fi
+  else
+    ok "build '$slug' closed; CURRENT cleared, locks dropped."
+  fi
 }
 
 # ── v0.5.0: design-fidelity gate + status (the anti-ceremony teeth) ─────────
@@ -504,10 +535,85 @@ cmd_status() { # <build-dir>
   echo "────────────────────────────────────────────────────"
 }
 
+# ── v0.6.0: parallel-build identification + merge-consequence gate ───────────
+# Live view of every in-flight (non-terminal) build on this repo.
+cmd_builds() {
+  local idx; idx="$(state_root)/INDEX"
+  [ -f "$idx" ] || { ok "no INDEX — 0 builds."; return; }
+  local any=0
+  printf '%-26s %-12s %-16s %s\n' "SLUG" "STATUS" "BRANCH" "WORKTREE"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue; case "$line" in \#*) continue ;; esac
+    local slug; slug="$(printf '%s' "$line" | sed -nE 's/^([A-Za-z0-9_-]+).*/\1/p')"
+    [ -n "$slug" ] || continue
+    local st; st="$(build_status "$slug")"; is_terminal "$st" && continue
+    local wt br; wt="$(worktree_path "$slug")"
+    if git worktree list --porcelain | grep -qxF "worktree $wt"; then br="compass/$slug"; else wt="(main checkout)"; br="-"; fi
+    printf '%-26s %-12s %-16s %s\n' "$slug" "$st" "$br" "$wt"; any=1
+  done < "$idx"
+  [ "$any" = 1 ] || ok "0 in-flight builds."
+}
+
+# Merge-consequence gate: when another build merged to the base, gate this build.
+# Base = recorded base's REMOTE ref (origin/<base>) + fetch — NEVER local main (RC-1).
+cmd_post_merge_check() { # <slug>
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: compass.sh post-merge-check <slug>"
+  local ld basef; ld="$(locks_dir)"; basef="$ld/$slug.base"
+  [ -f "$basef" ] || die "no recorded base for '$slug' — its worktree was not created via 'compass.sh worktree'."
+  local base_branch base_sha; base_branch="$(sed -nE 's/^base_branch=(.*)/\1/p' "$basef")"; base_sha="$(sed -nE 's/^base_sha=(.*)/\1/p' "$basef")"
+  local remote_ref="$base_branch"; case "$base_branch" in origin/*) ;; *) remote_ref="origin/$base_branch" ;; esac
+  [ -n "$(git remote 2>/dev/null)" ] || { ok "post-merge-check '$slug': no remote — skipped (no upstream to advance)."; return 0; }
+  git fetch -q origin 2>/dev/null || true
+  git show-ref --verify --quiet "refs/remotes/$remote_ref" || { ok "post-merge-check '$slug': no upstream '$remote_ref' — skipped."; return 0; }
+  local advanced; advanced="$(git rev-list --count "${base_sha}..refs/remotes/$remote_ref" 2>/dev/null || echo 0)"
+  [ "${advanced:-0}" = "0" ] && { ok "post-merge-check '$slug': base current — no merge consequences."; return 0; }
+  local hits=""
+  if [ -f "$ld/$slug.files" ]; then
+    local changed; changed="$(git diff --name-only "${base_sha}..refs/remotes/$remote_ref" 2>/dev/null || true)"
+    while IFS= read -r f; do [ -n "$f" ] || continue; grep -qxF "$f" "$ld/$slug.files" 2>/dev/null && hits="${hits}  $f"$'\n'; done <<< "$changed"
+  fi
+  [ -n "$hits" ] && die "post-merge-check '$slug': '$remote_ref' advanced $advanced commit(s) AND touched your claimed files:
+$hits Integrate '$remote_ref' + re-verify (blast radius) before ship."
+  die "post-merge-check '$slug': '$remote_ref' advanced $advanced commit(s) (disjoint from your claim) — integrate '$remote_ref' + re-verify before ship."
+}
+
+# doctor: classify every worktree (managed/stray/main) + status + dirty; --migrate relocates CLEAN strays.
+cmd_doctor() { # [--migrate]
+  local migrate=0; [ "${1:-}" = "--migrate" ] && migrate=1
+  local home main_wt; home="$(managed_home)"; main_wt="$(main_root)"
+  # canonicalize (resolve symlinks like macOS /tmp→/private/tmp) so prefix matching is reliable
+  local home_real; home_real="$(cd "$home" 2>/dev/null && pwd -P || printf '%s' "$home")"
+  echo "Compass doctor — worktrees for this repo (home: $home):"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    local wt; wt="${line#worktree }"
+    if [ "$wt" = "$main_wt" ]; then echo "  [main]    $wt"; continue; fi
+    local slug; slug="$(basename "$wt")"
+    local wt_real; wt_real="$(cd "$wt" 2>/dev/null && pwd -P || printf '%s' "$wt")"
+    local cls="stray"; case "$wt_real" in "$home_real"/*) cls="managed" ;; esac
+    local st dirty; st="$(build_status "$slug")"; dirty="clean"; [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && dirty="DIRTY"
+    echo "  [$cls] $slug  status=$st  $dirty"
+    if [ "$migrate" = 1 ]; then
+      case "$slug" in _merged_*) continue ;; esac
+      if [ "$cls" = "stray" ] && [ "$dirty" = "clean" ]; then
+        local dest; dest="$(worktree_path "$slug")"; mkdir -p "$(dirname "$dest")"
+        if git worktree move "$wt" "$dest" 2>/dev/null; then echo "    → migrated → $dest"; else echo "    → migrate FAILED — left in place" >&2; fi
+      elif [ "$dirty" = "DIRTY" ]; then
+        echo "    → DIRTY: left untouched (resolve manually, never auto-moved)"
+      fi
+    fi
+  done < <(git worktree list --porcelain | grep '^worktree ')
+  ok "doctor done."
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     state-root)        state_root; echo ;;
+    cwd-slug)          cwd_slug ;;
+    builds)            cmd_builds "$@" ;;
+    post-merge-check)  cmd_post_merge_check "$@" ;;
+    doctor)            cmd_doctor "$@" ;;
     status)            cmd_status "$@" ;;
     design-drift-gate) cmd_design_drift_gate "$@" ;;
     converge-gate)     cmd_converge_gate "$@" ;;

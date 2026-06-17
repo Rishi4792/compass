@@ -5,6 +5,7 @@
 set -uo pipefail
 SH="$(cd "$(dirname "$0")" && pwd)/compass.sh"
 T="/tmp/compass-smoke (paren)/repo"; rm -rf "/tmp/compass-smoke (paren)"; mkdir -p "$T"; cd "$T"
+export COMPASS_WORKTREE_HOME="/tmp/compass-smoke (paren)/.worktrees"   # v0.6.0: never pollute the real ~/.compass
 git init -q; git config user.email t@t.t; git config user.name t
 mkdir -p "src/(dash)/active" src/email; echo a > "src/(dash)/active/p.tsx"; echo b > src/email/c.tsx; echo lk > package-lock.json
 git add -A; git commit -qm init
@@ -72,6 +73,44 @@ printf '%s\n%s\n%s\n' '# dl' '<!-- design-review: complete -->' '| D1 | x | MAJO
 ( bash "$SH" converge-gate .claude/builds/web1 >/dev/null 2>&1 ); chk "$?" "0" "converge-gate PASSES when correctness + design both clean"
 printf '%s\n' "| C1 | x | MAJOR | y | OPEN |" >> .claude/builds/web1/review-ledger.md
 ( bash "$SH" converge-gate .claude/builds/web1 >/dev/null 2>&1 ); chk "$?" "1" "converge-gate FAILS an open correctness Critical/Major"
+
+# ── v0.6.0: elegant parallel builds (centralized home + identification + merge-consequence) ──
+# INV-1: worktree lands in the centralized home, NOT a project sibling
+sib_before="$(ls -1d "$(dirname "$T")"/* 2>/dev/null | wc -l | tr -d ' ')"
+WT_V6="$(bash "$SH" worktree v6a 2>/dev/null | tail -1)"
+case "$WT_V6" in "$COMPASS_WORKTREE_HOME"/*) chk 0 0 "worktree lands in centralized home (not a sibling)";; *) chk 1 0 "worktree in home (got $WT_V6)";; esac
+chk "$(ls -1d "$(dirname "$T")"/* 2>/dev/null | wc -l | tr -d ' ')" "$sib_before" "no new project sibling dir created"
+# INV-2: project-id = <basename>-<cksum digits>
+( echo "$WT_V6" | grep -qE '/repo-[0-9]+/v6a$' ); chk "$?" "0" "project-id = basename-<cksum>"
+# RC-2: base anchor recorded at creation
+chk "$([ -f "$T/.claude/builds/.locks/v6a.base" ] && echo yes || echo no)" "yes" "base anchor recorded at worktree creation"
+# INV-3: state-root resolves from inside the centralized worktree (normalize symlinks via pwd -P)
+chk "$(cd "$WT_V6" && bash "$SH" state-root)" "$(cd "$T" && pwd -P)/.claude/builds" "state-root resolves from centralized worktree"
+# INV-7: builds lists in-flight, not terminal
+printf '%s\n%s\n' "v6live · g · status=plan-LOCKED" "v6done · g · status=SHIPPED" >> .claude/builds/INDEX
+out="$(bash "$SH" builds 2>/dev/null)"
+( echo "$out" | grep -q 'v6live' ); chk "$?" "0" "builds lists an in-flight build"
+( echo "$out" | grep -q 'v6done' ); chk "$?" "1" "builds omits a terminal build"
+# INV-8/9: post-merge-check vs a REAL origin (bare remote)
+R="/tmp/compass-smoke (paren)/remote.git"; git init -q --bare "$R"
+git remote add origin "$R" 2>/dev/null; git push -q origin HEAD:main 2>/dev/null
+WT_PM="$(bash "$SH" worktree v6pm 2>/dev/null | tail -1)"   # base defaults to origin/main
+( cd "$WT_PM" && bash "$SH" claim v6pm "src/email/*" >/dev/null 2>&1 )
+( bash "$SH" post-merge-check v6pm >/dev/null 2>&1 ); chk "$?" "0" "post-merge-check: base current → 0"
+( cd "$T" && echo adv > advfile.txt && git add advfile.txt && git commit -q -m adv >/dev/null 2>&1 && git push -q origin HEAD:main 2>/dev/null )
+( bash "$SH" post-merge-check v6pm >/dev/null 2>&1 ); chk "$?" "1" "post-merge-check: origin/main advanced → 1 (must integrate)"
+# no-upstream → graceful skip (exit 0)
+( cd "$T" && git remote remove origin 2>/dev/null )
+( bash "$SH" post-merge-check v6pm >/dev/null 2>&1 ); chk "$?" "0" "post-merge-check: no remote → graceful skip 0"
+git remote add origin "$R" 2>/dev/null
+# INV-4: doctor classifies managed vs stray (+main) — capture then match (avoid SIGPIPE under pipefail)
+out_d="$(bash "$SH" doctor 2>/dev/null || true)"
+case "$out_d" in *"[managed] v6a"*) chk 0 0 "doctor classifies a managed worktree" ;; *) chk 1 0 "doctor classifies a managed worktree" ;; esac
+# INV-5/6: close is dirty-SAFE — a dirty worktree survives close (NEVER force-removed)
+echo dirty > "$WT_V6/uncommitted.txt"
+sed -i.bak 's/^v6a · /v6a · /' .claude/builds/INDEX 2>/dev/null; rm -f .claude/builds/INDEX.bak
+( bash "$SH" close .claude/builds/v6a v6a >/dev/null 2>&1 )
+( git worktree list --porcelain | grep -q '/v6a$' ); chk "$?" "0" "close LEAVES a dirty worktree (no force-remove — the v0.5.0 incident fix)"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null

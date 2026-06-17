@@ -3,6 +3,22 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.6.0] — 2026-06-17
+
+Elegant parallel builds. Worktrees move out of sight, and parallel builds on one repo become visible and merge-aware. Born from a real mess — three confusingly-similar sibling folders (`GQ Business CRM`, `GQ Business CRM.compass/`, `GQ-Business-CRM-obs`) next to the project, plus un-GC'd worktrees and hand-rolled ones. Built with Compass itself; the reviews caught two that would have re-created the mess (the pre-commit guard silently breaking, and `close` deleting uncommitted work — the v0.5.0 incident).
+
+### Added
+- **Centralized worktree home.** Build worktrees now live in `~/.compass/worktrees/<project-id>/<slug>` (project-id = `<basename>-<cksum>`, collision-safe), out of the project's parent — so you only ever see the project folder next to your other projects, never a `.compass` or `-obs` sibling. Overridable via `COMPASS_WORKTREE_HOME`. State stays in-project (`.claude/builds/`).
+- **`compass.sh builds`** — a live table of every in-flight build on the repo (slug · status · branch · worktree). `/compass:status` shows it when more than one build is active.
+- **`compass.sh post-merge-check <slug>`** — the merge-consequence gate. When a sibling merges first, this checks the build against **`origin/<base>` (after fetch — never local `main`)**: is the base advanced? did the merge touch this build's claimed files (blast radius)? If so it STOPs and requires integrating the new base + re-verifying — **flagged during build, a hard block before ship.** Never auto-rebases (conflicts need human eyes). The base SHA is recorded at worktree creation as the diff anchor.
+- **`compass.sh doctor [--migrate]`** — audits every worktree (managed vs stray, status, dirty, merged), sweeps clean terminals, and `--migrate` relocates clean ad-hoc siblings into the home via `git worktree move`. **Never touches dirty/unmerged — only flags them.**
+
+### Changed
+- **Dirty-safe removal everywhere (the v0.5.0 incident fix).** `gc` and `close` now use one shared **non-force** remove — a worktree with uncommitted work is LEFT in place and flagged, never force-deleted. (v0.5.0's `close` force-removed a dirty worktree and lost 55 files; that can't happen now.) `gc` also prunes orphans and scans the centralized home.
+- **Worktree identity by branch, not path.** `cwd_slug` (used by the pre-commit guard, resume, and assert-worktree, via the new `compass.sh cwd-slug`) derives the slug from the `compass/<slug>` branch — location-independent, so the contamination guard keeps working after worktrees move. **Always create worktrees via `compass.sh worktree` — never hand-roll `git worktree add`.**
+
+**Why:** parallel builds were technically isolated but operationally messy — siblings cluttered the project's parent, GC missed shipped worktrees, and a first-merge could silently invalidate the others. v0.6.0 makes the worktrees invisible, the parallel builds identifiable, and a merge's consequences a hard gate. Smoke: 28 → 40 assertions, including the merge gate against a real bare remote and the dirty-safe close.
+
 ## [0.5.0] — 2026-06-16
 
 Design fidelity becomes a brutal, non-negotiable gate, and post-build verification stops being ceremonial. The most important behavioral change since inception: it redefines what "verified" and "done" mean. Built with Compass itself (contract → review → plan → review → build → review → ship); the reviews caught the ceremonial trap twice before it shipped (see below).
