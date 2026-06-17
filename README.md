@@ -6,6 +6,12 @@
 ![version](https://img.shields.io/badge/version-0.5.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
+> **The problem in one line:** AI coding agents drift from what you asked — and worse, they say *"done"* when the numbers are wrong or a step was skipped. **Compass makes "done" something the agent has to *prove*, with a real gate it can't talk past.**
+
+<!-- DEMO — record the 45s drift-catch clip (see the storyboard), save as docs/compass-demo.gif, then uncomment the line below:
+![Compass refuses to close until the number matches the audited gold](docs/compass-demo.gif)
+-->
+
 ---
 
 ## What is Compass?
@@ -108,6 +114,9 @@ Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md
 
 ## Versioning & updates
 Semantic versioning; every change is recorded in **[CHANGELOG.md](CHANGELOG.md)** (what changed and why). See **[RELEASING.md](RELEASING.md)** for the release process. Self-hosted installs update via `/plugin marketplace update compass`.
+
+## Proof: Compass built its own latest release
+v0.5.0 was built *by running Compass on Compass* — the full contract → review → plan → review → build → review → ship lifecycle. Its own adversarial reviews caught the exact failure the release exists to kill **twice** before anything shipped: an invariant that was being "proven" by grepping prose, and a missing design ledger that would have counted as a pass. Both were stopped at the contract/plan gates, not in production. The reviews earn their keep — on their own release. (See [CHANGELOG.md](CHANGELOG.md).)
 
 ## Why "Compass"
 A compass keeps you pointed true no matter the terrain. Same idea here: the contract is your true north, and every stage checks the bearing.
