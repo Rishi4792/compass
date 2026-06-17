@@ -8,9 +8,7 @@
 
 > **The problem in one line:** AI coding agents drift from what you asked — and worse, they say *"done"* when the numbers are wrong or a step was skipped. **Compass makes "done" something the agent has to *prove*, with a real gate it can't talk past.**
 
-<!-- DEMO — record the 45s drift-catch clip (see the storyboard), save as docs/compass-demo.gif, then uncomment the line below:
-![Compass refuses to close until the number matches the audited gold](docs/compass-demo.gif)
--->
+![Compass: contract → plan → build with adversarial reviews at every gate — drift in the numbers or the UI can't pass](docs/compass-demo.gif)
 
 ---
 
