@@ -4,3 +4,6 @@ node_modules/
 
 # Local session catch-up — never publish
 CONTEXT.md
+
+# Local launch/marketing working doc — never publish
+LAUNCH-KIT.md
