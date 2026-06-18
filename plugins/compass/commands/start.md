@@ -38,10 +38,11 @@ On `start` in parallel mode:
 ① contract ─gate→ ② review-contract ─gate→ [contract-LOCKED]
    ─gate→ ③ plan ─gate→ ④ review-plan ─gate→ [plan-LOCKED]
    ─gate→ ⑤ build ─gate→ ⑥ review-build ─(human sign-off)→ [CLOSED]
-   ─gate→ ⑦ ship (optional; skip if contract marks deploy out of scope) → [SHIPPED]
+   ─gate→ ⑦ ship (MANDATORY unless the contract carries `deploy: out-of-scope — <reason>`) → [SHIPPED]
 ```
 - Reviews converge first: **light = one clean pass; full = two clean rounds** (caps R1=2, R2=3, R3=5). Cap un-converged escalates UP (and supersedes) — plan→contract, build→plan, contract→user — never fakes done.
 - **review-build requires a human sign-off** on the receipt's command+output evidence before CLOSED.
+- **Ship is mandatory (v0.7.0).** CLOSED is NOT a final resting state unless the contract waives deploy. The terminal-status guard (`compass.sh close` runs `lifecycle-audit CLOSED`; ship runs `lifecycle-audit SHIPPED`) and the **Stop hook** (`compass.sh stop-guard`, fires every time the agent tries to stop) block going quiet, skipping a gate, or forgetting ship while a build is mid-lifecycle. Enforcement is script + hook, not discretion.
 
 ## The gate (between every stage — never auto-advance)
 Present a short summary, then **AskUserQuestion** with five options:

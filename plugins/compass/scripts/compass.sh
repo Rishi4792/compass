@@ -422,8 +422,22 @@ $found"
   ok "secret scan: 0 hits."
 }
 
-cmd_close() { # <build-dir> <slug>
-  local dir="$1" slug="$2"
+set_index_status() { # <slug> <status>  — update the status= token on the slug's INDEX line
+  local idx; idx="$(state_root)/INDEX"; [ -f "$idx" ] || return 0
+  local esc; esc="$(printf '%s' "$1" | sed 's/[.[\*^$/]/\\&/g')"
+  sed -i.bak -E "/^${esc}[ ]/ s/status=[A-Za-z-]+/status=$2/" "$idx" 2>/dev/null && rm -f "$idx.bak" || true
+}
+
+cmd_close() { # <build-dir> <slug> [--abandon]
+  local dir="$1" slug="$2" mode="${3:-}"
+  if [ "$mode" = "--abandon" ]; then
+    set_index_status "$slug" ROLLED-BACK
+    ok "build '$slug' ABANDONED → status ROLLED-BACK (lifecycle-audit skipped); clearing state."
+  else
+    # Terminal-status guard (v0.7.0): a normal close must pass the CLOSED lifecycle audit.
+    cmd_lifecycle_audit "$dir" CLOSED >/dev/null 2>&1 || die "close: lifecycle-audit CLOSED failed — refusing to close an incomplete build. Inspect: compass.sh lifecycle-audit '$dir' CLOSED   (or cancel it: compass.sh close '$dir' '$slug' --abandon)."
+    set_index_status "$slug" CLOSED
+  fi
   # Clear the CURRENT hint in the canonical state root (worktree-safe).
   local sr; sr="$(state_root 2>/dev/null || true)"
   if [ -n "$sr" ] && [ -f "$sr/CURRENT" ] && [ "$(cat "$sr/CURRENT" 2>/dev/null)" = "$slug" ]; then
@@ -443,6 +457,129 @@ cmd_close() { # <build-dir> <slug>
   else
     ok "build '$slug' closed; CURRENT cleared, locks dropped."
   fi
+}
+
+# ── v0.7.0: migration-delivery gate + lifecycle audit + Stop-hook guard ───────
+
+# Prisma canonical migrations dir: when schema lives under prisma/schema/, the deploy
+# reads prisma/schema/migrations; otherwise prisma/migrations. (The exact incident class.)
+prisma_canonical_dir() { # <repo-root>
+  if [ -d "$1/prisma/schema" ]; then printf '%s' "$1/prisma/schema/migrations"
+  else printf '%s' "$1/prisma/migrations"; fi
+}
+
+# A stage has a usable PASS receipt: present, not SUPERSEDED, header says PASS, no unchecked box.
+stage_pass() { # <build-dir> <stage>
+  local block; block="$(last_block "$1/receipts.md" "$2" 2>/dev/null)"
+  [ -n "$block" ] || return 1
+  printf '%s' "$block" | head -n1 | grep -q 'SUPERSEDED' && return 1
+  printf '%s' "$block" | head -n1 | grep -q 'PASS' || return 1
+  printf '%s' "$block" | grep -q '^- \[ \]' && return 1
+  return 0
+}
+
+# migration-gate: a schema-touching build cannot pass unless a real migration in the
+# deploy's canonical folder reproduces the schema on a fresh DB (STRICT, no waiver).
+cmd_migration_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh migration-gate <build-dir>"
+  local contract="$dir/contract.md"; [ -f "$contract" ] || die "migration-gate: no contract.md in $dir"
+  # trigger
+  local st; st="$(sed -nE 's/.*schema-touching:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | head -1 | tr 'A-Z' 'a-z')"
+  case "$st" in
+    no) ok "no schema change — migration-gate N/A."; return 0 ;;
+    yes) : ;;
+    *) die "migration-gate: contract.md missing 'schema-touching: yes|no' field (required trigger)." ;;
+  esac
+  local root="${COMPASS_REPO_ROOT:-$(main_root)}"
+  # recipe (declared block wins; else Prisma auto-detect)
+  local canon diff_cmd fresh_cmd
+  canon="$(sed -nE 's/^canonical_migrations_dir:[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  diff_cmd="$(sed -nE 's/^migrate_diff_cmd:[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  fresh_cmd="$(sed -nE 's/^migrate_deploy_fresh_cmd:[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  local prisma_mode=0
+  if [ -z "$canon" ]; then prisma_mode=1; canon="$(prisma_canonical_dir "$root")"; fi
+  [ -n "$diff_cmd" ]  || diff_cmd="cd '$root' && npx prisma migrate diff --from-migrations '$canon' --to-schema-datamodel prisma/schema --exit-code"
+  [ -n "$fresh_cmd" ] || fresh_cmd="cd '$root' && npx prisma migrate deploy"
+  # G-M3 stray-migration detector (Prisma auto-detect mode): a non-canonical migrations dir is IGNORED by deploy.
+  if [ "$prisma_mode" = 1 ] && [ -d "$root/prisma/schema" ] && [ -d "$root/prisma/migrations" ]; then
+    die "migration-gate: STRAY 'prisma/migrations' exists while schema is in 'prisma/schema/' — deploy reads '$canon' and IGNORES it. Move/remove (G-M3)."
+  fi
+  # G-M3 db-execute substitution (delivery must be a migration, not a hand-apply)
+  grep -qiE 'db execute|prisma db execute' "$dir/receipts.md" "$dir/plan.md" 2>/dev/null \
+    && die "migration-gate: receipt/plan references 'db execute' — schema must be delivered by a migration the deploy applies, not hand-applied (G-M3)."
+  # G-M1 presence
+  local nmig=0; [ -d "$canon" ] && nmig="$(find "$canon" -mindepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')"
+  [ "${nmig:-0}" -gt 0 ] 2>/dev/null || die "migration-gate: no migration *.sql in canonical dir '$canon' (G-M1) — schema change not delivered as a migration."
+  # G-M4 fresh-DB apply (STRICT) then G-M2 schema==migrations (diff empty)
+  ( eval "$fresh_cmd" ) >/dev/null 2>&1 || die "migration-gate: fresh-DB apply failed (G-M4, STRICT) — history won't replay from scratch. Repair/baseline before shipping; no waiver."
+  ( eval "$diff_cmd" )  >/dev/null 2>&1 || die "migration-gate: schema != migrations (G-M2) — migrations don't reproduce the live schema."
+  ok "migration-gate: migration present, no stray dir, fresh-DB apply clean, schema==migrations (STRICT)."
+}
+
+# lifecycle-audit: full-chain receipt + terminal-status audit (the always-fire teeth).
+cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
+  local dir="${1:-}" want="${2:-}"; [ -n "$dir" ] || die "usage: compass.sh lifecycle-audit <build-dir> [CLOSED|SHIPPED]"
+  [ -f "$dir/receipts.md" ] || die "lifecycle-audit: no receipts.md in $dir"
+  local deploy_waived=0
+  grep -qiE 'deploy:[[:space:]]*out-of-scope|deploy out of scope' "$dir/contract.md" 2>/dev/null && deploy_waived=1
+  # G-L1 ordered chain through review-build
+  local s
+  for s in contract review-contract plan review-plan build review-build; do
+    stage_pass "$dir" "$s" || die "lifecycle-audit: stage '$s' has no clean PASS receipt (missing / unchecked box / SUPERSEDED) — chain broken (G-L1)."
+  done
+  # G-L2 review-build human sign-off (for CLOSED/SHIPPED/completeness)
+  case "$want" in
+    CLOSED|SHIPPED|"")
+      last_block "$dir/receipts.md" review-build | grep -qiE 'sign-?off|signed off' \
+        || die "lifecycle-audit: review-build receipt has no human sign-off line (G-L2)." ;;
+  esac
+  # ship requirements
+  local need_ship=0
+  [ "$want" = "SHIPPED" ] && need_ship=1
+  [ -z "$want" ] && [ "$deploy_waived" = 0 ] && need_ship=1
+  if [ "$need_ship" = 1 ]; then
+    stage_pass "$dir" ship || die "lifecycle-audit: ship required (SHIPPED, or deploy not out-of-scope) but no clean ship PASS receipt (G-L2/G-L3). Run compass:ship, or record 'deploy: out-of-scope — <reason>'."
+    # RB-01: prod-verify must be PRESENT and CHECKED (omitting it is not a soft pass loophole).
+    last_block "$dir/receipts.md" ship | grep -qiE '^- \[x\].*prod[ -]?(reconcile|verif|recon)' \
+      || die "lifecycle-audit: ship receipt has no CHECKED prod-verify line (G-L2) — prod reconciliation is mandatory and cannot be omitted or soft-passed."
+  fi
+  ok "lifecycle-audit: chain PASS${want:+, status '$want' consistent}${deploy_waived:+ }$([ "$deploy_waived" = 1 ] && echo '(deploy waived)')."
+}
+
+# stop-guard: the Stop-hook command. Reads hook JSON on stdin; blocks stopping while any
+# build is mid-lifecycle. Honors stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks
+# signal via JSON, not exit code); fail-open on any error.
+cmd_stop_guard() {
+  local input; input="$(cat 2>/dev/null || true)"
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
+  # RB-02: resolve state-root INLINE — never call state_root (it die/exits, which under
+  # set -e would crash the session instead of failing open). A Stop hook must never crash.
+  local sr="" common
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+    [ -n "$common" ] && sr="$(cd "$(dirname "$common")" 2>/dev/null && pwd || true)/.claude/builds"
+  fi
+  [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
+  local line slug status waived stage next
+  while IFS= read -r line; do
+    case "$line" in ''|\#*) continue ;; esac
+    slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
+    [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
+    status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z')"
+    [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z')"
+    case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
+    if printf '%s' "$status" | grep -q 'closed'; then
+      waived=0; grep -qiE 'deploy:[[:space:]]*out-of-scope|deploy out of scope' "$sr/$slug/contract.md" 2>/dev/null && waived=1
+      [ "$waived" = 1 ] && continue                                               # closed + deploy waived → allow
+    fi
+    # mid-lifecycle → block
+    stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
+    next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
+    stage="$(printf '%s' "${stage:-?}" | sed 's/"/\\"/g')"; next="$(printf '%s' "${next:-?}" | sed 's/"/\\"/g')"
+    printf '{"decision":"block","reason":"Compass: build %s is mid-lifecycle (stage: %s). Next: %s. Do NOT stop — fire the next stage / its AskUserQuestion gate / compass:ship."}\n' "$slug" "$stage" "$next"
+    return 0
+  done < "$sr/INDEX"
+  printf '{}\n'; return 0
 }
 
 # ── v0.5.0: design-fidelity gate + status (the anti-ceremony teeth) ─────────
@@ -635,6 +772,9 @@ main() {
     supersede)         cmd_supersede "$@" ;;
     reconcile)         cmd_reconcile "$@" ;;
     secret-scan)       cmd_secret_scan "$@" ;;
+    migration-gate)    cmd_migration_gate "$@" ;;
+    lifecycle-audit)   cmd_lifecycle_audit "$@" ;;
+    stop-guard)        cmd_stop_guard "$@" ;;
     close)             cmd_close "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/compass.sh\" stop-guard"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "matcher": "*",

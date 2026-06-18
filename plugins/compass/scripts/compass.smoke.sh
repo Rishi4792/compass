@@ -109,7 +109,7 @@ case "$out_d" in *"[managed] v6a"*) chk 0 0 "doctor classifies a managed worktre
 # INV-5/6: close is dirty-SAFE — a dirty worktree survives close (NEVER force-removed)
 echo dirty > "$WT_V6/uncommitted.txt"
 sed -i.bak 's/^v6a · /v6a · /' .claude/builds/INDEX 2>/dev/null; rm -f .claude/builds/INDEX.bak
-( bash "$SH" close .claude/builds/v6a v6a >/dev/null 2>&1 )
+( bash "$SH" close .claude/builds/v6a v6a --abandon >/dev/null 2>&1 )
 ( git worktree list --porcelain | grep -q '/v6a$' ); chk "$?" "0" "close LEAVES a dirty worktree (no force-remove — the v0.5.0 incident fix)"
 
 echo "──────── $pass passed, $fail failed ────────"

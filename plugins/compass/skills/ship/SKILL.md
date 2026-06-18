@@ -21,11 +21,14 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 ## Procedure
 1. **Deploy via the repo's own path** — the deploy/predeploy scripts Phase 0 found; never an ad-hoc deploy. Respect the contract's rollout order + flags.
 2. **Post-deploy reconciliation on PROD data** — run the reproducing query against prod (read-only), then `compass.sh reconcile <actual> <gold> <tol>`. **Non-zero = STOP and roll back** via the contract's exact revert path.
+   - **PROD-VERIFY IS A HARD STOP (v0.7.0):** if prod is unreachable / the reproducing query can't run, the build **CANNOT be marked SHIPPED** — it stays at CLOSED, you surface the blocker, ship resumes once verifiable. **No `PARTIAL`, no "deferred to <user>", no unchecked prod-verify box.** (This is the exact `pg-method-rates` soft-pass that reached prod.)
+   - **Schema builds:** before trusting prod, `compass.sh migration-gate .claude/builds/<slug>` must be PASS (a real migration in the canonical deploy dir reproduces the schema on a fresh DB — STRICT). A schema delivered by `db execute` / hand-apply is a FAIL, not a ship.
 3. **Confirm observability EMITS in prod** — the exact metric/log the contract named is actually flowing (query it / tail it), not just present in code.
 4. **Smoke the critical flow** — the contract's headline behavior works in prod (read-only asserts; Playwright against prod with env-supplied auth, never a committed token).
 5. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy), record what happened.
 
 ## Emit
+**Terminal-status guard (v0.7.0):** before recording SHIPPED, run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** (a stage receipt is missing/soft-passed, or prod-verify is unchecked). Only on PASS write the status.
 `progress.md` = `SHIPPED` (or `ROLLED-BACK`). **EMIT RECEIPT**:
 ```
 ## RECEIPT — ship · <slug> · PASS

@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.7.0] — 2026-06-18
+
+Two failure modes promoted from prose to executable gates ("prose drifts, gates don't"). Born from a real prod outage: a Compass-built feature (`pg-method-rates`) hand-applied a schema change to the dev DB via `prisma db execute` — no migration ever landed in the deploy's canonical folder — and ship was marked SHIPPED with prod-verify left unchecked. The lifecycle showed all green while prod broke.
+
+- **Migration-delivery gate (`compass.sh migration-gate`)** — for `schema-touching: yes` builds: a real migration must exist in the deploy's **canonical** dir (Prisma: `prisma/schema/migrations` when `prisma/schema/` exists, else `prisma/migrations`), `db execute`/hand-apply can't substitute, a **stray migration in a non-canonical dir is caught** (the exact incident class), and a **fresh-DB apply must reproduce the schema (STRICT — no waiver)**. Wired as a hard gate into build, review-build, and ship.
+- **Ship prod-verify is a HARD STOP** — unreachable prod = the build stays CLOSED, never `PARTIAL`/"deferred"/SHIPPED-with-an-unchecked-box.
+- **Lifecycle enforced every time, always** — `compass.sh lifecycle-audit` (full-chain receipt + terminal-status guard, wired into `close`/ship) + a new **`Stop` hook** (`compass.sh stop-guard`) that blocks the agent from going quiet, skipping a gate, or forgetting ship while a build is mid-lifecycle (honors `stop_hook_active` to avoid deadlock). **Ship is now mandatory** unless the contract carries `deploy: out-of-scope — <reason>`. `close --abandon` cancels an incomplete build.
+- Reproduction self-test `compass.selftest.sh` (INV-1..INV-7) encodes both real failures and proves the new gates catch them. Built with Compass itself; its review caught the Stop-hook deadlock risk, the `close`-traps-abandon regression, and a private-data-in-fixtures leak before build.
+
 ## [0.6.0] — 2026-06-17
 
 Elegant parallel builds. Worktrees move out of sight, and parallel builds on one repo become visible and merge-aware. Born from a real mess — three confusingly-similar sibling folders (`GQ Business CRM`, `GQ Business CRM.compass/`, `GQ-Business-CRM-obs`) next to the project, plus un-GC'd worktrees and hand-rolled ones. Built with Compass itself; the reviews caught two that would have re-created the mess (the pre-commit guard silently breaking, and `close` deleting uncommitted work — the v0.5.0 incident).
