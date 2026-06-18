@@ -521,7 +521,7 @@ cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
   local dir="${1:-}" want="${2:-}"; [ -n "$dir" ] || die "usage: compass.sh lifecycle-audit <build-dir> [CLOSED|SHIPPED]"
   [ -f "$dir/receipts.md" ] || die "lifecycle-audit: no receipts.md in $dir"
   local deploy_waived=0
-  grep -qiE 'deploy:[[:space:]]*out-of-scope|deploy out of scope' "$dir/contract.md" 2>/dev/null && deploy_waived=1
+  grep -qiE '^[[:space:]]*[-*]?[[:space:]]*deploy:[[:space:]]*out-of-scope' "$dir/contract.md" 2>/dev/null && deploy_waived=1
   # G-L1 ordered chain through review-build
   local s
   for s in contract review-contract plan review-plan build review-build; do
@@ -569,7 +569,7 @@ cmd_stop_guard() {
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z')"
     case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
     if printf '%s' "$status" | grep -q 'closed'; then
-      waived=0; grep -qiE 'deploy:[[:space:]]*out-of-scope|deploy out of scope' "$sr/$slug/contract.md" 2>/dev/null && waived=1
+      waived=0; grep -qiE '^[[:space:]]*[-*]?[[:space:]]*deploy:[[:space:]]*out-of-scope' "$sr/$slug/contract.md" 2>/dev/null && waived=1
       [ "$waived" = 1 ] && continue                                               # closed + deploy waived → allow
     fi
     # mid-lifecycle → block

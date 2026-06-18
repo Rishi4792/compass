@@ -84,7 +84,10 @@ bash "$SH" lifecycle-audit "$SK" >/dev/null 2>&1; chk "$?" "1" "INV-4 skipped: r
 SS="$SB/shipskip"; full_chain "$SS" review-build --signoff; : > "$SS/contract.md"
 bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "1" "INV-5 ship-skipped: no waiver, no ship → FAIL (G-L3)"
 printf 'deploy: out-of-scope — internal tooling, no deploy\n' > "$SS/contract.md"
-bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "0" "INV-5 waiver: deploy out-of-scope → PASS"
+bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "0" "INV-5 waiver: deploy out-of-scope (field line) → PASS"
+# v0.7.1: the phrase appearing ONLY in prose must NOT count as a waiver (anchored field match)
+printf 'This build does NOT record a `deploy: out-of-scope` waiver — it is mentioned only in prose.\n' > "$SS/contract.md"
+bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "1" "INV-5 prose: 'deploy: out-of-scope' only in prose → NOT waived → FAIL (v0.7.1 anchor fix)"
 
 echo "── stop-guard (INV-6) ────────────────────────────────────────"
 # isolated throwaway git repo so state_root/INDEX are sandboxed
@@ -109,7 +112,8 @@ echo "── no-regression + old-misses baseline (INV-7) ───────�
 # migration-gate no-op for schema-touching:no
 NS="$SB/noschema"; mkdir -p "$NS"; printf 'schema-touching: no\n' > "$NS/contract.md"
 bash "$SH" migration-gate "$NS" >/dev/null 2>&1; chk "$?" "0" "INV-7 no-op: schema-touching:no → N/A PASS"
-# lifecycle-audit clean complete build (deploy waived) → PASS
+# lifecycle-audit clean complete build (deploy waived) → PASS  (reset $SS contract — prior cases mutated it)
+printf 'deploy: out-of-scope — internal tooling, no deploy\n' > "$SS/contract.md"
 bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "0" "INV-7 no-op: complete+waived build → PASS"
 # OLD MISSES: the soft-pass ship receipt's LAST block is a clean PASS → existing scan-receipt does NOT catch it
 bash "$SH" scan-receipt "$SPok" ship >/dev/null 2>&1

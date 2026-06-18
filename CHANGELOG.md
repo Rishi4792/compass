@@ -3,6 +3,10 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.7.1] — 2026-06-18
+
+Fixed — the `deploy: out-of-scope` waiver detection (in `lifecycle-audit` and `stop-guard`) was an **unanchored** grep, so it matched the phrase anywhere in the contract — including prose that merely *describes* the waiver. That let the "ship is mandatory" guarantee be bypassed by a contract that only mentions the phrase. Now anchored to a real field line (`^[-* ]*deploy: out-of-scope`); prose/backtick mentions no longer count. Self-test gains an INV-5 prose-only case (18 assertions). Caught by v0.7.0's own ship audit printing a false "deploy waived" — dogfooding worked.
+
 ## [0.7.0] — 2026-06-18
 
 Two failure modes promoted from prose to executable gates ("prose drifts, gates don't"). Born from a real prod outage: a Compass-built feature (`pg-method-rates`) hand-applied a schema change to the dev DB via `prisma db execute` — no migration ever landed in the deploy's canonical folder — and ship was marked SHIPPED with prod-verify left unchecked. The lifecycle showed all green while prod broke.
