@@ -3,7 +3,7 @@
 **Build software true to spec, with zero drift.** A contract-first build lifecycle for [Claude Code](https://claude.com/claude-code).
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.7.1-1f6feb)
+![version](https://img.shields.io/badge/version-0.8.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 > **The problem in one line:** AI coding agents drift from what you asked — and worse, they say *"done"* when the numbers are wrong or a step was skipped. **Compass makes "done" something the agent has to *prove*, with a real gate it can't talk past.**
@@ -55,9 +55,9 @@ Between every hop is a **user-driven gate** (Approve / Revise / **Amend contract
 | ② | `/compass:review-contract` | **Review-1 (light)** — pressure-tests completeness, ambiguity, testability, and that reconciliation is pinned, *independent*, and exact. One clean pass; cap 2. |
 | ③ | `/compass:plan` | **Scans the live codebase first** (or the chosen stack, for greenfield), then writes a step-by-step plan — each step a verify command, every INVARIANT a non-deferred bound-asserting check, every migration a dry-run-on-a-copy. |
 | ④ | `/compass:review-plan` | **Review-2 (full)** — traceability, INVARIANT coverage, migration/dry-run, dependencies, blast radius, rollback, tests, reconciliation feasibility, perf, security, secret-leak. Two clean rounds; cap 3. |
-| ⑤ | `/compass:build` | **Build-Test-Verify**, one step at a time. Reconciliation is a script `PASS/FAIL`; a step's box is checked only after its verify passes. |
-| ⑥ | `/compass:review-build` | **Review-3 (full)** — feature/regression/RBAC/perf + reconciliation, design+a11y, exercised rollback, wired observability, idempotency, secret-scan. Ends with a **human sign-off** on the evidence. Two clean rounds; cap 5. |
-| ⑦ | `/compass:ship` | **Mandatory** (unless the contract marks deploy out of scope) — deploys via the repo's own path, then re-runs reconciliation on prod data and confirms the observability signal actually emits. **Prod-verify is a hard stop**: unreachable prod keeps the build at CLOSED, never a soft "shipped". For schema builds, `migration-gate` must pass (a real migration reproduces the schema on a fresh DB). |
+| ⑤ | `/compass:build` | **Build-Test-Verify**, one step at a time. Reconciliation is a script `PASS/FAIL`; a step's box is checked only after its verify passes. For builds that touch pages, **every route in the declared blast radius gets a recorded page-load proof** (`route-coverage`) — typecheck-only for a page step is rejected. |
+| ⑥ | `/compass:review-build` | **Review-3 (full)** — feature/regression/RBAC/perf + reconciliation, design+a11y, exercised rollback, wired observability, idempotency, secret-scan, **blast-radius `route-coverage` (hard CRITICAL) with each declared route independently RE-LOADED**. Ends with a **human sign-off** on the evidence. Two clean rounds; cap 5. |
+| ⑦ | `/compass:ship` | **Mandatory** (unless the contract marks deploy out of scope) — deploys via the repo's own path, then re-runs reconciliation on prod data and confirms the observability signal actually emits. **Prod-verify is a hard stop**: unreachable prod keeps the build at CLOSED, never a soft "shipped". **Post-deploy route smoke** GETs each declared route on prod (200-with-content) — any miss blocks SHIPPED. For schema builds, `migration-gate` must pass (a real migration reproduces the schema on a fresh DB). |
 
 ### Two engines + the teeth
 - **Verify ladder** — cheapest real proof first, by facet. Web: typecheck → DB query → curl+cookie HTML → API → **Playwright** (assert DOM text + computed CSS for exact things, **plus a screenshot read-back vs the design you captured at planning time** so the result has zero drift from what you imagined; prod read-only) → Chrome MCP (last resort). Pipeline/CLI: exit code → golden-file diff → asserts → numeric reconciliation → determinism. Never correctness on agent agreement.

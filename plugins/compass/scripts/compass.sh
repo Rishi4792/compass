@@ -348,6 +348,26 @@ last_block() { # <file> <stage>
   ' "$1"
 }
 
+# plan_routes: emit one declared route per line from plan.md's "## Affected routes"
+# block. Each route = the first whitespace token starting with '/' (rest is prose).
+plan_routes() { # <build-dir>
+  local pf="$1/plan.md"
+  [ -f "$pf" ] || return 0
+  awk '
+    /^##[[:space:]]+Affected[[:space:]]+routes/ { cap=1; next }
+    cap && /^##[[:space:]]/ { cap=0 }
+    cap {
+      line=$0
+      sub(/^[[:space:]]*[-*][[:space:]]*/, "", line)        # strip list marker
+      sub(/^[[:space:]`*_">]+/, "", line)                   # strip leading markdown wrappers (RB3-01)
+      if (line ~ /^\//) {                                   # a route, not prose
+        match(line, /^\/[^[:space:]`*_"<>]+/)               # first /path token, stop at space/markdown
+        if (RSTART > 0) print substr(line, RSTART, RLENGTH)
+      }
+    }
+  ' "$pf" 2>/dev/null || true
+}
+
 cmd_gate() { # <build-dir> <prior-stage>
   local dir="$1" stage="$2" f="$1/receipts.md"
   [ -f "$f" ] || die "no receipts.md in $dir — prior stage '$stage' never ran. Start at the right earlier stage."
@@ -517,6 +537,63 @@ cmd_migration_gate() { # <build-dir>
 }
 
 # lifecycle-audit: full-chain receipt + terminal-status audit (the always-fire teeth).
+# ── v0.8.0: blast-radius page-load coverage (the §3a gate) ─────────────────
+# route-coverage: every route the plan declares as affected must carry a recorded
+# canonical page-load proof in receipts.md. Honor-level (checks the RECORD); the
+# real teeth are review-build's independent re-load. Read-only, idempotent.
+cmd_route_coverage() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh route-coverage <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local pf="$dir/plan.md" rf="$dir/receipts.md"
+
+  # changed-files (COMPASS_CHANGED_FILES override for testability, else git diff)
+  local changed routey=0 is_web=0
+  if [ -n "${COMPASS_CHANGED_FILES:-}" ]; then
+    changed="$COMPASS_CHANGED_FILES"
+  else
+    changed="$(git diff --name-only 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$changed" | grep -qE '(^|/)(page|route)\.(t|j)sx?$|/page($|/)|/route($|/)' && routey=1
+  # facet=web from INDEX (normalized token list, never contract prose)
+  local slug sr idxline facets
+  slug="$(basename "$dir")"; sr="$(state_root 2>/dev/null || true)"
+  if [ -n "$sr" ] && [ -f "$sr/INDEX" ]; then
+    idxline="$(grep -E "^${slug} " "$sr/INDEX" 2>/dev/null | head -1 || true)"
+    facets="$(printf '%s' "$idxline" | sed -nE 's/.*facets=([^ ·]*).*/\1/p')"
+    printf '%s' "$facets" | grep -qE '(^|[+,])web([+,]|$)' && is_web=1
+  fi
+
+  local routes; routes="$(plan_routes "$dir")"
+
+  # G-R0: declaration MANDATORY when route files changed or facet=web (anti-gaming)
+  if [ "$routey" = 1 ] || [ "$is_web" = 1 ]; then
+    [ -n "$routes" ] || die "route-coverage: build changed page/route files (or facet=web) but plan.md '## Affected routes' is empty/missing — declaration is MANDATORY (G-R0), not N/A."
+  fi
+
+  # N/A: nothing route-ish, nothing declared
+  if [ -z "$routes" ]; then ok "route-coverage: no routes touched — N/A."; return 0; fi
+
+  [ -f "$rf" ] || die "route-coverage: routes declared but no receipts.md to carry page-load proofs (G-R1)."
+
+  # G-R2 advisory (R1-03): page/route step verified by typecheck only — surface, do NOT die
+  local adv; adv="$(grep -nE '\.(t|j)sx?|/page|/route' "$pf" 2>/dev/null | grep -iE 'tsc|noemit|review-build interaction' | grep -ivE '200|loaded|curl|playwright|[[:space:]]get[[:space:]]' || true)"
+  [ -n "$adv" ] && printf 'route-coverage: NOTE (G-R2 advisory) — page/route step(s) appear typecheck-only; G-R1 still requires a load proof:\n%s\n' "$adv" >&2
+
+  # G-R1: per route, ONE canonical line — literal "route <path>:" (R2-01 grep -F defuses
+  # [param] char-classes; R2-02 trailing colon stops a prefix route stealing a longer
+  # route's line) AND 200|loaded AND a checked [x], all on the same line.
+  local missing="" r
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    grep -F -- "route $r:" "$rf" 2>/dev/null | grep -E '(200|loaded)' | grep -q '\[x\]' || missing="$missing $r"
+  done <<EOF
+$routes
+EOF
+  [ -n "$missing" ] && die "route-coverage: declared route(s) without a canonical page-load proof line (G-R1):$missing"
+  local n; n="$(printf '%s\n' "$routes" | grep -c . || true)"
+  ok "route-coverage: $n route(s), all with a canonical page-load proof."
+}
+
 cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
   local dir="${1:-}" want="${2:-}"; [ -n "$dir" ] || die "usage: compass.sh lifecycle-audit <build-dir> [CLOSED|SHIPPED]"
   [ -f "$dir/receipts.md" ] || die "lifecycle-audit: no receipts.md in $dir"
@@ -542,13 +619,52 @@ cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
     # RB-01: prod-verify must be PRESENT and CHECKED (omitting it is not a soft pass loophole).
     last_block "$dir/receipts.md" ship | grep -qiE '^- \[x\].*prod[ -]?(reconcile|verif|recon)' \
       || die "lifecycle-audit: ship receipt has no CHECKED prod-verify line (G-L2) — prod reconciliation is mandatory and cannot be omitted or soft-passed."
+    # S2 (v0.8.0 §3b): per declared route, a prod route-smoke proof in the ship receipt
+    # (route <path> + prod + 200|loaded, checked). No declared routes → no-op (back-compat).
+    local sroutes; sroutes="$(plan_routes "$dir")"
+    if [ -n "$sroutes" ]; then
+      local shipblk; shipblk="$(last_block "$dir/receipts.md" ship)"
+      local sb="" rr
+      while IFS= read -r rr; do
+        [ -n "$rr" ] || continue
+        printf '%s\n' "$shipblk" | grep -F -- "route $rr:" | grep -iE 'prod' | grep -E '(200|loaded)' | grep -q '\[x\]' \
+          || sb="$sb $rr"
+      done <<EOF
+$sroutes
+EOF
+      [ -n "$sb" ] && die "lifecycle-audit: SHIPPED but ship receipt missing a CHECKED prod route-smoke proof (route <path> + prod + 200|loaded) for:$sb (§3b)."
+    fi
   fi
   ok "lifecycle-audit: chain PASS${want:+, status '$want' consistent}${deploy_waived:+ }$([ "$deploy_waived" = 1 ] && echo '(deploy waived)')."
 }
 
-# stop-guard: the Stop-hook command. Reads hook JSON on stdin; blocks stopping while any
-# build is mid-lifecycle. Honors stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks
-# signal via JSON, not exit code); fail-open on any error.
+# is_mid_build (v0.8.0 §3d): exit 0 iff a BUILD step is genuinely in progress — the
+# ONLY state where stopping risks half-applied artifacts. Everything else (gates,
+# *-LOCKED, CONVERGED, CLOSED-awaiting-ship, mid-contract/plan/review) is a clean,
+# resumable checkpoint → quiet. set -euo pipefail safe: every grep guarded, missing
+# files ⇒ NOT mid-build; never dies (a Stop hook must never crash the session).
+is_mid_build() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || return 1
+  local rf="$dir/receipts.md" pf="$dir/plan.md" lb=""
+  # (a) the LAST build receipt block is IN-PROGRESS / carries a step k/n counter.
+  #     The build-specific `step k/n` (only the build stage writes it) + hyphenated
+  #     IN-PROGRESS marker — NEVER generic spaced prose like "review-plan — IN PROGRESS".
+  if [ -f "$rf" ]; then
+    lb="$(last_block "$rf" build 2>/dev/null || true)"
+    if printf '%s' "$lb" | grep -qE 'IN-PROGRESS|step[[:space:]]*[0-9]+/[0-9]+' 2>/dev/null; then return 0; fi
+  fi
+  # (b) plan.md has a checked AND an unchecked step box (build partway). Line-leading
+  #     task boxes only (not inline prose). Catches the post-step-1 case (a) may miss.
+  if [ -f "$pf" ]; then
+    if grep -qE '^- \[x\]' "$pf" 2>/dev/null && grep -qE '^- \[ \]' "$pf" 2>/dev/null; then return 0; fi
+  fi
+  return 1
+}
+
+# stop-guard: the Stop-hook command. Reads hook JSON on stdin. v0.8.0 (§3d): blocks ONLY
+# on true mid-build abandonment (is_mid_build) — quiet at every gate/clean checkpoint, so
+# the harness's red "Stop hook error" no longer fires on normal pauses. Honors
+# stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks signal via JSON); fail-open.
 cmd_stop_guard() {
   local input; input="$(cat 2>/dev/null || true)"
   case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
@@ -568,15 +684,13 @@ cmd_stop_guard() {
     status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z')"
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z')"
     case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
-    if printf '%s' "$status" | grep -q 'closed'; then
-      waived=0; grep -qiE '^[[:space:]]*[-*]?[[:space:]]*deploy:[[:space:]]*out-of-scope' "$sr/$slug/contract.md" 2>/dev/null && waived=1
-      [ "$waived" = 1 ] && continue                                               # closed + deploy waived → allow
-    fi
-    # mid-lifecycle → block
+    # §3d: block ONLY on true mid-build abandonment. Gates / *-LOCKED / CONVERGED /
+    # CLOSED-awaiting-ship / mid-contract|plan|review are clean checkpoints → quiet.
+    is_mid_build "$sr/$slug" || continue
     stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
     next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
     stage="$(printf '%s' "${stage:-?}" | sed 's/"/\\"/g')"; next="$(printf '%s' "${next:-?}" | sed 's/"/\\"/g')"
-    printf '{"decision":"block","reason":"Compass: build %s is mid-lifecycle (stage: %s). Next: %s. Do NOT stop — fire the next stage / its AskUserQuestion gate / compass:ship."}\n' "$slug" "$stage" "$next"
+    printf '{"decision":"block","reason":"Compass: build %s is mid-BUILD with a step in progress (stage: %s). Next: %s. Finish the build step (or write a clean pause to progress.md) before stopping — work can be left half-applied."}\n' "$slug" "$stage" "$next"
     return 0
   done < "$sr/INDEX"
   printf '{}\n'; return 0
@@ -773,6 +887,7 @@ main() {
     reconcile)         cmd_reconcile "$@" ;;
     secret-scan)       cmd_secret_scan "$@" ;;
     migration-gate)    cmd_migration_gate "$@" ;;
+    route-coverage)    cmd_route_coverage "$@" ;;
     lifecycle-audit)   cmd_lifecycle_audit "$@" ;;
     stop-guard)        cmd_stop_guard "$@" ;;
     close)             cmd_close "$@" ;;
