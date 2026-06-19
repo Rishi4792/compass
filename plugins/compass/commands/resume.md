@@ -16,7 +16,8 @@ Continue a Compass build that was paused or interrupted. State is on disk, so cl
    - **`plan.md` checkboxes are authoritative** for build progress; if `progress.md` disagrees, trust the checkboxes. `progress.md` status qualifies the stage (`contract-LOCKED` vs `plan-LOCKED`, `in-review (Rn)`, etc.).
    - Read `contract.md` (the invariant) and `review-ledger.md` (open issues).
 3. State in ONE line where things stand — e.g. "Resuming — plan-LOCKED, building step 4/11 (next: the reconciliation query)." Do not recite the files.
-4. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
+4. **Re-bind ownership to THIS session before handing off:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"`. The build's Stop-hook guard now follows the live (resuming) session — an orphaned build (its old terminal closed) is silent until this re-bind restores the guard (v0.9.0).
+5. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
 
 ## Clean hand-off (when telling the user to open a new terminal)
 Print **exactly one clean, copy-paste-ready fenced block and nothing interleaved**:

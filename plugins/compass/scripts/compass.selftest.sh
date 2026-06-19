@@ -157,55 +157,168 @@ bash "$SH" lifecycle-audit "$R3" SHIPPED >/dev/null 2>&1; chk "$?" "1" "INV-R3 S
 printf -- '- [x] route /accounts/new: curl prod → 200 form (prod)\n' >> "$R3/receipts.md"
 bash "$SH" lifecycle-audit "$R3" SHIPPED >/dev/null 2>&1; chk "$?" "0" "INV-R3 with a CHECKED prod route-smoke per declared route → PASS"
 
-echo "── stop-guard (INV-6 retained + INV-R5 §3d gate-quiet) ───────"
-# isolated throwaway git repo so state_root/INDEX are sandboxed
+echo "── stop-guard §3d behaviors (now OWNER-aware — v0.9.0) ───────"
+# isolated throwaway git repo so state_root/INDEX are sandboxed. v0.9.0: every mid-build
+# fixture now writes an OWNER (sessX) and pipes session_id=sessX, so the §3d quiet cases stay
+# quiet for the RIGHT reason (is_mid_build/status), not merely a missing owner (R2-12).
 G="$SB/repo"; mkdir -p "$G"; ( cd "$G" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
-mkdir -p "$G/.claude/builds/midbuild"
+mkdir -p "$G/.claude/builds/midbuild" "$G/.claude/builds/.locks"
+printf 'session=sessX\n' > "$G/.claude/builds/.locks/midbuild.owner"   # owner present for ALL cases below
+JX='{"session_id":"sessX","stop_hook_active":false}'   # the OWNING session stops
+sg() { cd "$G" && printf '%s' "${1:-$JX}" | bash "$SH" stop-guard; }   # run guard in $G
 printf 'midbuild · goal · status=plan-LOCKED · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '**Status:** plan-LOCKED\n**Stage:** plan\n**Next:** build\n' > "$G/.claude/builds/midbuild/progress.md"
 printf '## 7. Steps\n- [ ] **S1**\n- [ ] **S2**\n' > "$G/.claude/builds/midbuild/plan.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 gate (plan-LOCKED, 0 boxes) → NO block (v0.8.0 §3d — inverts old INV-6 'mid-lifecycle→block'; quiet at gates)"
-OUT="$(cd "$G" && echo '{"stop_hook_active":true}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-6 loop-guard: stop_hook_active=true → NO block (anti-deadlock)"
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "1" "§3d gate (plan-LOCKED, 0 boxes) + owner present → NO block (quiet from is_mid_build, not missing owner)"
+printf '%s' "$(sg '{"session_id":"sessX","stop_hook_active":true}')" | grep -q '"decision":"block"'; chk "$?" "1" "loop-guard: stop_hook_active=true → NO block (anti-deadlock)"
 # terminal status → no block
 printf 'midbuild · goal · status=SHIPPED · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '**Status:** SHIPPED\n' > "$G/.claude/builds/midbuild/progress.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-6 terminal (SHIPPED) → NO block"
-# RB-02 fail-open: outside a git repo the hook must not crash (set -e would otherwise propagate state_root's exit)
-NG="$(mktemp -d)"; ( cd "$NG" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard >/dev/null 2>&1 ); chk "$?" "0" "INV-6 fail-open: stop-guard outside a git repo → exit 0 (RB-02, never crash)"
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "1" "terminal (SHIPPED) + owner present → NO block"
+# RB-02 fail-open: outside a git repo the hook must not crash
+NG="$(mktemp -d)"; ( cd "$NG" && printf '%s' "$JX" | bash "$SH" stop-guard >/dev/null 2>&1 ); chk "$?" "0" "fail-open: stop-guard outside a git repo → exit 0 (RB-02, never crash)"
 
-# INV-R5 (§3d): block ONLY on true mid-build; quiet at every clean checkpoint/gate.
+# §3d: block ONLY on true mid-build (owner matches); quiet at every clean checkpoint/gate.
 printf 'midbuild · goal · status=building · facets=library\n' > "$G/.claude/builds/INDEX"
-# (block) mid-build: last build receipt is IN-PROGRESS · step k/n
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — build · midbuild · IN-PROGRESS · step 4/11\n- [x] y\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '**Status:** building\n**Stage:** build · IN-PROGRESS · step 4/11\n**Next:** step 5\n' > "$G/.claude/builds/midbuild/progress.md"
 printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$G/.claude/builds/midbuild/plan.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "0" "INV-R5 mid-build (build receipt IN-PROGRESS · step 4/11) → block"
-# (block) plan.md half-checked, NO IN-PROGRESS build receipt → still mid-build via (b)
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "mid-build (IN-PROGRESS · step 4/11) + owning session → block"
+# plan.md half-checked, NO IN-PROGRESS build receipt → still mid-build via (b)
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "0" "INV-R5 plan.md half-checked (≥1 [x] AND ≥1 [ ]) → block"
-# (quiet) ambiguity guard: a review-plan IN PROGRESS receipt (spaced prose, no k/n) is NOT a build mid-step
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "plan.md half-checked (≥1 [x] AND ≥1 [ ]) + owning session → block"
+# (quiet) ambiguity guard: review-plan IN PROGRESS (no build k/n) is NOT a build mid-step
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — review-plan · midbuild · IN PROGRESS\n- [ ] round 1 paused\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '## 7. Steps\n- [ ] **S1**\n' > "$G/.claude/builds/midbuild/plan.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 ambiguity guard: 'review-plan IN PROGRESS' (no build k/n) → NO block (quiet)"
-# (quiet) CLOSED-awaiting-ship is a user gate (relaxes old closed-not-waived block)
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "1" "ambiguity guard ('review-plan IN PROGRESS', no build k/n) + owner present → NO block (quiet from is_mid_build)"
+# POSITIVE CONTROL (R2-12): same fixture flipped to a REAL mid-step build + owner → MUST block (proves owner path didn't disable everything)
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — build · midbuild · IN-PROGRESS · step 2/7\n- [x] y\n' > "$G/.claude/builds/midbuild/receipts.md"
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "POSITIVE CONTROL: same slug flipped to real mid-step + owner → block (owner path is live, not a kill-switch)"
+# (quiet) CLOSED-awaiting-ship
 printf 'midbuild · goal · status=closed · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '**Status:** CLOSED\n**Stage:** review-build\n**Next:** ship\n' > "$G/.claude/builds/midbuild/progress.md"
 printf 'schema-touching: no\n' > "$G/.claude/builds/midbuild/contract.md"
-OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 CLOSED-awaiting-ship (all boxes done) → NO block (§3d relaxes the old ship-nudge)"
-# (quiet, RP2-02) a build with NO plan.md must not crash the hook under set -euo pipefail
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
+printf '## 7. Steps\n- [x] **S1**\n' > "$G/.claude/builds/midbuild/plan.md"
+printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "1" "CLOSED-awaiting-ship (no unchecked box) + owner → NO block"
+# (quiet, RP2-02) no plan.md must not crash under set -euo pipefail
 rm -f "$G/.claude/builds/midbuild/plan.md"
 printf 'midbuild · goal · status=building · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '**Status:** building\n**Stage:** build\n**Next:** step 1\n' > "$G/.claude/builds/midbuild/progress.md"
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
-( cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard >/dev/null 2>&1 ); chk "$?" "0" "INV-R5 RP2-02: build with NO plan.md → is_mid_build quiet, exit 0 (no crash under set -euo pipefail)"
+( sg >/dev/null 2>&1 ); chk "$?" "0" "RP2-02: no plan.md + owner → is_mid_build quiet, exit 0 (no crash)"
+
+echo "── session isolation S1–S17 (v0.9.0 — owner=session id) ──────"
+# fresh sandbox; a single mid-build 'A' owned by sessX (IN-PROGRESS step 3/9)
+I="$SB/iso"; mkdir -p "$I/.claude/builds/A" "$I/.claude/builds/.locks"; ( cd "$I" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
+setA() { printf 'A · goal · status=building · facets=library\n' > "$I/.claude/builds/INDEX"
+  printf '## RECEIPT — contract · A · PASS\n- [x] x\n## RECEIPT — build · A · IN-PROGRESS · step 3/9\n- [x] y\n' > "$I/.claude/builds/A/receipts.md"
+  printf '**Status:** building\n**Stage:** build step 3/9\n**Next:** step 4\n' > "$I/.claude/builds/A/progress.md"
+  printf '## 7. Steps\n- [x] **S1**\n- [x] **S2**\n- [x] **S3**\n- [ ] **S4**\n' > "$I/.claude/builds/A/plan.md"
+  printf 'session=%s\n' "${1:-sessX}" > "$I/.claude/builds/.locks/A.owner"; rm -f "$I/.claude/builds/.locks/A.blocked"; }
+ig() { cd "$I" && printf '%s' "$1" | bash "$SH" stop-guard; }
+setA sessX
+O="$(ig '{"session_id":"sessX","stop_hook_active":false}')"
+printf '%s' "$O" | grep -q '"decision":"block"' && printf '%s' "$O" | grep -q '\bA\b'; chk "$?" "0" "S1 owning session sessX + mid-build → block (reason names A)"
+printf '%s' "$(ig '{"session_id":"sessY","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S2 foreign session sessY → quiet {}"
+printf '%s' "$(ig '{"stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S3 no session id (env unset) → quiet {}"
+rm -f "$I/.claude/builds/.locks/A.owner"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S4 orphan (no owner file) → quiet {} for everyone"
+setA sessX
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" >/dev/null   # arm block once
+# S5 paused
+printf '**Status:** PAUSED — parked\n' > "$I/.claude/builds/A/progress.md"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S5 status PAUSED + owner sessX → quiet {}"
+# S6 CLOSED + deploy waived
+printf 'A · goal · status=closed · facets=library\n' > "$I/.claude/builds/INDEX"
+printf '**Status:** CLOSED\n' > "$I/.claude/builds/A/progress.md"; printf 'deploy: out-of-scope — internal\n' > "$I/.claude/builds/A/contract.md"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S6 CLOSED+deploy-waived + owner → quiet {}"
+# S7/S8 two builds, two owners
+mkdir -p "$I/.claude/builds/B"; setA sessX
+printf 'A · goal · status=building · facets=library\nB · goal · status=building · facets=library\n' > "$I/.claude/builds/INDEX"
+printf '## RECEIPT — contract · B · PASS\n- [x] x\n## RECEIPT — build · B · IN-PROGRESS · step 1/4\n- [x] y\n' > "$I/.claude/builds/B/receipts.md"
+printf '**Status:** building\n**Stage:** build step 1/4\n**Next:** step 2\n' > "$I/.claude/builds/B/progress.md"
+printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$I/.claude/builds/B/plan.md"
+printf 'session=sessY\n' > "$I/.claude/builds/.locks/B.owner"
+O="$(ig '{"session_id":"sessX","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '\bA\b' && ! printf '%s' "$O" | grep -q '\bB\b'; chk "$?" "0" "S7 A(sessX)+B(sessY) mid: sessX stops → block names A NOT B"
+O="$(ig '{"session_id":"sessY","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '\bB\b' && ! printf '%s' "$O" | grep -q '\bA\b'; chk "$?" "0" "S8 same: sessY stops → block names B NOT A"
+rm -f "$I/.claude/builds/B.owner" "$I/.claude/builds/.locks/B.owner" "$I/.claude/builds/.locks/B.blocked"; rm -rf "$I/.claude/builds/B"
+# S9 non-git already covered (fail-open). S10 malformed progress + mid-build + owner → still block, exit 0
+setA sessX; printf 'GARBAGE no status line here\x01\n' > "$I/.claude/builds/A/progress.md"
+S10E=0; O="$(ig '{"session_id":"sessX","stop_hook_active":false}')" || S10E=$?   # ONE call (a 2nd would dedupe)
+chk "$S10E" "0" "S10 malformed progress.md + mid-build + owner → exit 0 (no crash)"
+printf '%s' "$O" | grep -q '"decision":"block"'; chk "$?" "0" "S10b malformed progress.md → still valid block JSON (stage/next '?')"
+# S11 substring non-collision
+setA sessX
+printf '%s' "$(ig '{"session_id":"sessXY","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S11 owner sessX vs stop sessXY → quiet (exact compare, no substring match)"
+# S12 fingerprint dedup + re-arm
+setA sessX
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S12a first stop, step 3/9 → block"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S12b identical step (zero mutation) → quiet {} (fingerprint dedup)"
+printf '## RECEIPT — contract · A · PASS\n- [x] x\n## RECEIPT — build · A · IN-PROGRESS · step 4/9\n- [x] y\n' > "$I/.claude/builds/A/receipts.md"   # advance step → re-arm
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S12c step advanced 3→4 → block again (re-armed)"
+# S13 own refuses empty
+( cd "$I" && bash "$SH" own A --session "" >/dev/null 2>&1 ); chk "$?" "1" "S13 own --session '' → non-zero (refuse empty)"
+# S15 transcript_path different uuid + spaced/pretty JSON
+setA sessX
+O="$(ig '{ "transcript_path" : "/x/9999dead-0000-0000-0000-000000000000/t.jsonl" , "session_id" : "sessX" , "stop_hook_active" : false }')"
+printf '%s' "$O" | grep -q '"decision":"block"'; chk "$?" "0" "S15 different uuid in transcript_path + spaced JSON → block (parse keyed to session_id field)"
+# S16 env fallback
+setA sessX
+( cd "$I" && printf '%s' '{"stop_hook_active":false}' | CLAUDE_CODE_SESSION_ID=sessX bash "$SH" stop-guard | grep -q '"decision":"block"' ); chk "$?" "0" "S16 no stdin session_id + env CLAUDE_CODE_SESSION_ID=sessX → block (env fallback)"
+setA sessX
+( cd "$I" && printf '%s' '{"stop_hook_active":false}' | CLAUDE_CODE_SESSION_ID= bash "$SH" stop-guard | grep -q '"decision":"block"' ); chk "$?" "1" "S16b no stdin + empty env → quiet {}"
+# S17 trailing-newline / whitespace owner still matches
+setA sessX; printf 'session=sessX  \n\n' > "$I/.claude/builds/.locks/A.owner"; rm -f "$I/.claude/builds/.locks/A.blocked"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S17 owner with trailing whitespace/newline → still block (strict extract + trim)"
+
+echo "── S14 cross-project isolation (two real repos) ──────────────"
+RA="$SB/repoA"; RB="$SB/repoB"
+for R in "$RA" "$RB"; do mkdir -p "$R/.claude/builds/.locks"; ( cd "$R" && git init -q && git commit -q --allow-empty -m x 2>/dev/null ); done
+mkdir -p "$RA/.claude/builds/X"
+printf 'X · goal · status=building · facets=library\n' > "$RA/.claude/builds/INDEX"
+printf '## RECEIPT — contract · X · PASS\n- [x] x\n## RECEIPT — build · X · IN-PROGRESS · step 2/5\n- [x] y\n' > "$RA/.claude/builds/X/receipts.md"
+printf '**Status:** building\n**Stage:** build step 2/5\n**Next:** step 3\n' > "$RA/.claude/builds/X/progress.md"
+printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$RA/.claude/builds/X/plan.md"
+printf 'session=sessX\n' > "$RA/.claude/builds/.locks/X.owner"
+printf '%s' "$(cd "$RB" && printf '%s' '{"session_id":"sessX","stop_hook_active":false}' | bash "$SH" stop-guard)" | grep -q '"decision":"block"'; chk "$?" "1" "S14 same session sessX stopping in repoB → quiet (cross-project isolation)"
+printf '%s' "$(cd "$RA" && printf '%s' '{"session_id":"sessX","stop_hook_active":false}' | bash "$SH" stop-guard)" | grep -q '"decision":"block"'; chk "$?" "0" "S14b converse: sessX in repoA still blocks (proves quiet is isolation, not global invisibility)"
+
+echo "── ship coordination P1–P7 (v0.9.0) ─────────────────────────"
+SP="$SB/ship"; mkdir -p "$SP/.claude/builds/A" "$SP/.claude/builds/B" "$SP/.claude/builds/C" "$SP/.claude/builds/.locks"; ( cd "$SP" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
+printf 'A · goal · status=building · facets=library\nB · goal · status=plan-LOCKED · facets=library\nC · goal · status=closed · facets=library\n' > "$SP/.claude/builds/INDEX"
+printf '**Status:** CLOSED\n' > "$SP/.claude/builds/A/progress.md"; printf 'schema-touching: no\n' > "$SP/.claude/builds/A/contract.md"
+printf '**Status:** plan-LOCKED\n' > "$SP/.claude/builds/B/progress.md"; printf 'x\n' > "$SP/.claude/builds/B/contract.md"
+printf '**Status:** CLOSED\n' > "$SP/.claude/builds/C/progress.md"; printf 'deploy: out-of-scope — internal\n' > "$SP/.claude/builds/C/contract.md"
+spc() { cd "$SP" && bash "$SH" ship-contenders "$1" 2>/dev/null; }
+[ "$(spc B)" = "A" ]; chk "$?" "0" "P3 ship-contenders B → lists A (progress=CLOSED beats stale INDEX), excludes C(waived)+self"
+[ -z "$(spc A)" ]; chk "$?" "0" "P4 ship-contenders A → empty (no other ship-ready)"
+( cd "$SP" && bash "$SH" ship-claim A >/dev/null 2>&1 && bash "$SH" ship-claim B >/dev/null 2>&1 ); chk "$?" "1" "P1/P7 A holds lock, B claims (A live) → non-zero (single-flight)"
+( cd "$SP" && bash "$SH" ship-claim A >/dev/null 2>&1 ); chk "$?" "0" "P2 A re-claims its own lock → idempotent 0"
+# no-steal-on-CLOSED: A is CLOSED (terminal var) but mid-ship → B must NOT steal
+( cd "$SP" && bash "$SH" ship-claim B >/dev/null 2>&1 ); chk "$?" "1" "P7b holder A status=CLOSED (live mid-ship) → B refused (no steal on CLOSED)"
+# P6 steal when holder SHIPPED
+printf 'A · goal · status=SHIPPED · facets=library\nB · goal · status=plan-LOCKED · facets=library\nC · goal · status=closed · facets=library\n' > "$SP/.claude/builds/INDEX"; printf '**Status:** SHIPPED\n' > "$SP/.claude/builds/A/progress.md"
+( cd "$SP" && bash "$SH" ship-claim B >/dev/null 2>&1 ); chk "$?" "0" "P6 holder A SHIPPED → B steals stale lock (self-healing, no deadlock)"
+( cd "$SP" && bash "$SH" ship-release B >/dev/null 2>&1 ); chk "$?" "0" "ship-release B (holder) → 0"
+# P8 (review-build M1): a corrupt lock (empty holder / garbage ts) is stealable — never an un-healable deadlock
+mkdir -p "$SP/.claude/builds/.locks/.ship.lock"; printf 'holder=\nts=garbage\n' > "$SP/.claude/builds/.locks/.ship.lock/info"
+( cd "$SP" && bash "$SH" ship-claim B >/dev/null 2>&1 ); chk "$?" "0" "P8 corrupt ship lock (empty holder / non-numeric ts) → stealable (no un-healable deadlock)"
+( cd "$SP" && bash "$SH" ship-release B >/dev/null 2>&1 )
+# P5 loser re-check: post-merge-check non-zero when base advanced AND touches claimed files
+RP="$SB/p5"; mkdir -p "$RP"; ( cd "$RP" && git init -q
+  git config user.email t@t; git config user.name t
+  echo base > f.txt; git add -A; git commit -q -m base
+  git clone -q --bare . origin.git
+  git remote add origin "$RP/origin.git"; git push -q origin HEAD:main 2>/dev/null )
+( cd "$RP" && mkdir -p .claude/builds/.locks
+  printf 'L · goal · status=closed · facets=library\n' > .claude/builds/INDEX
+  printf 'f.txt\n' > .claude/builds/.locks/L.files
+  printf 'base_branch=main\nbase_sha=%s\n' "$(cd "$RP" && git rev-parse HEAD)" > .claude/builds/.locks/L.base
+  # advance origin/main touching the claimed file
+  git clone -q "$RP/origin.git" wc 2>/dev/null && cd wc && git config user.email t@t && git config user.name t && echo changed >> f.txt && git add -A && git commit -q -m advance && git push -q origin HEAD:main 2>/dev/null )
+( cd "$RP" && bash "$SH" post-merge-check L >/dev/null 2>&1 ); chk "$?" "1" "P5 base advanced + touches claimed file → post-merge-check NON-ZERO (loser must integrate+re-verify before ship)"
 
 echo "── no-regression + old-misses baseline (INV-7) ───────────────"
 # migration-gate no-op for schema-touching:no
