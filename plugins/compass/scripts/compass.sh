@@ -536,7 +536,6 @@ cmd_migration_gate() { # <build-dir>
   ok "migration-gate: migration present, no stray dir, fresh-DB apply clean, schema==migrations (STRICT)."
 }
 
-# lifecycle-audit: full-chain receipt + terminal-status audit (the always-fire teeth).
 # ── v0.8.0: blast-radius page-load coverage (the §3a gate) ─────────────────
 # route-coverage: every route the plan declares as affected must carry a recorded
 # canonical page-load proof in receipts.md. Honor-level (checks the RECORD); the
@@ -594,6 +593,7 @@ EOF
   ok "route-coverage: $n route(s), all with a canonical page-load proof."
 }
 
+# lifecycle-audit: full-chain receipt + terminal-status audit (the always-fire teeth).
 cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
   local dir="${1:-}" want="${2:-}"; [ -n "$dir" ] || die "usage: compass.sh lifecycle-audit <build-dir> [CLOSED|SHIPPED]"
   [ -f "$dir/receipts.md" ] || die "lifecycle-audit: no receipts.md in $dir"
@@ -676,7 +676,7 @@ cmd_stop_guard() {
     [ -n "$common" ] && sr="$(cd "$(dirname "$common")" 2>/dev/null && pwd || true)/.claude/builds"
   fi
   [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
-  local line slug status waived stage next
+  local line slug status stage next
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
