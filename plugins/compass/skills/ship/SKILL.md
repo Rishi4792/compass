@@ -10,13 +10,21 @@ The lifecycle verifies locally (prod stays read-only during build). This stage t
 ## When NOT to run
 If the contract's Non-goals mark **deploy out of scope**, skip — the build is done at CLOSED and the observability check was scoped to staging. Say so and stop.
 
-## Step 0 — gate
-Run `compass.sh gate .claude/builds/<slug> review-build`. **Non-zero → STOP** (build not CLOSED/signed-off), offer `compass:review-build`. Read `contract.md` (deploy/rollback/observability sections are the invariant here).
+## Step 0 — own, claim the ship lock (single-flight), then gate
+1. **Own this build:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"` (the Stop hook guards this session through ship).
+2. **Claim the ship lock FIRST and unconditionally (v0.9.0 single-flight):** `compass.sh ship-claim <slug>`. **Non-zero → STOP** — another build holds the lock (it names the holder); only one build per project ships at a time. The lock self-heals (steals a SHIPPED/ROLLED-BACK or >2h-stale holder), so a crashed ship never deadlocks future ships. **You MUST `compass.sh ship-release <slug>` on EVERY exit from ship — success (SHIPPED), yield (Step 0.4), or any hard-stop (prod unreachable)** — so the lock is never leaked.
+3. **Gate:** `compass.sh gate .claude/builds/<slug> review-build`. **Non-zero → STOP** (build not CLOSED/signed-off; `ship-release` first), offer `compass:review-build`. Read `contract.md` (deploy/rollback/observability are the invariant here).
+
+## Step 0.4 — ship-contention ordering gate (v0.9.0, before the merge-consequence gate)
+`compass.sh ship-contenders <slug>` lists OTHER ship-ready builds in this project (CLOSED, deploy not waived). If non-empty, **AskUserQuestion: which build ships first?**
+- **This build chosen** → keep the claim, continue to Step 0.5.
+- **The other chosen** → `compass.sh ship-release <slug>` + **yield** (write the resume pointer, STOP). The user ships the other; when this build resumes ship, Step 0.5 re-checks against the now-advanced base and hard-blocks until you integrate + re-verify. (This is exactly "the loser re-checks the implications to its merge.")
 
 ## Step 0.5 — parallel-build merge-consequence gate (HARD BLOCK — v0.6.0)
 If other builds are/were in flight on this repo, a sibling may have merged into the base after this build's branch diverged. **Two independently-green branches do not prove the union is green.** Before shipping this build:
 - **`compass.sh post-merge-check <this-slug>` — MANDATORY, non-zero → STOP.** It fetches, checks this build against `origin/<base>` (never local `main`): is the base **advanced**? did the merged change touch **this build's claimed files** (blast radius)? If so you must **integrate `origin/<base>` (rebase/merge) + re-verify** the touched surface before shipping. (No remote / current → it passes.)
 - Then `compass.sh merged-recon <this-slug> <sibling-slug> <base-branch>` — re-runs **both** builds' recorded `RECON-CMD` on the *merged* tree (resolve `package-lock.json`/migration-order conflicts first — whoever merged first wins, you rebase). **Non-zero → STOP.** Then `compass.sh gc`.
+  - **Non-reconciling (library) builds (v0.9.0):** a build with no `RECON-CMD` (library/tooling, no numeric gold) has no merged-recon teeth — so on the merged tree **re-run its test suite** (`compass.sh`'s own `compass.selftest.sh` + `compass.smoke.sh`, or the repo's equivalent) and require green before shipping. The post-merge-check (base-advanced + blast-radius) above is the primary loser-re-check; the merged test-suite green is its reconciliation analogue.
 
 ## Procedure
 1. **Deploy via the repo's own path** — the deploy/predeploy scripts Phase 0 found; never an ad-hoc deploy. Respect the contract's rollout order + flags.

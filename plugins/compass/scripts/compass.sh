@@ -108,6 +108,106 @@ is_terminal() { # <status>
   case " $TERMINAL_STATUSES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
+# ── v0.9.0: session ownership (window/session-scoped Stop hook) ──────────────
+# owner_of: print the recorded owner session id for a slug, or empty. STRICT extract
+# (session=<value>), trims CR + trailing ws. NEVER errors / never die()s — safe to call
+# from the Stop hook under set -euo pipefail. Optional <locks-dir> lets the hook pass its
+# inline-resolved dir (avoids locks_dir→state_root die() in edge contexts).
+owner_of() { # <slug> [locks-dir]
+  local ld="${2:-}"; [ -n "$ld" ] || ld="$(locks_dir 2>/dev/null || true)"
+  [ -n "$ld" ] || { printf ''; return 0; }
+  local f="$ld/$1.owner"
+  [ -f "$f" ] || { printf ''; return 0; }
+  sed -nE 's/^session=(.+)$/\1/p' "$f" 2>/dev/null | head -n1 | tr -d '\r' | sed 's/[[:space:]]*$//' 2>/dev/null || printf ''
+}
+
+# cmd_own: bind a build's owner = a session id. REFUSES an empty id (so an empty owner can
+# never spuriously match an empty/absent stopping id). Logs when it displaces a DIFFERENT
+# owner (the rare two-live-terminals-one-build case). Session = --session <id> or $CLAUDE_CODE_SESSION_ID.
+cmd_own() { # <slug> [--session <id>]
+  local slug="${1:-}"; shift || true
+  [ -n "$slug" ] || die "usage: compass.sh own <slug> [--session <id>]"
+  local sid=""
+  if [ "${1:-}" = "--session" ]; then sid="${2:-}"; else sid="${CLAUDE_CODE_SESSION_ID:-}"; fi
+  [ -n "$sid" ] || die "own '$slug': empty session id (pass --session <id> or set \$CLAUDE_CODE_SESSION_ID) — refusing to write an empty owner."
+  local ld; ld="$(locks_dir)"; mkdir -p "$ld"
+  local prev; prev="$(owner_of "$slug" "$ld")"
+  if [ -n "$prev" ] && [ "$prev" != "$sid" ]; then
+    echo "compass: own '$slug' — displacing previous owner session ($prev → $sid)." >&2
+  fi
+  printf 'session=%s\n' "$sid" | atomic_write "$ld/$slug.owner"
+  ok "owner of '$slug' = session $sid."
+}
+
+# ── v0.9.0: ship coordination (single-flight + contention ordering) ─────────
+# resolve_status: a build's status resolved the SAME way stop-guard does — progress.md
+# **Status:** primary, INDEX `status=` fallback — lowercased. So a manually-corrected/stale
+# INDEX can neither miss nor invent a ship contender. Empty → "unknown".
+resolve_status() { # <slug>
+  local sr; sr="$(state_root 2>/dev/null || true)"; [ -n "$sr" ] || { printf 'unknown'; return 0; }
+  local s; s="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$1/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+  [ -n "$s" ] || s="$(build_status "$1" 2>/dev/null | tr 'A-Z' 'a-z' || true)"
+  printf '%s' "${s:-unknown}"
+}
+
+# ship-claim: single-flight ship mutex. Atomic mkdir; records holder+epoch ts. Self-healing
+# (R2-06): steals ONLY when the holder is SHIPPED/ROLLED-BACK (truly done) or the lock is
+# older than COMPASS_SHIP_LOCK_TTL (default 2h) — NEVER on CLOSED (that's the live mid-ship
+# state). Otherwise refuses non-zero, naming the live holder. So a failed ship cannot deadlock.
+cmd_ship_claim() { # <slug>
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: compass.sh ship-claim <slug>"
+  local ld; ld="$(locks_dir)"; mkdir -p "$ld"; local lock="$ld/.ship.lock"
+  local ttl="${COMPASS_SHIP_LOCK_TTL:-7200}" now; now="$(date +%s 2>/dev/null || echo 0)"
+  if mkdir "$lock" 2>/dev/null; then
+    { printf 'holder=%s\n' "$slug"; printf 'ts=%s\n' "$now"; } > "$lock/info"
+    ok "ship-claim: '$slug' holds the ship lock."; return 0
+  fi
+  local holder hts st age
+  holder="$(sed -nE 's/^holder=(.*)/\1/p' "$lock/info" 2>/dev/null | head -1 || true)"
+  hts="$(sed -nE 's/^ts=(.*)/\1/p' "$lock/info" 2>/dev/null | head -1 || true)"
+  case "${hts:-}" in ''|*[!0-9]*) hts=0 ;; esac
+  [ "$holder" = "$slug" ] && { ok "ship-claim: '$slug' already holds the lock (idempotent)."; return 0; }
+  st="$(build_status "$holder" 2>/dev/null || echo UNKNOWN)"
+  age=$(( now - hts ))
+  # Steal a corrupt lock too: an empty holder or a missing/garbage ts (hts<=0) means a partial
+  # write / crash in the mkdir→info window — by definition stale, never a live holder (a real
+  # claim always writes holder + a large epoch ts). Else: terminal holder, or age past TTL.
+  if [ -z "$holder" ] || [ "$hts" -le 0 ] || [ "$st" = "SHIPPED" ] || [ "$st" = "ROLLED-BACK" ] || [ "$age" -ge "$ttl" ]; then
+    { printf 'holder=%s\n' "$slug"; printf 'ts=%s\n' "$now"; } > "$lock/info"
+    ok "ship-claim: '$slug' STOLE a stale ship lock (prev '$holder' status=$st age=${age}s)."; return 0
+  fi
+  die "ship-claim: ship lock held by '$holder' (status=$st, age=${age}s) — one build ships at a time. Wait (self-heals after ${ttl}s) or have the holder run 'compass.sh ship-release $holder'."
+}
+
+# ship-release: drop the ship lock ONLY if this slug holds it (guarded; never errors if absent).
+cmd_ship_release() { # <slug>
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: compass.sh ship-release <slug>"
+  local ld; ld="$(locks_dir 2>/dev/null || true)"; [ -n "$ld" ] || return 0
+  local lock="$ld/.ship.lock"; [ -d "$lock" ] || { ok "ship-release: no ship lock held."; return 0; }
+  local holder; holder="$(sed -nE 's/^holder=(.*)/\1/p' "$lock/info" 2>/dev/null | head -1 || true)"
+  if [ "$holder" = "$slug" ]; then rm -rf "$lock" 2>/dev/null || true; ok "ship-release: '$slug' released the ship lock."
+  else ok "ship-release: lock held by '${holder:-?}', not '$slug' — left intact."; fi
+}
+
+# ship-contenders: list OTHER same-project builds that are ship-ready = status CLOSED AND
+# contract lacks `deploy: out-of-scope`. Self excluded. Status via resolve_status (R2-09).
+cmd_ship_contenders() { # <slug>
+  local self="${1:-}"; [ -n "$self" ] || die "usage: compass.sh ship-contenders <slug>"
+  local sr; sr="$(state_root)"; [ -f "$sr/INDEX" ] || return 0
+  local line slug st
+  while IFS= read -r line; do
+    case "$line" in ''|\#*) continue ;; esac
+    slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
+    [ "$slug" = "$self" ] && continue
+    st="$(resolve_status "$slug")"
+    case "$st" in *shipped*|*rolled-back*) continue ;; esac
+    case "$st" in *closed*) ;; *) continue ;; esac
+    grep -qiE '^[[:space:]]*[-*]?[[:space:]]*deploy:[[:space:]]*out-of-scope' "$sr/$slug/contract.md" 2>/dev/null && continue
+    echo "$slug"
+  done < "$sr/INDEX"
+  return 0
+}
+
 cmd_active_builds() {
   local idx; idx="$(state_root)/INDEX"
   [ -f "$idx" ] || { ok "no INDEX — 0 active builds."; return; }
@@ -330,6 +430,11 @@ cmd_gc() {
     if [ "$st" = "UNKNOWN" ] || is_terminal "$st"; then
       if safe_remove_worktree "$wt"; then
         removed=$((removed+1)); git branch -D "compass/$slug" 2>/dev/null || true
+        # v0.9.0: only NOW (worktree actually gone) drop ownership/guard state, so a still-live
+        # build whose worktree survived dirty is never orphaned (R2-09/L1). Guarded — never fails gc.
+        local gld; gld="$(locks_dir 2>/dev/null || true)"
+        [ -n "$gld" ] && rm -f "$gld/$slug.owner" "$gld/$slug.blocked" 2>/dev/null || true
+        cmd_ship_release "$slug" >/dev/null 2>&1 || true
       else
         kept=$((kept+1)); echo "gc: '$slug' has uncommitted work — LEFT in place (resolve, then gc)." >&2
       fi
@@ -464,7 +569,8 @@ cmd_close() { # <build-dir> <slug> [--abandon]
     : > "$sr/CURRENT"
   fi
   # Drop the build's locks.
-  if [ -n "$sr" ]; then rm -f "$sr/.locks/$slug.files" "$sr/.locks/$slug.meta" "$sr/.locks/$slug.base" 2>/dev/null || true; fi
+  if [ -n "$sr" ]; then rm -f "$sr/.locks/$slug.files" "$sr/.locks/$slug.meta" "$sr/.locks/$slug.base" "$sr/.locks/$slug.owner" "$sr/.locks/$slug.blocked" 2>/dev/null || true; fi
+  cmd_ship_release "$slug" >/dev/null 2>&1 || true   # v0.9.0: drop ship lock if this slug held it (guarded; never fails the close)
   # Worktree removal is DIRTY-SAFE (RP-3 / v0.5.0 incident): never --force. Dirty → leave + warn, state still cleared.
   local wt; wt="$(worktree_path "$slug" 2>/dev/null)"
   if git worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
@@ -665,9 +771,34 @@ is_mid_build() { # <build-dir>
 # on true mid-build abandonment (is_mid_build) — quiet at every gate/clean checkpoint, so
 # the harness's red "Stop hook error" no longer fires on normal pauses. Honors
 # stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks signal via JSON); fail-open.
+# _step_counter: a monotonic build-progress signal for the loop backstop (v0.9.0). The `k`
+# from the latest build receipt's `step k/n`, else the count of checked plan.md boxes (the
+# plan.md-half-checked path). Both advance only on real progress → cosmetic churn won't
+# re-arm the guard; a genuine step flip will. Never errors.
+_step_counter() { # <build-dir>
+  local dir="$1" k=""
+  if [ -f "$dir/receipts.md" ]; then
+    k="$(grep -oE 'step[[:space:]]*[0-9]+/[0-9]+' "$dir/receipts.md" 2>/dev/null | tail -1 | sed -nE 's/.*step[[:space:]]*([0-9]+)\/[0-9]+.*/\1/p' || true)"
+  fi
+  if [ -z "$k" ] && [ -f "$dir/plan.md" ]; then
+    k="$(grep -cE '^- \[x\]' "$dir/plan.md" 2>/dev/null || true)"
+  fi
+  printf '%s' "${k:-0}"
+}
+
+# stop-guard (v0.9.0 — window/session-scoped): blocks ONLY the session that OWNS a mid-build
+# in THIS project. A no-build session, a foreign build's session, an orphaned build (owner
+# session gone), another project — all stay quiet. So parallel builds and unrelated sessions
+# never contaminate each other. `stop_hook_active` is the primary anti-deadlock; a
+# session|slug|step-counter fingerprint is the backstop (block at most once per build-step).
+# Honors set -euo pipefail throughout: every read guarded → never crashes a session (fail-open).
 cmd_stop_guard() {
   local input; input="$(cat 2>/dev/null || true)"
   case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
+  # Stopping session id — FIELD-ANCHORED parse (never the uuid embedded in transcript_path),
+  # whitespace-tolerant; env fallback. ${:-} keeps set -u happy; || true keeps set -e happy.
+  local sid; sid="$(printf '%s' "$input" | sed -nE 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1 || true)"
+  [ -n "$sid" ] || sid="${CLAUDE_CODE_SESSION_ID:-}"
   # RB-02: resolve state-root INLINE — never call state_root (it die/exits, which under
   # set -e would crash the session instead of failing open). A Stop hook must never crash.
   local sr="" common
@@ -676,19 +807,34 @@ cmd_stop_guard() {
     [ -n "$common" ] && sr="$(cd "$(dirname "$common")" 2>/dev/null && pwd || true)/.claude/builds"
   fi
   [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
-  local line slug status stage next
+  local ld="$sr/.locks"
+  local line slug status stage next owner fp prev
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
     [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
-    status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z')"
-    [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z')"
+    status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+    [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
     case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
-    # §3d: block ONLY on true mid-build abandonment. Gates / *-LOCKED / CONVERGED /
-    # CLOSED-awaiting-ship / mid-contract|plan|review are clean checkpoints → quiet.
+    # §3d: only TRUE mid-build is a risky stop; gates/*-LOCKED/CONVERGED/CLOSED-awaiting-ship → quiet.
     is_mid_build "$sr/$slug" || continue
-    stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
-    next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1)"
+    # v0.9.0 OWNERSHIP: block ONLY the session that owns this mid-build. Orphan (no owner) or
+    # a foreign session → quiet. Exact POSIX compare (no glob); owner_of never errors.
+    owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+    [ -n "$owner" ] && [ "$owner" = "$sid" ] || continue
+    # Loop backstop: block at most once per build-step. Inline mkdir-mutex, FAILS OPEN.
+    fp="${sid}|${slug}|$(_step_counter "$sr/$slug" 2>/dev/null || true)"
+    mkdir -p "$ld" 2>/dev/null || true
+    mkdir "$ld/.$slug.bl.lock" 2>/dev/null || true                                # best-effort; proceed either way
+    prev="$(cat "$ld/$slug.blocked" 2>/dev/null || true)"
+    if [ "$prev" = "$fp" ]; then
+      rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
+      printf '{}\n'; return 0                                                      # same build-step already blocked once → allow
+    fi
+    printf '%s' "$fp" | atomic_write "$ld/$slug.blocked" 2>/dev/null || printf '%s' "$fp" > "$ld/$slug.blocked" 2>/dev/null || true
+    rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
+    stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
+    next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
     stage="$(printf '%s' "${stage:-?}" | sed 's/"/\\"/g')"; next="$(printf '%s' "${next:-?}" | sed 's/"/\\"/g')"
     printf '{"decision":"block","reason":"Compass: build %s is mid-BUILD with a step in progress (stage: %s). Next: %s. Finish the build step (or write a clean pause to progress.md) before stopping — work can be left half-applied."}\n' "$slug" "$stage" "$next"
     return 0
@@ -890,6 +1036,10 @@ main() {
     route-coverage)    cmd_route_coverage "$@" ;;
     lifecycle-audit)   cmd_lifecycle_audit "$@" ;;
     stop-guard)        cmd_stop_guard "$@" ;;
+    own)               cmd_own "$@" ;;
+    ship-claim)        cmd_ship_claim "$@" ;;
+    ship-release)      cmd_ship_release "$@" ;;
+    ship-contenders)   cmd_ship_contenders "$@" ;;
     close)             cmd_close "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac
