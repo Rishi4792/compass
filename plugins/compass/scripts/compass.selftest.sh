@@ -89,15 +89,84 @@ bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "0" "INV-5 waiver: de
 printf 'This build does NOT record a `deploy: out-of-scope` waiver — it is mentioned only in prose.\n' > "$SS/contract.md"
 bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "1" "INV-5 prose: 'deploy: out-of-scope' only in prose → NOT waived → FAIL (v0.7.1 anchor fix)"
 
-echo "── stop-guard (INV-6) ────────────────────────────────────────"
+echo "── route-coverage (INV-R0..R4, v0.8.0 blast-radius) ─────────"
+RC="$SB/rc"; mkdir -p "$RC"
+# INV-R4 no-op: no routes declared + no changed route files → N/A PASS
+printf '## 7. Steps\n- [ ] **S1**\n' > "$RC/plan.md"
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC" >/dev/null 2>&1; chk "$?" "0" "INV-R4 no routes + no route files → N/A PASS"
+# INV-R0 anti-gaming: a page.tsx changed but empty ## Affected routes → FAIL (declaration mandatory)
+COMPASS_CHANGED_FILES="src/app/accounts/page.tsx" bash "$SH" route-coverage "$RC" >/dev/null 2>&1; chk "$?" "1" "INV-R0 page file changed + no declared routes → FAIL (G-R0, can't game by omission)"
+# Declare routes (pg-method-rates shape): two [param] routes + a prefix pair /accounts & /accounts/new
+cat > "$RC/plan.md" <<'EOF'
+## Affected routes
+- /accounts/[branchId] — prospect page
+- /active/[groupId] — active account
+- /accounts/new — create prospect
+- /accounts — list
+## 7. Steps
+- [ ] **S1**
+EOF
+# INV-R1 RED: routes declared, no canonical proof → FAIL
+: > "$RC/receipts.md"
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC" >/dev/null 2>&1; chk "$?" "1" "INV-R1 declared routes, no canonical proof line → FAIL"
+# INV-R1 RED: R2-01 [param] char-class imposter + R2-02 prefix-steal + scattered tokens → still FAIL
+cat > "$RC/receipts.md" <<'EOF'
+- [x] route /accounts/new: curl -s localhost/accounts/new → 200 form
+- [x] route /accounts/b: curl → 200 imposter-not-the-param-route
+a stray 200 here and a curl over there on unrelated lines
+EOF
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC" >/dev/null 2>&1; chk "$?" "1" "INV-R1 R2-01 [param] imposter + R2-02 prefix-steal + scattered → still FAIL"
+# INV-R1 GREEN: a canonical literal+colon-anchored proof per route → PASS
+cat > "$RC/receipts.md" <<'EOF'
+- [x] route /accounts/[branchId]: curl -s 'localhost/accounts/1' → 200 prospect
+- [x] route /active/[groupId]: curl -s 'localhost/active/1' → 200 active
+- [x] route /accounts/new: curl -s localhost/accounts/new → 200 form
+- [x] route /accounts: curl -s localhost/accounts → 200 list
+EOF
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC" >/dev/null 2>&1; chk "$?" "0" "INV-R1 canonical proof per route (grep -F literal + colon anchor) → PASS"
+# INV-R1 RB3-01: a markdown-wrapped declared route (backtick / bold) must NOT be silently dropped
+RCW="$SB/rcw"; mkdir -p "$RCW"
+printf '## Affected routes\n- `/accounts/secret` — backtick-wrapped\n- **/active/bold** — bold-wrapped\n- /accounts/plain — plain\n## 7. Steps\n- [ ] S1\n' > "$RCW/plan.md"
+printf -- '- [x] route /accounts/plain: curl → 200 ok\n' > "$RCW/receipts.md"   # only the plain route proved
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RCW" >/dev/null 2>&1; chk "$?" "1" "INV-R1 RB3-01: backtick/bold-wrapped declared routes unproved → still FAIL (not silently dropped)"
+# same, all three proved (incl the wrapped ones, parser extracts the bare path) → PASS
+printf -- '- [x] route /accounts/secret: curl → 200 a\n- [x] route /active/bold: curl → 200 b\n- [x] route /accounts/plain: curl → 200 c\n' > "$RCW/receipts.md"
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RCW" >/dev/null 2>&1; chk "$?" "0" "INV-R1 RB3-01: wrapped routes proved by their bare path → PASS (parser robust)"
+# INV-R2 typecheck-only: page step tsc-only + no proof → FAIL (G-R1) AND a G-R2 advisory printed
+RC2="$SB/rc2"; mkdir -p "$RC2"
+cat > "$RC2/plan.md" <<'EOF'
+## Affected routes
+- /accounts/new — create prospect
+## 7. Steps
+- [ ] S7 accounts/new/page.tsx · VERIFY: npx tsc --noEmit
+EOF
+: > "$RC2/receipts.md"
+ADV="$(COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC2" 2>&1 >/dev/null || true)"
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC2" >/dev/null 2>&1; chk "$?" "1" "INV-R2 typecheck-only page step + no proof → FAIL (G-R1 carries the teeth)"
+printf '%s' "$ADV" | grep -q 'G-R2 advisory'; chk "$?" "0" "INV-R2 G-R2 advisory printed (surfaced, not a die)"
+printf -- '- [x] route /accounts/new: curl → 200 form\n' > "$RC2/receipts.md"
+COMPASS_CHANGED_FILES="" bash "$SH" route-coverage "$RC2" >/dev/null 2>&1; chk "$?" "0" "INV-R2 same typecheck-only step WITH a load proof → PASS (no false-positive)"
+
+echo "── ship route-smoke (INV-R3, v0.8.0) ────────────────────────"
+R3="$SB/r3"; full_chain "$R3" ship --signoff
+printf 'schema-touching: no\n' > "$R3/contract.md"
+printf '## Affected routes\n- /accounts/new — create prospect\n## 7. Steps\n- [ ] S1\n' > "$R3/plan.md"
+# ship block carries a CHECKED prod-verify (passes RB-01) but NO prod route-smoke line yet
+printf -- '- [x] prod reconcile: compass.sh reconcile 5 5 0 → PASS\n' >> "$R3/receipts.md"
+bash "$SH" lifecycle-audit "$R3" SHIPPED >/dev/null 2>&1; chk "$?" "1" "INV-R3 SHIPPED + route declared + ship receipt missing prod route-smoke → FAIL"
+printf -- '- [x] route /accounts/new: curl prod → 200 form (prod)\n' >> "$R3/receipts.md"
+bash "$SH" lifecycle-audit "$R3" SHIPPED >/dev/null 2>&1; chk "$?" "0" "INV-R3 with a CHECKED prod route-smoke per declared route → PASS"
+
+echo "── stop-guard (INV-6 retained + INV-R5 §3d gate-quiet) ───────"
 # isolated throwaway git repo so state_root/INDEX are sandboxed
 G="$SB/repo"; mkdir -p "$G"; ( cd "$G" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
 mkdir -p "$G/.claude/builds/midbuild"
 printf 'midbuild · goal · status=plan-LOCKED · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '**Status:** plan-LOCKED\n**Stage:** plan\n**Next:** build\n' > "$G/.claude/builds/midbuild/progress.md"
+printf '## 7. Steps\n- [ ] **S1**\n- [ ] **S2**\n' > "$G/.claude/builds/midbuild/plan.md"
 OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
-printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "0" "INV-6 mid-lifecycle → block"
+printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 gate (plan-LOCKED, 0 boxes) → NO block (v0.8.0 §3d — inverts old INV-6 'mid-lifecycle→block'; quiet at gates)"
 OUT="$(cd "$G" && echo '{"stop_hook_active":true}' | bash "$SH" stop-guard)"
 printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-6 loop-guard: stop_hook_active=true → NO block (anti-deadlock)"
 # terminal status → no block
@@ -107,6 +176,36 @@ OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
 printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-6 terminal (SHIPPED) → NO block"
 # RB-02 fail-open: outside a git repo the hook must not crash (set -e would otherwise propagate state_root's exit)
 NG="$(mktemp -d)"; ( cd "$NG" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard >/dev/null 2>&1 ); chk "$?" "0" "INV-6 fail-open: stop-guard outside a git repo → exit 0 (RB-02, never crash)"
+
+# INV-R5 (§3d): block ONLY on true mid-build; quiet at every clean checkpoint/gate.
+printf 'midbuild · goal · status=building · facets=library\n' > "$G/.claude/builds/INDEX"
+# (block) mid-build: last build receipt is IN-PROGRESS · step k/n
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — build · midbuild · IN-PROGRESS · step 4/11\n- [x] y\n' > "$G/.claude/builds/midbuild/receipts.md"
+printf '**Status:** building\n**Stage:** build · IN-PROGRESS · step 4/11\n**Next:** step 5\n' > "$G/.claude/builds/midbuild/progress.md"
+printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$G/.claude/builds/midbuild/plan.md"
+OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
+printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "0" "INV-R5 mid-build (build receipt IN-PROGRESS · step 4/11) → block"
+# (block) plan.md half-checked, NO IN-PROGRESS build receipt → still mid-build via (b)
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
+OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
+printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "0" "INV-R5 plan.md half-checked (≥1 [x] AND ≥1 [ ]) → block"
+# (quiet) ambiguity guard: a review-plan IN PROGRESS receipt (spaced prose, no k/n) is NOT a build mid-step
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — review-plan · midbuild · IN PROGRESS\n- [ ] round 1 paused\n' > "$G/.claude/builds/midbuild/receipts.md"
+printf '## 7. Steps\n- [ ] **S1**\n' > "$G/.claude/builds/midbuild/plan.md"
+OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
+printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 ambiguity guard: 'review-plan IN PROGRESS' (no build k/n) → NO block (quiet)"
+# (quiet) CLOSED-awaiting-ship is a user gate (relaxes old closed-not-waived block)
+printf 'midbuild · goal · status=closed · facets=library\n' > "$G/.claude/builds/INDEX"
+printf '**Status:** CLOSED\n**Stage:** review-build\n**Next:** ship\n' > "$G/.claude/builds/midbuild/progress.md"
+printf 'schema-touching: no\n' > "$G/.claude/builds/midbuild/contract.md"
+OUT="$(cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard)"
+printf '%s' "$OUT" | grep -q '"decision":"block"'; chk "$?" "1" "INV-R5 CLOSED-awaiting-ship (all boxes done) → NO block (§3d relaxes the old ship-nudge)"
+# (quiet, RP2-02) a build with NO plan.md must not crash the hook under set -euo pipefail
+rm -f "$G/.claude/builds/midbuild/plan.md"
+printf 'midbuild · goal · status=building · facets=library\n' > "$G/.claude/builds/INDEX"
+printf '**Status:** building\n**Stage:** build\n**Next:** step 1\n' > "$G/.claude/builds/midbuild/progress.md"
+printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
+( cd "$G" && echo '{"stop_hook_active":false}' | bash "$SH" stop-guard >/dev/null 2>&1 ); chk "$?" "0" "INV-R5 RP2-02: build with NO plan.md → is_mid_build quiet, exit 0 (no crash under set -euo pipefail)"
 
 echo "── no-regression + old-misses baseline (INV-7) ───────────────"
 # migration-gate no-op for schema-touching:no
