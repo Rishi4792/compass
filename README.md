@@ -83,6 +83,8 @@ Or, once it's listed in the Anthropic community marketplace:
 Then `/compass:start` to run the full lifecycle, or invoke any stage by name (`/compass:contract`, `/compass:plan`, …). Resume anytime with `/compass:resume`.
 
 > Plugin commands are namespaced, so it's `/compass:start`, not `/compass`.
+>
+> Every stage is reachable two ways: the namespaced `/compass:build` and the bare skill `/build` (the skill name also auto-triggers on natural language like "build it"). Both run the same stage, and **every stage presents the 4-button next-step gate** (Approve / Revise / Amend / Pause) at its transition — whichever way you entered.
 
 ## Use it three ways
 - **Full pipeline:** `/compass:start` — the whole lifecycle with gates.

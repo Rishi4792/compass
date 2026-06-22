@@ -44,15 +44,35 @@ On `start` in parallel mode:
 - **review-build requires a human sign-off** on the receipt's command+output evidence before CLOSED.
 - **Ship is mandatory (v0.7.0).** CLOSED is NOT a final resting state unless the contract waives deploy. The terminal-status guard (`compass.sh close` runs `lifecycle-audit CLOSED`; ship runs `lifecycle-audit SHIPPED`) and the **Stop hook** (`compass.sh stop-guard`, fires every time the agent tries to stop) block going quiet, skipping a gate, or forgetting ship while a build is mid-lifecycle. Enforcement is script + hook, not discretion.
 
-## The gate (between every stage — never auto-advance)
-Present a short summary, then **AskUserQuestion** with five options:
-1. **Approve & continue** — advance to the next stage.
-2. **Revise** — re-run this stage with the user's change.
-3. **Amend contract** — a *legitimate scope change* (not drift): bump the contract version + changelog, run a mini review-contract on the delta, `supersede` downstream, re-baseline. This is how Compass distinguishes scope-change (goes through amendment) from drift (blocked).
-4. **Pause here** — stop cleanly; write the resume pointer.
-5. **Show full artifact** — print the complete file, then ask again.
+## The gate (between every stage — owned by the stage, never auto-advance)
+**The gate is owned by each stage's skill.** Every stage skill ends by presenting the canonical 4-button gate (the verbatim block below; single source: `shared/gate.md`, smoke-enforced). As the orchestrator you **sequence** the stages and advance only when the user picks **Approve** or **Amend** — you do **not** present a second gate of your own. "Show full artifact" is offered via the gate's **Other** option. On detected drift from `contract.md`, STOP and surface.
 
-Only **Approve**/**Amend** advance. Every later stage reads `contract.md` as the invariant; on detected drift, STOP and surface.
+<!-- GATE:START -->
+## Stage transition — the gate (fires on EVERY entry path)
+
+This stage owns its own transition gate. Present it whether the stage was run standalone
+(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
+`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+
+1. First print the one-line **transition footer**, in exactly this shape:
+
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+
+   (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
+   (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,
+   or just print the artifact if the user asks):
+   - **Approve & continue** — advance to the next stage.
+   - **Revise** — re-run this stage with the user's change.
+   - **Amend** — a legitimate scope change (not drift): bump the contract version + changelog,
+     run a mini review-contract on the delta, `supersede` downstream, re-baseline.
+   - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
+
+Only **Approve** or **Amend** advances. **Never auto-invoke the next skill** — the gate ASKS;
+it does not advance by itself. On any detected drift from `contract.md`, STOP and surface
+instead of advancing.
+<!-- GATE:END -->
 
 ## Standalone / budget
 Each skill works alone and self-gates via `compass.sh gate` (missing proof = hard stop, never fabricated). If the contract set a **budget**, surface "approaching budget" and stop-with-summary rather than grinding to a cap.
@@ -62,7 +82,7 @@ Each skill works alone and self-gates via `compass.sh gate` (missing proof = har
 ```
 ✓ <stage> PASSED — <one-line proof>.  Next: <stage> · run `<exact command>`.
 ```
-Then present the 5-option gate. After any pause/interrupt, `/compass:status` reprints this. Mid-build, surface step `k/n` after each step. Silence is a defect.
+The stage's own skill then presents the gate after this footer (the footer is the first line of the gate block). After any pause/interrupt, `/compass:status` reprints this. Mid-build, surface step `k/n` after each step. Silence is a defect.
 
 ## Auto-pause
 The pre-compact hook fires an *advisory* reminder only — it can't write for you and compaction can't be deferred. The real safety net is per-step discipline (progress.md fresh after each step; a box never checked before its verify passes; a build IN-PROGRESS receipt per step), so a lost compaction costs at most one step. On the hook OR **Pause**: write `progress.md` first, then print the **elegant hand-off — exactly one clean, copy-paste-ready fenced block and nothing interleaved** (the shell command to open the build, then the resume command):
@@ -72,4 +92,4 @@ cd "<abs PROJECT root, where .claude/ lives>" && claude
 Then, on its own line, the command to run once Claude starts: `/compass:resume <slug>` — Stage `<stage>`, Next `<the single next action>`. Nothing else on those lines: the user copies the block clean into a new terminal.
 
 ## Bottom line
-Read `CURRENT`, sequence the stages, gate every hop (script gate + the 5-option user gate), keep the contract as the invariant, prove every "done" with a recorded command, require the human sign-off before CLOSED, and hand off cleanly when context ends.
+Read `CURRENT`, sequence the stages, gate every hop (script gate + the stage-owned 4-button user gate), keep the contract as the invariant, prove every "done" with a recorded command, require the human sign-off before CLOSED, and hand off cleanly when context ends.

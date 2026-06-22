@@ -3,7 +3,7 @@
   "owner": { "name": "Rishi Kapoor" },
   "metadata": {
     "description": "Compass — build true to spec, with zero drift. A contract-first build lifecycle where a locked contract is the invariant every step is checked against, enforced by a real gate script (not prose).",
-    "version": "0.9.0"
+    "version": "0.9.1"
   },
   "plugins": [
     {
