@@ -33,6 +33,19 @@ On `start` in parallel mode:
 
 **Unattended runs** (`--unattended`): gates write the resume banner and `exit 0` instead of asking; a guard rejection writes a receipt **FAIL** and stops (never retries → no livelock). Only proceed when the prior stage receipt is PASS.
 
+## Autonomous mode (`--auto`, v0.10.0) — opt-in, two human gates only
+`/compass:start --auto` runs the lifecycle WITHOUT the per-hop 4-button gate, stopping for a human at only **two** points (the rest auto-advance). It is mutually exclusive with `--unattended` (`compass.sh auto-precheck` refuses both; default = fully gated). Setup once at the start: `compass.sh budget-init <dir> [--wall S --sessions N --stages N]` (defaults 3600s / 6 / 40) then `compass.sh auto-init <dir>` (refuses without a budget — **a budget is mandatory**, INV-3).
+
+The orchestrator loop in `--auto`:
+1. **Per stage, Step-0:** `compass.sh budget-check <dir> --bump-stage`. Non-zero → `compass.sh fire-g2 <dir> budget-stop` and STOP (the measurable ceiling is the runaway guard — INV-4).
+2. Run the stage. If a stage's verify/INVARIANT FAILS, or a review caps un-converged → `compass.sh fire-g2 <dir> <reason>` and STOP.
+3. After the stage gate PASSES: `compass.sh can-advance <dir>`. If it passes, **auto-advance (treat as Approve) — do NOT present the 4-button gate.** If it reports a gate, STOP.
+4. **G1 (the only upfront human stop):** right after the contract receipt is PASS, present ONE approval of the contract + design/product intent (Approve/Amend). On approval, append a `gate-cleared` event and continue the loop.
+5. **G2 (event-triggered):** any `fire-g2` writes a `gate-wait-G2` banner to `progress.md` and STOPs (exit non-zero) — it NEVER auto-resolves, spawns, or hangs. A human resumes with `/compass:resume <slug>` choosing ship-despite-miss / relax / keep-trying / abort (after `g2_fires` ≥ 3, keep-trying is withdrawn).
+6. **End of lifecycle:** review-build records `auto-closed: two clean adversarial rounds + all INVARIANTs green` (NOT a faked human signature — `lifecycle-audit` G-L2 accepts this marker); ship then runs its FULL real verification (prod recon + route smoke). Any ship/prod-verify FAIL → `fire-g2`.
+
+**Cross-session continuation (F6):** when context runs low and the owning session stops mid-`--auto`-build, the Stop hook (`compass.sh stop-guard`) auto-spawns a fresh `claude` running `/compass:resume <slug> --auto` (from `budget.env`/`session-chain.log` state) and lets this session exit — **only** if not at a gate (gate-lock absent — INV-6), single-flight holds (INV-5), and the session cap isn't reached (INV-7). Spend is bounded by the measurable budget across all spawned sessions. No human is needed for continuation; humans are needed only at G1/G2.
+
 ## The pipeline
 ```
 ① contract ─gate→ ② review-contract ─gate→ [contract-LOCKED]

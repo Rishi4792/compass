@@ -145,6 +145,15 @@ rw=0; for s in $STAGES; do [ -f "$PLUGIN_ROOT/commands/$s.md" ] && rw=$((rw+1));
 chk "$rw" "7" "RECONCILE stage-wrapper count == 7 (gold)"
 chk "$g2" "7" "RECONCILE gated stage-skill count == 7 (gold)"
 
+# ── v0.10.0 --auto autonomous loop wiring ──
+disp=0; for c in auto-precheck auto-init budget-init budget-check check-session-chain fire-g2 auto-spawn can-advance; do
+  grep -qE "^[[:space:]]+$c\)" "$SH" && disp=$((disp+1)); done
+chk "$disp" "8" "v0.10 all 8 --auto subcommands wired in dispatch"
+chk "$([ -f "$PLUGIN_ROOT/scripts/spawn-smoke.sh" ] && echo 1 || echo 0)" "1" "v0.10 spawn-smoke.sh present (S0 feasibility gate)"
+chk "$(grep -q 'auto-closed:' "$SH" && echo 1 || echo 0)" "1" "v0.10 lifecycle-audit G-L2 accepts the auto-closed marker"
+chk "$(grep -lq 'Autonomous mode' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.10 start.md documents --auto autonomous mode"
+chk "$(grep -lq 'budget.env\|NO JSON\|line-oriented' "$PLUGIN_ROOT/scripts/compass.sh" && echo 1 || echo 0)" "1" "v0.10 state is line-oriented (budget.env, no JSON)"
+
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null
 [ "$fail" = 0 ]
