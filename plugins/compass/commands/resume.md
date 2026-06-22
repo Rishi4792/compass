@@ -19,6 +19,9 @@ Continue a Compass build that was paused or interrupted. State is on disk, so cl
 4. **Re-bind ownership to THIS session before handing off:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"`. The build's Stop-hook guard now follows the live (resuming) session — an orphaned build (its old terminal closed) is silent until this re-bind restores the guard (v0.9.0).
 5. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
 
+## Autonomous resume (`/compass:resume <slug> --auto`, v0.10.0)
+A build with a `.auto-mode` marker resumes in autonomous mode (this is how the Stop hook's cross-session spawn re-enters — `/compass:resume <slug> --auto`). After the ownership re-bind (step 4), re-enter the `--auto` orchestrator loop (see start.md "Autonomous mode"): per-stage `budget-check --bump-stage` (→ `fire-g2 budget-stop` on non-zero), auto-advance while `can-advance` passes, stop at G1/G2. **If the build is at `gate-wait-G2`** (a human-resumed G2): present the human's choices — ship-despite-miss / relax-the-bound (Amend) / keep-trying / abort — and on a continue choice, remove the gate-lock (`.locks/<slug>.gate-lock`) before proceeding. Budget is cumulative across resumes (read from `budget.env`).
+
 ## Clean hand-off (when telling the user to open a new terminal)
 Print **exactly one clean, copy-paste-ready fenced block and nothing interleaved**:
 ```

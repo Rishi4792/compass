@@ -331,6 +331,108 @@ bash "$SH" lifecycle-audit "$SS" >/dev/null 2>&1; chk "$?" "0" "INV-7 no-op: com
 bash "$SH" scan-receipt "$SPok" ship >/dev/null 2>&1
 echo "  note  OLD MISSES — existing 'scan-receipt ship' on a clean-looking ship receipt exits $? (passes); only lifecycle-audit ties SHIPPED status to a CHECKED prod-verify."
 
+echo "── v0.10.0 --auto autonomous loop (INV-2..INV-8) ─────────────"
+LOCKS="$(bash "$SH" state-root 2>/dev/null)/.locks"
+# Idempotency: clear any stale v10* lock artifacts (incl. with_lock mutex dirs) from a prior
+# interrupted run, so a leftover mutex can't make fire-g2 time out without creating the gate-lock.
+rm -rf "$LOCKS"/v10* "$LOCKS"/.gate-v10*.lock "$LOCKS"/.budget-v10*.lock 2>/dev/null || true
+mk_auto() { local d="$1"; shift; mkdir -p "$d"; printf '**Status:** Plan LOCKED\n' > "$d/progress.md"; bash "$SH" budget-init "$d" "$@" >/dev/null 2>&1; }
+
+# INV-8 flag exclusivity
+bash "$SH" auto-precheck --auto --unattended >/dev/null 2>&1; chk "$?" "1" "INV-8: --auto + --unattended → exit 1 (mutually exclusive)"
+bash "$SH" auto-precheck --auto >/dev/null 2>&1;             chk "$?" "0" "INV-8: --auto alone → exit 0 (mode=auto)"
+bash "$SH" auto-precheck >/dev/null 2>&1;                    chk "$?" "0" "INV-8: neither flag → exit 0 (gated default)"
+
+# INV-3 budget required
+I3="$SB/v10i3"; mkdir -p "$I3"; printf '**Status:** Plan LOCKED\n' > "$I3/progress.md"
+bash "$SH" auto-init "$I3" >/dev/null 2>&1;    chk "$?" "1" "INV-3: auto-init with no budget → exit 1 (budget required)"
+bash "$SH" budget-check "$I3" >/dev/null 2>&1; chk "$?" "1" "INV-3: budget-check with no budget → exit 1"
+
+# INV-4 ceiling binds (sessions), wall accumulation, lock-safe concurrent bump
+I4s="$SB/v10i4s"; mk_auto "$I4s" --sessions 1
+bash "$SH" budget-check "$I4s" >/dev/null 2>&1; chk "$?" "1" "INV-4: spent_sessions==ceiling → budget-check exit 1 (ceiling binds)"
+I4w="$SB/v10i4w"; mk_auto "$I4w" --wall 5 --sessions 99 --stages 99
+NOWP=$(( $(date +%s) - 30 )); sed -i.bak "s/^session_start_ts=.*/session_start_ts=$NOWP/" "$I4w/budget.env"; rm -f "$I4w/budget.env.bak"
+bash "$SH" budget-check "$I4w" >/dev/null 2>&1; chk "$?" "1" "INV-4: elapsed 30s > wall ceiling 5s → exit 1 (wall cumulative, not reset — RP-07)"
+I4c="$SB/v10i4c"; mk_auto "$I4c" --stages 999
+for _ in 1 2 3 4 5; do ( bash "$SH" budget-check "$I4c" --bump-stage >/dev/null 2>&1 ) & done; wait
+gotstg="$(sed -nE 's/^spent_stages=//p' "$I4c/budget.env" | tail -1)"
+chk "$gotstg" "5" "INV-4: 5 concurrent --bump-stage under with_lock → spent_stages=5 (no lost update — RP-08)"
+
+# INV-2 / INV-2b gate preservation + auto-closed marker
+I2="$SB/v10i2"; mk_auto "$I2"; bash "$SH" auto-init "$I2" >/dev/null 2>&1
+bash "$SH" can-advance "$I2" >/dev/null 2>&1; chk "$?" "0" "INV-2: clean build → can-advance exit 0"
+bash "$SH" fire-g2 "$I2" "invariant failed" >/dev/null 2>&1; chk "$?" "1" "INV-2: fire-g2 → exit 1 (G2 stop)"
+bash "$SH" can-advance "$I2" >/dev/null 2>&1; chk "$?" "1" "INV-2: after G2 (gate-lock) → can-advance exit 1 (no advance past gate)"
+A1="$SB/v10ac"; full_chain "$A1" review-build; printf -- '- [x] auto-closed: two clean adversarial rounds + all INVARIANTs green\n' >> "$A1/receipts.md"; printf 'deploy: out-of-scope — test\n' > "$A1/contract.md"
+bash "$SH" lifecycle-audit "$A1" CLOSED >/dev/null 2>&1; chk "$?" "0" "INV-2b: 'auto-closed:' marker → lifecycle-audit CLOSED exit 0"
+A2="$SB/v10so"; full_chain "$A2" review-build --signoff; printf 'deploy: out-of-scope — test\n' > "$A2/contract.md"
+bash "$SH" lifecycle-audit "$A2" CLOSED >/dev/null 2>&1; chk "$?" "0" "INV-1: human 'sign-off' marker → lifecycle-audit CLOSED exit 0 (gated path intact)"
+A3="$SB/v10no"; full_chain "$A3" review-build; printf 'deploy: out-of-scope — test\n' > "$A3/contract.md"
+bash "$SH" lifecycle-audit "$A3" CLOSED >/dev/null 2>&1; chk "$?" "1" "INV-1: review-build with NEITHER marker → lifecycle-audit exit 1 (inverse — RP-06)"
+
+# INV-5/6/7 spawn guards (COMPASS_SPAWN_CMD stub writes a sentinel; never launches claude)
+I6="$SB/v10i6"; mk_auto "$I6"; bash "$SH" auto-init "$I6" >/dev/null 2>&1; SENT6="$I6/sentinel"
+mkdir -p "$LOCKS/$(basename "$I6").gate-lock"
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$SENT6\"'" bash "$SH" auto-spawn "$I6" >/dev/null 2>&1; chk "$?" "1" "INV-6: spawn with gate-lock held → refused (exit 1)"
+sleep 0.3; { [ -f "$SENT6" ] && r=present || r=absent; }; chk "$r" "absent" "INV-6: gate held → stub NOT invoked (no spawn past a gate)"
+rmdir "$LOCKS/$(basename "$I6").gate-lock" 2>/dev/null || true
+I5="$SB/v10i5"; mk_auto "$I5"; bash "$SH" auto-init "$I5" >/dev/null 2>&1; SENT5="$I5/sentinel"
+bash "$SH" own "$(basename "$I5")" --session "other-session" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$SENT5\"'" CLAUDE_CODE_SESSION_ID="me" bash "$SH" auto-spawn "$I5" >/dev/null 2>&1; chk "$?" "1" "INV-5: live FOREIGN owner → spawn refused (single-flight)"
+rm -f "$LOCKS/$(basename "$I5").owner" 2>/dev/null || true
+I7="$SB/v10i7"; mk_auto "$I7" --sessions 1; bash "$SH" auto-init "$I7" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'exit 0'" bash "$SH" auto-spawn "$I7" >/dev/null 2>&1; chk "$?" "1" "INV-7: session cap reached (1/1) → spawn refused"
+I7b="$SB/v10i7b"; mk_auto "$I7b" --sessions 6; bash "$SH" auto-init "$I7b" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'exit 1'" bash "$SH" auto-spawn "$I7b" >/dev/null 2>&1
+gotss="$(sed -nE 's/^spent_sessions=//p' "$I7b/budget.env" | tail -1)"
+chk "$gotss" "2" "INV-7: spent_sessions incremented (1→2) BEFORE spawn → crash can't hide a session (RP-02)"
+
+# spawn fires when clear + idempotency (RP-12)
+I8="$SB/v10i8"; mk_auto "$I8" --sessions 6; bash "$SH" auto-init "$I8" >/dev/null 2>&1; SENT8="$I8/sentinel"
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$SENT8\"'" bash "$SH" auto-spawn "$I8" >/dev/null 2>&1; chk "$?" "0" "F6: clear build → spawn fires (exit 0)"
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$I8/sentinel2\"'" bash "$SH" auto-spawn "$I8" >/dev/null 2>&1; chk "$?" "1" "RP-12: recent spawn already recorded → second spawn skipped (idempotent)"
+
+# S3 session-chain validator
+I9="$SB/v10i9"; mkdir -p "$I9"; printf '%s|s|build|spawn|0|1|0\n' "$(date +%s)" > "$I9/session-chain.log"
+bash "$SH" check-session-chain "$I9" >/dev/null 2>&1; chk "$?" "0" "S3: well-formed chain → valid (exit 0)"
+printf 'bad|line|only-3\n' >> "$I9/session-chain.log"
+bash "$SH" check-session-chain "$I9" >/dev/null 2>&1; chk "$?" "1" "S3: malformed line (wrong field count) → exit 1"
+
+# ── review-build hardening (RB-01..RB-06) ──
+# RB-01: spawn path enforces the WALL ceiling itself (not only the session cap)
+RBw="$SB/v10rbw"; mk_auto "$RBw" --wall 5 --sessions 99 --stages 99; bash "$SH" auto-init "$RBw" >/dev/null 2>&1
+sed -i.bak "s/^session_start_ts=.*/session_start_ts=$(( $(date +%s) - 30 ))/" "$RBw/budget.env"; rm -f "$RBw/budget.env.bak"
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$RBw/sentinel\"'" bash "$SH" auto-spawn "$RBw" >/dev/null 2>&1; chk "$?" "1" "RB-01: spawn refused on WALL ceiling (under session cap) — defense-in-depth runaway guard"
+sleep 0.2; { [ -f "$RBw/sentinel" ] && r=present || r=absent; }; chk "$r" "absent" "RB-01: wall-exceeded → stub NOT invoked"
+# RB-02: corrupt (non-numeric) spent → fail CLOSED, not open
+RBc="$SB/v10rbc"; mk_auto "$RBc" --sessions 6; bash "$SH" auto-init "$RBc" >/dev/null 2>&1
+sed -i.bak 's/^spent_sessions=.*/spent_sessions=garbage/' "$RBc/budget.env"; rm -f "$RBc/budget.env.bak"
+bash "$SH" budget-check "$RBc" >/dev/null 2>&1; chk "$?" "1" "RB-02: corrupt spent_sessions → budget-check fails CLOSED (exit 1)"
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$RBc/sentinel\"'" bash "$SH" auto-spawn "$RBc" >/dev/null 2>&1; chk "$?" "1" "RB-02: corrupt budget → spawn refused (no fail-open runaway)"
+# RB-03: fire-g2 appends a Status banner when progress.md has none
+RBg="$SB/v10rbg"; mkdir -p "$RBg"; printf '# progress\n' > "$RBg/progress.md"   # NO **Status:** line
+bash "$SH" fire-g2 "$RBg" "test" >/dev/null 2>&1
+grep -q '^\*\*Status:\*\* gate-wait-G2' "$RBg/progress.md" && r=1 || r=0; chk "$r" "1" "RB-03: fire-g2 APPENDS the gate-wait-G2 banner when no Status line exists (never silently dropped)"
+# RB-04: budget-init twice preserves cumulative spend
+RBi="$SB/v10rbi"; mk_auto "$RBi" --sessions 6; bash "$SH" budget-check "$RBi" --bump-stage >/dev/null 2>&1; bash "$SH" budget-check "$RBi" --bump-stage >/dev/null 2>&1
+bash "$SH" budget-init "$RBi" --sessions 6 >/dev/null 2>&1
+got="$(sed -nE 's/^spent_stages=//p' "$RBi/budget.env" | tail -1)"; chk "$got" "2" "RB-04: budget-init re-call PRESERVES spent_stages (no ceiling-bypass reset)"
+# RB-05: can-advance fails closed with no progress.md
+RBa="$SB/v10rba"; mkdir -p "$RBa"; bash "$SH" can-advance "$RBa" >/dev/null 2>&1; chk "$?" "1" "RB-05: can-advance with absent progress.md → exit 1 (fail closed)"
+# RB-06: INV-6 via the REAL gate path — fire-g2 creates the gate-lock, then spawn is refused
+RB6="$SB/v10rb6"; mk_auto "$RB6" --sessions 6; bash "$SH" auto-init "$RB6" >/dev/null 2>&1
+bash "$SH" fire-g2 "$RB6" "real-gate" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'echo ok > \"$RB6/sentinel\"'" bash "$SH" auto-spawn "$RB6" >/dev/null 2>&1; chk "$?" "1" "RB-06: fire-g2 (real gate path) → subsequent auto-spawn refused (INV-6, integration)"
+sleep 0.2; { [ -f "$RB6/sentinel" ] && r=present || r=absent; }; chk "$r" "absent" "RB-06: real gate held → stub NOT invoked"
+
+# RB-07: clock-skew — a FUTURE session_start_ts must NOT under-count wall and bypass the ceiling
+RB7="$SB/v10rb7"; mk_auto "$RB7" --wall 8 --sessions 99 --stages 99
+sed -i.bak "s/^spent_wall=.*/spent_wall=10/; s/^session_start_ts=.*/session_start_ts=$(( $(date +%s) + 100 ))/" "$RB7/budget.env"; rm -f "$RB7/budget.env.bak"
+bash "$SH" budget-check "$RB7" >/dev/null 2>&1; chk "$?" "1" "RB-07: future session_start_ts (clock skew) → elapsed clamped ≥0 → prior 10s>8s ceiling still detected (exit 1)"
+
+rm -rf "$LOCKS"/v10*.gate-lock "$LOCKS"/v10*.owner "$LOCKS"/v10*.blocked 2>/dev/null || true
+
 echo
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

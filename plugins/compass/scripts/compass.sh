@@ -713,8 +713,8 @@ cmd_lifecycle_audit() { # <build-dir> [CLOSED|SHIPPED]
   # G-L2 review-build human sign-off (for CLOSED/SHIPPED/completeness)
   case "$want" in
     CLOSED|SHIPPED|"")
-      last_block "$dir/receipts.md" review-build | grep -qiE 'sign-?off|signed off' \
-        || die "lifecycle-audit: review-build receipt has no human sign-off line (G-L2)." ;;
+      last_block "$dir/receipts.md" review-build | grep -qiE 'sign-?off|signed off|^- \[x\] auto-closed:' \
+        || die "lifecycle-audit: review-build receipt has no human sign-off line, nor an --auto 'auto-closed:' marker (G-L2)." ;;
   esac
   # ship requirements
   local need_ship=0
@@ -816,12 +816,22 @@ cmd_stop_guard() {
     status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
     case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
+    # NOTE (v0.10.0): gate-wait-* are resumable human-gate checkpoints, NOT terminal/mid-build —
+    # do NOT add them to the skip-case above. In --auto they are handled by _auto_spawn_maybe (which
+    # refuses to spawn while a gate-lock is held), and can-advance blocks advancing past them.
     # §3d: only TRUE mid-build is a risky stop; gates/*-LOCKED/CONVERGED/CLOSED-awaiting-ship → quiet.
     is_mid_build "$sr/$slug" || continue
     # v0.9.0 OWNERSHIP: block ONLY the session that owns this mid-build. Orphan (no owner) or
     # a foreign session → quiet. Exact POSIX compare (no glob); owner_of never errors.
     owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
     [ -n "$owner" ] && [ "$owner" = "$sid" ] || continue
+    # v0.10.0 --auto: in autonomous mode the Stop hook does NOT block to force the agent onward
+    # (that's gated behavior). Instead it attempts a cross-session spawn (or lets the build pause
+    # for G2/budget/human) and ALWAYS allows this session to stop. Emits no stray stdout.
+    if [ -f "$sr/$slug/.auto-mode" ]; then
+      _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
+      printf '{}\n'; return 0
+    fi
     # Loop backstop: block at most once per build-step. Inline mkdir-mutex, FAILS OPEN.
     fp="${sid}|${slug}|$(_step_counter "$sr/$slug" 2>/dev/null || true)"
     mkdir -p "$ld" 2>/dev/null || true
@@ -1003,6 +1013,232 @@ cmd_doctor() { # [--migrate]
   ok "doctor done."
 }
 
+# ── v0.10.0: opt-in --auto autonomous loop ──────────────────────────────────
+# State files are LINE-ORIENTED (no JSON — POSIX shell, macOS bash 3.2, no jq).
+# budget.env: key=value. session-chain.log: pipe-delimited 7 fields.
+# Locks always taken gate-$slug THEN budget-$slug, never the reverse (no deadlock).
+AUTO_EVENTS="start gate-wait-G1 gate-wait-G2 gate-cleared spawn spawn-failed budget-stop"
+BUDGET_DEFAULT_WALL=3600; BUDGET_DEFAULT_SESSIONS=6; BUDGET_DEFAULT_STAGES=40
+
+_now_epoch() { date +%s 2>/dev/null || echo 0; }
+_be_file() { printf '%s/budget.env' "$1"; }
+_be_get() { # <file> <key>  → value or empty
+  [ -f "$1" ] || { printf ''; return 0; }
+  sed -nE "s/^$2=(.*)$/\1/p" "$1" 2>/dev/null | tail -1 | tr -d '\r' || printf ''
+}
+_be_set() { # <file> <key> <val>  (caller holds the lock)
+  local f="$1" k="$2" v="$3" tmp
+  tmp="$(mktemp "${f}.XXXXXX")"
+  { [ -f "$f" ] && grep -vE "^$k=" "$f" 2>/dev/null || true; printf '%s=%s\n' "$k" "$v"; } > "$tmp"
+  mv -f "$tmp" "$f"
+}
+_chain_file() { printf '%s/session-chain.log' "$1"; }
+_chain_append() { # <dir> <stage> <event>  (best-effort, never fails the caller)
+  local dir="$1" stage="${2:--}" event="$3" be sid
+  be="$(_be_file "$dir")"; sid="${CLAUDE_CODE_SESSION_ID:-local}"
+  printf '%s|%s|%s|%s|%s|%s|%s\n' "$(_now_epoch)" "$sid" "$stage" "$event" \
+    "$(_be_get "$be" spent_wall)" "$(_be_get "$be" spent_sessions)" "$(_be_get "$be" spent_stages)" \
+    >> "$(_chain_file "$dir")" 2>/dev/null || true
+}
+
+# S1: reject --auto + --unattended together; echo the resolved mode. Default (neither)=gated.
+cmd_auto_precheck() { # <flags...>
+  local has_auto=0 has_un=0 a
+  for a in "$@"; do case "$a" in --auto) has_auto=1 ;; --unattended) has_un=1 ;; esac; done
+  [ "$has_auto" = 1 ] && [ "$has_un" = 1 ] && die "auto-precheck: --auto and --unattended are mutually exclusive — choose one."
+  [ "$has_auto" = 1 ] && { ok "mode=auto"; return 0; }
+  ok "mode=gated"
+}
+
+# S1: mark a build mode=auto. REQUIRES a declared budget.env w/ ceilings (INV-3).
+cmd_auto_init() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh auto-init <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local be; be="$(_be_file "$dir")"
+  { [ -f "$be" ] && [ -n "$(_be_get "$be" ceiling_wall)" ]; } || die "auto-init: --auto requires a declared budget — run 'compass.sh budget-init $dir' first (budget required)."
+  : > "$dir/.auto-mode"   # the mode:auto marker (machine-checked by stop-guard/can-advance)
+  ok "build is mode=auto (budget ceilings present)."
+}
+
+# S2: write ceilings + a fresh session_start_ts + zeroed spend.
+cmd_budget_init() { # <build-dir> [--wall N --sessions N --stages N]
+  local dir="${1:-}"; shift || true
+  [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh budget-init <build-dir> [--wall N --sessions N --stages N]"
+  local wall="$BUDGET_DEFAULT_WALL" sess="$BUDGET_DEFAULT_SESSIONS" stg="$BUDGET_DEFAULT_STAGES"
+  while [ $# -gt 0 ]; do case "$1" in
+    --wall) wall="${2:-}"; shift 2 ;; --sessions) sess="${2:-}"; shift 2 ;; --stages) stg="${2:-}"; shift 2 ;;
+    *) shift ;; esac; done
+  local be; be="$(_be_file "$dir")"
+  # RB-04: preserve cumulative spend on re-init (must NOT reset spent_* to 0 and bypass the
+  # ceiling). The read+write is done INSIDE the lock (no read-outside-lock race — review-build R2).
+  with_lock "budget-$(basename "$dir")" _budget_init_locked "$be" "$wall" "$sess" "$stg" "$(_now_epoch)"
+  ok "budget-init: wall=${wall}s sessions=${sess} stages=${stg} (spend preserved if re-init)."
+}
+
+# S2: enforce ceilings (INV-3 required, INV-4 binds). Wall is cumulative across sessions.
+cmd_budget_check() { # <build-dir> [--bump-stage|--bump-session]
+  local dir="${1:-}" bump="${2:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh budget-check <build-dir> [--bump-stage|--bump-session]"
+  local be; be="$(_be_file "$dir")"
+  [ -f "$be" ] && [ -n "$(_be_get "$be" ceiling_wall)" ] || die "budget-check: no declared budget (budget required)."
+  with_lock "budget-$(basename "$dir")" _budget_check_locked "$dir" "$be" "$bump"
+}
+_is_num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }   # non-negative integer only
+_elapsed() { local e=$(( ${1:-0} - ${2:-0} )); [ "$e" -lt 0 ] && e=0; printf '%s' "$e"; }  # now,start → ≥0 (clock-skew safe)
+_budget_init_locked() { # <be> <wall> <sess> <stg> <now>  (under budget lock) — preserves spend on re-init
+  local be="$1" w="$2" s="$3" g="$4" now="$5" psw=0 pss=1 psg=0 pg2=0 x
+  if [ -f "$be" ]; then
+    x="$(_be_get "$be" spent_wall)";     _is_num "$x" && psw="$x"
+    x="$(_be_get "$be" spent_sessions)"; _is_num "$x" && pss="$x"
+    x="$(_be_get "$be" spent_stages)";   _is_num "$x" && psg="$x"
+    x="$(_be_get "$be" g2_fires)";       _is_num "$x" && pg2="$x"
+  fi
+  { printf 'ceiling_wall=%s\n' "$w"; printf 'ceiling_sessions=%s\n' "$s"; printf 'ceiling_stages=%s\n' "$g";
+    printf 'spent_wall=%s\n' "$psw"; printf 'spent_sessions=%s\n' "$pss"; printf 'spent_stages=%s\n' "$psg";
+    printf 'tokens_best_effort=0\n'; printf 'g2_fires=%s\n' "$pg2"; printf 'session_start_ts=%s\n' "$now"; } > "$be"
+}
+_budget_check_locked() { # <dir> <be> <bump>  (under lock)
+  local dir="$1" be="$2" bump="$3" now; now="$(_now_epoch)"
+  local cw cs cg sw ss sg st
+  cw="$(_be_get "$be" ceiling_wall)";  cs="$(_be_get "$be" ceiling_sessions)"; cg="$(_be_get "$be" ceiling_stages)"
+  sw="$(_be_get "$be" spent_wall)";    ss="$(_be_get "$be" spent_sessions)";   sg="$(_be_get "$be" spent_stages)"
+  st="$(_be_get "$be" session_start_ts)"
+  # ceilings: fall back to the safe defaults; spent: fall back to 0. Then FAIL CLOSED on any
+  # non-numeric value (a corrupt budget.env must never fail open into an unbounded loop — RB-02).
+  _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"; _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"; _is_num "$cg" || cg="$BUDGET_DEFAULT_STAGES"
+  : "${sw:=0}"; : "${ss:=0}"; : "${sg:=0}"; : "${st:=$now}"
+  for v in "$sw" "$ss" "$sg" "$st"; do _is_num "$v" || die "budget-check: corrupt budget.env (non-numeric '$v') — refusing (fail closed)."; done
+  case "$bump" in
+    --bump-stage)   sg=$((sg+1)); _be_set "$be" spent_stages "$sg" ;;
+    --bump-session) sw=$(( sw + $(_elapsed "$now" "$st") )); _be_set "$be" spent_wall "$sw"; _be_set "$be" session_start_ts "$now"; ss=$((ss+1)); _be_set "$be" spent_sessions "$ss" ;;
+  esac
+  local cum_wall=$(( sw + $(_elapsed "$now" "$st") ))   # cumulative wall = persisted + this session's elapsed (clock-skew safe)
+  # ceiling test (INV-4) — any dimension at/over → non-zero
+  if [ "$cum_wall" -ge "$cw" ] || [ "$ss" -ge "$cs" ] || [ "$sg" -ge "$cg" ]; then
+    _chain_append "$dir" "-" "budget-stop"
+    die "budget-check: ceiling reached (wall ${cum_wall}/${cw}s, sessions ${ss}/${cs}, stages ${sg}/${cg}) — fire G2."
+  fi
+  # 80% warn (any dimension)
+  local pct=80
+  if [ $(( cum_wall * 100 )) -ge $(( cw * pct )) ] || [ $(( ss * 100 )) -ge $(( cs * pct )) ] || [ $(( sg * 100 )) -ge $(( cg * pct )) ]; then
+    echo "compass: budget approaching ceiling (wall ${cum_wall}/${cw}s, sessions ${ss}/${cs}, stages ${sg}/${cg})." >&2
+  fi
+  ok "budget-check: within ceilings (wall ${cum_wall}/${cw}s, sessions ${ss}/${cs}, stages ${sg}/${cg})."
+}
+
+# S3: validate the session-chain log schema + recompute dims.
+cmd_check_session_chain() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh check-session-chain <build-dir>"
+  local f; f="$(_chain_file "$dir")"
+  [ -f "$f" ] || { ok "check-session-chain: no log yet (0 events)."; return 0; }
+  awk -F'|' -v ev="$AUTO_EVENTS" -v lc="$LIFECYCLE" '
+    BEGIN{ n=split(ev,E," "); for(i=1;i<=n;i++)EV[E[i]]=1; m=split(lc,L," "); for(i=1;i<=m;i++)LC[L[i]]=1; LC["-"]=1 }
+    /^[[:space:]]*$/ { next }
+    { if (NF!=7) { printf("check-session-chain: line %d has %d fields (want 7): %s\n",NR,NF,$0) > "/dev/stderr"; bad=1; next }
+      if (!($4 in EV)) { printf("check-session-chain: line %d bad event \"%s\"\n",NR,$4) > "/dev/stderr"; bad=1 }
+      if (!($3 in LC)) { printf("check-session-chain: line %d bad stage \"%s\"\n",NR,$3) > "/dev/stderr"; bad=1 }
+      for(c=5;c<=7;c++){ if($c !~ /^[0-9]+$/){ printf("check-session-chain: line %d field %d not numeric \"%s\"\n",NR,c,$c) > "/dev/stderr"; bad=1 } }
+      if($5+0>mw)mw=$5; if($6+0>ms)ms=$6; if($7+0>mg)mg=$7; rows++ }
+    END{ if(bad)exit 1; printf("check-session-chain: %d events OK; max wall=%d sessions=%d stages=%d\n",rows,mw,ms,mg) }' "$f" \
+    || die "check-session-chain: malformed log (see stderr)."
+  ok "check-session-chain: log valid."
+}
+
+# S4: fire the G2 feasibility gate. gate-lock FIRST (under lock), then banner/event/g2_fires. exit≠0.
+cmd_fire_g2() { # <build-dir> <reason>
+  local dir="${1:-}" reason="${2:-feasibility}"
+  [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh fire-g2 <build-dir> <reason>"
+  local slug; slug="$(basename "$dir")"
+  with_lock "gate-$slug" _fire_g2_locked "$dir" "$slug" "$reason"
+}
+_fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
+  local dir="$1" slug="$2" reason="$3" ld; ld="$(locks_dir)"; mkdir -p "$ld"
+  mkdir "$ld/$slug.gate-lock" 2>/dev/null || true            # gate-lock FIRST (RP-03)
+  # write Status banner (replace the **Status:** line, else APPEND it — never silently drop it, RB-03)
+  local p="$dir/progress.md" tmp banner
+  banner="**Status:** gate-wait-G2 — G2 fired: ${reason}. Resume with /compass:resume ${slug} (choices: ship-despite-miss / relax / keep-trying / abort)."
+  if [ -f "$p" ] && grep -qE '^\*\*Status:\*\*' "$p"; then
+    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
+  else
+    printf '\n%s\n' "$banner" >> "$p"
+  fi
+  _chain_append "$dir" "-" "gate-wait-G2"
+  # bump g2_fires
+  local be; be="$(_be_file "$dir")"
+  if [ -f "$be" ]; then local g; g="$(_be_get "$be" g2_fires)"; : "${g:=0}"; g=$((g+1)); _be_set "$be" g2_fires "$g"
+    if [ "$g" -ge 3 ]; then echo "compass: G2 fired ${g}× — 'keep-trying' withdrawn; only ship-despite-miss / abort." >&2; fi
+  fi
+  die "G2 (feasibility) fired: ${reason}. Build is gate-wait-G2 — a human must resume. (Autonomous spawn is blocked while this gate is held.)"
+}
+
+# S5 helper: attempt an autonomous cross-session spawn. Emits ZERO stdout (RP-04). Returns 0 if it
+# spawned, 1 otherwise. Caller (stop-guard) handles the JSON. Refuses at gate-lock / foreign owner /
+# cap, and is idempotent vs a recent spawn (RP-12). Increments spent_sessions BEFORE spawn (RP-02/07).
+_auto_spawn_maybe() { # <dir> <slug> <sid> <locks-dir>
+  local dir="$1" slug="$2" sid="$3" ld="$4"
+  [ -f "$dir/.auto-mode" ] || return 1
+  # (1) gate held? (INV-6) — never spawn past a human gate
+  [ -d "$ld/$slug.gate-lock" ] && { echo "compass: auto-spawn refused — gate-lock held (no gate bypass)." >&2; return 1; }
+  # (2) single-flight (INV-5): a live foreign owner holds the build
+  local owner; owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+  [ -n "$owner" ] && [ "$owner" != "$sid" ] && { echo "compass: auto-spawn refused — single-flight (owner $owner)." >&2; return 1; }
+  # (3) idempotency (RP-12): a recent spawn already recorded for this build
+  local cf; cf="$(_chain_file "$dir")"
+  if [ -f "$cf" ] && [ "$(tail -3 "$cf" 2>/dev/null | grep -c '|spawn|' || echo 0)" -gt 0 ]; then
+    echo "compass: auto-spawn skipped — recent spawn already recorded (idempotent)." >&2; return 1
+  fi
+  # (4) budget + cap (INV-4/7), increment BEFORE spawn, all under one lock (RP-02)
+  local be; be="$(_be_file "$dir")"
+  [ -f "$be" ] || { echo "compass: auto-spawn refused — no budget." >&2; return 1; }
+  with_lock "budget-$slug" _auto_spawn_locked "$dir" "$slug" "$be" || return 1
+}
+_auto_spawn_locked() { # <dir> <slug> <be>  (under budget lock) — returns 0 if spawn fired
+  local dir="$1" slug="$2" be="$3" ss cs sw cw st sg cg now; now="$(_now_epoch)"
+  ss="$(_be_get "$be" spent_sessions)"; cs="$(_be_get "$be" ceiling_sessions)"
+  sw="$(_be_get "$be" spent_wall)"; cw="$(_be_get "$be" ceiling_wall)"; st="$(_be_get "$be" session_start_ts)"
+  sg="$(_be_get "$be" spent_stages)"; cg="$(_be_get "$be" ceiling_stages)"
+  : "${ss:=0}"; : "${sw:=0}"; : "${sg:=0}"; : "${st:=$now}"
+  _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"; _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"; _is_num "$cg" || cg="$BUDGET_DEFAULT_STAGES"
+  # FAIL CLOSED on corrupt spend (a garbage spent_* must not read as 0 and bypass the cap — RB-02)
+  for v in "$ss" "$sw" "$sg" "$st"; do _is_num "$v" || { echo "compass: auto-spawn refused — corrupt budget.env ('$v')." >&2; return 1; }; done
+  # Enforce ALL ceilings in the spawn path itself (don't rely on the orchestrator's per-stage
+  # check) so a cross-session continuation can never exceed wall/sessions/stages — RB-01.
+  local cumw; cumw=$(( sw + $(_elapsed "$now" "$st") ))
+  [ "$ss" -ge "$cs" ] && { echo "compass: auto-spawn refused — session cap ${ss}/${cs} (INV-7)." >&2; return 1; }
+  [ "$cumw" -ge "$cw" ] && { echo "compass: auto-spawn refused — wall ceiling ${cumw}/${cw}s (INV-4)." >&2; return 1; }
+  [ "$sg" -ge "$cg" ] && { echo "compass: auto-spawn refused — stage ceiling ${sg}/${cg} (INV-4)." >&2; return 1; }
+  # fold this session's wall, start a new session slot BEFORE spawning (crash-safe count)
+  sw="$cumw"; _be_set "$be" spent_wall "$sw"; _be_set "$be" session_start_ts "$now"
+  ss=$((ss+1)); _be_set "$be" spent_sessions "$ss"
+  local cmd; cmd="${COMPASS_SPAWN_CMD:-nohup claude -p \"/compass:resume $slug --auto\"}"
+  if sh -c "$cmd" >"$dir/spawn-session.log" 2>&1 & then
+    _chain_append "$dir" "-" "spawn"; return 0
+  else
+    _chain_append "$dir" "-" "spawn-failed"; return 1
+  fi
+}
+
+# S5 entry: attempt the autonomous spawn for a build (used by stop-guard inline; also callable for
+# diagnostics/tests). Resolves slug/session/locks and delegates. Exit 0 iff a spawn fired.
+cmd_auto_spawn() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh auto-spawn <build-dir>"
+  _auto_spawn_maybe "$dir" "$(basename "$dir")" "${CLAUDE_CODE_SESSION_ID:-local}" "$(locks_dir)" \
+    && ok "auto-spawn: spawned." || die "auto-spawn: did not spawn (gate/owner/cap/idempotent/budget)."
+}
+
+# S7: may the loop auto-advance? exit 0 only if NO gate-lock and status is not gate-wait-*.
+cmd_can_advance() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh can-advance <build-dir>"
+  local slug; slug="$(basename "$dir")"
+  # RB-05: an absent/unreadable progress.md is an UNKNOWN state — fail closed (never auto-advance
+  # from a state we can't read), else a missing status string would slip past the gate-wait check.
+  [ -f "$dir/progress.md" ] || die "can-advance: NO — progress.md absent (unknown state, fail closed)."
+  [ -d "$(locks_dir)/$slug.gate-lock" ] && die "can-advance: NO — gate-lock held (human gate pending)."
+  local status; status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$dir/progress.md" 2>/dev/null | tail -1 || true)"
+  case "$status" in *gate-wait-*) die "can-advance: NO — status is '$status' (human gate)." ;; esac
+  ok "can-advance: yes."
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -1041,6 +1277,14 @@ main() {
     ship-release)      cmd_ship_release "$@" ;;
     ship-contenders)   cmd_ship_contenders "$@" ;;
     close)             cmd_close "$@" ;;
+    auto-precheck)     cmd_auto_precheck "$@" ;;
+    auto-init)         cmd_auto_init "$@" ;;
+    budget-init)       cmd_budget_init "$@" ;;
+    budget-check)      cmd_budget_check "$@" ;;
+    check-session-chain) cmd_check_session_chain "$@" ;;
+    fire-g2)           cmd_fire_g2 "$@" ;;
+    auto-spawn)        cmd_auto_spawn "$@" ;;
+    can-advance)       cmd_can_advance "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac
 }
