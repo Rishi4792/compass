@@ -112,6 +112,39 @@ sed -i.bak 's/^v6a · /v6a · /' .claude/builds/INDEX 2>/dev/null; rm -f .claude
 ( bash "$SH" close .claude/builds/v6a v6a --abandon >/dev/null 2>&1 )
 ( git worktree list --porcelain | grep -q '/v6a$' ); chk "$?" "0" "close LEAVES a dirty worktree (no force-remove — the v0.5.0 incident fix)"
 
+# ── v0.9.1: namespaced stage wrappers + always-on gate (single canonical source) ──
+PLUGIN_ROOT="$(cd "$(dirname "$SH")/.." && pwd)"
+xblk(){ awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$1"; }
+GATE="$PLUGIN_ROOT/shared/gate.md"
+STAGES="contract review-contract plan review-plan build review-build ship"
+# INV-1: all 10 command files exist (3 commands + 7 stage wrappers), each with a non-empty description
+c1=0; for c in start resume status $STAGES; do [ -f "$PLUGIN_ROOT/commands/$c.md" ] && c1=$((c1+1)); done
+chk "$c1" "10" "INV-1 all 10 command files exist (3 commands + 7 stage wrappers)"
+bd=0; for c in "$PLUGIN_ROOT"/commands/*.md; do grep -qE '^description: .+' "$c" || bd=$((bd+1)); done
+chk "$bd" "0" "INV-1 every command has a non-empty description"
+# INV-3: canonical gate defines 4 option labels + uses AskUserQuestion
+gl=0; for l in Approve Revise Amend Pause; do grep -q "$l" "$GATE" && gl=$((gl+1)); done
+chk "$gl" "4" "INV-3 canonical gate.md defines all 4 option labels"
+( grep -q AskUserQuestion "$GATE" ); chk "$?" "0" "INV-3 canonical gate uses AskUserQuestion"
+# INV-2: each of 7 stage skills presents the gate; old text-only tail removed (R2-01)
+g2=0; for s in $STAGES; do grep -q AskUserQuestion "$PLUGIN_ROOT/skills/$s/SKILL.md" && g2=$((g2+1)); done
+chk "$g2" "7" "INV-2 all 7 stage skills present the gate (AskUserQuestion)"
+( grep -rq "; don't invoke it" "$PLUGIN_ROOT"/skills/*/SKILL.md ); chk "$?" "1" "INV-2 old text-only standalone-stop tail removed (R2-01)"
+# INV-4: each wrapper delegates to its skill and adds no second gate
+g4=0; for s in $STAGES; do w="$PLUGIN_ROOT/commands/$s.md"; if grep -q "compass:$s" "$w" && ! grep -q AskUserQuestion "$w"; then g4=$((g4+1)); fi; done
+chk "$g4" "7" "INV-4 all 7 wrappers delegate to their skill with no double-gate"
+# INV-7: canonical gate block byte-identical across 7 skills + start.md (8 consumers)
+canon="$(xblk "$GATE")"
+chk "$([ -n "$canon" ] && echo 1 || echo 0)" "1" "INV-7 canonical gate block is non-empty (no vacuous match)"
+g7=0; for t in skills/contract/SKILL.md skills/review-contract/SKILL.md skills/plan/SKILL.md skills/review-plan/SKILL.md skills/build/SKILL.md skills/review-build/SKILL.md skills/ship/SKILL.md commands/start.md; do
+  [ "$(xblk "$PLUGIN_ROOT/$t")" = "$canon" ] && g7=$((g7+1))
+done
+chk "$g7" "8" "INV-7 canonical gate block byte-identical across 7 skills + start.md"
+# RECONCILE: stage wrappers == 7 AND gated stage-skills == 7 (gold=7, exact)
+rw=0; for s in $STAGES; do [ -f "$PLUGIN_ROOT/commands/$s.md" ] && rw=$((rw+1)); done
+chk "$rw" "7" "RECONCILE stage-wrapper count == 7 (gold)"
+chk "$g2" "7" "RECONCILE gated stage-skill count == 7 (gold)"
+
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null
 [ "$fail" = 0 ]

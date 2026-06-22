@@ -51,5 +51,31 @@ Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Ro
 - [x] final round was a verify-the-fixes round: [D]/[E]/[F] re-attacked the last fix diff → 0 new material
 - [x] set-based fixes driven by the canonical source (not a drift-prone copy); test covers the full set
 ```
-Self-check: `compass.sh scan-receipt .claude/builds/<slug> review-build`. **Then require a HUMAN sign-off** (AskUserQuestion): show the receipt's command+output lines (the falsifiable evidence, not a summary) and ask the user to Approve before CLOSED. On approve: `progress.md` = `CLOSED`; INDEX `status=closed`; run `compass.sh close .claude/builds/<slug> <slug>` (clears CURRENT). Then the build may proceed to `compass:ship` (or close if deploy is out of scope).
-**Standalone STOP:** report the result; no further outward action.
+Self-check: `compass.sh scan-receipt .claude/builds/<slug> review-build`. **Then require a HUMAN sign-off** — show the receipt's command+output lines (the falsifiable evidence, not a summary) as the transition proof, then present the gate below. On **Approve**: `progress.md` = `CLOSED`; INDEX `status=closed`; run `compass.sh close .claude/builds/<slug> <slug>` (clears CURRENT); Approve advances to `compass:ship` (or stays CLOSED if the contract waives deploy).
+
+<!-- GATE:START -->
+## Stage transition — the gate (fires on EVERY entry path)
+
+This stage owns its own transition gate. Present it whether the stage was run standalone
+(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
+`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+
+1. First print the one-line **transition footer**, in exactly this shape:
+
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+
+   (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
+   (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,
+   or just print the artifact if the user asks):
+   - **Approve & continue** — advance to the next stage.
+   - **Revise** — re-run this stage with the user's change.
+   - **Amend** — a legitimate scope change (not drift): bump the contract version + changelog,
+     run a mini review-contract on the delta, `supersede` downstream, re-baseline.
+   - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
+
+Only **Approve** or **Amend** advances. **Never auto-invoke the next skill** — the gate ASKS;
+it does not advance by itself. On any detected drift from `contract.md`, STOP and surface
+instead of advancing.
+<!-- GATE:END -->
