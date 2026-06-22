@@ -63,6 +63,7 @@ Between every hop is a **user-driven gate** (Approve / Revise / **Amend contract
 - **Verify ladder** — cheapest real proof first, by facet. Web: typecheck → DB query → curl+cookie HTML → API → **Playwright** (assert DOM text + computed CSS for exact things, **plus a screenshot read-back vs the design you captured at planning time** so the result has zero drift from what you imagined; prod read-only) → Chrome MCP (last resort). Pipeline/CLI: exit code → golden-file diff → asserts → numeric reconciliation → determinism. Never correctness on agent agreement.
 - **Review core** — fan-out streams, one ledger, a convergence loop. Light review = one clean pass; full = two consecutive clean rounds, and a round counts as clean only if its evidence (command + exit + counts) is recorded. Cap un-converged escalates UP (and *supersedes* downstream receipts) — never fakes done.
 - **The teeth = a real script, not prose.** Each stage emits a receipt to `receipts.md` carrying the actual commands + outputs; the next stage's Step-0 runs **`scripts/compass.sh gate`**, which **exits non-zero** if the prior receipt is absent, FAIL, has an unchecked box, or was superseded — a hard error the build can't step past. Reconciliation (`compass.sh reconcile`) and secret-scan (`compass.sh secret-scan`) are deterministic `PASS/FAIL` gates that block close.
+- **Parallel builds — one worktree per build.** A repo can run N builds at once (including one unattended) without them stepping on each other: each build gets its own git worktree under `~/.compass/worktrees/<project-id>/<slug>`, so one build's `git add` can never sweep another's files. `compass.sh builds` shows everything in flight, `compass.sh doctor` audits/sweeps worktrees, and when a sibling merges first **`compass.sh post-merge-check`** blocks the others (base-advanced + blast-radius vs `origin/<base>`) until they re-verify. Schema builds must declare per-worktree DB isolation or Compass refuses to run them in parallel. (See [docs/PARALLEL-BUILDS-KEYSTONE.md](docs/PARALLEL-BUILDS-KEYSTONE.md).)
 
 ---
 
@@ -127,8 +128,12 @@ Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md
 ## Versioning & updates
 Semantic versioning; every change is recorded in **[CHANGELOG.md](CHANGELOG.md)** (what changed and why). See **[RELEASING.md](RELEASING.md)** for the release process. Self-hosted installs update via `/plugin marketplace update compass`.
 
-## Proof: Compass built its own latest release
-v0.5.0 was built *by running Compass on Compass* — the full contract → review → plan → review → build → review → ship lifecycle. Its own adversarial reviews caught the exact failure the release exists to kill **twice** before anything shipped: an invariant that was being "proven" by grepping prose, and a missing design ledger that would have counted as a pass. Both were stopped at the contract/plan gates, not in production. The reviews earn their keep — on their own release. (See [CHANGELOG.md](CHANGELOG.md).)
+## Proof: Compass builds its own releases
+Every release since v0.5.0 has been built *by running Compass on Compass* — the full contract → review → plan → review → build → review → ship lifecycle, on itself. And on its own releases the reviews keep catching the exact failures the project exists to kill, **before** anything ships:
+- **v0.5.0** — an invariant being "proven" by grepping prose, and a missing design ledger that would have counted as a pass. Both stopped at the contract/plan gates.
+- **v0.10.0** (the opt-in `--auto` autonomous loop) — review-contract killed a *token* budget that can't actually be measured from a shell (→ a measurable wall/sessions/stages ceiling) and caught that the auto-close would be blocked by the existing sign-off gate; review-plan caught that JSON can't be parsed in POSIX shell (→ line-oriented state) and that the time ceiling wouldn't bind without a per-stage check; review-build found 8 defects in the built code, including the spawn path enforcing only the session cap, not the time limit. None reached `main`.
+
+The reviews earn their keep — on their own releases. (See [CHANGELOG.md](CHANGELOG.md).)
 
 ## Why "Compass"
 A compass keeps you pointed true no matter the terrain. Same idea here: the contract is your true north, and every stage checks the bearing.
