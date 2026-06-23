@@ -154,6 +154,15 @@ chk "$(grep -q 'auto-closed:' "$SH" && echo 1 || echo 0)" "1" "v0.10 lifecycle-a
 chk "$(grep -lq 'Autonomous mode' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.10 start.md documents --auto autonomous mode"
 chk "$(grep -lq 'budget.env\|NO JSON\|line-oriented' "$PLUGIN_ROOT/scripts/compass.sh" && echo 1 || echo 0)" "1" "v0.10 state is line-oriented (budget.env, no JSON)"
 
+# ── v0.11.0 autonomous self-spawn wiring ──
+d11=0; for c in fire-g1 gate-clear auto-start stage-continuable; do grep -qE "^[[:space:]]+$c\)" "$SH" && d11=$((d11+1)); done
+chk "$d11" "4" "v0.11 all 4 new subcommands wired in dispatch (fire-g1/gate-clear/auto-start/stage-continuable)"
+# the reorder: the .auto-mode branch must appear BEFORE the gated `is_mid_build || continue` in stop-guard
+am=$(grep -n 'sr/\$slug/.auto-mode' "$SH" | head -1 | cut -d: -f1); im=$(grep -n 'is_mid_build "\$sr/\$slug" || continue' "$SH" | head -1 | cut -d: -f1)
+chk "$([ -n "$am" ] && [ -n "$im" ] && [ "$am" -lt "$im" ] && echo 1 || echo 0)" "1" "v0.11 stop-guard: .auto-mode branch is BEFORE is_mid_build (fires at all stages — the fix)"
+chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md adds the interactive Gated/Autonomous prompt"
+chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md documents the auto-start one-command trigger"
+
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null
 [ "$fail" = 0 ]

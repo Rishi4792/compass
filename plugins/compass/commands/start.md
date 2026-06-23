@@ -33,8 +33,12 @@ On `start` in parallel mode:
 
 **Unattended runs** (`--unattended`): gates write the resume banner and `exit 0` instead of asking; a guard rejection writes a receipt **FAIL** and stops (never retries → no livelock). Only proceed when the prior stage receipt is PASS.
 
-## Autonomous mode (`--auto`, v0.10.0) — opt-in, two human gates only
-`/compass:start --auto` runs the lifecycle WITHOUT the per-hop 4-button gate, stopping for a human at only **two** points (the rest auto-advance). It is mutually exclusive with `--unattended` (`compass.sh auto-precheck` refuses both; default = fully gated). Setup once at the start: `compass.sh budget-init <dir> [--wall S --sessions N --stages N]` (defaults 3600s / 6 / 40) then `compass.sh auto-init <dir>` (refuses without a budget — **a budget is mandatory**, INV-3).
+## Autonomous mode (`--auto`, v0.10.0; self-spawn v0.11.0) — opt-in, two human gates only
+`/compass:start --auto` runs the lifecycle WITHOUT the per-hop 4-button gate, stopping for a human at only **two** points (the rest auto-advance). It is mutually exclusive with `--unattended` (`compass.sh auto-precheck` refuses both; default = fully gated).
+
+### Two ways to turn it on (v0.11.0)
+1. **Interactive (default, discoverable):** on a plain `/compass:start` (no flag), BEFORE writing the contract, ask the user **Gated or Autonomous?** via AskUserQuestion. If **Autonomous**, also ask for the budget (wall-seconds / max-sessions / max-stages; offer the defaults 3600 / 6 / 40), then run the one-command setup below. If **Gated**, proceed exactly as today.
+2. **Flag / one command:** `/compass:start --auto` skips the prompt. Setup is a SINGLE command — **`compass.sh auto-start <dir> [--wall S --sessions N --stages N]`** — which runs `auto-precheck` + `budget-init` + `auto-init` and writes `.auto-mode` (refuses without a budget — **mandatory**, INV-3; refuses `--unattended`). (The old three-call setup still works but `auto-start` is the supported entry.)
 
 The orchestrator loop in `--auto`:
 1. **Per stage, Step-0:** `compass.sh budget-check <dir> --bump-stage`. Non-zero → `compass.sh fire-g2 <dir> budget-stop` and STOP (the measurable ceiling is the runaway guard — INV-4).
@@ -44,7 +48,11 @@ The orchestrator loop in `--auto`:
 5. **G2 (event-triggered):** any `fire-g2` writes a `gate-wait-G2` banner to `progress.md` and STOPs (exit non-zero) — it NEVER auto-resolves, spawns, or hangs. A human resumes with `/compass:resume <slug>` choosing ship-despite-miss / relax / keep-trying / abort (after `g2_fires` ≥ 3, keep-trying is withdrawn).
 6. **End of lifecycle:** review-build records `auto-closed: two clean adversarial rounds + all INVARIANTs green` (NOT a faked human signature — `lifecycle-audit` G-L2 accepts this marker); ship then runs its FULL real verification (prod recon + route smoke). Any ship/prod-verify FAIL → `fire-g2`.
 
-**Cross-session continuation (F6):** when context runs low and the owning session stops mid-`--auto`-build, the Stop hook (`compass.sh stop-guard`) auto-spawns a fresh `claude` running `/compass:resume <slug> --auto` (from `budget.env`/`session-chain.log` state) and lets this session exit — **only** if not at a gate (gate-lock absent — INV-6), single-flight holds (INV-5), and the session cap isn't reached (INV-7). Spend is bounded by the measurable budget across all spawned sessions. No human is needed for continuation; humans are needed only at G1/G2.
+**Cross-session continuation (self-spawn, v0.11.0):** when context runs low and the owning session stops at ANY **continuable** stage (contract/plan/review/build — fixed in v0.11; v0.10 only fired during build), the Stop hook (`compass.sh stop-guard`) auto-spawns a fresh `claude` running `/compass:resume <slug> --auto` (from `budget.env`/`session-chain.log`) and lets this session exit — **only** if `is_stage_continuable` (real pending work, not terminal/idle), not at a G1/G2 gate-lock (INV-GATE), single-flight holds (INV-5), and budget remains (INV-HALT). 
+
+**Honesty on the boundary:** the budget — wall-clock + max-sessions + max-stages — is the **hard runaway ceiling**, proven (INV-HALT) to bind across *real separate spawned processes*, so the chain cannot exceed it regardless of what the spawn launches. The self-spawn launches `nohup claude -p "/compass:resume <slug> --auto"`; if that launcher can't start, it records `spawn-failed` and stops cleanly (INV-DEGRADE) — never a silent or faked continuation. A human is needed only at G1/G2.
+
+**G1/G2 are real gates (v0.11):** `compass.sh fire-g1`/`fire-g2` take a gate-lock; the self-spawn refuses while either is held (no bypass). On human approval the orchestrator runs `compass.sh gate-clear <dir>` to release the lock and continue.
 
 ## The pipeline
 ```

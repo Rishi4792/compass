@@ -3,6 +3,17 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.11.0] — 2026-06-23
+
+**`--auto` is now genuinely autonomous and genuinely triggerable.** Two gaps found by running v0.10 `--auto` on a live build are fixed:
+
+- **The self-spawn now fires at EVERY stage, not just build.** In v0.10 the cross-session auto-spawn sat *after* the `is_mid_build` gate in `cmd_stop_guard`, so a session stopping at contract/plan/review fell back to a manual hand-off instead of self-continuing. The `.auto-mode` branch now runs *before* that gate, guarded by a new `is_stage_continuable` (real pending work, not terminal/idle, no gate-lock) so it never spawns on a done/idle build. Gated mode (no `.auto-mode`) is byte-for-byte unchanged (INV-BC).
+- **Two explicit triggers.** `compass.sh auto-start <dir> [--wall/--sessions/--stages]` is a single command (precheck + budget-init + auto-init); and `/compass:start` (no flag) now asks **Gated or Autonomous?** up front. No more reading prose to hand-wire it.
+- **G1 is a real gate.** The upfront approval now takes a gate-lock (`fire-g1`) like G2, so a self-spawn can never bypass the one human checkpoint; `gate-clear` releases it on approval.
+- **Honest degrade.** The self-spawn launches `nohup claude -p "/compass:resume <slug> --auto"`; a liveness probe records `spawn-failed` and stops cleanly if the launcher dies — never a silent or faked continuation.
+- **The safety teeth (INV-HALT) — proven across REAL separate processes.** The runaway ceiling (wall + max-sessions + max-stages) is proven to bind across genuinely separate OS processes re-entering the budget lock — a recursive-shell self-spawn chain self-propagates and the (cap+1)-th spawn is refused; 5 concurrent real spawns with one slot yield exactly one winner, no deadlock, in <10s. **Safety is decoupled from real-`claude` availability** — the chain cannot exceed the budget regardless of what the spawn launches. This is the explicit guard against the 1.16B-token autonomous-loop failure mode.
+- New `compass.sh` subcommands: `auto-start`, `fire-g1`, `gate-clear`, `stage-continuable`. Built **autonomously by Compass on Compass** (`--auto`, dogfooded) under a measurable budget; its own Review-1 caught that the in-process runaway proof had to become a real-separate-process proof, and that G1 needed its own lock — both fixed before code. selftest 99→118, smoke 56.
+
 ## [0.10.0] — 2026-06-22
 
 **Opt-in `--auto` autonomous loop.** Compass can now run the full lifecycle without the per-hop human gate, stopping for a human at only **two** points — grounded in an audit of 38 past Compass/CRM builds which found the human gate changed direction in ~45% of builds but only ever at (A) taste/product/strategy/security calls and (B) "ship despite a failed/infeasible invariant", while *all* mechanical correctness was already caught by the autonomous adversarial reviews. So `--auto` keeps exactly those two gates and auto-advances the rest. Default (no flag) behavior is **unchanged** (INV-1) — every existing gate still fires.

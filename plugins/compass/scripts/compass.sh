@@ -819,19 +819,27 @@ cmd_stop_guard() {
     # NOTE (v0.10.0): gate-wait-* are resumable human-gate checkpoints, NOT terminal/mid-build —
     # do NOT add them to the skip-case above. In --auto they are handled by _auto_spawn_maybe (which
     # refuses to spawn while a gate-lock is held), and can-advance blocks advancing past them.
+    # v0.11.0 --auto (BEFORE the is_mid_build gated check, so it fires at EVERY continuable stage,
+    # not only build — the v0.10 bug). In autonomous mode the Stop hook never blocks; it attempts a
+    # cross-session spawn (or lets the build pause for a gate/budget/human) and ALWAYS allows this
+    # session to stop. Gated by: this is the OWNING session, the build is continuable (real pending
+    # work, not terminal/idle, no gate-lock — _auto_spawn_maybe re-checks the gate-lock too), and
+    # `.auto-mode` is set. Emits no stray stdout (only the final {}). Gated mode (no marker) falls
+    # through UNCHANGED below — INV-BC.
+    if [ -f "$sr/$slug/.auto-mode" ]; then
+      owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+      if [ -n "$owner" ] && [ "$owner" = "$sid" ] && is_stage_continuable "$sr/$slug"; then
+        _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
+      fi
+      printf '{}\n'; return 0
+    fi
+    # ── gated mode (no .auto-mode) — UNCHANGED from v0.10 ──
     # §3d: only TRUE mid-build is a risky stop; gates/*-LOCKED/CONVERGED/CLOSED-awaiting-ship → quiet.
     is_mid_build "$sr/$slug" || continue
     # v0.9.0 OWNERSHIP: block ONLY the session that owns this mid-build. Orphan (no owner) or
     # a foreign session → quiet. Exact POSIX compare (no glob); owner_of never errors.
     owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
     [ -n "$owner" ] && [ "$owner" = "$sid" ] || continue
-    # v0.10.0 --auto: in autonomous mode the Stop hook does NOT block to force the agent onward
-    # (that's gated behavior). Instead it attempts a cross-session spawn (or lets the build pause
-    # for G2/budget/human) and ALWAYS allows this session to stop. Emits no stray stdout.
-    if [ -f "$sr/$slug/.auto-mode" ]; then
-      _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
-      printf '{}\n'; return 0
-    fi
     # Loop backstop: block at most once per build-step. Inline mkdir-mutex, FAILS OPEN.
     fp="${sid}|${slug}|$(_step_counter "$sr/$slug" 2>/dev/null || true)"
     mkdir -p "$ld" 2>/dev/null || true
@@ -1171,6 +1179,75 @@ _fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
   die "G2 (feasibility) fired: ${reason}. Build is gate-wait-G2 — a human must resume. (Autonomous spawn is blocked while this gate is held.)"
 }
 
+# v0.11.0 S3 — fire-g1: the UPFRONT gate now takes a real gate-lock (same surface as G2, so the
+# self-spawn refuses past it — RC-3). Only one gate is ever active at a time. exit≠0 (it's a stop).
+cmd_fire_g1() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh fire-g1 <build-dir>"
+  local slug; slug="$(basename "$dir")"
+  with_lock "gate-$slug" _fire_g1_locked "$dir" "$slug"
+}
+_fire_g1_locked() { # <dir> <slug>  (under gate lock)
+  local dir="$1" slug="$2" ld; ld="$(locks_dir)"; mkdir -p "$ld"
+  mkdir "$ld/$slug.gate-lock" 2>/dev/null || true            # gate-lock FIRST (shared surface)
+  local p="$dir/progress.md" tmp banner
+  banner="**Status:** gate-wait-G1 — upfront approval needed. Approve to continue (/compass:resume ${slug}); autonomous spawn is blocked while this gate is held."
+  if [ -f "$p" ] && grep -qE '^\*\*Status:\*\*' "$p"; then
+    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
+  else printf '\n%s\n' "$banner" >> "$p"; fi
+  _chain_append "$dir" "-" "gate-wait-G1"
+  die "G1 (upfront) fired: a human must approve the contract+intent before the loop runs."
+}
+
+# v0.11.0 S3 — gate-clear: release the gate-lock on human approval (G1 or G2) so the lifecycle (and,
+# in auto, the self-spawn) may continue. Appends a `gate-cleared` event. Idempotent.
+cmd_gate_clear() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh gate-clear <build-dir>"
+  local slug; slug="$(basename "$dir")" ld; ld="$(locks_dir)"
+  with_lock "gate-$slug" sh -c 'rmdir "$1/'"$slug"'.gate-lock" 2>/dev/null || true' _ "$ld"
+  _chain_append "$dir" "-" "gate-cleared"
+  ok "gate-clear: gate-lock released for '$slug'."
+}
+
+# v0.11.0 S2 — is_stage_continuable: may the autonomous loop continue this build across a session?
+# TRUE iff NOT terminal, NOT gate-held, AND there is a real clean checkpoint to resume from (a
+# stage PASS with ship not yet done, OR a true mid-build). FALSE for terminal/idle/stuck/gate-held
+# → no no-op spawn loop (RC-2). Never errors (safe from the Stop hook).
+is_stage_continuable() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || return 1
+  local slug; slug="$(basename "$dir")"
+  # terminal status → not continuable
+  local status; status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+  case "$status" in *shipped*|*rolled-back*|*paused*) return 1 ;; esac
+  # gate held → not continuable (a human must act)
+  [ -d "$(locks_dir 2>/dev/null)/$slug.gate-lock" ] && return 1
+  # mid-build → continuable
+  is_mid_build "$dir" && return 0
+  # else: continuable iff some stage has a clean PASS receipt AND ship is not done
+  stage_pass "$dir" ship 2>/dev/null && return 1   # already shipped-clean → nothing to continue
+  local s
+  for s in review-build build review-plan plan review-contract contract; do
+    if stage_pass "$dir" "$s" 2>/dev/null; then return 0; fi
+  done
+  return 1   # no clean checkpoint → not continuable (stuck/never-started)
+}
+
+# v0.11.0 S4 — auto-start: ONE command to enter autonomous mode (precheck + budget-init + auto-init).
+# The explicit, discoverable trigger. Idempotent (budget-init preserves spend). Rejects --unattended.
+cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattended(REJECTED)]
+  local dir="${1:-}"; shift || true
+  [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh auto-start <build-dir> [--wall S --sessions N --stages N]"
+  local args=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --unattended) die "auto-start: --auto and --unattended are mutually exclusive — choose one." ;;
+    --wall|--sessions|--stages) args="$args $1 $2"; shift 2 ;;
+    *) shift ;; esac; done
+  cmd_auto_precheck --auto >/dev/null || die "auto-start: precheck failed."
+  # shellcheck disable=SC2086
+  cmd_budget_init "$dir"$args >/dev/null || die "auto-start: budget-init failed."
+  cmd_auto_init "$dir" >/dev/null || die "auto-start: auto-init failed."
+  ok "auto-start: '$(basename "$dir")' is now AUTONOMOUS (--auto). Budget set, .auto-mode written. Run /compass:start (it will auto-advance, stopping only at G1/G2)."
+}
+
 # S5 helper: attempt an autonomous cross-session spawn. Emits ZERO stdout (RP-04). Returns 0 if it
 # spawned, 1 otherwise. Caller (stop-guard) handles the JSON. Refuses at gate-lock / foreign owner /
 # cap, and is idempotent vs a recent spawn (RP-12). Increments spent_sessions BEFORE spawn (RP-02/07).
@@ -1183,16 +1260,34 @@ _auto_spawn_maybe() { # <dir> <slug> <sid> <locks-dir>
   local owner; owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
   [ -n "$owner" ] && [ "$owner" != "$sid" ] && { echo "compass: auto-spawn refused — single-flight (owner $owner)." >&2; return 1; }
   # (3) idempotency (RP-12): a recent spawn already recorded for this build
-  local cf; cf="$(_chain_file "$dir")"
-  if [ -f "$cf" ] && [ "$(tail -3 "$cf" 2>/dev/null | grep -c '|spawn|' || echo 0)" -gt 0 ]; then
+  local cf recent; cf="$(_chain_file "$dir")"
+  recent="$(tail -3 "$cf" 2>/dev/null | grep -c '|spawn|' || true)"; _is_num "$recent" || recent=0
+  if [ -f "$cf" ] && [ "$recent" -gt 0 ]; then
     echo "compass: auto-spawn skipped — recent spawn already recorded (idempotent)." >&2; return 1
   fi
-  # (4) budget + cap (INV-4/7), increment BEFORE spawn, all under one lock (RP-02)
+  # (4) budget RESERVE under the lock (RB3-1): re-read, ceiling-check, increment, write — then RELEASE
+  # the lock. The launch+probe happen OUTSIDE the lock, so a fast spawned child can take the budget
+  # lock immediately (no parent-holds-lock-while-child-waits contention). Reserve = atomic; the slot
+  # is counted BEFORE the spawn (crash-safe/conservative — a launch that then dies never UNDER-counts).
   local be; be="$(_be_file "$dir")"
   [ -f "$be" ] || { echo "compass: auto-spawn refused — no budget." >&2; return 1; }
-  with_lock "budget-$slug" _auto_spawn_locked "$dir" "$slug" "$be" || return 1
+  with_lock "budget-$slug" _budget_reserve_session "$dir" "$slug" "$be" || return 1
+  # (5) launch + honest liveness check, NO lock held. The probe tells a launcher that started from one
+  # that died immediately (INV-DEGRADE): exited non-zero → spawn-failed; still-running/exited-0 → spawn.
+  # (For a real detached `nohup claude`, this confirms the LAUNCH; the session slot is already reserved,
+  # so even a later child crash can never exceed the cap — safety does not depend on child liveness.)
+  local cmd; cmd="${COMPASS_SPAWN_CMD:-nohup claude -p \"/compass:resume $slug --auto\"}"
+  sh -c "$cmd" >"$dir/spawn-session.log" 2>&1 &
+  local pid=$!
+  sleep 0.15
+  if kill -0 "$pid" 2>/dev/null; then _chain_append "$dir" "-" "spawn"; return 0; fi
+  local rc=0; wait "$pid" 2>/dev/null || rc=$?
+  if [ "$rc" -eq 0 ]; then _chain_append "$dir" "-" "spawn"; return 0
+  else _chain_append "$dir" "-" "spawn-failed"; return 1; fi
 }
-_auto_spawn_locked() { # <dir> <slug> <be>  (under budget lock) — returns 0 if spawn fired
+# Reserve one session slot atomically under the budget lock (RB3-1). 0 = reserved (go), 1 = refuse.
+# NO launch here → the lock is held only for the brief read-modify-write, never during sleep/spawn.
+_budget_reserve_session() { # <dir> <slug> <be>  (under budget lock)
   local dir="$1" slug="$2" be="$3" ss cs sw cw st sg cg now; now="$(_now_epoch)"
   ss="$(_be_get "$be" spent_sessions)"; cs="$(_be_get "$be" ceiling_sessions)"
   sw="$(_be_get "$be" spent_wall)"; cw="$(_be_get "$be" ceiling_wall)"; st="$(_be_get "$be" session_start_ts)"
@@ -1201,21 +1296,15 @@ _auto_spawn_locked() { # <dir> <slug> <be>  (under budget lock) — returns 0 if
   _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"; _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"; _is_num "$cg" || cg="$BUDGET_DEFAULT_STAGES"
   # FAIL CLOSED on corrupt spend (a garbage spent_* must not read as 0 and bypass the cap — RB-02)
   for v in "$ss" "$sw" "$sg" "$st"; do _is_num "$v" || { echo "compass: auto-spawn refused — corrupt budget.env ('$v')." >&2; return 1; }; done
-  # Enforce ALL ceilings in the spawn path itself (don't rely on the orchestrator's per-stage
-  # check) so a cross-session continuation can never exceed wall/sessions/stages — RB-01.
+  # Enforce ALL ceilings in the spawn path itself so a cross-session continuation can NEVER exceed
+  # wall/sessions/stages — RB-01. Checked BEFORE the increment, all under this one lock (INV-HALT).
   local cumw; cumw=$(( sw + $(_elapsed "$now" "$st") ))
   [ "$ss" -ge "$cs" ] && { echo "compass: auto-spawn refused — session cap ${ss}/${cs} (INV-7)." >&2; return 1; }
   [ "$cumw" -ge "$cw" ] && { echo "compass: auto-spawn refused — wall ceiling ${cumw}/${cw}s (INV-4)." >&2; return 1; }
   [ "$sg" -ge "$cg" ] && { echo "compass: auto-spawn refused — stage ceiling ${sg}/${cg} (INV-4)." >&2; return 1; }
-  # fold this session's wall, start a new session slot BEFORE spawning (crash-safe count)
   sw="$cumw"; _be_set "$be" spent_wall "$sw"; _be_set "$be" session_start_ts "$now"
   ss=$((ss+1)); _be_set "$be" spent_sessions "$ss"
-  local cmd; cmd="${COMPASS_SPAWN_CMD:-nohup claude -p \"/compass:resume $slug --auto\"}"
-  if sh -c "$cmd" >"$dir/spawn-session.log" 2>&1 & then
-    _chain_append "$dir" "-" "spawn"; return 0
-  else
-    _chain_append "$dir" "-" "spawn-failed"; return 1
-  fi
+  return 0   # slot reserved (explicit, set -e safe)
 }
 
 # S5 entry: attempt the autonomous spawn for a build (used by stop-guard inline; also callable for
@@ -1283,6 +1372,10 @@ main() {
     budget-check)      cmd_budget_check "$@" ;;
     check-session-chain) cmd_check_session_chain "$@" ;;
     fire-g2)           cmd_fire_g2 "$@" ;;
+    fire-g1)           cmd_fire_g1 "$@" ;;
+    gate-clear)        cmd_gate_clear "$@" ;;
+    stage-continuable) is_stage_continuable "$@" && ok "continuable" || die "not continuable" ;;
+    auto-start)        cmd_auto_start "$@" ;;
     auto-spawn)        cmd_auto_spawn "$@" ;;
     can-advance)       cmd_can_advance "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
