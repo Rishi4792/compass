@@ -433,6 +433,92 @@ bash "$SH" budget-check "$RB7" >/dev/null 2>&1; chk "$?" "1" "RB-07: future sess
 
 rm -rf "$LOCKS"/v10*.gate-lock "$LOCKS"/v10*.owner "$LOCKS"/v10*.blocked 2>/dev/null || true
 
+echo "── v0.11.0 autonomous self-spawn (INV-BC/STAGE/CONTINUABLE/HALT/GATE/TRIGGER/DEGRADE) ──"
+# Run ENTIRELY inside a sandbox git repo so all locks/state are isolated from the real ~/.claude
+# (the real-process chain test spawns detached children — must never touch the live lock dir).
+V="$SB/v11repo"; mkdir -p "$V/.claude/builds"; ( cd "$V" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
+B11="$V/.claude/builds"
+mka() { local n="$1"; shift; local d="$B11/$n"; mkdir -p "$d"; printf '**Status:** Plan LOCKED\n' > "$d/progress.md"; ( cd "$V" && bash "$SH" auto-start "$d" "$@" >/dev/null 2>&1 ); }
+v11() { ( cd "$V" && bash "$SH" "$@" ); }   # run a compass.sh subcommand with state-root = sandbox
+
+# INV-TRIGGER: auto-start one-command + reject --unattended
+mka v11trig --wall 3600 --sessions 6 --stages 40; chk "$([ -f "$B11/v11trig/.auto-mode" ] && echo 1 || echo 0)" "1" "INV-TRIGGER: auto-start wrote .auto-mode marker"
+v11 budget-check "$B11/v11trig" >/dev/null 2>&1; chk "$?" "0" "INV-TRIGGER: budget present after auto-start"
+v11 auto-start "$B11/v11trig" --unattended >/dev/null 2>&1; chk "$?" "1" "INV-TRIGGER: auto-start --unattended → exit 1 (mutually exclusive)"
+
+# INV-CONTINUABLE: terminal/idle/gate → not continuable; locked-with-PASS+no-ship → continuable
+mka v11cont --sessions 6; C="$B11/v11cont"
+printf '## RECEIPT — contract · v11cont · PASS\n- [x] x\n' > "$C/receipts.md"
+v11 stage-continuable "$C" >/dev/null 2>&1; chk "$?" "0" "INV-CONTINUABLE: contract PASS + no ship → continuable (exit 0)"
+printf '**Status:** SHIPPED\n' > "$C/progress.md"
+v11 stage-continuable "$C" >/dev/null 2>&1; chk "$?" "1" "INV-CONTINUABLE: SHIPPED → not continuable (exit 1)"
+printf '**Status:** Plan LOCKED\n' > "$C/progress.md"; : > "$C/receipts.md"   # no PASS receipt = stuck/never-started
+v11 stage-continuable "$C" >/dev/null 2>&1; chk "$?" "1" "INV-CONTINUABLE: no clean PASS receipt → not continuable (exit 1)"
+printf '## RECEIPT — contract · v11cont · PASS\n- [x] x\n' > "$C/receipts.md"; v11 fire-g1 "$C" >/dev/null 2>&1
+v11 stage-continuable "$C" >/dev/null 2>&1; chk "$?" "1" "INV-CONTINUABLE: gate-lock held → not continuable (exit 1)"
+v11 gate-clear "$C" >/dev/null 2>&1
+
+# INV-GATE: G1 lock → spawn refused; gate-clear → G2 takes same lock (no collision); foreign owner → refused
+mka v11gate --sessions 6; GA="$B11/v11gate"
+v11 fire-g1 "$GA" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'echo x > \"$GA/sent\"'" v11 auto-spawn "$GA" >/dev/null 2>&1; chk "$?" "1" "INV-GATE: G1 lock held → auto-spawn refused"
+sleep 0.2; chk "$([ -f "$GA/sent" ] && echo present || echo absent)" "absent" "INV-GATE: G1 held → spawn stub NOT invoked"
+v11 gate-clear "$GA" >/dev/null 2>&1
+v11 fire-g2 "$GA" "x" >/dev/null 2>&1; chk "$?" "1" "INV-GATE: after gate-clear, fire-g2 takes the SAME lock with no collision (fires, exit 1)"
+v11 gate-clear "$GA" >/dev/null 2>&1
+mka v11foreign --sessions 6; GF="$B11/v11foreign"; v11 own v11foreign --session "other" >/dev/null 2>&1
+COMPASS_SPAWN_CMD="sh -c 'echo x'" CLAUDE_CODE_SESSION_ID="me" v11 auto-spawn "$GF" >/dev/null 2>&1; chk "$?" "1" "INV-GATE: live foreign owner → auto-spawn refused (single-flight)"
+rm -f "$B11/.locks/v11foreign.owner" 2>/dev/null || true
+
+# INV-DEGRADE: failing spawn command → spawn-failed event + non-zero, no hang
+mka v11deg --sessions 6; DG="$B11/v11deg"
+COMPASS_SPAWN_CMD="sh -c 'exit 1'" v11 auto-spawn "$DG" >/dev/null 2>&1; chk "$?" "1" "INV-DEGRADE: failing spawn cmd → auto-spawn non-zero"
+chk "$(grep -c '|spawn-failed|' "$DG/session-chain.log" 2>/dev/null | tr -d ' ')" "1" "INV-DEGRADE: spawn-failed event recorded (honest, not silent)"
+
+# ★ INV-HALT (the safety centerpiece) — REAL separate OS processes through the lock, no real claude.
+# A recursive helper SCRIPT re-invokes `compass.sh auto-spawn` (a genuine separate process re-entering
+# the budget lock); the chain self-propagates until the cap REFUSES. Proven across real processes.
+mka v11halt --wall 99999 --sessions 4 --stages 999; H="$B11/v11halt"
+SEQHELP="$SB/seqhelp.sh"
+cat > "$SEQHELP" <<EOF
+#!/usr/bin/env bash
+# a "session" that (like a real --auto session) tries to spawn the next, carrying the same helper.
+cd "$V" && COMPASS_SPAWN_CMD="$SEQHELP" "$SH" auto-spawn "$H" >/dev/null 2>&1 || true
+EOF
+chmod +x "$SEQHELP"
+COMPASS_SPAWN_CMD="$SEQHELP" v11 auto-spawn "$H" >/dev/null 2>&1   # kick off the real-process chain
+sleep 1.5   # let the chain self-propagate across real processes
+halt_ss="$(sed -nE 's/^spent_sessions=//p' "$H/budget.env" | tail -1)"
+chk "$([ "${halt_ss:-0}" -le 4 ] && echo ok || echo "OVER:$halt_ss")" "ok" "★ INV-HALT: real-process self-spawn chain NEVER exceeds session cap (spent_sessions=${halt_ss} ≤ 4)"
+COMPASS_SPAWN_CMD="$SEQHELP" v11 auto-spawn "$H" >/dev/null 2>&1; chk "$?" "1" "★ INV-HALT: at the cap, the next real spawn is REFUSED (exit 1)"
+
+# INV-HALT concurrent pressure: N real background processes, 1 slot → exactly 1 wins, no deadlock, fast
+mka v11conc --wall 99999 --sessions 2 --stages 999; HC="$B11/v11conc"   # spent=1, cap=2 → 1 slot free
+t0=$(date +%s)
+for i in 1 2 3 4 5; do ( cd "$V" && COMPASS_SPAWN_CMD="sh -c 'true'" bash "$SH" auto-spawn "$HC" > "$HC/as.$i.log" 2>&1 ) & done; wait
+t1=$(date +%s)
+conc_ss="$(sed -nE 's/^spent_sessions=//p' "$HC/budget.env" | tail -1)"
+chk "$conc_ss" "2" "★ INV-HALT concurrent: 5 parallel real spawns, 1 slot → spent_sessions exactly 2 (1 winner, no lost update)"
+chk "$([ $((t1-t0)) -lt 10 ] && echo ok || echo "SLOW:$((t1-t0))s")" "ok" "★ INV-HALT concurrent: batch returns <10s (no lock deadlock; losers refuse in ms)"
+
+# INV-STAGE + INV-BC: the reorder fires the spawn at a NON-build stage in auto, and NOT at all without the marker
+SG="$SB/repo11"; mkdir -p "$SG"; ( cd "$SG" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
+mkdir -p "$SG/.claude/builds/sb11" "$SG/.claude/builds/.locks"
+printf 'session=sessZ\n' > "$SG/.claude/builds/.locks/sb11.owner"
+printf 'sb11 · g · status=plan-LOCKED · facets=library\n' > "$SG/.claude/builds/INDEX"
+printf '## RECEIPT — contract · sb11 · PASS\n- [x] x\n## RECEIPT — review-contract · sb11 · PASS\n- [x] x\n## RECEIPT — plan · sb11 · PASS\n- [x] x\n' > "$SG/.claude/builds/sb11/receipts.md"
+printf '**Status:** plan-LOCKED\n**Stage:** plan\n**Next:** review-plan\n' > "$SG/.claude/builds/sb11/progress.md"
+sgz() { cd "$SG" && printf '%s' '{"session_id":"sessZ","stop_hook_active":false}' | COMPASS_SPAWN_CMD="sh -c 'echo x > \"'"$SG"'/SPAWNED\"'" bash "$SH" stop-guard; }
+# without .auto-mode → gated: plan-LOCKED, 0 boxes → NOT mid-build → quiet, and NO spawn (INV-BC)
+sgz >/dev/null 2>&1; sleep 0.2
+chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "none" "INV-BC: no .auto-mode at a non-build stage → spawn NOT attempted (gated path unchanged)"
+# with .auto-mode → autonomous: the reorder reaches the spawn path at the plan (non-build) stage (INV-STAGE)
+: > "$SG/.claude/builds/sb11/.auto-mode"
+bash "$SH" budget-init "$SG/.claude/builds/sb11" --wall 99999 --sessions 6 --stages 99 >/dev/null 2>&1
+sgz >/dev/null 2>&1; sleep 0.3
+chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "spawned" "★ INV-STAGE: .auto-mode at a NON-build stage (plan) → Stop hook REACHES the spawn (the v0.10 bug is fixed)"
+# (all v0.11 state lived in the sandbox repos $V/$SG under $SB — auto-removed by the EXIT trap; no real locks touched)
+
 echo
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

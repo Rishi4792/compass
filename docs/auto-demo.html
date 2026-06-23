@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!-- Compass --auto demo — VISUAL-FIRST: each scene is a real-looking artifact with the
+     problems annotated in context (red-pen review style) + a "narrator" bar carrying the
+     one-line takeaway. Minimal prose; the artifact + annotations do the work.
+     Render: docs/auto-demo-render.sh  (headless Chrome per-scene → ffmpeg GIF). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#08080d; --panel:#11121b; --panel2:#171927; --border:#242a3a; --ink:#f3f5fb;
+    --muted:#9aa3b8; --dim:#5c647a; --accent:#8A63D2; --accent-soft:#bda4f2; --blue:#1f6feb;
+    --green:#3fb950; --green-soft:#7ee29a; --red:#c0463a; --red-soft:#f0898b; --amber:#d99a3a;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1280px;height:720px;overflow:hidden;background:var(--bg)}
+  body{font-family:var(--sans);-webkit-font-smoothing:antialiased;color:var(--ink)}
+  .scene{display:none;position:relative;width:1280px;height:720px;overflow:hidden}
+  body[data-s="1"] #s1,body[data-s="2"] #s2,body[data-s="3"] #s3,
+  body[data-s="4"] #s4,body[data-s="5"] #s5{display:block}
+
+  /* ── the narrator bar (one eyebrow + one bold line) — the ONLY prose, like the reference ── */
+  .bar{position:absolute;left:0;right:0;bottom:0;height:118px;
+       background:linear-gradient(180deg,rgba(8,8,13,0),var(--bg) 38%);
+       display:flex;flex-direction:column;justify-content:center;padding:0 64px 14px}
+  .bar .eye{font:800 14px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;margin-bottom:12px}
+  .bar .say{font:800 34px/1.12 var(--sans);letter-spacing:-.015em}
+  .bar.red .eye{color:var(--red-soft)} .bar.red .say .h{color:var(--red-soft)}
+  .bar.purple .eye{color:var(--accent-soft)} .bar.purple .say .h{color:var(--accent-soft)}
+  .bar.green .eye{color:var(--green-soft)} .bar.green .say .h{color:var(--green-soft)}
+
+  /* ── annotation callout (red pill with a left pointer), like the reference ── */
+  .anno{position:absolute;background:var(--red);color:#fff;font:700 15px/1 var(--sans);
+        padding:10px 14px;border-radius:9px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:5}
+  .anno::before{content:"";position:absolute;left:-7px;top:50%;transform:translateY(-50%);
+        border:7px solid transparent;border-right-color:var(--red);border-left:0}
+  .anno.down::before{left:22px;top:auto;bottom:-7px;transform:none;border:7px solid transparent;border-top-color:var(--red);border-bottom:0}
+  .anno .x{color:#ffd3ce;font-weight:900;margin-right:6px}
+  .drift-badge{position:absolute;background:var(--red);color:#fff;font:800 14px/1 var(--sans);
+        letter-spacing:.06em;padding:11px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:5;
+        display:flex;align-items:center;gap:8px}
+
+  /* ════ S1 · agent claims done (dark IDE/chat artifact) ════ */
+  .ide{position:absolute;left:120px;top:96px;width:1040px;background:var(--panel);
+       border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .ide .top{display:flex;align-items:center;gap:8px;padding:13px 16px;background:#0e0f17;border-bottom:1px solid var(--border)}
+  .dot3{width:12px;height:12px;border-radius:50%}.r{background:#ff5f56}.y{background:#ffbd2e}.g{background:#27c93f}
+  .ide .tt{color:var(--dim);font:600 13px/1 var(--mono);margin-left:8px}
+  .ide .body{padding:26px 28px;min-height:300px;font-family:var(--mono)}
+  .umsg{color:var(--muted);font-size:16px;margin-bottom:22px}
+  .amsg{background:#10221a;border:1px solid rgba(63,185,80,.3);border-radius:11px;padding:18px 20px;max-width:760px}
+  .amsg .who{color:var(--green-soft);font:700 13px/1 var(--sans);letter-spacing:.04em;margin-bottom:11px;display:flex;align-items:center;gap:8px}
+  .amsg .txt{color:var(--ink);font-size:17px;line-height:1.55}
+  .amsg .txt b{color:var(--green-soft)}
+
+  /* ════ S2 · the drift hero (light dashboard + annotations — the reference) ════ */
+  .dash{position:absolute;left:96px;top:60px;width:1088px;height:496px;background:#f4f2ec;color:#1a1a1a;
+        border-radius:14px;padding:38px 46px;box-shadow:0 30px 90px rgba(0,0,0,.55);overflow:hidden}
+  .dash h2{font-family:var(--serif);font-size:34px;font-weight:700;letter-spacing:-.01em}
+  .dash .sub{color:#7a756c;font-size:14px;margin-top:3px}
+  .dash hr{border:0;border-top:1px solid #ddd8cf;margin:20px 0}
+  .dash ul{list-style:none;font-size:18px;line-height:2}
+  .dash li::before{content:"•";color:#9a958c;margin-right:12px}
+  .dash li b{font-weight:700}
+  .dash .mrr{font-weight:700;font-size:17px;margin:6px 0 14px}
+  .dash table{border-collapse:collapse;font-size:15px}
+  .dash th,.dash td{border:1px solid #d6d1c7;padding:8px 16px;text-align:left}
+  .dash th{font-weight:700}.dash td{color:#3a362f}
+
+  /* ════ S3 · adversarial review (dark review panel, findings pinned) ════ */
+  .rev{position:absolute;left:120px;top:84px;width:1040px;background:var(--panel);border:1px solid var(--border);
+       border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .rev .hd{display:flex;align-items:center;gap:12px;padding:16px 22px;background:#0e0f17;border-bottom:1px solid var(--border)}
+  .rev .hd .tag{font:800 12px/1 var(--sans);letter-spacing:.08em;color:#fff;background:var(--red);padding:7px 11px;border-radius:7px}
+  .rev .hd .mode{color:var(--dim);font:600 14px/1 var(--mono)}
+  .rev .list{padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+  .rev .item{display:flex;align-items:center;gap:16px;font-size:18px}
+  .rev .item .ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;flex:0 0 auto}
+  .rev .item .ic.bad{background:rgba(192,70,58,.18);color:var(--red-soft);border:1px solid rgba(192,70,58,.5)}
+  .rev .item .what{color:var(--ink)}
+  .rev .item .fix{margin-left:auto;color:var(--green-soft);font:700 14px/1 var(--sans);background:rgba(63,185,80,.12);
+       border:1px solid rgba(63,185,80,.4);padding:8px 13px;border-radius:999px}
+
+  /* ════ S4 · runs itself (autonomous run log + 2 brake stops) ════ */
+  .run{position:absolute;left:96px;top:74px;width:1088px;display:flex;gap:18px}
+  .runcol{flex:1.15;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 22px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .runcol .ttl{color:var(--dim);font:700 12px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;margin-bottom:16px}
+  .step{display:flex;align-items:center;gap:13px;font:600 17px/1 var(--mono);color:var(--muted);padding:9px 0}
+  .step .chk{width:24px;height:24px;border-radius:7px;background:rgba(63,185,80,.16);border:1px solid rgba(63,185,80,.45);
+       color:var(--green-soft);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+  .step.now{color:var(--ink)} .step.now .chk{background:rgba(138,99,210,.18);border-color:rgba(138,99,210,.5);color:var(--accent-soft)}
+  .brakes{flex:.85;display:flex;flex-direction:column;gap:16px}
+  .brake{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px 22px}
+  .brake.j{border-color:rgba(217,154,58,.5)} .brake.b{border-color:rgba(63,185,80,.5)}
+  .brake .bh{font:800 12px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;margin-bottom:11px;display:flex;align-items:center;gap:9px}
+  .brake.j .bh{color:#f0c06a} .brake.b .bh{color:var(--green-soft)}
+  .brake .bd{color:var(--ink);font-size:18px;font-weight:700;line-height:1.35}
+  .brake .bs{color:var(--muted);font-size:14px;margin-top:7px}
+  .stoppill{font:800 11px/1 var(--sans);letter-spacing:.06em;padding:6px 10px;border-radius:999px}
+  .stoppill.amber{color:#f0c06a;background:rgba(217,154,58,.14);border:1px solid rgba(217,154,58,.45)}
+  .stoppill.green{color:var(--green-soft);background:rgba(63,185,80,.14);border:1px solid rgba(63,185,80,.45)}
+
+  /* ════ S5 · end card ════ */
+  .end{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       background:radial-gradient(1100px 600px at 50% 40%,rgba(138,99,210,.16),transparent 60%),var(--bg)}
+  .logo{width:78px;height:78px;border-radius:19px;background:linear-gradient(160deg,#9a78e0,#6f4fd0);
+        display:flex;align-items:center;justify-content:center;font-size:40px;margin-bottom:24px;box-shadow:0 14px 44px rgba(138,99,210,.45)}
+  .brand{font-size:60px;font-weight:800;letter-spacing:-.02em}
+  .tag{color:var(--muted);font-size:25px;margin-top:10px}.tag b{color:var(--ink);font-weight:700}
+  .install{font-family:var(--mono);font-size:17px;color:var(--ink);background:var(--panel);border:1px solid var(--border);
+        border-radius:12px;padding:16px 24px;margin-top:30px}.install .c{color:var(--accent-soft)}
+  .foot{color:var(--dim);font-size:14px;margin-top:18px;letter-spacing:.02em}
+</style>
+</head>
+<body data-s="1">
+
+  <!-- ① THE CLAIM — agent says "done" -->
+  <section class="scene" id="s1">
+    <div class="ide">
+      <div class="top"><span class="dot3 r"></span><span class="dot3 y"></span><span class="dot3 g"></span><span class="tt">agent · build/revenue-dashboard</span></div>
+      <div class="body">
+        <div class="umsg">▸ build the revenue dashboard from the spec</div>
+        <div class="amsg">
+          <div class="who">✓ assistant</div>
+          <div class="txt">All set — dashboard built and verified. <b>Done. Shipping now.</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="bar red"><div class="eye">every coding agent does this</div>
+      <div class="say">It says <span class="h">“done.”</span>  —  but did it actually match the spec?</div></div>
+  </section>
+
+  <!-- ② DRIFT CAUGHT — the dashboard + annotations (the reference) -->
+  <section class="scene" id="s2">
+    <div class="dash">
+      <div class="drift-badge" style="right:34px;top:30px">⚠ DRIFT DETECTED</div>
+      <h2>Revenue Dashboard</h2>
+      <div class="sub">Last 12 months</div>
+      <hr>
+      <ul>
+        <li>Total Revenue: <b>$1.21M</b></li>
+        <li>Active Users: 8,420</li>
+        <li>Churn: 2.1%</li>
+      </ul>
+      <div class="anno" style="left:330px;top:150px"><span class="x">✕</span>should be $1.16M</div>
+      <hr>
+      <div class="mrr">Monthly recurring revenue</div>
+      <div class="anno" style="left:355px;top:286px"><span class="x">✕</span>doesn’t match the approved design</div>
+      <table>
+        <tr><th>Month</th><th>2025</th><th>2024</th></tr>
+        <tr><td>Jan</td><td>61,000</td><td>52,000</td></tr>
+        <tr><td>Feb</td><td>66,000</td><td>54,000</td></tr>
+        <tr><td>Mar</td><td>72,000</td><td>57,000</td></tr>
+      </table>
+    </div>
+    <div class="bar red"><div class="eye">compass checks the build against the spec</div>
+      <div class="say">2 drifts found. <span class="h">“Done” is blocked</span> — the build cannot close.</div></div>
+  </section>
+
+  <!-- ③ ADVERSARIAL REVIEW — torn apart -->
+  <section class="scene" id="s3">
+    <div class="rev">
+      <div class="hd"><span class="tag">REVIEW-BUILD</span><span class="mode">assume it’s broken until a re-run check proves otherwise</span></div>
+      <div class="list">
+        <div class="item"><span class="ic bad">✕</span><span class="what">budget that couldn’t be measured</span><span class="fix">✓ fixed</span></div>
+        <div class="item"><span class="ic bad">✕</span><span class="what">state that wouldn’t parse in the shell</span><span class="fix">✓ fixed</span></div>
+        <div class="item"><span class="ic bad">✕</span><span class="what">spawn path missing the time limit</span><span class="fix">✓ fixed</span></div>
+      </div>
+    </div>
+    <div class="bar purple"><div class="eye">every stage is torn apart before it can pass</div>
+      <div class="say">The <span class="h">reviews</span> catch the bugs — not a tired human clicking approve.</div></div>
+  </section>
+
+  <!-- ④ RUNS ITSELF — autonomous run + the two brakes -->
+  <section class="scene" id="s4">
+    <div class="run">
+      <div class="runcol">
+        <div class="ttl">compass:start --auto · running on its own</div>
+        <div class="step"><span class="chk">✓</span> contract</div>
+        <div class="step"><span class="chk">✓</span> plan</div>
+        <div class="step"><span class="chk">✓</span> build</div>
+        <div class="step"><span class="chk">✓</span> review ×3</div>
+        <div class="step now"><span class="chk">→</span> ship</div>
+      </div>
+      <div class="brakes">
+        <div class="brake j"><div class="bh"><span class="stoppill amber">stops for you</span> Brake 1 · judgment</div>
+          <div class="bd">“Ship despite a missed target?”</div><div class="bs">the one call a machine shouldn’t make</div></div>
+        <div class="brake b"><div class="bh"><span class="stoppill green">stops itself</span> Brake 2 · budget</div>
+          <div class="bd">Out of budget → halts.</div><div class="bs">no surprise overnight bill</div></div>
+      </div>
+    </div>
+    <div class="bar green"><div class="eye">no drift + reviews that catch the bugs</div>
+      <div class="say">So it can <span class="h">run itself</span> — stopping only for judgment, or budget.</div></div>
+  </section>
+
+  <!-- ⑤ END CARD -->
+  <section class="scene" id="s5">
+    <div class="end">
+      <div class="logo">🧭</div>
+      <div class="brand">Compass</div>
+      <p class="tag">Your AI can’t say <b>“done”</b> until it proves it.</p>
+      <div class="install"><span class="c">/plugin</span> marketplace add Rishi4792/compass</div>
+      <p class="foot">github.com/Rishi4792/compass · MIT</p>
+    </div>
+  </section>
+
+</body>
+</html>

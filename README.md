@@ -3,7 +3,7 @@
 **Build software true to spec, with zero drift.** A contract-first build lifecycle for [Claude Code](https://claude.com/claude-code).
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.10.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.11.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 > **The problem in one line:** AI coding agents drift from what you asked — and worse, they say *"done"* when the numbers are wrong or a step was skipped. **Compass makes "done" something the agent has to *prove*, with a real gate it can't talk past.**
@@ -95,11 +95,13 @@ Then `/compass:start` to run the full lifecycle, or invoke any stage by name (`/
 ## Autonomous mode (`--auto`, v0.10.0) — opt-in
 `/compass:start --auto` runs the whole lifecycle **without the per-hop gate**, stopping for a human at only **two** points: **G1** (one upfront approval of the contract + design intent) and **G2** (fires only when an invariant fails, a review can't converge, the budget is hit, or prod-verify fails). Everything in between auto-advances, and the autonomous adversarial reviews still self-correct exactly as in gated mode. *(Why two? An audit of 38 past Compass builds showed humans only ever changed direction at those two kinds of moment — taste/strategy, and "ship despite a miss" — while the reviews caught all mechanical correctness on their own.)*
 
-It's bounded by a **mandatory measurable budget** (`--auto` refuses to start without one): wall-clock seconds + max-sessions + max-stages (defaults 1h / 6 / 40), enforced cumulatively. When context runs low it **auto-spawns a fresh session** (`/compass:resume <slug> --auto`) and continues with no human — guarded so it can never bypass a gate, run two sessions at once, or exceed the budget. Default (no flag) behavior is unchanged.
+It's bounded by a **mandatory measurable budget** (`--auto` refuses to start without one): wall-clock seconds + max-sessions + max-stages (defaults 1h / 6 / 40), enforced cumulatively. When context runs low it **auto-spawns a fresh session** (`/compass:resume <slug> --auto`) — at *any* stage (v0.11) — and continues with no human, guarded so it can never bypass a gate, run two sessions at once, or exceed the budget. The runaway ceiling is proven to hold across **real separate spawned processes** (INV-HALT), so the chain cannot exceed the budget regardless of what it launches — the explicit guard against an autonomous loop running away. Default (no flag) behavior is unchanged.
 
+Turn it on two ways (v0.11):
 ```
-compass.sh budget-init <build-dir> --wall 3600 --sessions 6 --stages 40
-/compass:start --auto
+# one command, then start:
+compass.sh auto-start <build-dir> --wall 3600 --sessions 6 --stages 40 && /compass:start --auto
+# …or just run /compass:start — it asks "Gated or Autonomous?" up front.
 ```
 **Rollback** to fully-gated: delete the auto artifacts from the build dir (`budget.env`, `session-chain.log`, the `.auto-mode` marker, and any `.locks/<slug>.{gate-lock,owner,blocked}`). All `--auto` behavior is flag-gated, so removing the marker restores gated mode exactly. `--auto` is mutually exclusive with `--unattended`.
 

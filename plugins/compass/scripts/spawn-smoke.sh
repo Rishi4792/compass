@@ -34,4 +34,16 @@ wait "$child" 2>/dev/null || true
 
 if [ "$detached_ok" -ne 1 ]; then verdict_degraded "nohup detach did not produce the sentinel"; fi
 if [ "$claude_present" -ne 1 ]; then verdict_degraded "claude CLI not on PATH"; fi
+
+# (c) v0.11.0 OPT-IN real-claude probe — only when COMPASS_SMOKE_REAL=1. A real `claude -p` self-spawn
+# spends tokens and IS the runaway surface, so it is NEVER auto-run in CI. Safety does NOT depend on
+# this: the runaway ceiling (INV-HALT) is proven across REAL shell processes without claude. This probe
+# only upgrades the report from "mechanism-proven" to "end-to-end-proven" when a human opts in.
+if [ "${COMPASS_SMOKE_REAL:-0}" = "1" ] && [ "$claude_present" = 1 ]; then
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 60 claude -p "say: spawn-probe-ok" >/dev/null 2>&1 \
+      && echo "SPAWN-SMOKE: REAL-OK — claude -p responded under timeout (end-to-end spawn viable)" \
+      || echo "SPAWN-SMOKE: REAL-DEGRADED — claude -p did not respond (auth/cost/offline); F-SPAWN falls back to hand-off"
+  fi
+fi
 verdict_full
