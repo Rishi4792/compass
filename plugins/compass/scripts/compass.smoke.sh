@@ -175,11 +175,60 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=118' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the selftest floor 118"
 chk "$(grep -c 'FLOOR_SMOKE=60' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the smoke floor 60"
+
+# ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
+CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
+chk "$(grep -c 'post-ship-loop: on (clean 2 / cap 5)' "$CSK")" "1" "v0.13 contract skill writes the post-ship-loop header for new builds (P1 durable)"
+chk "$(grep -cF -- '- [x] post-ship-loop: <on (clean N / cap M)|off — reason>' "$CSK")" "1" "v0.13 contract skill pins the post-ship-loop receipt box (P1 durable)"
+chk "$(grep -c 'cold-critic: on' "$CSK")" "1" "v0.13 contract skill writes cold-critic: on for web builds (VZ-2 durable header rule)"
+chk "$(grep -c 'observation-channel:' "$CSK")" "1" "v0.13 contract skill writes the observation-channel declaration (durable)"
+
+# ── v0.13.0 S14: INV-TEMPLATES — extract each SKILL-pinned template, instantiate via THE pinned ──
+# placeholder map (alternations take their FIRST branch), feed its *_match parser via __match.
+tpl() { # <skill-file> <template-name> — prints the template block (fenced lines, or one inline `…` line)
+  awk -v m="<!-- TEMPLATE: $2 -->" '
+    index($0,m)>0 { cap=1; next }
+    cap && /^[[:space:]]*```/ { if (started) exit; next }
+    cap && /<!-- TEMPLATE:/ { exit }
+    cap {
+      line=$0; sub(/^[[:space:]]*/,"",line)
+      if (line=="" && !started) next
+      if (line ~ /^`.*`.?$/) { gsub(/^`|`,?$/,"",line); print line; exit }   # inline backticked template
+      if (started && line !~ /^#/ && line !~ /^-/) exit                       # prose after the block ends it
+      print line; started=1
+    }' "$1"
+}
+inst() { # THE pinned map (VZ-5): first-branch rule for alternations
+  sed -e 's/<slug>/fixt/g' -e 's/<k>/1/g' -e 's/<CLEAN|MATERIAL>/CLEAN/g' -e 's/<GO|NO-GO>/GO/g'       -e 's/<git sha-12>/000000000000/g' -e 's/<sha>/000000000000/g'       -e 's/<PS ids>/PS-1-1/g' -e 's/<ISO ts>/2026-01-01T00:00:00Z/g'       -e 's/<command>/true/g' -e 's/<observed output>/OK/g'       -e 's|<prod url / system name — never a secret>|fixture-system|g'       -e 's|<dir>|/tmp/x|g' -e 's|<evidence path>|evidence/shot.png|g'       -e 's/<on (clean N \/ cap M)|off — reason>/on (clean 1 \/ cap 5)/g'
+}
+SHIP="$PLUGIN_ROOT/skills/ship/SKILL.md"; BUILD="$PLUGIN_ROOT/skills/build/SKILL.md"; CSK2="$PLUGIN_ROOT/skills/contract/SKILL.md"
+tpl "$SHIP" round-receipt | inst | bash "$SH" __match round_receipt_match
+chk "$?" "0" "INV-TEMPLATES: ship round-receipt template (extracted+instantiated) accepted by round_receipt_match"
+tpl "$SHIP" user-accepted | inst | bash "$SH" __match user_accepted_match
+chk "$?" "0" "INV-TEMPLATES: user-accepted template accepted by user_accepted_match"
+tpl "$BUILD" cold-critic-receipt | inst | bash "$SH" __match coldcritic_receipt_match
+chk "$?" "0" "INV-TEMPLATES: cold-critic receipt template accepted by coldcritic_receipt_match"
+tpl "$CSK2" postship-box | inst | bash "$SH" __match postship_box_match
+chk "$?" "0" "INV-TEMPLATES: contract postship receipt box accepted by postship_box_match"
+tpl "$CSK2" intake-box | inst | bash "$SH" __match intake_box_match
+chk "$?" "0" "INV-TEMPLATES: contract intake receipt box accepted by intake_box_match"
+tpl "$CSK2" sketch-box | inst | bash "$SH" __match sketch_box_match
+chk "$?" "0" "INV-TEMPLATES: contract sketch receipt box accepted by sketch_box_match"
+
+# ── v0.13.0 S14: INV-WIRED — every gate provably INVOKED (seam greps; behavioral pairs live in selftest) ──
+ENG="$PLUGIN_ROOT/scripts/compass.sh"
+chk "$(awk '/^cmd_gate\(\)/{f=1} f&&/cmd_intake_gate/{n++} f&&/^}/{exit} END{print n+0}' "$ENG")" "1" "INV-WIRED: cmd_gate contract seam invokes intake-gate"
+chk "$(awk '/^cmd_gate\(\)/{f=1} f&&/cmd_sketch_gate/{n++} f&&/^}/{exit} END{print (n>=2)?1:0}' "$ENG")" "1" "INV-WIRED: cmd_gate invokes sketch-gate at BOTH contract + review-build seams"
+chk "$(awk '/^cmd_lifecycle_audit\(\)/{f=1} f&&/cmd_loop_converged/{n++} f&&/^\}$/&&n{exit} END{print n+0}' "$ENG")" "1" "INV-WIRED: lifecycle-audit G-O1 invokes loop-converged"
+chk "$(awk '/^cmd_loop_round\(\)/{f=1} f&&/^\}$/{f=0} f&&/cmd_budget_check/{n++} END{print n+0}' "$ENG")" "1" "INV-WIRED: loop-round owns the budget-check call"
+chk "$(grep -c 'Post-ship: round' "$ENG")" "1" "INV-WIRED: cmd_status carries the loop line"
+chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "INV-WIRED: build skill invokes coldgo-gate (final web verify)"
+chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/review-build/SKILL.md")" "1" "INV-WIRED: review-build [C] invokes coldgo-gate"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null

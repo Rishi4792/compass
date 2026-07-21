@@ -16,6 +16,8 @@
 
 Stages are nodes, **script gates are the edges** (exit codes — never model-chosen), adversarial reviews and the post-ship critique loop are independent verifier nodes with fresh context and on-disk evidence only. Every cycle is bounded (caps + convergence bounds from the contract header + stall detection + budget metering inside the registration gate). `SHIPPED` is not the finish line: it is unwritable until the post-ship loop converges on the live system.
 
+**v0.13 — co-construct + sketch:** the contract interview scans your repo first, then EXPANDS your thinking (pre-mortem / constraint-relaxation / 10x / adjacent-use-case menus — with a hard "something must be rejected" gate so the expansion is real), and RENDERS what you're deciding as you decide it: a grayscale throwaway wireframe for UI (the accepted mockup becomes the binding spec, with a line-1 leak tracer so the throwaway can never ship) or an embedded Mermaid logic map for everything else. All of it enforced by `intake-gate` + `sketch-gate` exit codes riding the ordinary stage gates.
+
 ## What is Compass?
 
 Compass turns any non-trivial build into a disciplined, contract-first lifecycle. You write a locked **contract** — the single source of truth for what's being built — and every later stage (plan, build, three adversarial reviews, and an optional ship) is checked against it. The contract is the invariant; the moment anything drifts, Compass **stops and asks**.

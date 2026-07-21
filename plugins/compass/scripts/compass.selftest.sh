@@ -913,7 +913,7 @@ RC="$HERE/compass.recon.sh"
 mkstub() { # <file> <tail-line> [names]
   { echo '#!/bin/sh'; [ -n "${3:-}" ] && printf 'echo "%s"\n' "$3"; printf 'echo "%s"\n' "$2"; } > "$1"; chmod +x "$1"
 }
-NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS"
+NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED"
 ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 118 passed, 0 failed" "$NAMES12"
 SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 60 passed, 0 failed ────────"
 COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
@@ -931,6 +931,137 @@ chk "$(printf '%s' "$ERR" | grep -c 'refuse: inv-missing')" "1" "INV-RECON refus
 ST_X="$SB/st-cross.sh"; mkstub "$ST_X" "──────── 200 passed, 0 failed ────────"
 ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_X" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"
 chk "$(printf '%s' "$ERR" | grep -c 'refuse: cross-match')" "1" "INV-RECON refuse+code: smoke-shaped count in the selftest channel (cross-match guard)"
+
+echo "── INV-INTAKE (v0.13.0 S10): intake-gate / intake-phase / cmd_gate seam ────────"
+mkintake() { # <dir> — clean FULL co-construct fixture (bold headers; ladder synced 2/1/1)
+  local d="$1"; mkdir -p "$d"
+  cat > "$d/contract.md" <<'EOC'
+**Facets:** library
+**deploy:** in scope — x
+**intake:** co-construct-v1
+sketch: out-of-scope — engine-only fixture (no UI, logic map exercised by INV-SKETCH)
+
+## Scope ladder
+- NOW: alpha
+- NOW: beta
+- LATER: gamma
+- NEVER: delta
+EOC
+  cat > "$d/intake.md" <<'EOI'
+MODE: FULL (approved via AskUserQuestion)
+COVERAGE: functional=CLEAR data=CLEAR
+PHASE 0 DONE · t0
+Q: why now? → A: recurring pain in prod
+Q: success anchor? → A: last month's incident never repeats
+PHASE 1 DONE · t1
+GEN premortem: OPT fails silently on empty input → NOW
+GEN premortem: OPT budget overrun kills adoption → LATER
+GEN relax: OPT if latency were free, stream everything → NEVER
+GEN relax: OPT batch nightly instead → LATER
+GEN 10x: OPT make it the default for every build → NOW
+GEN 10x: OPT SaaS it → NEVER
+GEN adjacent: OPT same engine for docs builds → LATER
+GEN adjacent: OPT internal audit tool → LATER
+PHASE 2 DONE · t2
+SCOPE NOW: alpha
+SCOPE NOW: beta
+SCOPE LATER: gamma
+SCOPE NEVER: delta
+PHASE 3 DONE · t3
+Q: auth model? → A: env-token
+Q: rollback? → A: git revert
+PHASE 4 DONE · t4
+PHASE 5 DONE · t5
+EOI
+  printf '\n## RECEIPT — contract · fix · PASS\n- [x] done\n' > "$d/receipts.md"
+}
+IN="$SB/in-clean"; mkintake "$IN"
+bash "$SH" intake-gate "$IN" >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: clean FULL interview → PASS"
+bash "$SH" gate "$IN" contract >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: cmd_gate contract seam passes on a clean interview (behavioral)"
+chk "$(bash "$SH" intake-phase "$IN" 2>/dev/null)" "5" "INV-INTAKE: intake-phase prints the resume pointer (5)"
+# ladder mismatch → gate <dir> contract FAILS (behavioral seam proof)
+IB="$SB/in-ladder"; mkintake "$IB"; printf 'SCOPE NOW: extra-only-in-intake\n' >> "$IB/intake.md"
+ERR="$(bash "$SH" intake-gate "$IB" 2>&1 >/dev/null)"; chk "$?" "1" "INV-INTAKE refuse: ladder count mismatch (G-I5, count-equality only)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: ladder')" "1" "INV-INTAKE reason code: ladder"
+bash "$SH" gate "$IB" contract >/dev/null 2>&1; chk "$?" "1" "INV-INTAKE: cmd_gate contract seam FAILS when intake-gate fails (INV-WIRED behavioral)"
+# evidential G-I6: re-gate under .auto-mode PASSES (the RC-6 brick-scenario)
+: > "$IN/.auto-mode"
+bash "$SH" intake-gate "$IN" >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: re-gate with .auto-mode present PASSES (G-I6 is evidential, not temporal)"
+rm -f "$IN/.auto-mode"
+# classic bypass + legacy N/A
+IC="$SB/in-classic"; mkintake "$IC"; sed -i.bak 's/\*\*intake:\*\* co-construct-v1/**intake:** classic/' "$IC/contract.md"; rm -f "$IC/contract.md.bak"; rm "$IC/intake.md"
+bash "$SH" intake-gate "$IC" >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: 'intake: classic' bypasses (auto degrade path)"
+IL="$SB/in-legacy"; mkdir -p "$IL"; printf '**Facets:** library\n' > "$IL/contract.md"; printf '\n## RECEIPT — contract · fix · PASS\n- [x] done\n' > "$IL/receipts.md"
+bash "$SH" intake-gate "$IL" >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: legacy (no declaration, no intake.md) → N/A(0)"
+bash "$SH" gate "$IL" contract >/dev/null 2>&1; chk "$?" "0" "INV-INTAKE: cmd_gate on a legacy build byte-identical (INV-BC)"
+# G-I1 mode + phase order
+IM="$SB/in-mode"; mkintake "$IM"; sed -i.bak '/^MODE:/d' "$IM/intake.md"; rm -f "$IM/intake.md.bak"
+ERR="$(bash "$SH" intake-gate "$IM" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: mode')" "1" "INV-INTAKE refuse: missing MODE line (G-I1)"
+IP="$SB/in-phase"; mkintake "$IP"; sed -i.bak '/^PHASE 2 DONE/d' "$IP/intake.md"; rm -f "$IP/intake.md.bak"
+ERR="$(bash "$SH" intake-gate "$IP" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: phase-order')" "1" "INV-INTAKE refuse: out-of-order/missing PHASE markers (G-I1)"
+# G-I2 generators
+IG="$SB/in-gen"; mkintake "$IG"; sed -i.bak '/^GEN adjacent/d' "$IG/intake.md"; rm -f "$IG/intake.md.bak"
+ERR="$(bash "$SH" intake-gate "$IG" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: generators')" "1" "INV-INTAKE refuse: a generator missing its ≥2 disposed options (G-I2)"
+# G-I3 all-NOW
+I3="$SB/in-allnow"; mkintake "$I3"
+sed -i.bak -e 's/→ LATER$/→ NOW/' -e 's/→ NEVER$/→ NOW/' -e 's/^SCOPE LATER: gamma/SCOPE NOW: gamma/' -e 's/^SCOPE NEVER: delta/SCOPE NOW: delta/' "$I3/intake.md"; rm -f "$I3/intake.md.bak"
+sed -i.bak -e 's/^- LATER: gamma/- NOW: gamma/' -e 's/^- NEVER: delta/- NOW: delta/' "$I3/contract.md"; rm -f "$I3/contract.md.bak"
+ERR="$(bash "$SH" intake-gate "$I3" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: rejection')" "1" "INV-INTAKE refuse: all-NOW ledger (G-I3 HARD — decision 5)"
+# G-I4 budget
+I4="$SB/in-budget"; mkintake "$I4"
+sed -i.bak 's/^PHASE 4 DONE · t4/Q: q3? → A: a\nQ: q4? → A: a\nQ: q5? → A: a\nPHASE 4 DONE · t4/' "$I4/intake.md"; rm -f "$I4/intake.md.bak"
+ERR="$(bash "$SH" intake-gate "$I4" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: budget')" "1" "INV-INTAKE refuse: 5 Phase-4 questions > FULL cap 4 (G-I4)"
+# G-I6 answers
+I6="$SB/in-noans"; mkintake "$I6"; sed -i.bak 's/→ A: [^→]*$/→ A: /' "$I6/intake.md"; rm -f "$I6/intake.md.bak"
+ERR="$(bash "$SH" intake-gate "$I6" 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: answers')" "1" "INV-INTAKE refuse: zero recorded answers (G-I6 evidential)"
+
+echo "── INV-SKETCH (v0.13.0 S11): sketch-gate + first-line leak tracer ──────────────"
+SKR="$SB/sk-repo"; mk_git_sandbox "$SKR" >/dev/null
+mksk() { # <build-dir> <facets>
+  mkdir -p "$1/sketch"
+  printf '%s\n' "**Facets:** $2" '**deploy:** in scope — x' '**intake:** co-construct-v1' > "$1/contract.md"
+  printf 'v1 · t · decision=layout · alternatives=A,B · picked=A · render=local · file=sketch/mock-v1.html\n' > "$1/sketch/LEDGER"
+  printf '\n## RECEIPT — contract · fix · PASS\n- [x] done\n' > "$1/receipts.md"
+}
+# legacy N/A + escape N/A
+SL="$SKR/sk-legacy"; mkdir -p "$SL"; printf '**Facets:** web\n' > "$SL/contract.md"
+( cd "$SKR" && bash "$SH" sketch-gate sk-legacy ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: legacy (no triggers) → N/A(0)"
+SE="$SKR/sk-esc"; mksk "$SE" web; printf 'sketch: out-of-scope — tiny copy tweak\n' >> "$SE/contract.md"
+( cd "$SKR" && bash "$SH" sketch-gate sk-esc ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: explicit out-of-scope escape → N/A(0)"
+# web: mockup path (marker line-1 + banner)
+SW="$SKR/sk-web"; mksk "$SW" web
+printf '<!-- COMPASS-MOCK slug=sk-web v=1 throwaway=true -->\n<div>THROWAWAY WIREFRAME — critique structure, not polish</div>\n' > "$SW/sketch/mock-v1.html"
+printf 'mockup: sketch/mock-v1.html (ACCEPTED v1)\n' >> "$SW/contract.md"
+( cd "$SKR" && bash "$SH" sketch-gate sk-web ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: web + accepted mockup (line-1 marker + banner) → PASS"
+sed -i.bak 's/THROWAWAY WIREFRAME[^<]*//' "$SW/sketch/mock-v1.html"; rm -f "$SW/sketch/mock-v1.html.bak"
+ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-web 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: mockup')" "1" "INV-SKETCH refuse: banner stripped from the mockup"
+# web: design-standard path (decision 6)
+SD="$SKR/sk-std"; mksk "$SD" web; printf 'design-standard: rk-house-style\n' >> "$SD/contract.md"
+( cd "$SKR" && bash "$SH" sketch-gate sk-std ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: web + named design-standard (no mockup) → PASS (decision 6 both paths)"
+# web: neither
+SN="$SKR/sk-none"; mksk "$SN" web
+ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-none 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: mockup')" "1" "INV-SKETCH refuse: applicable web build with neither mockup nor design-standard"
+# non-web logic map (RD-9)
+SP="$SKR/sk-pipe"; mksk "$SP" library
+ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-pipe 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: logicmap')" "1" "INV-SKETCH refuse: non-web co-construct without a Logic Map (RD-9)"
+printf '\n## Logic Map\n```mermaid\nflowchart LR\n  a --> b\n```\n' >> "$SP/contract.md"
+( cd "$SKR" && bash "$SH" sketch-gate sk-pipe ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: non-web with a mermaid Logic Map fence → PASS"
+# missing LEDGER
+SG2="$SKR/sk-noledger"; mksk "$SG2" library; rm "$SG2/sketch/LEDGER"
+printf '\n## Logic Map\n```mermaid\nflowchart LR\n  a --> b\n```\n' >> "$SG2/contract.md"
+ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-noledger 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: ledger')" "1" "INV-SKETCH refuse: no sketch/LEDGER render line"
+# leak tracer: line-1 marker in a TRACKED file → FAIL; mid-file mention → PASS
+printf '<!-- COMPASS-MOCK slug=leaked v=3 throwaway=true -->\n<div>oops shipped</div>\n' > "$SKR/leaked.html"
+( cd "$SKR" && git add leaked.html && git -c user.email=t@t -c user.name=t commit -qm leak )
+ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-pipe 2>&1 >/dev/null)"; chk "$?" "1" "INV-SKETCH refuse: tracked file with LINE-1 COMPASS-MOCK marker (leak tracer)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: leak')" "1" "INV-SKETCH reason code: leak"
+( cd "$SKR" && git rm -q leaked.html && printf '# doc\nthe marker string <!-- COMPASS-MOCK slug=x --> may be MENTIONED mid-file\n' > doc.md && git add doc.md && git -c user.email=t@t -c user.name=t commit -qm doc )
+( cd "$SKR" && bash "$SH" sketch-gate sk-pipe ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: mid-file mention in a tracked doc → PASS (first-line anchor, no self-trip)"
+# cmd_gate review-build seam behavioral (leak → gate fails)
+printf '<!-- COMPASS-MOCK slug=leak2 v=1 throwaway=true -->\n' > "$SKR/leak2.html"
+( cd "$SKR" && git add leak2.html && git -c user.email=t@t -c user.name=t commit -qm leak2 )
+printf '\n## RECEIPT — review-build · fix · PASS\n- [x] done\n' >> "$SP/receipts.md"
+( cd "$SKR" && bash "$SH" gate sk-pipe review-build ) >/dev/null 2>&1; chk "$?" "1" "INV-SKETCH: cmd_gate review-build seam FAILS on a line-1 leak (INV-WIRED behavioral)"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"

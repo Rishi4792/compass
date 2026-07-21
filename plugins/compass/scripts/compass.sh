@@ -515,6 +515,17 @@ cmd_gate() { # <build-dir> <prior-stage>
     die "'$stage' receipt has an UNCHECKED box — its work is incomplete:
 $(printf '%s' "$block" | grep '^\- \[ \]')"
   fi
+  # v0.13.0 seams (script-owned invocation, RC-5/RC-6): the co-construct + sketch gates ride the
+  # ordinary gate call — legacy builds (no declarations, no artifacts) pass byte-identically.
+  if [ "$stage" = "contract" ]; then
+    cmd_intake_gate "$dir" >/dev/null || die "gate: intake-gate FAILED for '$dir' (see stderr)."
+    if type cmd_sketch_gate >/dev/null 2>&1; then
+      cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate FAILED for '$dir' (see stderr)."
+    fi
+  fi
+  if [ "$stage" = "review-build" ] && type cmd_sketch_gate >/dev/null 2>&1; then
+    cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate (leak re-check) FAILED for '$dir' (see stderr)."
+  fi
   ok "prior stage '$stage' receipt present, PASS, complete, not superseded."
 }
 
@@ -1675,6 +1686,156 @@ cmd_auto_resume() { # <build-dir>
   ok "auto-resume: self-spawn re-armed for '$(basename "$dir")'."
 }
 
+# ── v0.13.0 S10: intake-gate — the co-construction interview's teeth (contract F-INTAKEGATE) ──
+# Trigger (RC-6, pinned): the gate applies iff the contract declares `intake: co-construct-v1`
+# OR intake.md exists; `intake: classic` explicitly BYPASSES (the pre-v0.13 interview ran).
+# Checks are EVIDENTIAL (G-I6 reads recorded interview evidence, never the transient .auto-mode
+# marker — re-gating an --auto build that legitimately interviewed earlier stays clean).
+# Codes: mode · phase-order · generators · rejection · budget · ladder · answers.
+cmd_intake_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh intake-gate <build-dir>"
+  local c="$dir/contract.md" im="$dir/intake.md"
+  local decl; decl="$(hdr_get "$c" intake 2>/dev/null || true)"
+  case "$decl" in
+    classic*) ok "intake-gate: N/A — 'intake: classic' (pre-v0.13 interview path)."; return 0 ;;
+  esac
+  if [ "$decl" != "co-construct-v1" ] && [ ! -f "$im" ]; then
+    ok "intake-gate: N/A — no co-construct declaration and no intake.md (legacy)."; return 0
+  fi
+  [ -f "$im" ] || { echo "refuse: mode" >&2; die "intake-gate: 'intake: co-construct-v1' declared but intake.md is missing."; }
+  # G-I1: MODE line + ordered PHASE markers (FULL: 0 1 2 3 4 5 · LIGHT: 0 1 3 4 5)
+  local mode; mode="$(sed -nE 's/^MODE: (FULL|LIGHT).*/\1/p' "$im" | head -1)"
+  [ -n "$mode" ] || { echo "refuse: mode" >&2; die "intake-gate: no MODE: FULL|LIGHT line (G-I1)."; }
+  local want got
+  if [ "$mode" = "FULL" ]; then want="0 1 2 3 4 5"; else want="0 1 3 4 5"; fi
+  got="$(sed -nE 's/^PHASE ([0-9]+) DONE.*/\1/p' "$im" | tr '\n' ' ' | sed 's/ $//')"
+  [ "$got" = "$want" ] || { echo "refuse: phase-order" >&2; die "intake-gate: PHASE markers '$got' != required '$want' for $mode (G-I1)."; }
+  # G-I2 (FULL): 4 generators × ≥2 OPT lines, every OPT terminating in NOW|LATER|NEVER
+  if [ "$mode" = "FULL" ]; then
+    local g n
+    for g in premortem relax 10x adjacent; do
+      n="$(grep -cE "^GEN $g: OPT .+ → (NOW|LATER|NEVER)$" "$im" || true)"
+      [ "$n" -ge 2 ] || { echo "refuse: generators" >&2; die "intake-gate: generator '$g' has $n disposed OPT lines (need ≥2) (G-I2)."; }
+    done
+    grep -qE '^GEN [a-z0-9]+: OPT .+ → ' "$im" && grep -E '^GEN [a-z0-9]+: OPT ' "$im" | grep -vqE '→ (NOW|LATER|NEVER)$' \
+      && { echo "refuse: generators" >&2; die "intake-gate: an OPT line lacks a terminal NOW|LATER|NEVER disposition (G-I2 — nothing raised may be silently dropped)."; }
+  fi
+  # G-I3 (HARD, decision 5): expansion was real — ≥1 LATER or NEVER disposition somewhere
+  grep -qE '(→ (LATER|NEVER)$|^SCOPE (LATER|NEVER): )' "$im" \
+    || { echo "refuse: rejection" >&2; die "intake-gate: zero LATER/NEVER dispositions — an all-NOW ledger is sycophancy or scope balloon (G-I3, HARD)."; }
+  # G-I4: Phase-4 question budget (Q: lines after the PHASE 3 marker): ≤4 FULL / ≤2 LIGHT
+  local cap q4; [ "$mode" = "FULL" ] && cap=4 || cap=2
+  q4="$(awk '/^PHASE 3 DONE/{p=1;next} p && /^Q: /{n++} END{print n+0}' "$im")"
+  [ "$q4" -le "$cap" ] || { echo "refuse: budget" >&2; die "intake-gate: $q4 Phase-4 questions exceed the $mode cap $cap (G-I4 — the fatigue budget is enforced, not advisory)."; }
+  # G-I5: ladder count sync (COUNT equality only — no substring matching, the G13 lesson)
+  local b ic cc
+  for b in NOW LATER NEVER; do
+    ic="$(grep -cE "^SCOPE $b: " "$im" || true)"
+    cc="$(awk -v b="$b" '/^## Scope ladder/{p=1;next} p&&/^## /{p=0} p{ line=$0; gsub(/\*/,"",line); if (line ~ ("^[- ]*" b ": ")) n++ } END{print n+0}' "$c")"
+    [ "$ic" = "$cc" ] || { echo "refuse: ladder" >&2; die "intake-gate: $b count mismatch — intake.md has $ic, contract '## Scope ladder' has $cc (G-I5)."; }
+  done
+  # G-I6 (EVIDENTIAL): ≥1 real human answer recorded
+  grep -qE '^Q: .+ → A: .+' "$im" || { echo "refuse: answers" >&2; die "intake-gate: zero recorded 'Q: … → A: …' answers — a headless session cannot fake the interview (G-I6)."; }
+  ok "intake-gate: co-construct interview complete ($mode; phases $got; expansion real; budget kept; ladder synced)."
+}
+# intake-phase <dir>: the deterministic resume pointer — prints the highest completed phase.
+cmd_intake_phase() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh intake-phase <build-dir>"
+  [ -f "$dir/intake.md" ] || { echo "none"; return 0; }
+  sed -nE 's/^PHASE ([0-9]+) DONE.*/\1/p' "$dir/intake.md" | tail -1 | { read -r p || p=none; echo "${p:-none}"; }
+}
+
+# ── v0.13.0 S11: sketch-gate — render-while-contracting teeth (contract F-SKETCHGATE) ──
+# Applicability (RC-5, widened RD-9): applies iff sketch/LEDGER exists OR a `sketch:`/`mockup:`
+# header is present OR `intake: co-construct-v1` is declared (ANY facet — web takes the
+# mockup/design-standard branch, non-web the Logic Map branch). Escape: `sketch: out-of-scope —
+# <reason>` → N/A(0). Legacy builds (none of the triggers) → N/A(0).
+# Leak tracer (RC-4, first-line-anchored so Compass's own source can never self-trip): FAIL iff
+# any TRACKED file outside the state root has LINE 1 matching `^<!-- COMPASS-MOCK slug=`.
+# Codes: ledger · mockup · logicmap · leak.
+cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tracer)
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh sketch-gate <build-dir>"
+  local c="$dir/contract.md"
+  # No contract at all → nothing declared, nothing to check (legacy/minimal fixtures — INV-BC;
+  # the seam must be byte-inert for builds that never opted in).
+  [ -f "$c" ] || { ok "sketch-gate: N/A — no contract.md (legacy)."; return 0; }
+  local skl; skl="$(hdr_get "$c" sketch 2>/dev/null || true)"
+  case "$skl" in out-of-scope*) ok "sketch-gate: N/A — ${skl}."; return 0 ;; esac
+  local mock decl facets
+  mock="$(hdr_get "$c" mockup 2>/dev/null || true)"
+  decl="$(hdr_get "$c" intake 2>/dev/null || true)"
+  facets="$(hdr_get "$c" Facets 2>/dev/null || true)"
+  if [ ! -f "$dir/sketch/LEDGER" ] && [ -z "$skl" ] && [ -z "$mock" ] && [ "$decl" != "co-construct-v1" ]; then
+    ok "sketch-gate: N/A — no sketch artifacts or declarations (legacy)."; return 0
+  fi
+  # LEDGER: ≥1 render line
+  grep -qE '^v[0-9]+ · ' "$dir/sketch/LEDGER" 2>/dev/null \
+    || { echo "refuse: ledger" >&2; die "sketch-gate: sketch/LEDGER missing or has no 'v<N> · …' render line."; }
+  case "$facets" in
+    *web*)
+      local ok_spec=""
+      if [ -n "$mock" ]; then
+        local mp; mp="$dir/$(printf '%s' "$mock" | sed -E 's/ \(ACCEPTED.*//')"
+        [ -f "$mp" ] || { echo "refuse: mockup" >&2; die "sketch-gate: contract names mockup '$mock' but the file is missing."; }
+        head -1 "$mp" | grep -q '^<!-- COMPASS-MOCK slug=' || { echo "refuse: mockup" >&2; die "sketch-gate: mockup lacks the line-1 COMPASS-MOCK marker."; }
+        grep -q 'THROWAWAY WIREFRAME' "$mp" || { echo "refuse: mockup" >&2; die "sketch-gate: mockup lacks the visible THROWAWAY banner."; }
+        ok_spec=1
+      fi
+      [ -z "$ok_spec" ] && hdr_get "$c" design-standard >/dev/null 2>&1 && ok_spec=1   # decision 6: both paths valid
+      [ -n "$ok_spec" ] || { echo "refuse: mockup" >&2; die "sketch-gate: web build needs an ACCEPTED mockup (marker+banner) OR a 'design-standard:' line (decision 6)."; }
+      ;;
+    *)
+      awk '/^## Logic Map/{p=1;next} p&&/^## /{p=0} p' "$c" | awk '/^```mermaid/{m=1;next} m&&/^```/{m=0} m' | grep -q -- '-->' \
+        || { echo "refuse: logicmap" >&2; die "sketch-gate: non-web co-construct build needs a '## Logic Map' mermaid fence with ≥1 edge (RD-9 — a pipeline cannot silently skip its logic map)."; }
+      ;;
+  esac
+  # leak tracer — tracked files only, line-1 anchored, state root excluded
+  local hits=""
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    local f
+    while IFS= read -r f; do
+      case "$f" in .claude/builds/*) continue ;; esac
+      [ -f "$f" ] || continue
+      head -1 "$f" 2>/dev/null | grep -q '^<!-- COMPASS-MOCK slug=' && hits="$hits $f"
+    done <<EOF
+$(git ls-files)
+EOF
+  fi
+  [ -z "$hits" ] || { echo "refuse: leak" >&2; die "sketch-gate: THROWAWAY mockup leaked into tracked product source:$hits (the marker is the tracer — mockups live only under the state root)."; }
+  ok "sketch-gate: sketch artifacts sound; no tracked line-1 COMPASS-MOCK leak."
+}
+
+# ── v0.13.0 S14: *_match helpers — each SKILL-pinned template's acceptance rule lives HERE, ──
+# used by the gates' parsing and driven directly by smoke via `__match` with map-instantiated
+# templates (INV-TEMPLATES): the pinned template text and the parser physically cannot drift.
+round_receipt_match() { # stdin: one round-receipt block
+  local b; b="$(cat)"
+  printf '%s\n' "$b" | head -1 | grep -qE '^## RECEIPT — post-ship-critique · round [0-9]+ · (CLEAN|MATERIAL)$' || return 1
+  printf '%s\n' "$b" | grep -qE '^- \[x\] LIVE-TARGET: .+' || return 1
+  printf '%s\n' "$b" | grep -qE '^\- \[x\].*`.*`.*→' || return 1
+}
+user_accepted_match() { # stdin: one line
+  local l; l="$(cat)"; l="$(norm_line "$l")"
+  printf '%s' "$l" | grep -qE '^[- ]*user-accepted: ship-as-is — .+ · .+$'
+}
+coldcritic_receipt_match() { # stdin: one cold-critic block
+  local b; b="$(cat)"
+  printf '%s\n' "$b" | head -1 | grep -qE '^## RECEIPT — cold-critic · (GO|NO-GO|HUMAN-GO · ".+") · tree=[a-z0-9]+$' || return 1
+  printf '%s\n' "$b" | grep -qE '^- \[x\] clean-tree: git status --porcelain empty$' || return 1
+}
+postship_box_match() { # stdin: one receipt box line
+  local l; l="$(cat)"; l="$(norm_line "$l")"
+  printf '%s' "$l" | grep -qE '^[- ]*\[x\] post-ship-loop: (on \(clean [0-9]+ / cap [0-9]+\)|off — .+)$'
+}
+intake_box_match() { # stdin
+  local l; l="$(cat)"; l="$(norm_line "$l")"
+  printf '%s' "$l" | grep -qE '^[- ]*\[x\] intake-gate: compass.sh intake-gate .+ → 0$'
+}
+sketch_box_match() { # stdin
+  local l; l="$(cat)"; l="$(norm_line "$l")"
+  printf '%s' "$l" | grep -qE '^[- ]*\[x\] sketch-gate: compass.sh sketch-gate .+ → 0$'
+}
+
 # v0.12.0 S2a: __match — TEST SURFACE ONLY. Whitelist-guarded to the *_match helper namespace;
 # reads ONE candidate line/block on stdin, exits 0/1. Lets the suites drive the exact matchers
 # the gates use (INV-TEMPLATES) without sourcing tricks. Not for production flows.
@@ -1736,6 +1897,9 @@ main() {
     coldgo-gate)       cmd_coldgo_gate "$@" ;;
     auto-suspend)      cmd_auto_suspend "$@" ;;
     auto-resume)       cmd_auto_resume "$@" ;;
+    intake-gate)       cmd_intake_gate "$@" ;;
+    intake-phase)      cmd_intake_phase "$@" ;;
+    sketch-gate)       cmd_sketch_gate "$@" ;;
     postship-signal)   cmd_postship_signal "$@" ;;
     __match)           cmd___match "$@" ;;
     check-session-chain) cmd_check_session_chain "$@" ;;
