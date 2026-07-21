@@ -1089,7 +1089,10 @@ cmd_budget_check() { # <build-dir> [--bump-stage|--bump-session]
   [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh budget-check <build-dir> [--bump-stage|--bump-session]"
   local be; be="$(_be_file "$dir")"
   [ -f "$be" ] && [ -n "$(_be_get "$be" ceiling_wall)" ] || die "budget-check: no declared budget (budget required)."
-  with_lock "budget-$(basename "$dir")" _budget_check_locked "$dir" "$be" "$bump"
+  # BUG-3 fix: die OUTSIDE the critical section so the mutex always releases (see _budget_check_locked).
+  BUDGET_FAIL_MSG=""
+  with_lock "budget-$(basename "$dir")" _budget_check_locked "$dir" "$be" "$bump" || \
+    die "${BUDGET_FAIL_MSG:-budget-check: failed.}"
 }
 _is_num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }   # non-negative integer only
 _elapsed() { local e=$(( ${1:-0} - ${2:-0} )); [ "$e" -lt 0 ] && e=0; printf '%s' "$e"; }  # now,start → ≥0 (clock-skew safe)
@@ -1115,7 +1118,10 @@ _budget_check_locked() { # <dir> <be> <bump>  (under lock)
   # non-numeric value (a corrupt budget.env must never fail open into an unbounded loop — RB-02).
   _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"; _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"; _is_num "$cg" || cg="$BUDGET_DEFAULT_STAGES"
   : "${sw:=0}"; : "${ss:=0}"; : "${sg:=0}"; : "${st:=$now}"
-  for v in "$sw" "$ss" "$sg" "$st"; do _is_num "$v" || die "budget-check: corrupt budget.env (non-numeric '$v') — refusing (fail closed)."; done
+  # BUG-3 fix (v0.12.0): never `die` INSIDE the with_lock critical section — an exit skips the
+  # RETURN trap and leaks the budget mutex (same class as the fire-g1/g2 leak). The locked fn
+  # sets BUDGET_FAIL_MSG + returns 1; cmd_budget_check dies OUTSIDE with the identical message.
+  for v in "$sw" "$ss" "$sg" "$st"; do _is_num "$v" || { BUDGET_FAIL_MSG="budget-check: corrupt budget.env (non-numeric '$v') — refusing (fail closed)."; return 1; }; done
   case "$bump" in
     --bump-stage)   sg=$((sg+1)); _be_set "$be" spent_stages "$sg" ;;
     --bump-session) sw=$(( sw + $(_elapsed "$now" "$st") )); _be_set "$be" spent_wall "$sw"; _be_set "$be" session_start_ts "$now"; ss=$((ss+1)); _be_set "$be" spent_sessions "$ss" ;;
@@ -1124,7 +1130,8 @@ _budget_check_locked() { # <dir> <be> <bump>  (under lock)
   # ceiling test (INV-4) — any dimension at/over → non-zero
   if [ "$cum_wall" -ge "$cw" ] || [ "$ss" -ge "$cs" ] || [ "$sg" -ge "$cg" ]; then
     _chain_append "$dir" "-" "budget-stop"
-    die "budget-check: ceiling reached (wall ${cum_wall}/${cw}s, sessions ${ss}/${cs}, stages ${sg}/${cg}) — fire G2."
+    BUDGET_FAIL_MSG="budget-check: ceiling reached (wall ${cum_wall}/${cw}s, sessions ${ss}/${cs}, stages ${sg}/${cg}) — fire G2."
+    return 1
   fi
   # 80% warn (any dimension)
   local pct=80
@@ -1157,7 +1164,10 @@ cmd_fire_g2() { # <build-dir> <reason>
   local dir="${1:-}" reason="${2:-feasibility}"
   [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh fire-g2 <build-dir> <reason>"
   local slug; slug="$(basename "$dir")"
-  with_lock "gate-$slug" _fire_g2_locked "$dir" "$slug" "$reason"
+  # die OUTSIDE the critical section: an exit inside with_lock skips the RETURN trap and
+  # leaks the mutex, deadlocking the next gate-clear (leak found live 2026-07-21).
+  with_lock "gate-$slug" _fire_g2_locked "$dir" "$slug" "$reason" || \
+    die "G2 (feasibility) fired: ${reason}. Build is gate-wait-G2 — a human must resume. (Autonomous spawn is blocked while this gate is held.)"
 }
 _fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
   local dir="$1" slug="$2" reason="$3" ld; ld="$(locks_dir)"; mkdir -p "$ld"
@@ -1176,7 +1186,7 @@ _fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
   if [ -f "$be" ]; then local g; g="$(_be_get "$be" g2_fires)"; : "${g:=0}"; g=$((g+1)); _be_set "$be" g2_fires "$g"
     if [ "$g" -ge 3 ]; then echo "compass: G2 fired ${g}× — 'keep-trying' withdrawn; only ship-despite-miss / abort." >&2; fi
   fi
-  die "G2 (feasibility) fired: ${reason}. Build is gate-wait-G2 — a human must resume. (Autonomous spawn is blocked while this gate is held.)"
+  return 1
 }
 
 # v0.11.0 S3 — fire-g1: the UPFRONT gate now takes a real gate-lock (same surface as G2, so the
@@ -1184,7 +1194,9 @@ _fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
 cmd_fire_g1() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh fire-g1 <build-dir>"
   local slug; slug="$(basename "$dir")"
-  with_lock "gate-$slug" _fire_g1_locked "$dir" "$slug"
+  # die OUTSIDE the critical section (same mutex-leak class as fire-g2 — see comment there).
+  with_lock "gate-$slug" _fire_g1_locked "$dir" "$slug" || \
+    die "G1 (upfront) fired: a human must approve the contract+intent before the loop runs."
 }
 _fire_g1_locked() { # <dir> <slug>  (under gate lock)
   local dir="$1" slug="$2" ld; ld="$(locks_dir)"; mkdir -p "$ld"
@@ -1195,14 +1207,14 @@ _fire_g1_locked() { # <dir> <slug>  (under gate lock)
     tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
   else printf '\n%s\n' "$banner" >> "$p"; fi
   _chain_append "$dir" "-" "gate-wait-G1"
-  die "G1 (upfront) fired: a human must approve the contract+intent before the loop runs."
+  return 1
 }
 
 # v0.11.0 S3 — gate-clear: release the gate-lock on human approval (G1 or G2) so the lifecycle (and,
 # in auto, the self-spawn) may continue. Appends a `gate-cleared` event. Idempotent.
 cmd_gate_clear() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh gate-clear <build-dir>"
-  local slug; slug="$(basename "$dir")" ld; ld="$(locks_dir)"
+  local slug ld; slug="$(basename "$dir")"; ld="$(locks_dir)"
   with_lock "gate-$slug" sh -c 'rmdir "$1/'"$slug"'.gate-lock" 2>/dev/null || true' _ "$ld"
   _chain_append "$dir" "-" "gate-cleared"
   ok "gate-clear: gate-lock released for '$slug'."

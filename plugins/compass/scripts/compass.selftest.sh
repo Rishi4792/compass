@@ -519,6 +519,43 @@ sgz >/dev/null 2>&1; sleep 0.3
 chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "spawned" "★ INV-STAGE: .auto-mode at a NON-build stage (plan) → Stop hook REACHES the spawn (the v0.10 bug is fixed)"
 # (all v0.11 state lived in the sandbox repos $V/$SG under $SB — auto-removed by the EXIT trap; no real locks touched)
 
+echo "── INV-ENGINEFIX (v0.12.0 S1): mutex-leak class BUG-1/BUG-2/BUG-3 ─────────────"
+# All three bugs are the same class: an `exit` (die) inside a with_lock critical section skips
+# the RETURN trap and leaks the mutex, deadlocking the NEXT caller into a 30s lock timeout.
+# Fixtures assert: the failing call exits non-zero FAST, and an IMMEDIATE second call acquires
+# the mutex without timeout (i.e. no leak). Timing bound: >5s ⇒ leaked (timeout is ~30s).
+EF="$SB/enginefix"; mkdir -p "$EF"
+printf '**Status:** Plan LOCKED\n' > "$EF/progress.md"
+
+# BUG-1/BUG-2 — fire-g1: fires (exit 1), then gate-clear must succeed instantly and remove the lock
+T0=$(date +%s)
+bash "$SH" fire-g1 "$EF" >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g1 fires → exit 1 (gate held)"
+bash "$SH" gate-clear "$EF" >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-1: gate-clear after fire-g1 → exit 0 (no ld-exec crash)"
+T1=$(date +%s)
+chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-2: fire-g1 leaked no mutex (gate-clear instant, no 30s timeout)"
+chk "$([ -d "$LOCKS/$(basename "$EF").gate-lock" ] && echo held || echo gone)" "gone" "INV-ENGINEFIX BUG-1: gate-lock dir removed by gate-clear (real locks dir, not a vacuous path)"
+
+# BUG-2 — fire-g2 same shape
+T0=$(date +%s)
+bash "$SH" fire-g2 "$EF" enginefix-test >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g2 fires → exit 1"
+bash "$SH" gate-clear "$EF" >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-2: gate-clear after fire-g2 → exit 0"
+T1=$(date +%s)
+chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-2: fire-g2 leaked no mutex (instant clear)"
+
+# BUG-3 — budget-check at ceiling: exit 1 with the ceiling message, budget mutex NOT leaked,
+# budget.env intact, and an immediate second call also exits 1 fast (would hang ~30s pre-fix).
+BF="$SB/enginefix-budget"; mkdir -p "$BF"; printf '**Status:** Plan LOCKED\n' > "$BF/progress.md"
+bash "$SH" budget-init "$BF" --wall 99999 --sessions 1 --stages 99 >/dev/null 2>&1
+sed -i.bak "s/^spent_sessions=.*/spent_sessions=1/" "$BF/budget.env"; rm -f "$BF/budget.env.bak"
+OUT="$(bash "$SH" budget-check "$BF" 2>&1)"; RC=$?
+chk "$RC" "1" "INV-ENGINEFIX BUG-3: budget-check at ceiling → exit 1"
+chk "$(printf '%s' "$OUT" | grep -c 'ceiling reached')" "1" "INV-ENGINEFIX BUG-3: identical ceiling message preserved (die outside the lock)"
+T0=$(date +%s)
+bash "$SH" budget-check "$BF" >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX BUG-3: immediate SECOND budget-check → exit 1 (mutex was released)"
+T1=$(date +%s)
+chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-3: second call instant — no leaked .budget-*.lock"
+grep -q '^ceiling_sessions=1$' "$BF/budget.env"; chk "$?" "0" "INV-ENGINEFIX BUG-3: budget.env intact after at-ceiling refusal"
+
 echo
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
