@@ -556,6 +556,382 @@ T1=$(date +%s)
 chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-3: second call instant — no leaked .budget-*.lock"
 grep -q '^ceiling_sessions=1$' "$BF/budget.env"; chk "$?" "0" "INV-ENGINEFIX BUG-3: budget.env intact after at-ceiling refusal"
 
+echo "── INV-GRAMMAR (v0.12.0 S2a): norm_line / hdr_get / ps_open_rows ──────────────"
+# Source the engine as a library (source-guard added in S2a) to unit-drive internal helpers.
+# Positive fixtures = THIS build's own contract.md (bold house-style headers — the RD-2 class).
+GLIB="$SB/grammar"; mkdir -p "$GLIB"
+REAL_CONTRACT="$HERE/../../../.claude/builds/loop-eyes-intake-v0-12-13/contract.md"
+(
+  set -u; source "$SH"
+  set +e +o pipefail   # the engine sets -euo pipefail; fixtures intentionally exercise failures
+  # norm_line strips every asterisk
+  [ "$(norm_line '**post-ship-loop:** on (clean 2 / cap 5)')" = "post-ship-loop: on (clean 2 / cap 5)" ]; echo "N1=$?"
+  if [ -f "$REAL_CONTRACT" ]; then
+    v="$(hdr_get "$REAL_CONTRACT" post-ship-loop)"; case "$v" in "on (clean 2 / cap 5)"*) echo "H1=0";; *) echo "H1=1";; esac
+    v="$(hdr_get "$REAL_CONTRACT" deploy)"; case "$v" in "in scope"*) echo "H2=0";; *) echo "H2=1";; esac
+  else
+    # CI fallback: authored bold fixtures (same shapes)
+    printf '%s\n' '**post-ship-loop:** on (clean 2 / cap 5) — prose' '**deploy:** in scope — x' > "$GLIB/c.md"
+    v="$(hdr_get "$GLIB/c.md" post-ship-loop)"; case "$v" in "on (clean 2 / cap 5)"*) echo "H1=0";; *) echo "H1=1";; esac
+    v="$(hdr_get "$GLIB/c.md" deploy)"; case "$v" in "in scope"*) echo "H2=0";; *) echo "H2=1";; esac
+  fi
+  # bold deploy-waiver (the VZ-3 class): hdr_get parses what the old [-*]? grep cannot
+  printf '%s\n' '**deploy:** out-of-scope — lib-only' > "$GLIB/w.md"
+  v="$(hdr_get "$GLIB/w.md" deploy)"; case "$v" in "out-of-scope"*) echo "H3=0";; *) echo "H3=1";; esac
+  # absent key → exit 1
+  hdr_get "$GLIB/w.md" observation-channel >/dev/null; echo "H4=$?"
+  # ps_open_rows: pinned grammar — count OPEN Crit/Maj PS rows ONLY
+  cat > "$GLIB/ledger.md" <<'LEDG'
+| PS-1-1 | R1 | CRITICAL | api | broken · cite=INV-X | fix | OPEN |
+| PS-1-2 | R1 | MAJOR | ui | drift · cite=INV-Y | fix | CLOSED |
+| PS-2-1 | R2 | MINOR | doc | nit · FUTURE | fix | OPEN |
+| RC-1 | R1 | CRITICAL | plan | not-a-ps-row | fix | OPEN |
+LEDG
+  echo "P1=$(ps_open_rows "$GLIB/ledger.md")"
+  echo "P2=$(ps_open_rows "$GLIB/does-not-exist.md")"
+) > "$GLIB/out.txt" 2>"$GLIB/err.txt"
+chk "$(grep -c '^N1=0$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: norm_line deletes every asterisk"
+chk "$(grep -c '^H1=0$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: hdr_get parses THIS contract's own bold post-ship-loop header (RD-2 positive)"
+chk "$(grep -c '^H2=0$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: hdr_get parses the bold deploy header"
+chk "$(grep -c '^H3=0$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: hdr_get parses bold '**deploy:** out-of-scope' (the grep the old pattern misses — VZ-3)"
+chk "$(grep -c '^H4=1$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: hdr_get absent key → exit 1"
+chk "$(grep -c '^P1=1$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: ps_open_rows counts exactly the OPEN CRITICAL PS row (CLOSED/MINOR/non-PS excluded)"
+chk "$(grep -c '^P2=0$' "$GLIB/out.txt")" "1" "INV-GRAMMAR: ps_open_rows missing file → 0 (never crashes)"
+# __match surface: whitelist guard both ways (real *_match helpers land with their gates)
+bash "$SH" __match not_in_namespace </dev/null >/dev/null 2>&1; chk "$?" "1" "INV-GRAMMAR: __match refuses a non-*_match name (whitelist)"
+bash "$SH" __match bogus_match </dev/null >/dev/null 2>&1; chk "$?" "1" "INV-GRAMMAR: __match refuses an unknown *_match helper"
+# source-guard: sourcing must NOT run main (no usage output), CLI still works
+S_OUT="$(bash -c 'source '"$SH"' >/dev/null 2>&1; echo sourced-ok')"
+chk "$S_OUT" "sourced-ok" "INV-GRAMMAR: source-guard — sourcing loads the library without running main"
+
+echo "── INV-PS policy + NOVERIFIER (v0.12.0 S2): postship-required / postship-signal ──"
+PSP="$SB/psp"; mkdir -p "$PSP"
+
+# policy matrix (bold house-style headers throughout — hdr_get path, VZ-3)
+printf '%s\n' '**deploy:** in scope — x' '**post-ship-loop:** on (clean 2 / cap 5)' > "$PSP/contract.md"
+bash "$SH" postship-required "$PSP" >/dev/null 2>&1; chk "$?" "0" "S2 policy: header on → REQUIRED (exit 0)"
+printf '%s\n' '**deploy:** in scope — x' '**post-ship-loop:** off — cron-only build' > "$PSP/contract.md"
+bash "$SH" postship-required "$PSP" >/dev/null 2>&1; chk "$?" "1" "S2 policy: header off — <reason> → waived (exit 1)"
+printf '%s\n' '**deploy:** in scope — x' > "$PSP/contract.md"
+bash "$SH" postship-required "$PSP" >/dev/null 2>&1; chk "$?" "1" "S2 policy: header ABSENT → N/A legacy (exit 1, INV-BC)"
+printf '%s\n' '**deploy:** out-of-scope — lib-only' '**post-ship-loop:** on (clean 2 / cap 5)' > "$PSP/contract.md"
+bash "$SH" postship-required "$PSP" >/dev/null 2>&1; chk "$?" "1" "S2 policy: BOLD deploy-waiver beats an on-header (VZ-3 — the old grep misses this line)"
+
+# INV-PS-NOVERIFIER ×3
+PSN="$SB/psn"; mkdir -p "$PSN"
+printf '%s\n' '**deploy:** in scope — x' '**post-ship-loop:** on (clean 2 / cap 5)' > "$PSN/contract.md"
+ERRV="$(bash "$SH" postship-signal "$PSN" 2>&1 >/dev/null)"; RC=$?
+chk "$RC" "1" "INV-PS-NOVERIFIER: none of the four verifiers → exit 1"
+chk "$(printf '%s' "$ERRV" | grep -c 'refuse: no-verifier')" "1" "INV-PS-NOVERIFIER: reason code 'refuse: no-verifier' on stderr (P13)"
+printf '%s\n' '**deploy:** in scope — x' 'observation-channel: library = bash scripts/smoke.sh' >> "$PSN/contract.md"
+bash "$SH" postship-signal "$PSN" >/dev/null 2>&1; chk "$?" "0" "INV-PS-NOVERIFIER: observation-channel ALONE suffices (the new grammar is a sufficient verifier)"
+PSR="$SB/psr"; mkdir -p "$PSR"
+printf '%s\n' '**deploy:** in scope — x' > "$PSR/contract.md"
+printf 'RECON-CMD: bash scripts/recon.sh\n' > "$PSR/receipts.md"
+bash "$SH" postship-signal "$PSR" >/dev/null 2>&1; chk "$?" "0" "INV-PS-NOVERIFIER: RECON-CMD alone suffices"
+
+echo "── INV-PS CAP/GROUND/LEDGER/ORDER/STALL/BUDGET (v0.12.0 S3): loop-round ────────"
+mkps() { # <dir> [facets] — post-ship fixture factory (bold house-style headers)
+  local d="$1" fac="${2:-library}"; mkdir -p "$d"
+  printf '%s\n' "**Facets:** $fac" '**deploy:** in scope — x' '**post-ship-loop:** on (clean 2 / cap 5)' \
+    'observation-channel: library = bash scripts/digest.sh' > "$d/contract.md"
+  : > "$d/receipts.md"; : > "$d/review-ledger.md"
+}
+wr_round() { # <dir> <round> <verdict> [extra-line]
+  { printf '\n## RECEIPT — post-ship-critique · round %s · %s\n' "$2" "$3"
+    printf -- '- [x] LIVE-TARGET: fixture-system\n'
+    printf -- '- [x] check: `bash scripts/digest.sh` → OK\n'
+    [ -n "${4:-}" ] && printf -- '%s\n' "$4"; } >> "$1/receipts.md"
+}
+wr_obs() { # <dir> <round> [line1]
+  mkdir -p "$1/evidence/round-$2"
+  printf '%s\nrest of digest\n' "${3:-\`bash scripts/digest.sh\`}" > "$1/evidence/round-$2/observe.txt"
+}
+mkpng() { # <path> <kb>
+  { printf '\x89PNG\r\n\x1a\n'; dd if=/dev/zero bs=1024 count="$2" 2>/dev/null; } > "$1"
+}
+
+# happy path non-web CLEAN + loop.log truth
+H="$SB/ps-happy"; mkps "$H"; wr_round "$H" 1 CLEAN; wr_obs "$H" 1
+bash "$SH" loop-round "$H" postship CLEAN --sig aaaaaaaaaaaa >/dev/null 2>&1
+chk "$?" "0" "S3 happy: non-web CLEAN round 1 registers (receipt + observe.txt comparand)"
+chk "$(awk -F'|' 'END{print $3"·"$4}' "$H/loop.log")" "1·CLEAN" "S3: loop.log carries round 1 · CLEAN (file-based truth)"
+
+# receipt refusals
+E="$SB/ps-receipt"; mkps "$E"; wr_obs "$E" 1
+ERR="$(bash "$SH" loop-round "$E" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"; chk "$?" "1" "S3 refuse: missing round receipt"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: receipt')" "1" "S3 reason code: receipt"
+wr_round "$E" 1 CLEAN '- [ ] unchecked box'
+ERR="$(bash "$SH" loop-round "$E" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: receipt')" "1" "S3 refuse: unchecked box in the round receipt"
+E2="$SB/ps-noev"; mkps "$E2"
+printf '\n## RECEIPT — post-ship-critique · round 1 · CLEAN\n- [x] LIVE-TARGET: x\n- [x] looks fine to me\n' >> "$E2/receipts.md"; wr_obs "$E2" 1
+ERR="$(bash "$SH" loop-round "$E2" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: receipt')" "1" "S3 refuse: no checked backtick-command evidence line ('looks fine' cannot register)"
+
+# evidence refusals (non-web comparand mechanic)
+V="$SB/ps-ev"; mkps "$V"; wr_round "$V" 1 CLEAN
+ERR="$(bash "$SH" loop-round "$V" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: evidence')" "1" "S3 refuse: missing observe.txt (empty evidence)"
+wr_obs "$V" 1 '\`wrong command\`'
+ERR="$(bash "$SH" loop-round "$V" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: evidence')" "1" "S3 refuse: observe.txt line-1 comparand mismatch (VF-2 mechanic)"
+
+# web evidence floors + HUMAN-OBSERVED scoping
+W="$SB/ps-web"; mkps "$W" "web"; wr_round "$W" 1 CLEAN
+ERR="$(bash "$SH" loop-round "$W" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: evidence')" "1" "S3 refuse: web round with no PNG"
+mkdir -p "$W/evidence/round-1"; mkpng "$W/evidence/round-1/shot.png" 5
+ERR="$(bash "$SH" loop-round "$W" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: evidence')" "1" "S3 refuse: PNG under the 20KB floor (blank-capture guard)"
+mkpng "$W/evidence/round-1/shot.png" 25
+bash "$SH" loop-round "$W" postship CLEAN --sig aaaaaaaaaaaa >/dev/null 2>&1
+chk "$?" "0" "S3 happy: web CLEAN with a real ≥20KB PNG registers"
+WH="$SB/ps-human"; mkps "$WH" "web"; wr_round "$WH" 1 CLEAN '- [x] HUMAN-OBSERVED: "Looks great." (mid-block, any-line rule)'
+: > "$WH/.auto-mode"
+ERR="$(bash "$SH" loop-round "$WH" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: human-observed-auto')" "1" "S3 refuse: HUMAN-OBSERVED under .auto-mode (RC-8 — no fabricated human eyes)"
+rm "$WH/.auto-mode"
+bash "$SH" loop-round "$WH" postship CLEAN --sig aaaaaaaaaaaa >/dev/null 2>&1
+chk "$?" "0" "S3 happy: gated HUMAN-OBSERVED mid-block accepted as the web round's evidence"
+
+# ledger coupling
+L="$SB/ps-ledger"; mkps "$L"; wr_round "$L" 1 CLEAN; wr_obs "$L" 1
+printf '| PS-1-1 | R1 | CRITICAL | api | broken · cite=INV-X | fix | OPEN |\n' > "$L/review-ledger.md"
+ERR="$(bash "$SH" loop-round "$L" postship CLEAN --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: ledger')" "1" "S3 refuse: CLEAN with an open PS Crit/Maj row (verdict↔ledger cannot disagree)"
+LM="$SB/ps-ledm"; mkps "$LM"; wr_round "$LM" 1 MATERIAL; wr_obs "$LM" 1
+ERR="$(bash "$SH" loop-round "$LM" postship MATERIAL --sig aaaaaaaaaaaa 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: ledger')" "1" "S3 refuse: MATERIAL without a new PS-1-* row"
+
+# order: MATERIAL → fresh ship PASS before next round
+O="$SB/ps-order"; mkps "$O"; wr_round "$O" 1 MATERIAL; wr_obs "$O" 1
+printf '| PS-1-1 | R1 | MAJOR | x | y · cite=INV-Z | fix | OPEN |\n' > "$O/review-ledger.md"
+bash "$SH" loop-round "$O" postship MATERIAL --sig aaaaaaaaaaaa >/dev/null 2>&1
+chk "$?" "0" "S3: MATERIAL round 1 registers (PS row present)"
+sed -i.bak 's/| OPEN |/| CLOSED |/' "$O/review-ledger.md"; rm -f "$O/review-ledger.md.bak"
+wr_round "$O" 2 CLEAN; wr_obs "$O" 2
+ERR="$(bash "$SH" loop-round "$O" postship CLEAN --sig bbbbbbbbbbbb 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: order')" "1" "S3 refuse: no fresh ship PASS between MATERIAL round 1 and round 2 (line order)"
+printf '\n## RECEIPT — ship · %s · PASS\n- [x] redeployed\n' "$(basename "$O")" >> "$O/receipts.md"
+wr_round "$O" 2 CLEAN; wr_obs "$O" 2
+bash "$SH" loop-round "$O" postship CLEAN --sig bbbbbbbbbbbb >/dev/null 2>&1
+chk "$?" "0" "S3: round 2 registers once a fresh ship PASS sits between the rounds"
+
+# stall: no-progress + nogit skip-positive/degrade
+NP="$SB/ps-nop"; mkps "$NP"; wr_round "$NP" 1 MATERIAL; wr_obs "$NP" 1
+printf '| PS-1-1 | R1 | MAJOR | x | y · cite=I | fix | OPEN |\n' > "$NP/review-ledger.md"
+bash "$SH" loop-round "$NP" postship MATERIAL --sig cccccccccccc >/dev/null 2>&1
+sed -i.bak 's/OPEN/CLOSED/' "$NP/review-ledger.md"; rm -f "$NP/review-ledger.md.bak"
+printf '\n## RECEIPT — ship · %s · PASS\n- [x] redeployed\n' "$(basename "$NP")" >> "$NP/receipts.md"
+wr_round "$NP" 2 MATERIAL; wr_obs "$NP" 2
+printf '| PS-2-1 | R2 | MAJOR | x | y · cite=I | fix | OPEN |\n' >> "$NP/review-ledger.md"
+ERR="$(bash "$SH" loop-round "$NP" postship MATERIAL --sig cccccccccccc 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: no-progress')" "1" "S3 refuse: MATERIAL with unchanged sig (no-progress)"
+NG="$SB/ps-nogit"; mkps "$NG"; wr_round "$NG" 1 CLEAN; wr_obs "$NG" 1
+bash "$SH" loop-round "$NG" postship CLEAN --sig nogit >/dev/null 2>&1
+wr_round "$NG" 2 MATERIAL; wr_obs "$NG" 2
+printf '| PS-2-1 | R2 | MAJOR | x | y · cite=I | fix | OPEN |\n' >> "$NG/review-ledger.md"
+bash "$SH" loop-round "$NG" postship MATERIAL --sig nogit >/dev/null 2>&1
+chk "$?" "0" "S3 nogit skip-positive: CLEAN@nogit → MATERIAL@nogit REGISTERS (sig-equality skipped — VF-6)"
+sed -i.bak 's/OPEN/CLOSED/' "$NG/review-ledger.md"; rm -f "$NG/review-ledger.md.bak"
+printf '\n## RECEIPT — ship · %s · PASS\n- [x] redeployed\n' "$(basename "$NG")" >> "$NG/receipts.md"
+wr_round "$NG" 3 MATERIAL; wr_obs "$NG" 3
+printf '| PS-3-1 | R3 | MAJOR | x | y · cite=I | fix | OPEN |\n' >> "$NG/review-ledger.md"
+ERR="$(bash "$SH" loop-round "$NG" postship MATERIAL --sig nogit 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: nogit-stall')" "1" "S3 refuse: 2 consecutive MATERIAL@nogit (degrade replaces sig checks)"
+
+# cap (clean 1 / cap 2 header)
+CP="$SB/ps-cap"; mkps "$CP"
+sed -i.bak 's/on (clean 2 \/ cap 5)/on (clean 1 \/ cap 2)/' "$CP/contract.md"; rm -f "$CP/contract.md.bak"
+wr_round "$CP" 1 CLEAN; wr_obs "$CP" 1; bash "$SH" loop-round "$CP" postship CLEAN --sig s1s1s1s1s1s1 >/dev/null 2>&1
+wr_round "$CP" 2 CLEAN; wr_obs "$CP" 2; bash "$SH" loop-round "$CP" postship CLEAN --sig s2s2s2s2s2s2 >/dev/null 2>&1
+wr_round "$CP" 3 CLEAN; wr_obs "$CP" 3
+ERR="$(bash "$SH" loop-round "$CP" postship CLEAN --sig s3s3s3s3s3s3 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: cap')" "1" "S3 refuse: round 3 exceeds header cap 2 (bounds parsed from header, never hardcoded)"
+
+# budget: loop-round-OWNED under .auto-mode (INV-PS-BUDGET)
+BU="$SB/ps-budget"; mkps "$BU"; : > "$BU/.auto-mode"
+bash "$SH" budget-init "$BU" --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
+wr_round "$BU" 1 CLEAN; wr_obs "$BU" 1
+SG_BEFORE="$(grep '^spent_stages=' "$BU/budget.env" | cut -d= -f2)"
+bash "$SH" loop-round "$BU" postship CLEAN --sig ddddddddddddd >/dev/null 2>&1
+SG_AFTER="$(grep '^spent_stages=' "$BU/budget.env" | cut -d= -f2)"
+chk "$((SG_AFTER-SG_BEFORE))" "1" "INV-PS-BUDGET: registration under .auto-mode advances spent_stages (loop-round-owned bump)"
+sed -i.bak 's/^ceiling_stages=.*/ceiling_stages=1/' "$BU/budget.env"; rm -f "$BU/budget.env.bak"
+wr_round "$BU" 2 CLEAN; wr_obs "$BU" 2
+T0=$(date +%s); ERR="$(bash "$SH" loop-round "$BU" postship CLEAN --sig eeeeeeeeeeee 2>&1 >/dev/null)"; RC=$?; T1=$(date +%s)
+chk "$RC" "1" "INV-PS-BUDGET: at the stage ceiling → registration REFUSED"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: budget')" "1" "INV-PS-BUDGET: reason code budget + fire-g2 instruction"
+chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-PS-BUDGET: ceiling refusal instant (BUG-3 subshell — no mutex hang)"
+chk "$(awk -F'|' 'END{print $3}' "$BU/loop.log")" "1" "INV-PS-BUDGET: refused round NOT registered in loop.log"
+GB="$SB/ps-gated"; mkps "$GB"; wr_round "$GB" 1 CLEAN; wr_obs "$GB" 1
+bash "$SH" loop-round "$GB" postship CLEAN --sig ffffffffffff >/dev/null 2>&1
+chk "$([ -f "$GB/budget.env" ] && echo yes || echo no)" "no" "INV-PS-BUDGET: gated build (no .auto-mode) → no bump, no budget.env required"
+
+echo "── INV-PS-TERMINAL + F-CONV (v0.12.0 S4): loop-converged / G-O1 / continuable ──"
+mkterm() { # <dir> — postship-required build with full signed chain + prod-verify ship receipt
+  local d="$1"; mkps "$d"
+  full_chain "$d" ship --signoff
+  printf -- '- [x] human sign-off recorded\n' >> "$d/receipts.md"
+  printf -- '- [x] prod reconcile: `x` → PASS\n' >> "$d/receipts.md"
+}
+# converged: 2 trailing CLEAN, 0 open PS
+T1="$SB/term-conv"; mkterm "$T1"
+printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$T1/loop.log"
+bash "$SH" loop-converged "$T1" postship >/dev/null 2>&1; chk "$?" "0" "F-CONV: 2 trailing CLEAN + 0 open PS → converged"
+bash "$SH" lifecycle-audit "$T1" SHIPPED >/dev/null 2>&1;  chk "$?" "0" "G-O1: SHIPPED allowed when converged"
+# open loop: required + only 1 clean
+T2="$SB/term-open"; mkterm "$T2"
+printf '1|postship|1|CLEAN|aa|0\n' > "$T2/loop.log"
+ERR="$(bash "$SH" loop-converged "$T2" postship 2>&1 >/dev/null)"; chk "$?" "1" "F-CONV: 1/2 clean → refuse"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: clean-run')" "1" "F-CONV reason code: clean-run"
+bash "$SH" lifecycle-audit "$T2" SHIPPED >/dev/null 2>&1;  chk "$?" "1" "G-O1: SHIPPED blocked while the loop is open"
+# zero rounds: required-but-never-ran
+T3="$SB/term-zero"; mkterm "$T3"
+bash "$SH" lifecycle-audit "$T3" SHIPPED >/dev/null 2>&1;  chk "$?" "1" "G-O1: required + ZERO rounds → SHIPPED blocked (zero-state)"
+# CLEAN,MATERIAL,CLEAN → not converged (consecutive rule)
+T4="$SB/term-cmc"; mkterm "$T4"
+printf '1|postship|1|CLEAN|aa|0\n1|postship|2|MATERIAL|bb|1\n1|postship|3|CLEAN|cc|0\n' > "$T4/loop.log"
+bash "$SH" loop-converged "$T4" postship >/dev/null 2>&1; chk "$?" "1" "F-CONV: CLEAN,MATERIAL,CLEAN → NOT converged (needs CONSECUTIVE clean)"
+# waived + legacy pass G-O1 untouched (INV-BC)
+T5="$SB/term-waived"; mkterm "$T5"
+sed -i.bak 's/^\*\*post-ship-loop:\*\* on.*/**post-ship-loop:** off — fixture waiver/' "$T5/contract.md"; rm -f "$T5/contract.md.bak"
+bash "$SH" lifecycle-audit "$T5" SHIPPED >/dev/null 2>&1;  chk "$?" "0" "G-O1: waived (off — reason) → SHIPPED unblocked"
+T6="$SB/term-legacy"; mkterm "$T6"
+sed -i.bak '/post-ship-loop/d' "$T6/contract.md"; rm -f "$T6/contract.md.bak"
+bash "$SH" lifecycle-audit "$T6" SHIPPED >/dev/null 2>&1;  chk "$?" "0" "G-O1: legacy header-less contract → SHIPPED unblocked (INV-BC)"
+# user-accepted SET semantics + VOID negative
+T7="$SB/term-ua"; mkterm "$T7"
+printf '1|postship|1|MATERIAL|aa|1\n' > "$T7/loop.log"
+printf '| PS-1-1 | R1 | MAJOR | x | y · cite=I | fix | OPEN |\n' > "$T7/review-ledger.md"
+printf 'user-accepted: ship-as-is — PS-1-1 · 2026-07-21T14:00:00Z\n' >> "$T7/receipts.md"
+bash "$SH" loop-converged "$T7" postship >/dev/null 2>&1; chk "$?" "0" "F-CONV: user-accepted with open PS ⊆ recorded list → honored"
+printf '| PS-2-1 | R2 | CRITICAL | z | later finding | fix | OPEN |\n' >> "$T7/review-ledger.md"
+ERR="$(bash "$SH" loop-converged "$T7" postship 2>&1 >/dev/null)"; chk "$?" "1" "F-CONV: PS row OPENED after acceptance → acceptance VOID (P3 negative)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: accepted-void')" "1" "F-CONV reason code: accepted-void"
+# is_stage_continuable precedence pair (RD-6) — spawn stubbed by harness convention
+T8="$SB/term-cont"; mkterm "$T8"
+printf '**Status:** post-ship (round 1/5)\n' > "$T8/progress.md"
+( source "$SH"; set +e; is_stage_continuable "$T8" ); chk "$?" "0" "RD-6: status post-ship (round…) + ship PASS receipt → CONTINUABLE (beats the shipped-clean early-return)"
+printf '**Status:** SHIPPED (post-ship CONVERGED 3/5)\n' > "$T8/progress.md"
+( source "$SH"; set +e; is_stage_continuable "$T8" ); chk "$?" "1" "RD-6: SHIPPED (post-ship CONVERGED …) → terminal, NOT continuable"
+
+echo "── INV-COLDGO (v0.12.0 S5): coldgo-gate ────────────────────────────────────────"
+mk_git_sandbox() { # <dir> — real git repo with one commit (P14); prints HEAD sha-12
+  mkdir -p "$1"; ( cd "$1" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git rev-parse --short=12 HEAD )
+}
+mkcold() { # <build-dir> — web contract with cold-critic on
+  mkdir -p "$1"
+  printf '%s\n' '**Facets:** web' '**deploy:** in scope — x' 'cold-critic: on' > "$1/contract.md"
+  : > "$1/receipts.md"
+}
+wr_go() { # <build-dir> <GO|NO-GO> <sha> [dirty]
+  { printf '\n## RECEIPT — cold-critic · %s · tree=%s\n' "$2" "$3"
+    if [ "${4:-}" = dirty ]; then printf -- '- [ ] clean-tree: git status --porcelain empty\n'
+    else printf -- '- [x] clean-tree: git status --porcelain empty\n'; fi
+    printf -- '- [x] cold screenshots: evidence path named\n'; } >> "$1/receipts.md"
+}
+CGR="$SB/cg-repo"; SHA="$(mk_git_sandbox "$CGR")"
+CG="$CGR/b"; mkcold "$CG"
+# streak insufficiency
+( cd "$CGR" && bash "$SH" coldgo-gate b ) >/dev/null 2>&1; chk "$?" "1" "INV-COLDGO refuse: zero runs recorded (streak)"
+wr_go "$CG" GO "$SHA"; wr_go "$CG" GO "$SHA"
+( cd "$CGR" && bash "$SH" coldgo-gate b ) >/dev/null 2>&1; chk "$?" "0" "INV-COLDGO pass: 2 consecutive GOs @ identical sha == HEAD, clean trees"
+# sha mismatch between GOs
+CM="$CGR/bm"; mkcold "$CM"; wr_go "$CM" GO "aaaaaaaaaaaa"; wr_go "$CM" GO "$SHA"
+ERR="$(cd "$CGR" && bash "$SH" coldgo-gate bm 2>&1 >/dev/null)"; chk "$?" "1" "INV-COLDGO refuse: differing shas between GOs (commit resets streak)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: streak')" "1" "INV-COLDGO reason code: streak"
+# NO-GO in last 2
+CN="$CGR/bn"; mkcold "$CN"; wr_go "$CN" GO "$SHA"; wr_go "$CN" NO-GO "$SHA"
+( cd "$CGR" && bash "$SH" coldgo-gate bn ) >/dev/null 2>&1; chk "$?" "1" "INV-COLDGO refuse: NO-GO in the last 2 runs"
+# dirty tree
+CD="$CGR/bd"; mkcold "$CD"; wr_go "$CD" GO "$SHA" dirty; wr_go "$CD" GO "$SHA" dirty
+ERR="$(cd "$CGR" && bash "$SH" coldgo-gate bd 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: dirty-tree')" "1" "INV-COLDGO refuse: unchecked clean-tree box (sha must pin the pixels)"
+# stale head (commit after final GO)
+CS="$CGR/bs"; mkcold "$CS"; wr_go "$CS" GO "$SHA"; wr_go "$CS" GO "$SHA"
+( cd "$CGR" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m later )
+ERR="$(cd "$CGR" && bash "$SH" coldgo-gate bs 2>&1 >/dev/null)"; chk "$?" "1" "INV-COLDGO refuse: commit AFTER the final GO (RD-7 staleness)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: stale-head')" "1" "INV-COLDGO reason code: stale-head"
+SHA2="$(cd "$CGR" && git rev-parse --short=12 HEAD)"
+# HUMAN-GO: without fallback → refuse; with fallback → pass; under .auto-mode → refuse
+CH="$CGR/bh"; mkcold "$CH"
+printf '\n## RECEIPT — cold-critic · HUMAN-GO · "Looks great." · tree=%s\n- [x] signed off on the phone\n' "$SHA2" >> "$CH/receipts.md"
+ERR="$(cd "$CGR" && bash "$SH" coldgo-gate bh 2>&1 >/dev/null)"; chk "$?" "1" "INV-COLDGO refuse: HUMAN-GO without a declared fallback"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: no-fallback')" "1" "INV-COLDGO reason code: no-fallback"
+printf 'cold-critic-fallback: human-eyeball\n' >> "$CH/contract.md"
+( cd "$CGR" && bash "$SH" coldgo-gate bh ) >/dev/null 2>&1; chk "$?" "0" "INV-COLDGO pass: gated HUMAN-GO with declared fallback @ current HEAD"
+: > "$CH/.auto-mode"
+ERR="$(cd "$CGR" && bash "$SH" coldgo-gate bh 2>&1 >/dev/null)"; chk "$?" "1" "INV-COLDGO refuse: HUMAN-GO under .auto-mode (VF-4 — mirrors RC-8)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: human-go-auto')" "1" "INV-COLDGO reason code: human-go-auto"
+# waiver, non-web, legacy → N/A(0)
+CW="$CGR/bw"; mkcold "$CW"; sed -i.bak 's/^cold-critic: on/cold-critic: off — style-only tweak/' "$CW/contract.md"; rm -f "$CW/contract.md.bak"
+( cd "$CGR" && bash "$SH" coldgo-gate bw ) >/dev/null 2>&1; chk "$?" "0" "INV-COLDGO: explicit waiver → N/A(0)"
+CX="$CGR/bx"; mkdir -p "$CX"; printf '%s\n' '**Facets:** library' 'cold-critic: on' > "$CX/contract.md"; : > "$CX/receipts.md"
+( cd "$CGR" && bash "$SH" coldgo-gate bx ) >/dev/null 2>&1; chk "$?" "0" "INV-COLDGO: non-web build → N/A(0) (P4)"
+CL="$CGR/bl"; mkdir -p "$CL"; printf '%s\n' '**Facets:** web' > "$CL/contract.md"; : > "$CL/receipts.md"
+( cd "$CGR" && bash "$SH" coldgo-gate bl ) >/dev/null 2>&1; chk "$?" "0" "INV-COLDGO: LEGACY header-less web build → N/A(0) (Q7, INV-BC)"
+
+echo "── INV-SUSPEND + F-STATUS (v0.12.0 S6/S6a) ─────────────────────────────────────"
+SU="$SB/susp"; mkps "$SU"; : > "$SU/.auto-mode"
+bash "$SH" budget-init "$SU" --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
+# suspend: marker created, .auto-mode KEPT, chain event appended
+bash "$SH" auto-suspend "$SU" >/dev/null 2>&1; chk "$?" "0" "INV-SUSPEND: auto-suspend exits 0"
+chk "$([ -f "$SU/.auto-suspended" ] && [ -f "$SU/.auto-mode" ] && echo both || echo broken)" "both" "INV-SUSPEND: .auto-suspended created ALONGSIDE .auto-mode (metering stays armed)"
+chk "$(grep -c 'auto-suspended' "$SU/session-chain.log")" "1" "INV-SUSPEND: auto-suspended chain event appended"
+# spawn dormant at BOTH entry points (COMPASS_SPAWN_CMD stubbed — P18)
+SPAWNFLAG="$SB/susp-spawned"
+( source "$SH"; set +e; COMPASS_SPAWN_CMD="touch $SPAWNFLAG" _auto_spawn_maybe "$SU" "$(basename "$SU")" "sid-x" "$(locks_dir)" )
+chk "$([ -f "$SPAWNFLAG" ] && echo spawned || echo dormant)" "dormant" "INV-SUSPEND: _auto_spawn_maybe dormant while suspended (covers stop-guard AND auto-spawn)"
+# metering armed while suspended: loop-round still bumps
+wr_round "$SU" 1 CLEAN; wr_obs "$SU" 1
+SGB="$(grep '^spent_stages=' "$SU/budget.env" | cut -d= -f2)"
+bash "$SH" loop-round "$SU" postship CLEAN --sig abcabcabcabc >/dev/null 2>&1
+SGA="$(grep '^spent_stages=' "$SU/budget.env" | cut -d= -f2)"
+chk "$((SGA-SGB))" "1" "INV-SUSPEND: metering ARMED while suspended (loop-round still bumps — RD-1)"
+# chain stays valid with the new events
+bash "$SH" check-session-chain "$SU" >/dev/null 2>&1; chk "$?" "0" "INV-SUSPEND: check-session-chain accepts auto-suspended (vocabulary extended)"
+# resume: precondition + positive effects
+SV="$SB/susp2"; mkps "$SV"; : > "$SV/.auto-mode"; : > "$SV/.auto-suspended"
+bash "$SH" auto-resume "$SV" >/dev/null 2>&1; chk "$?" "1" "INV-SUSPEND: auto-resume REFUSES without declared budget ceilings (auto-init precondition, not flag-precheck)"
+bash "$SH" budget-init "$SV" --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
+bash "$SH" auto-resume "$SV" >/dev/null 2>&1; chk "$?" "0" "INV-SUSPEND: auto-resume exits 0 with ceilings"
+chk "$([ -f "$SV/.auto-suspended" ] && echo held || echo gone)" "gone" "INV-SUSPEND: resume removes the marker"
+chk "$(grep -c 'auto-resumed' "$SV/session-chain.log")" "1" "INV-SUSPEND: auto-resumed chain event appended"
+bash "$SH" check-session-chain "$SV" >/dev/null 2>&1; chk "$?" "0" "INV-SUSPEND: chain valid with BOTH new events"
+# F-STATUS: loop line + suspended line
+ST="$SB/statfix"; mkps "$ST"; : > "$ST/.auto-suspended"
+printf '**Status:** post-ship (round 1/5)\n' > "$ST/progress.md"
+printf '1|postship|1|CLEAN|aa|0\n' > "$ST/loop.log"
+OUT="$(bash "$SH" status "$ST" 2>/dev/null)"
+chk "$(printf '%s' "$OUT" | grep -c 'Post-ship: round 1/5 · consecutive-clean 1/2 · open PS 0')" "1" "F-STATUS: post-ship loop line rendered from loop.log + header bounds"
+chk "$(printf '%s' "$OUT" | grep -c 'auto: SUSPENDED (driver)')" "1" "F-STATUS: suspended line rendered from marker presence"
+
+echo "── INV-RECON (v0.12.0 S8b): compass.recon.sh negative fixtures (stubbed suites) ──"
+RC="$HERE/compass.recon.sh"
+mkstub() { # <file> <tail-line> [names]
+  { echo '#!/bin/sh'; [ -n "${3:-}" ] && printf 'echo "%s"\n' "$3"; printf 'echo "%s"\n' "$2"; } > "$1"; chmod +x "$1"
+}
+NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS"
+ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 118 passed, 0 failed" "$NAMES12"
+SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 60 passed, 0 failed ────────"
+COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
+chk "$?" "0" "INV-RECON: healthy stubbed tails + all pinned names → PASS"
+ST_LOW="$SB/st-low.sh"; mkstub "$ST_LOW" "selftest: 117 passed, 0 failed" "$NAMES12"
+ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_LOW" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"; RCC=$?
+chk "$RCC" "1" "INV-RECON refuse: selftest 117 < floor 118"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: floor-selftest')" "1" "INV-RECON reason code: floor-selftest"
+SM_LOW="$SB/sm-low.sh"; mkstub "$SM_LOW" "──────── 59 passed, 0 failed ────────"
+ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_LOW" bash "$RC" 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: floor-smoke')" "1" "INV-RECON refuse+code: smoke 59 < floor 60"
+ST_NONAME="$SB/st-noname.sh"; mkstub "$ST_NONAME" "selftest: 118 passed, 0 failed" "INV-ENGINEFIX INV-GRAMMAR"
+ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_NONAME" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: inv-missing')" "1" "INV-RECON refuse+code: a pinned INV group name absent"
+ST_X="$SB/st-cross.sh"; mkstub "$ST_X" "──────── 200 passed, 0 failed ────────"
+ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_X" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: cross-match')" "1" "INV-RECON refuse+code: smoke-shaped count in the selftest channel (cross-match guard)"
+
 echo
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

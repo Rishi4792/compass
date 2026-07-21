@@ -14,3 +14,7 @@ Print, at a glance, where the current Compass build is and what to do next — s
 
 ## Note
 Read-only. If `.claude/builds/` won't resolve, the user is not at the project root (where `.claude/` lives) — say so and ask for the root.
+
+## v0.12.0 additions
+- `Post-ship: round k/cap · consecutive-clean j/N · open PS m` — rendered when `loop.log` exists (the post-ship critique loop's live position; bounds parsed from the contract's `post-ship-loop:` header).
+- `auto: SUSPENDED (driver)` — rendered when `.auto-suspended` exists (an interactive driver suspended the self-spawn via `compass.sh auto-suspend`; budget metering stays armed; `auto-resume` re-arms).

@@ -46,11 +46,34 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 - [x] prod reconcile: `compass.sh reconcile <actual> <gold> <tol>` → PASS
 - [x] observability emits in prod: `<cmd>` → <signal seen>
 - [x] critical flow smoke (prod, read-only): <result>
+- [x] post-ship loop: <converged round n/cap · waived: <reason> · legacy-N/A> — `compass.sh loop-converged <dir> postship` → <exit>
+- [x] observation <facet>: `<capture-cmd>` → evidence/round-1/<file>
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> ship`.
 
-## Post-ship note
-If prod reconciliation later drifts (a future month), that's a new signal → reopen via `compass:contract` (amend) — Compass's drift guard doesn't end at deploy.
+## §5 — Post-ship critique loop (v0.12.0): SHIPPED is not the finish line
+After the Emit receipt passes `lifecycle-audit`, run `compass.sh postship-required <dir>`:
+- **N/A / waived** (deploy waived · `post-ship-loop: off — <reason>` · legacy header-less contract) → record `**Status:** SHIPPED` exactly as before. Done.
+- **REQUIRED** (header `on (clean N / cap M)` — the v0.12 contract skill writes it for every new shipping build) → the loop below. First, pre-flight: `compass.sh postship-signal <dir>` — **non-zero → `compass.sh fire-g2 <dir> "post-ship: no external verifier"`** (the loop NEVER grades on self-critique alone). Set column-0 `**Status:** post-ship (round 1/cap)`.
+
+**Per round k (in-session — NEVER a headless spawn):**
+1. **OBSERVE** into `evidence/round-<k>/`: web → screenshots of the DEPLOYED system at the contract's pinned viewports/states (real PNGs — the gate enforces magic bytes + ≥20KB); pipeline/library → run the contract's `observation-channel:` command; `observe.txt` line 1 = that command in backticks, then ≤50 key lines. Auth via env-vars only — **never a literal token in any receipt or evidence file**. Blocked channel: gated mode may record `HUMAN-OBSERVED: "<verbatim quote>"` inside the round receipt (any line in the block); in `--auto` a blocked channel → fire-g2.
+2. **CRITIQUE** — spawn a FRESH in-session subagent whose ONLY inputs are `contract.md` (INVARIANTs, DoD, `post-ship-check:` lines, `CRITIQUE-TARGET:` seeds from intake) and this round's evidence. No builder reasoning, no prior-round transcripts. A Crit/Maj finding COUNTS only when reproduced by a command the main session re-runs (reproduce-to-count); material findings must cite the contract line/INVARIANT violated — uncited findings become FUTURE rows (logged, non-blocking) unless the contract sets `observation: strict-design`.
+3. **RECORD** — findings → `| PS-<k>-<j> | R<k> | <SEV> | <where> | <finding · cite=…> | <fix> | OPEN |` rows in review-ledger.md, then append (fresh block AFTER any redeploy — the LAST block governs):
+   <!-- TEMPLATE: round-receipt -->
+   ```
+   ## RECEIPT — post-ship-critique · round <k> · <CLEAN|MATERIAL>
+   - [x] LIVE-TARGET: <prod url / system name — never a secret>
+   - [x] check: `<command>` → <observed output>
+   ```
+4. **REGISTER** — `compass.sh loop-round <dir> postship <CLEAN|MATERIAL> --sig $(git rev-parse --short=12 HEAD)` (non-git target → `--sig nogit`). The gate owns every refusal (cap · receipt · evidence · ledger · order · stalls · budget-in-auto). A refusal names its code — fix the cause or fire-g2; never re-word the receipt to slip past.
+5. **MATERIAL →** smallest fix → `post-merge-check` → **gated mode: present a 4-option AskUserQuestion menu BEFORE the redeploy (a DISTINCT menu — never the canonical GATE block)** → re-claim ship lock → redeploy via the repo's own path (full Procedure 1-4) → close the PS rows with re-run proof → `ship-release` → fresh ship receipt → next round.
+6. **CONVERGED** — `compass.sh loop-converged <dir> postship` exit 0 → write `**Status:** SHIPPED (post-ship CONVERGED n/cap)` (only now does `lifecycle-audit … SHIPPED` pass its G-O1). 
+7. **CAP with open findings** — `compass.sh fire-g2 <dir> "post-ship cap: <open PS ids>"` + a 4-option menu: **Accept & ship-as-is** (write the pinned column-0 line into receipts.md:
+   <!-- TEMPLATE: user-accepted -->
+   `user-accepted: ship-as-is — <PS ids> · <ISO ts>`
+   — any PS row opened AFTER it voids the acceptance) / **Keep trying** (one more capped loop — WITHDRAWN once `g2_fires` ≥ 3, the v0.10 rule) / **Re-scope** (Amend) / **Pause**. Never fake done.
+`ship-release` still fires on EVERY exit path, including between rounds. If prod reconciliation drifts LATER (a future month), that's a new signal → reopen via `compass:contract` (amend) — the drift guard doesn't end at deploy.
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

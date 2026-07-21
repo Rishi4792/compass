@@ -12,6 +12,10 @@
 
 ---
 
+## Compass is a graph
+
+Stages are nodes, **script gates are the edges** (exit codes — never model-chosen), adversarial reviews and the post-ship critique loop are independent verifier nodes with fresh context and on-disk evidence only. Every cycle is bounded (caps + convergence bounds from the contract header + stall detection + budget metering inside the registration gate). `SHIPPED` is not the finish line: it is unwritable until the post-ship loop converges on the live system.
+
 ## What is Compass?
 
 Compass turns any non-trivial build into a disciplined, contract-first lifecycle. You write a locked **contract** — the single source of truth for what's being built — and every later stage (plan, build, three adversarial reviews, and an optional ship) is checked against it. The contract is the invariant; the moment anything drifts, Compass **stops and asks**.

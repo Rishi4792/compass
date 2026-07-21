@@ -49,6 +49,33 @@ state_root() {
 }
 locks_dir() { printf '%s/.locks' "$(state_root)"; }
 
+# ── v0.12.0 S2a: shared pinned-grammar parsers (contract v3a "Pinned gate-read grammars") ──
+# norm_line: delete every `*` (bold-tolerant), used before any header match (RD-2).
+norm_line() { printf '%s' "$1" | tr -d '*'; }
+# hdr_get <file> <key>: print the FIRST pinned header line's value (post-normalization,
+# `^[- ]*<key>:` anchored, trailing space trimmed); exit 1 if absent. Keys are fixed literals.
+hdr_get() { # <file> <key>
+  local f="${1:-}" key="${2:-}"
+  [ -f "$f" ] && [ -n "$key" ] || return 1
+  awk -v key="$key" '
+    { line=$0; gsub(/\*/,"",line)
+      pat="^[- ]*" key ":[ \t]*"
+      if (line ~ pat) { sub(pat,"",line); sub(/[ \t]+$/,"",line); print line; found=1; exit } }
+    END { exit (found ? 0 : 1) }' "$f"
+}
+# ps_open_rows <ledger-file>: count OPEN Crit/Maj PS- rows per the pinned grammar
+# `| PS-<r>-<k> | R<r> | <SEV> | <where> | <finding> | <fix> | <OPEN|CLOSED> |`.
+# Prints the count (0 on missing file). Deliberately NOT ledger_open_rows (RC-10).
+ps_open_rows() { # <ledger-file>
+  local f="${1:-}"
+  [ -f "$f" ] || { printf '0'; return 0; }
+  awk -F'|' '
+    function trim(x){ gsub(/^[ \t]+|[ \t]+$/,"",x); return x }
+    { id=trim($2); sev=trim($4); st=trim($8)
+      if (id ~ /^PS-[0-9]+-[0-9]+$/ && (sev=="CRITICAL" || sev=="MAJOR") && st=="OPEN") n++ }
+    END { printf "%d", n }' "$f"
+}
+
 # main checkout root (parent of the common .git)
 main_root() {
   local common; common="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
@@ -740,6 +767,11 @@ $sroutes
 EOF
       [ -n "$sb" ] && die "lifecycle-audit: SHIPPED but ship receipt missing a CHECKED prod route-smoke proof (route <path> + prod + 200|loaded) for:$sb (§3b)."
     fi
+    # G-O1 (v0.12.0 S4): when the post-ship loop is REQUIRED, SHIPPED is unwritable until
+    # loop-converged passes (converged / user-accepted). Legacy + waived builds skip (INV-BC).
+    if cmd_postship_required "$dir" >/dev/null 2>&1; then
+      cmd_loop_converged "$dir" postship >/dev/null 2>&1 || { echo "refuse: loop-open" >&2; die "lifecycle-audit: post-ship critique loop is OPEN (required, not converged, no valid user-accepted) — SHIPPED cannot be recorded (G-O1)."; }
+    fi
   fi
   ok "lifecycle-audit: chain PASS${want:+, status '$want' consistent}${deploy_waived:+ }$([ "$deploy_waived" = 1 ] && echo '(deploy waived)')."
 }
@@ -947,6 +979,16 @@ cmd_status() { # <build-dir>
   [ "${total:-0}" -gt 0 ] 2>/dev/null && echo "Steps:   ${done_}/${total} checked"
   echo "Last ✓:  ${lastpass:-none}"
   echo "Next:    ${next:-unknown}"
+  # v0.12.0 S6 (F-STATUS): post-ship loop position + suspend visibility — file-derived, no guesses.
+  if [ -f "$dir/loop.log" ]; then
+    local psb pscl pscap psrounds psclean psopen
+    psb="$(_ps_bounds "$dir/contract.md")"; pscl="${psb% *}"; pscap="${psb#* }"
+    psrounds="$(awk -F'|' '$2=="postship"{n++}END{print n+0}' "$dir/loop.log")"
+    psclean="$(awk -F'|' '$2=="postship"{ if($4=="CLEAN") t++; else t=0 }END{print t+0}' "$dir/loop.log")"
+    psopen="$(ps_open_rows "$dir/review-ledger.md")"
+    echo "Post-ship: round ${psrounds}/${pscap} · consecutive-clean ${psclean}/${pscl} · open PS ${psopen}"
+  fi
+  [ -f "$dir/.auto-suspended" ] && echo "auto: SUSPENDED (driver)"
   echo "────────────────────────────────────────────────────"
 }
 
@@ -1025,7 +1067,7 @@ cmd_doctor() { # [--migrate]
 # State files are LINE-ORIENTED (no JSON — POSIX shell, macOS bash 3.2, no jq).
 # budget.env: key=value. session-chain.log: pipe-delimited 7 fields.
 # Locks always taken gate-$slug THEN budget-$slug, never the reverse (no deadlock).
-AUTO_EVENTS="start gate-wait-G1 gate-wait-G2 gate-cleared spawn spawn-failed budget-stop"
+AUTO_EVENTS="start gate-wait-G1 gate-wait-G2 gate-cleared spawn spawn-failed budget-stop auto-suspended auto-resumed"
 BUDGET_DEFAULT_WALL=3600; BUDGET_DEFAULT_SESSIONS=6; BUDGET_DEFAULT_STAGES=40
 
 _now_epoch() { date +%s 2>/dev/null || echo 0; }
@@ -1232,6 +1274,11 @@ is_stage_continuable() { # <build-dir>
   case "$status" in *shipped*|*rolled-back*|*paused*) return 1 ;; esac
   # gate held → not continuable (a human must act)
   [ -d "$(locks_dir 2>/dev/null)/$slug.gate-lock" ] && return 1
+  # v0.12.0 S4 (RD-6): a build mid-post-ship-loop IS continuable — recognized BEFORE the
+  # shipped-clean early-return below, because every mid-loop build HAS a ship PASS receipt
+  # (F-REG demands a fresh one per redeploy). Status token: column-0 `post-ship (round k/cap)`
+  # — deliberately lacks the "shipped" substring, so the terminal case above never eats it.
+  case "$status" in post-ship\ \(round*) return 0 ;; esac
   # mid-build → continuable
   is_mid_build "$dir" && return 0
   # else: continuable iff some stage has a clean PASS receipt AND ship is not done
@@ -1266,6 +1313,10 @@ cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattende
 _auto_spawn_maybe() { # <dir> <slug> <sid> <locks-dir>
   local dir="$1" slug="$2" sid="$3" ld="$4"
   [ -f "$dir/.auto-mode" ] || return 1
+  # v0.12.0 S6a (F-SUSPEND): an interactive driver has suspended the self-spawn — refuse at THIS
+  # seam so BOTH entry points (stop-guard AND direct auto-spawn) are dormant. .auto-mode stays,
+  # so budget metering + the RC-8/VF-4 human-eyes refusals REMAIN ARMED while suspended.
+  [ -f "$dir/.auto-suspended" ] && { echo "compass: auto-spawn refused — suspended by the interactive driver (auto-resume to re-arm)." >&2; return 1; }
   # (1) gate held? (INV-6) — never spawn past a human gate
   [ -d "$ld/$slug.gate-lock" ] && { echo "compass: auto-spawn refused — gate-lock held (no gate bypass)." >&2; return 1; }
   # (2) single-flight (INV-5): a live foreign owner holds the build
@@ -1340,6 +1391,303 @@ cmd_can_advance() { # <build-dir>
   ok "can-advance: yes."
 }
 
+# ── v0.12.0 S2: post-ship loop policy + external-verifier pre-flight (contract F-REQ/F-SIGNAL) ──
+# postship-required <build-dir>: is the post-ship critique loop REQUIRED for this build?
+#   exit 0 = required · exit 1 = N/A or waived (reason printed). Policy (contract v3a F-REQ):
+#   deploy waived → N/A · header `on (clean N / cap M)` → required · header `off — <reason>`
+#   → waived · header ABSENT → N/A "legacy — pre-v0.12 contract" (INV-BC: old builds untouched).
+#   All header reads go through hdr_get (bold-tolerant, VZ-3) — never the legacy [-*]? grep.
+cmd_postship_required() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh postship-required <build-dir>"
+  local c="$dir/contract.md"; [ -f "$c" ] || die "postship-required: no contract.md in $dir"
+  local dep; dep="$(hdr_get "$c" deploy || true)"
+  case "$dep" in
+    out-of-scope*) ok "postship-required: N/A — deploy waived (${dep})."; return 1 ;;
+  esac
+  local v; v="$(hdr_get "$c" post-ship-loop || true)"
+  case "$v" in
+    on*)      ok "postship-required: REQUIRED (${v})."; return 0 ;;
+    off*)     ok "postship-required: waived — ${v#off}"; return 1 ;;
+    "")       ok "postship-required: N/A — legacy (pre-v0.12 contract, no post-ship-loop header)."; return 1 ;;
+    *)        die "postship-required: unparseable post-ship-loop header value '${v}'." ;;
+  esac
+}
+
+# postship-signal <build-dir>: does at least ONE external verifier exist for the loop to grade
+# against? exit 0 iff any of: RECON-CMD in receipts.md · non-empty '## Affected routes' in
+# plan.md · a `post-ship-check:` line · an `observation-channel:` line (both via hdr_get).
+# Non-zero → the loop must NOT run on model self-critique alone (INV-PS-NOVERIFIER): fire G2.
+cmd_postship_signal() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh postship-signal <build-dir>"
+  local c="$dir/contract.md" r="$dir/receipts.md" found=""
+  [ -f "$r" ] && grep -qE '^RECON-CMD:' "$r" && found="RECON-CMD (receipts.md)"
+  [ -z "$found" ] && [ -n "$(plan_routes "$dir")" ] && found="declared routes (plan.md)"
+  [ -z "$found" ] && [ -f "$c" ] && hdr_get "$c" post-ship-check >/dev/null 2>&1 && found="post-ship-check line (contract.md)"
+  [ -z "$found" ] && [ -f "$c" ] && hdr_get "$c" observation-channel >/dev/null 2>&1 && found="observation-channel line (contract.md)"
+  if [ -n "$found" ]; then ok "postship-signal: external verifier present — ${found}."; return 0; fi
+  echo "refuse: no-verifier" >&2
+  die "postship-signal: NO external verifier (no RECON-CMD, no declared routes, no post-ship-check, no observation-channel) — the loop must not run on self-critique alone. Fire G2: compass.sh fire-g2 $dir \"post-ship: no external verifier\"."
+}
+
+# ── v0.12.0 S3: loop-round — register one post-ship critique round (contract F-REG) ──
+# _ps_bounds <contract>: prints "clean cap" parsed from the post-ship-loop header (defaults 2 5).
+_ps_bounds() { # <contract.md>
+  local v; v="$(hdr_get "$1" post-ship-loop || true)"
+  local n c
+  n="$(printf '%s' "$v" | sed -nE 's/^on \(clean ([0-9]+) \/ cap ([0-9]+)\).*/\1/p')"
+  c="$(printf '%s' "$v" | sed -nE 's/^on \(clean ([0-9]+) \/ cap ([0-9]+)\).*/\2/p')"
+  printf '%s %s' "${n:-2}" "${c:-5}"
+}
+# _png_ok <dir>: any *.png in dir with PNG magic bytes AND size ≥ 20480 → 0.
+_png_ok() { # <evidence-round-dir>
+  local f sz magic
+  for f in "$1"/*.png; do
+    [ -f "$f" ] || continue
+    sz=$(wc -c < "$f" | tr -d ' ')
+    [ "$sz" -ge 20480 ] || continue
+    magic="$(head -c 8 "$f" | od -An -tx1 | tr -d ' \n')"
+    [ "$magic" = "89504e470d0a1a0a" ] && return 0
+  done
+  return 1
+}
+# _round_block <receipts> <round> <verdict>: print the receipt block for that exact round header.
+_round_block() { # <receipts.md> <round> <CLEAN|MATERIAL>  (LAST matching block wins — a re-run
+  # round writes a FRESH receipt after the redeploy; the last one is the live one, like last_block)
+  awk -v hdr="## RECEIPT — post-ship-critique · round $2 · $3" '
+    index($0, hdr)==1 { cap=1; buf=$0 ORS; next }
+    cap && /^## / { cap=0 }
+    cap { buf=buf $0 ORS }
+    END { printf "%s", buf }' "$1"
+}
+_refuse() { echo "refuse: $1" >&2; die "loop-round: $2"; }
+
+cmd_loop_round() { # <build-dir> <phase> <CLEAN|MATERIAL> --sig <sha12|nogit>
+  local dir="${1:-}" phase="${2:-}" verdict="${3:-}" sigflag="${4:-}" sig="${5:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] && [ "$phase" = "postship" ] || die "usage: compass.sh loop-round <build-dir> postship <CLEAN|MATERIAL> --sig <sha12|nogit>"
+  case "$verdict" in CLEAN|MATERIAL) : ;; *) die "loop-round: verdict must be CLEAN or MATERIAL." ;; esac
+  [ "$sigflag" = "--sig" ] && [ -n "$sig" ] || die "loop-round: --sig <git sha-12 | nogit> is required."
+  local c="$dir/contract.md" r="$dir/receipts.md" lg="$dir/loop.log" ledger="$dir/review-ledger.md"
+  [ -f "$c" ] || die "loop-round: no contract.md"; [ -f "$r" ] || die "loop-round: no receipts.md"
+  local bounds cleanN cap; bounds="$(_ps_bounds "$c")"; cleanN="${bounds% *}"; cap="${bounds#* }"
+  # previous state from loop.log (truth — receipts alone don't count)
+  local prev_round=0 prev_verdict="" prev_sig="" prev2_sig="" prev3_sig=""
+  if [ -f "$lg" ]; then
+    prev_round="$(awk -F'|' -v p="$phase" '$2==p{r=$3}END{print r+0}' "$lg")"
+    prev_verdict="$(awk -F'|' -v p="$phase" '$2==p{v=$4}END{print v}' "$lg")"
+    prev_sig="$(awk -F'|' -v p="$phase" '$2==p{s[NR]=$5}END{print s[NR]}' "$lg")"
+    prev2_sig="$(awk -F'|' -v p="$phase" '$2==p{a=b;b=$5}END{print a}' "$lg")"
+    prev3_sig="$(awk -F'|' -v p="$phase" '$2==p{x=a;a=b;b=$5}END{print x}' "$lg")"
+  fi
+  local round=$((prev_round+1))
+  # 1 cap
+  [ "$round" -le "$cap" ] || _refuse cap "round $round exceeds cap $cap — fire G2 (compass.sh fire-g2 $dir \"post-ship cap\")."
+  # 2 receipt block exists, matches round+verdict, zero unchecked boxes, ≥1 checked backtick-command evidence line
+  local blk; blk="$(_round_block "$r" "$round" "$verdict")"
+  [ -n "$blk" ] || _refuse receipt "no round receipt '## RECEIPT — post-ship-critique · round $round · $verdict' in receipts.md."
+  printf '%s\n' "$blk" | grep -qE '^\- \[ \]' && _refuse receipt "round $round receipt has unchecked boxes."
+  printf '%s\n' "$blk" | grep -qE '^\- \[x\].*`.*`.*→' || _refuse receipt "round $round receipt lacks a checked backtick-command evidence line (cmd → output)."
+  # 3 evidence floors (web via contract Facets; HUMAN-OBSERVED gated-only)
+  local ev="$dir/evidence/round-$round" facets; facets="$(hdr_get "$c" Facets || true)"
+  local human=""; printf '%s\n' "$blk" | grep -qE 'HUMAN-OBSERVED: "..*"' && human=1
+  if [ -n "$human" ] && [ -f "$dir/.auto-mode" ]; then _refuse human-observed-auto "HUMAN-OBSERVED is gated-mode only — an unattended session cannot fabricate human eyes (fire G2 instead)."; fi
+  case "$facets" in
+    *web*)
+      if [ -z "$human" ]; then
+        [ -d "$ev" ] && _png_ok "$ev" || _refuse evidence "web round needs ≥1 real PNG ≥20KB in evidence/round-$round/ (or a gated HUMAN-OBSERVED line)."
+      fi ;;
+    *)
+      local ob="$ev/observe.txt"
+      [ -s "$ob" ] || _refuse evidence "non-web round needs non-empty evidence/round-$round/observe.txt."
+      local decl comp l1
+      decl="$(hdr_get "$c" observation-channel || true)"; comp="${decl#* = }"
+      l1="$(head -1 "$ob")"
+      l1="$(norm_line "$l1")"; comp="\`$(norm_line "$comp")\`"
+      [ "$l1" = "$comp" ] || _refuse evidence "observe.txt line 1 must be the declared digest command in backticks (comparand mechanic VF-2/VZ)." ;;
+  esac
+  # 4 ledger coupling (ps_open_rows — never ledger_open_rows)
+  local openps; openps="$(ps_open_rows "$ledger")"
+  if [ "$verdict" = "CLEAN" ]; then
+    [ "$openps" = "0" ] || _refuse ledger "CLEAN with $openps open PS Crit/Maj rows — verdict and ledger disagree."
+  else
+    grep -qE "^\| PS-$round-[0-9]+ \|" "$ledger" 2>/dev/null || _refuse ledger "MATERIAL without a new PS-$round-* row in review-ledger.md."
+  fi
+  # 5 order: previous MATERIAL → fresh ship PASS receipt between the two round receipts
+  if [ "$prev_verdict" = "MATERIAL" ]; then
+    local slug; slug="$(basename "$dir")"
+    awk -v prevh="## RECEIPT — post-ship-critique · round $prev_round · MATERIAL" \
+        -v ship="## RECEIPT — ship · $slug · PASS" -v curh="## RECEIPT — post-ship-critique · round $round · $verdict" '
+      index($0,prevh)==1 { seenprev=1 }
+      seenprev && index($0,ship)==1 { seenship=1 }
+      index($0,curh)==1 { lastok = seenship }
+      END { exit lastok?0:1 }' "$r" || _refuse order "MATERIAL round $prev_round must be followed by a fresh '## RECEIPT — ship · <slug> · PASS' BEFORE the (latest) round $round receipt."
+  fi
+  # 6/7/8 stall detection (sig semantics; nogit degrade replaces sig-equality checks)
+  if [ "$sig" = "nogit" ]; then
+    if [ "$verdict" = "MATERIAL" ] && [ "$prev_verdict" = "MATERIAL" ] && [ "$prev_sig" = "nogit" ]; then
+      _refuse nogit-stall "2 consecutive MATERIAL rounds at sig=nogit — degrade: fire G2."
+    fi
+  else
+    if [ "$verdict" = "MATERIAL" ] && [ "$sig" = "$prev_sig" ]; then
+      _refuse no-progress "MATERIAL with unchanged sig $sig — the code didn't change; fire G2."
+    fi
+    if [ -n "$prev3_sig" ] && [ "$sig" = "$prev2_sig" ] && [ "$prev_sig" = "$prev3_sig" ] && [ "$sig" != "$prev_sig" ]; then
+      _refuse ping-pong "sig alternation A,B,A,B — oscillating fixes; fire G2."
+    fi
+  fi
+  # 9 budget is loop-round-OWNED under .auto-mode (subshell: die() exits cannot escape it — VZ-4)
+  if [ -f "$dir/.auto-mode" ]; then
+    if ( cmd_budget_check "$dir" --bump-stage >/dev/null ); then :; else
+      _refuse budget "budget ceiling — fire G2 (compass.sh fire-g2 $dir \"post-ship budget\")."
+    fi
+  fi
+  # register (append-only; duplicate rounds impossible by construction: round = last+1)
+  printf '%s|%s|%s|%s|%s|%s\n' "$(_now_epoch)" "$phase" "$round" "$verdict" "$sig" "$openps" >> "$lg"
+  ok "loop-round: registered $phase round $round/$cap · $verdict · sig=$sig · open PS=$openps."
+}
+
+# ── v0.12.0 S4: loop-converged — is the post-ship critique loop DONE? (contract F-CONV) ──
+# exit 0 iff (a) rounds ≥ clean-bound N (header-parsed) AND the last N registered rounds are all
+# CLEAN AND 0 open PS Crit/Maj; or (b) a pinned `user-accepted: ship-as-is — <PS ids> · <ts>`
+# line exists AND every OPEN PS row id is in the recorded list (SET semantics, VF-3/VZ).
+# Refusal codes (Q8): clean-run · open-ps · accepted-void.
+cmd_loop_converged() { # <build-dir> <phase>
+  local dir="${1:-}" phase="${2:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] && [ "$phase" = "postship" ] || die "usage: compass.sh loop-converged <build-dir> postship"
+  local c="$dir/contract.md" lg="$dir/loop.log" ledger="$dir/review-ledger.md" r="$dir/receipts.md"
+  local bounds cleanN; bounds="$(_ps_bounds "$c")"; cleanN="${bounds% *}"
+  local rounds trailing_clean openps
+  rounds="$(awk -F'|' -v p="$phase" '$2==p{n++}END{print n+0}' "${lg:-/dev/null}" 2>/dev/null || printf 0)"
+  trailing_clean="$(awk -F'|' -v p="$phase" '$2==p{ if($4=="CLEAN") t++; else t=0 }END{print t+0}' "${lg:-/dev/null}" 2>/dev/null || printf 0)"
+  openps="$(ps_open_rows "$ledger")"
+  if [ "$rounds" -ge "$cleanN" ] && [ "$trailing_clean" -ge "$cleanN" ] && [ "$openps" = "0" ]; then
+    ok "loop-converged: $trailing_clean consecutive CLEAN (need $cleanN), 0 open PS — CONVERGED ($rounds rounds)."
+    return 0
+  fi
+  # user-accepted escape (cap path): SET semantics — every OPEN PS id must be in the recorded list
+  local ua; ua="$(hdr_get "$r" user-accepted 2>/dev/null || true)"
+  if [ -n "$ua" ]; then
+    case "$ua" in ship-as-is*) : ;; *) echo "refuse: accepted-void" >&2; die "loop-converged: user-accepted line present but not the pinned 'ship-as-is — <PS ids> · <ts>' form." ;; esac
+    local missing=""
+    if [ -f "$ledger" ]; then
+      local id
+      while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        printf '%s' "$ua" | grep -qF "$id" || missing="$missing $id"
+      done <<EOF
+$(awk -F'|' 'function trim(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x}
+   { id=trim($2); sev=trim($4); st=trim($8)
+     if (id ~ /^PS-[0-9]+-[0-9]+$/ && (sev=="CRITICAL"||sev=="MAJOR") && st=="OPEN") print id }' "$ledger")
+EOF
+    fi
+    if [ -n "$missing" ]; then
+      echo "refuse: accepted-void" >&2
+      die "loop-converged: user-accepted VOID — open PS rows not in the recorded list:$missing (a later finding voids the acceptance)."
+    fi
+    ok "loop-converged: user-accepted ship-as-is honored (open PS ⊆ recorded list) — loop closed by explicit human decision."
+    return 0
+  fi
+  if [ "$openps" != "0" ]; then echo "refuse: open-ps" >&2; die "loop-converged: $openps open PS Crit/Maj rows."; fi
+  echo "refuse: clean-run" >&2
+  die "loop-converged: need $cleanN consecutive CLEAN rounds (have $trailing_clean of $rounds registered)."
+}
+
+# ── v0.12.0 S5: coldgo-gate — the 2×cold-GO design gate as an exit code (contract F-COLDGO) ──
+# Applicability (VZ-2, authoring-time model): applies iff the contract declares web facets AND a
+# `cold-critic:` line with the pinned ON form. `off — <reason>` → waived. No line → N/A (legacy,
+# INV-BC; the v0.12 contract skill always writes `cold-critic: on` for web contracts). Non-web → N/A.
+# PASS iff the LAST 2 cold-critic receipts are GO with the IDENTICAL tree sha, each with a checked
+# clean-tree box, AND that sha == the CURRENT `git rev-parse --short=12 HEAD` (a commit after the
+# last GO invalidates — RD-7). Fallback: ONE `HUMAN-GO · "<quote>" · tree=<sha>` when the contract
+# declares `cold-critic-fallback: human-eyeball` — GATED MODE ONLY (VF-4). Codes: streak ·
+# dirty-tree · stale-head · human-go-auto · no-fallback.
+cmd_coldgo_gate() { # <build-dir>   (run from within the target repo)
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh coldgo-gate <build-dir>"
+  local c="$dir/contract.md" r="$dir/receipts.md"
+  [ -f "$c" ] || die "coldgo-gate: no contract.md"
+  local facets cc; facets="$(hdr_get "$c" Facets || true)"; cc="$(hdr_get "$c" cold-critic || true)"
+  case "$facets" in *web*) : ;; *) ok "coldgo-gate: N/A — not a web-facet build."; return 0 ;; esac
+  case "$cc" in
+    "")    ok "coldgo-gate: N/A — legacy web build (no cold-critic header, pre-v0.12)."; return 0 ;;
+    off*)  ok "coldgo-gate: waived — ${cc#off}"; return 0 ;;
+    on*)   : ;;
+    *)     die "coldgo-gate: unparseable cold-critic header value '${cc}'." ;;
+  esac
+  [ -f "$r" ] || { echo "refuse: streak" >&2; die "coldgo-gate: no receipts.md — no cold-critic runs recorded."; }
+  local head12; head12="$(git rev-parse --short=12 HEAD 2>/dev/null || printf nogit)"
+  # HUMAN-GO path first (one suffices; gated-only; fallback must be declared)
+  local hg; hg="$(grep -E '^## RECEIPT — cold-critic · HUMAN-GO · ".+" · tree=[a-z0-9]+' "$r" | tail -1 || true)"
+  if [ -n "$hg" ]; then
+    [ -f "$dir/.auto-mode" ] && { echo "refuse: human-go-auto" >&2; die "coldgo-gate: HUMAN-GO under .auto-mode — an unattended session cannot certify human eyes (fire G2)."; }
+    local fb; fb="$(hdr_get "$c" cold-critic-fallback || true)"
+    [ "$fb" = "human-eyeball" ] || { echo "refuse: no-fallback" >&2; die "coldgo-gate: HUMAN-GO recorded but the contract does not declare 'cold-critic-fallback: human-eyeball'."; }
+    local hsha; hsha="$(printf '%s' "$hg" | sed -nE 's/.*tree=([a-z0-9]+).*/\1/p')"
+    [ "$hsha" = "$head12" ] || { echo "refuse: stale-head" >&2; die "coldgo-gate: HUMAN-GO tree=$hsha but current HEAD is $head12 — a later commit invalidates the sign-off."; }
+    ok "coldgo-gate: HUMAN-GO honored (gated, fallback declared, tree=$hsha == HEAD)."
+    return 0
+  fi
+  # machine path: last 2 GO receipts, identical sha, clean-tree boxes, sha == HEAD
+  local last2; last2="$(grep -E '^## RECEIPT — cold-critic · (GO|NO-GO) · tree=' "$r" | tail -2)"
+  local n; n="$(printf '%s\n' "$last2" | grep -c 'cold-critic' || true)"
+  [ "$n" = "2" ] || { echo "refuse: streak" >&2; die "coldgo-gate: need 2 consecutive cold GO receipts (have $n runs recorded)."; }
+  printf '%s\n' "$last2" | grep -q 'NO-GO' && { echo "refuse: streak" >&2; die "coldgo-gate: a NO-GO sits in the last 2 runs — streak reset."; }
+  local s1 s2
+  s1="$(printf '%s\n' "$last2" | sed -n '1p' | sed -nE 's/.*tree=([a-z0-9]+).*/\1/p')"
+  s2="$(printf '%s\n' "$last2" | sed -n '2p' | sed -nE 's/.*tree=([a-z0-9]+).*/\1/p')"
+  [ "$s1" = "$s2" ] || { echo "refuse: streak" >&2; die "coldgo-gate: the 2 GOs carry different tree shas ($s1 vs $s2) — a commit between GOs resets the streak."; }
+  # each of the last two GO blocks needs a checked clean-tree box
+  local blocks; blocks="$(awk -v want="## RECEIPT — cold-critic · GO · tree=$s1" '
+    index($0,want)==1 { cap=1; cnt++; buf[cnt]=$0 ORS; next }
+    cap && /^## / { cap=0 }
+    cap { buf[cnt]=buf[cnt] $0 ORS }
+    END { printf "%s%s", buf[cnt-1], buf[cnt] }' "$r")"
+  local nboxes; nboxes="$(printf '%s' "$blocks" | grep -cE '^\- \[x\] clean-tree: .*porcelain.*empty' || true)"
+  [ "$nboxes" -ge 2 ] || { echo "refuse: dirty-tree" >&2; die "coldgo-gate: both GO receipts need a checked 'clean-tree: git status --porcelain empty' box (the sha must pin the pixels)."; }
+  [ "$s2" = "$head12" ] || { echo "refuse: stale-head" >&2; die "coldgo-gate: GOs at tree=$s2 but current HEAD is $head12 — a commit after the final GO invalidates it (RD-7)."; }
+  ok "coldgo-gate: 2 consecutive cold GOs @ tree=$s2 == HEAD, clean trees — design gate PASS."
+}
+
+# ── v0.12.0 S6a: auto-suspend / auto-resume — the interactive-driver lever (contract F-SUSPEND,
+# born from the live spawn race during this build's own R1). auto-suspend creates `.auto-suspended`
+# ALONGSIDE `.auto-mode` (never deletes it — metering and the human-eyes refusals stay armed),
+# appends the `auto-suspended` chain event, and refuses while a LIVE FOREIGN owner holds the build
+# (kill the spawn → `own` → suspend). auto-resume removes the marker, REQUIRES declared budget
+# ceilings (the auto-init precondition — flag-only precheck validates nothing), appends `auto-resumed`.
+cmd_auto_suspend() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh auto-suspend <build-dir>"
+  [ -f "$dir/.auto-mode" ] || die "auto-suspend: '$(basename "$dir")' is not an --auto build (no .auto-mode)."
+  local slug ld owner sid; slug="$(basename "$dir")"; ld="$(locks_dir)"; sid="${CLAUDE_CODE_SESSION_ID:-}"
+  owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+  if [ -n "$owner" ] && [ -n "$sid" ] && [ "$owner" != "$sid" ]; then
+    die "auto-suspend: a foreign session owns this build (owner $owner) — kill its spawn (pgrep -fl 'compass:resume $slug'), take ownership (compass.sh own $slug --session \"\$CLAUDE_CODE_SESSION_ID\"), then suspend. The engine never kills a process itself."
+  fi
+  : > "$dir/.auto-suspended"
+  _chain_append "$dir" "-" "auto-suspended"
+  ok "auto-suspend: self-spawn dormant for '$slug' (.auto-mode kept — metering stays armed). Re-arm: compass.sh auto-resume $dir"
+}
+cmd_auto_resume() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh auto-resume <build-dir>"
+  [ -f "$dir/.auto-suspended" ] || { ok "auto-resume: '$(basename "$dir")' is not suspended — nothing to do."; return 0; }
+  local be; be="$(_be_file "$dir")"
+  { [ -f "$be" ] && [ -n "$(_be_get "$be" ceiling_wall)" ] && [ -n "$(_be_get "$be" ceiling_sessions)" ] && [ -n "$(_be_get "$be" ceiling_stages)" ]; } \
+    || die "auto-resume: refusing — no declared budget ceilings in budget.env (--auto requires a measurable budget; run budget-init/auto-start first)."
+  rm -f "$dir/.auto-suspended"
+  _chain_append "$dir" "-" "auto-resumed"
+  ok "auto-resume: self-spawn re-armed for '$(basename "$dir")'."
+}
+
+# v0.12.0 S2a: __match — TEST SURFACE ONLY. Whitelist-guarded to the *_match helper namespace;
+# reads ONE candidate line/block on stdin, exits 0/1. Lets the suites drive the exact matchers
+# the gates use (INV-TEMPLATES) without sourcing tricks. Not for production flows.
+cmd___match() { # <helper-name>  (candidate on stdin)
+  local h="${1:-}"
+  case "$h" in
+    *_match) : ;;
+    *) die "__match: '$h' is not in the *_match helper namespace." ;;
+  esac
+  type "$h" >/dev/null 2>&1 || die "__match: unknown helper '$h'."
+  "$h"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -1382,6 +1730,14 @@ main() {
     auto-init)         cmd_auto_init "$@" ;;
     budget-init)       cmd_budget_init "$@" ;;
     budget-check)      cmd_budget_check "$@" ;;
+    postship-required) cmd_postship_required "$@" ;;
+    loop-round)        cmd_loop_round "$@" ;;
+    loop-converged)    cmd_loop_converged "$@" ;;
+    coldgo-gate)       cmd_coldgo_gate "$@" ;;
+    auto-suspend)      cmd_auto_suspend "$@" ;;
+    auto-resume)       cmd_auto_resume "$@" ;;
+    postship-signal)   cmd_postship_signal "$@" ;;
+    __match)           cmd___match "$@" ;;
     check-session-chain) cmd_check_session_chain "$@" ;;
     fire-g2)           cmd_fire_g2 "$@" ;;
     fire-g1)           cmd_fire_g1 "$@" ;;
@@ -1393,4 +1749,6 @@ main() {
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac
 }
-main "$@"
+# v0.12.0 S2a: source-guard — `source compass.sh` loads the library without running main,
+# so the suites can unit-drive internal helpers (hdr_get/ps_open_rows/*_match). CLI unchanged.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then main "$@"; fi

@@ -163,6 +163,24 @@ chk "$([ -n "$am" ] && [ -n "$im" ] && [ "$am" -lt "$im" ] && echo 1 || echo 0)"
 chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md adds the interactive Gated/Autonomous prompt"
 chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md documents the auto-start one-command trigger"
 
+# ── v0.12.0 S6 (F-STATUS, contract: "asserted in smoke"): behavioral status-line asserts ──
+FSD="$(mktemp -d)/fstat"; mkdir -p "$FSD"
+printf '%s\n' '**Facets:** library' '**post-ship-loop:** on (clean 2 / cap 5)' > "$FSD/contract.md"
+printf '**Status:** post-ship (round 1/5)\n' > "$FSD/progress.md"
+printf '1|postship|1|CLEAN|aa|0\n' > "$FSD/loop.log"
+: > "$FSD/.auto-suspended"
+FSO="$(bash "$SH" status "$FSD" 2>/dev/null)"
+chk "$(printf '%s' "$FSO" | grep -c 'Post-ship: round 1/5 · consecutive-clean 1/2 · open PS 0')" "1" "v0.12 F-STATUS: post-ship loop line renders (smoke, behavioral)"
+chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-STATUS: suspended line renders (smoke, behavioral)"
+rm -rf "$(dirname "$FSD")"
+
+# ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS; do
+  chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins INV group: $nm"
+done
+chk "$(grep -c 'FLOOR_SELFTEST=118' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the selftest floor 118"
+chk "$(grep -c 'FLOOR_SMOKE=60' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the smoke floor 60"
+
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null
 [ "$fail" = 0 ]

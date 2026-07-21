@@ -8,6 +8,16 @@ Compass builds software **true to spec, with zero drift**. The contract is the i
 
 > Namespaced invocations: `/compass:start`, `/compass:contract`, `/compass:review-contract`, `/compass:plan`, `/compass:review-plan`, `/compass:build`, `/compass:review-build`, `/compass:ship`. Resume with `/compass:resume`.
 
+## Compass is a graph
+
+Compass's lifecycle is an explicit directed graph — drawn at design time, never improvised at runtime:
+
+- **The org-graph (fixed):** contract → review-contract → plan → review-plan → build → review-build → ship. Nodes are stages; **edges are script gates** (`compass.sh gate`, exit codes) — the next stage is never chosen by a model.
+- **Independent verifier nodes:** the adversarial reviews, the cold-critic (fresh subagent, cold screenshots only, 2 consecutive GOs on one tree sha), and the **post-ship critique loop** (v0.12.0) — a bounded cycle after ship: critique the LIVE system against the contract, loop back on material findings, terminate on N consecutive clean rounds or the cap, `SHIPPED` unwritable until `loop-converged` passes. A verifier that shares the builder's context shares its blind spots — Compass's critics get fresh context and on-disk evidence only.
+- **Bounded cycles, evidence-based stop rules:** every loop carries a cap, a convergence bound read from the contract header, stall/oscillation detection, and budget metering owned by the registration gate itself.
+
+(Vocabulary kept Compass-native; the July-2026 "graph engineering" discourse this release coincided with is cited in the CHANGELOG.)
+
 ## State (file-based, resumable)
 All in `.claude/builds/<slug>/`:
 - `contract.md` — the versioned locked invariant (amendments bump the version + re-lock).
