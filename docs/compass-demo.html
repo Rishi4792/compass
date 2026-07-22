@@ -1,218 +1,265 @@
 <!DOCTYPE html>
-<!-- Compass hero demo — the README spine: (1) the pain — agent says done over a wrong number ·
-     (2) the teeth — a gate REFUSES it (exit 1, a gate it can't talk past) · (3) DOGFOODING — Compass
-     reviews its OWN code and catches a Critical · (4) loops AND graphs, edges are exit-code scripts ·
-     (5) install. Same rk-house-style (gq-stripe-blue). -->
+<!-- Compass hero GIF v2 — buzz.xyz-inspired: bold indigo + dot-grid, spray-paint kinetic wordmarks,
+     a living swarm of ✓/gate glyphs. Frame-deterministic render(f). 1280x720. 216 frames @15fps. -->
 <html lang="en"><head><meta charset="utf-8"><style>
   :root{
-    --ink:#0A2540; --mut:#5C616C; --mut2:#6B7079; --kicker:#697386;
-    --accent:#635BFF; --accentDark:#533AFD; --accentWash:rgba(99,91,255,0.07);
-    --chipFg:#3C4452; --chipBg:#EDEFF2;
-    --greenFg:#0E6245; --greenBg:#E6F8F1;
-    --amberFg:#9A6A14; --amberBg:#FFF9EE; --amberBorder:#F5E3BC;
-    --redFg:#A41C00; --redBg:#FCE8E6; --slateLine:#B3BCCB;
-    --bg:#F6F9FC; --surface:#FFFFFF; --headBg:#FAFBFC; --line:#F0F2F5; --grid:#EEF1F6;
+    --indigo:#4b40e6; --indigoDeep:#372cc4;
+    --paper:#F4F2FF; --ink:#0A0820; --lav:#C9C2FF;
+    --green:#38E0A6; --greenDeep:#12B886; --red:#FF5C4D; --amber:#FFC24B;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:1280px;height:720px;overflow:hidden;background:var(--bg)}
-  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;color:var(--ink)}
-  .num{font-variant-numeric:tabular-nums}
-  .scene{display:none;flex-direction:column;width:1280px;height:720px;overflow:hidden;background:var(--bg);padding:38px 72px 44px;position:relative}
-  body[data-s="1"] #s1,body[data-s="2"] #s2,body[data-s="3"] #s3,
-  body[data-s="4"] #s4,body[data-s="5"] #s5{display:flex}
-  svg{display:block}
-  .viz{flex:1;display:flex;flex-direction:column;justify-content:center;padding-top:8px}
+  html,body{width:1280px;height:720px;overflow:hidden}
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+  #stage{position:relative;width:1280px;height:720px;overflow:hidden;background:var(--indigo);
+    background-image:radial-gradient(rgba(255,255,255,.10) 1.3px, transparent 1.4px);background-size:26px 26px}
+  .wash{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0}
+  #redwash{background:radial-gradient(90% 90% at 50% 46%, rgba(255,60,45,.42), transparent 70%)}
+  #greenwash{background:radial-gradient(90% 90% at 50% 46%, rgba(30,190,130,.40), transparent 70%)}
+  .vign{position:absolute;inset:0;z-index:6;pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 42%, transparent 42%, rgba(18,12,72,.42) 100%)}
 
-  /* persistent chrome */
-  .brandmark{display:flex;align-items:center;gap:9px;position:absolute;left:72px;top:34px}
-  .brandmark .lg{width:24px;height:24px;border-radius:7px;background:linear-gradient(160deg,var(--accent),var(--accentDark));display:flex;align-items:center;justify-content:center}
-  .brandmark .nm{font-size:13px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
-  .footcta{position:absolute;right:72px;top:36px;font-size:11.5px;font-weight:600;color:var(--mut2)}
-  .footcta b{color:var(--accent)}
+  .swarm{position:absolute;inset:0;z-index:3}
+  .p{position:absolute;font-weight:900;line-height:1;will-change:transform}
 
-  /* atoms */
-  .kicker{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--kicker)}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(10,37,64,.04)}
-  .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;padding:4px 11px;border-radius:99px}
-  .pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
-  .pill.red{color:var(--redFg);background:var(--redBg)} .pill.green{color:var(--greenFg);background:var(--greenBg)}
-  .pill.amber{color:var(--amberFg);background:var(--amberBg)} .pill.accent{color:var(--accent);background:var(--accentWash)}
-  .cap{margin-top:24px}
-  .cap .k{margin-bottom:11px}
-  .cap h1{font-size:35px;font-weight:700;letter-spacing:-.022em;line-height:1.12;color:var(--ink)}
-  .cap h1 .a{color:var(--accent)} .cap h1 .r{color:var(--redFg)} .cap h1 .g{color:var(--greenFg)}
+  /* headline (top, crisp) */
+  .head{position:absolute;left:80px;right:80px;top:96px;text-align:center;z-index:7}
+  .head .k{font-size:13px;font-weight:800;letter-spacing:.26em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:14px}
+  .head h1{font-size:46px;font-weight:900;letter-spacing:-.03em;line-height:1.04;color:var(--paper)}
+  .head h1 .lav{color:var(--lav)} .head h1 .g{color:var(--green)} .head h1 .r{color:#FF8A7E}
 
-  /* ── S1 the betrayal (shipped, wrong) ── */
-  .ship{position:relative;width:1040px;padding:24px 28px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(10,37,64,.04);margin:0 auto}
-  .ship .top{display:flex;align-items:flex-start;justify-content:space-between}
-  .ship h3{font-size:19px;font-weight:700;color:var(--ink)} .ship .sub{font-size:12px;color:var(--mut2);margin-top:2px}
-  .aibubble{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#fff;background:var(--ink);border-radius:99px;padding:8px 14px}
-  .aibubble .ck{color:var(--greenBg)}
-  .ship .row{display:flex;gap:40px;margin-top:20px}
-  .ship .met{flex:0 0 auto}
-  .ship .met .mk{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
-  .ship .met .mv{font-size:30px;font-weight:700;letter-spacing:-.02em;color:var(--ink);margin-top:6px}
-  .ship .met.bad .mv{color:var(--redFg)}
-  .approvedref{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--greenFg);background:var(--greenBg);border-radius:99px;padding:4px 10px;margin-top:8px}
-  .ship table{width:360px;border-collapse:collapse;font-size:11.5px;margin-top:20px}
-  .ship th{background:var(--headBg);font-size:9.5px;font-weight:600;text-transform:uppercase;color:var(--mut);text-align:right;padding:6px 12px;border-bottom:1px solid var(--line)}
-  .ship th:first-child,.ship td:first-child{text-align:left;font-weight:600}
-  .ship td{text-align:right;padding:6px 12px;border-bottom:1px solid var(--line);color:var(--ink)}
-  .chg{display:flex;align-items:center;gap:12px;font-size:14px;padding:11px 0;border-top:1px solid var(--line)}
-  .chg:first-of-type{border-top:0}
-  .chg .sgn{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:0 0 auto}
-  .chg .sgn.add{background:var(--greenBg);color:var(--greenFg)} .chg .sgn.mod{background:var(--amberBg);color:var(--amberFg)}
-  .chg .path{font-weight:600;color:var(--ink)} .chg .what{color:var(--mut);font-size:12.5px}
+  /* spray hero (center) */
+  .hero{position:absolute;left:0;right:0;top:250px;text-align:center;z-index:5;height:220px}
+  .hero .crisp,.hero .spray{position:absolute;left:0;right:0;top:0;font-weight:900;letter-spacing:-.04em;line-height:1}
+  .hero .crisp{opacity:.13}
+  .hero .spray{filter:url(#spray)}
 
-  /* ── S2 the gate REFUSES (money shot) ── */
-  .gatebox{width:880px;margin:0 auto;padding:0;overflow:hidden}
-  .gatebox .claim{display:flex;align-items:center;gap:12px;padding:18px 24px;border-bottom:1px solid var(--line)}
-  .gatebox .claim .av{width:26px;height:26px;border-radius:7px;background:var(--ink);display:flex;align-items:center;justify-content:center}
-  .gatebox .claim .ct{font-size:15px;color:var(--ink)} .gatebox .claim .ct b{color:var(--greenFg)}
-  .verdict{padding:20px 24px;background:var(--redBg);display:flex;align-items:center;gap:18px}
-  .verdict .stamp{font-size:15px;font-weight:800;letter-spacing:.04em;color:#fff;background:var(--redFg);border-radius:8px;padding:11px 16px;white-space:nowrap}
-  .verdict .why{font-size:14px;color:var(--redFg);line-height:1.5}
-  .verdict .why b{font-weight:700}
-  .gatesub{text-align:center;margin-top:16px;font-size:13px;color:var(--mut)}.gatesub b{color:var(--ink)}
+  /* hook bits */
+  .sub{position:absolute;left:0;right:0;top:500px;text-align:center;z-index:7;font-size:31px;font-weight:800;letter-spacing:-.02em;color:var(--paper)}
+  .sub b{color:var(--lav)}
+  .term{position:absolute;left:50%;top:568px;transform:translateX(-50%);z-index:7;background:#0A0820;color:#EDEAFF;border-radius:12px;padding:13px 22px;font-size:19px;font-weight:700;font-family:'SF Mono',ui-monospace,Menlo,monospace;box-shadow:0 18px 40px rgba(8,6,28,.45)}
+  .term .pr{color:#8B80FF;font-weight:800}
 
-  /* ── S3 reviewers ── */
-  .lenses{display:flex;gap:13px;margin-top:6px}
-  .lens{flex:1;padding:15px 15px 0;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
-  .lens .lh{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:11px}
-  .lens .lh .li{color:var(--accent)}
-  .lens .find{font-size:11.5px;color:var(--mut);margin:8px 0 12px;line-height:1.3}
-  .lens .sev{margin:auto -15px 0;height:4px;background:var(--redBg)} .lens .sev i{display:block;height:100%;background:var(--redFg)}
-  .lens.ok{border-left:3px solid var(--greenFg)} .lens.ok .sev{background:var(--greenBg)} .lens.ok .sev i{background:var(--greenFg);width:100%}
-  .rounds{display:flex;align-items:center;gap:11px;margin-top:22px}
-  .rounds .rc{font-size:13px;font-weight:600;color:var(--ink);padding:9px 14px;border-radius:8px;box-shadow:0 1px 2px rgba(10,37,64,.04)}
-  .rounds .rc .n{font-weight:800}
-  .rounds .rc.r1{background:var(--redBg)} .rounds .rc.r1 .n{color:var(--redFg)}
-  .rounds .rc.r2{background:var(--amberBg);border:1px solid var(--amberBorder)} .rounds .rc.r2 .n{color:var(--amberFg)}
-  .rounds .rc.r3{background:var(--surface);border:1px solid var(--line)} .rounds .rc.r3 .n{color:var(--mut2)}
-  .rounds .ar{color:var(--accent);font-weight:700}
+  /* role pills (team) */
+  .roles{position:absolute;left:0;right:0;top:388px;display:flex;justify-content:center;gap:20px;z-index:7}
+  .rp{background:var(--paper);border-radius:16px;padding:18px 26px;text-align:center;box-shadow:0 14px 30px rgba(8,6,28,.28);min-width:150px}
+  .rp .rr{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#8B80FF}
+  .rp .rn{font-size:21px;font-weight:900;color:var(--ink);margin-top:4px;letter-spacing:-.01em}
 
-  /* ── S4 runs itself + budget leash ── */
-  .pipe{position:relative;display:flex;gap:16px;margin-top:6px}
-  .railbase{position:absolute;left:12.5%;right:12.5%;top:0;height:3px;background:var(--line);border-radius:3px;z-index:0}
-  .railfill{position:absolute;left:12.5%;top:0;height:3px;background:var(--accent);border-radius:3px;z-index:1}
-  .pstage{flex:1;position:relative;z-index:2}
-  .pcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(10,37,64,.04);padding:38px 12px 14px;text-align:center;min-height:118px;display:flex;flex-direction:column;gap:9px}
-  .pnode{position:absolute;top:-24px;left:50%;transform:translateX(-50%);width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(160deg,var(--accent),var(--accentDark));box-shadow:0 6px 16px rgba(99,91,255,.28)}
-  .pnode.live{background:var(--accentWash);border:1.5px solid var(--accent);color:var(--accent);box-shadow:0 0 0 5px var(--accentWash),0 6px 18px rgba(99,91,255,.22)}
-  .pn{font-size:14px;font-weight:700;color:var(--ink)}
-  .leash{display:flex;gap:18px;margin-top:34px}
-  .leash .lc{flex:1;padding:22px 24px}
-  .leash .lc .lt{font-size:14px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:9px;margin-bottom:11px}
-  .leash .lc .ls{font-size:12px;color:var(--mut);margin-top:9px}
-  .meter{position:relative;height:8px;border-radius:99px;background:var(--line);overflow:visible}
-  .meter i{display:block;height:100%;width:100%;background:var(--redFg);border-radius:99px}
-  .meter .wall{position:absolute;right:-1px;top:-4px;width:2px;height:16px;background:var(--redFg)}
-  .leash .lc.b{border-top:3px solid var(--redFg)} .leash .lc.t{border-top:3px solid var(--amberFg)}
-  .tasteicon{width:30px;height:30px;border-radius:8px;background:var(--amberBg);color:var(--amberFg);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  /* pipeline chips */
+  .pipe{position:absolute;left:0;right:0;top:452px;display:flex;justify-content:center;align-items:center;gap:0;z-index:7}
+  .st{position:relative;background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.28);border-radius:13px;padding:13px 20px;text-align:center;min-width:118px}
+  .st .sr{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+  .st .sn{font-size:17px;font-weight:900;color:var(--paper);margin-top:2px;letter-spacing:-.01em}
+  .st.on{background:var(--paper);border-color:var(--paper)} .st.on .sr{color:#8B80FF} .st.on .sn{color:var(--ink)}
+  .st.pass{background:rgba(56,224,166,.16);border-color:var(--green)} .st.pass .sr{color:#8bf3cf} .st.pass .sn{color:#CFFBEC}
+  .st.fail{background:rgba(255,92,77,.18);border-color:var(--red)} .st.fail .sr{color:#ffb3aa} .st.fail .sn{color:#FFD9D3}
+  .conn{width:44px;height:3px;background:rgba(255,255,255,.22);position:relative;border-radius:3px;flex:0 0 auto}
+  .conn i{position:absolute;inset:0;width:0;background:var(--green);border-radius:3px}
+  .conn .g{position:absolute;top:-24px;left:50%;transform:translateX(-50%);font-size:10.5px;font-weight:800;color:#CFFBEC;background:rgba(18,184,134,.9);border-radius:99px;padding:2px 8px;white-space:nowrap;opacity:0}
 
-  /* ── S5 outro ── */
-  #s5{align-items:center;justify-content:center;padding:0}
-  .logo{width:78px;height:78px;border-radius:12px;background:linear-gradient(160deg,var(--accent),var(--accentDark));display:flex;align-items:center;justify-content:center;margin-bottom:20px;box-shadow:0 8px 24px var(--accentWash)}
-  .brand{font-size:56px;font-weight:800;letter-spacing:-.025em;color:var(--ink)}
-  .tag{color:var(--mut);font-size:23px;margin-top:12px;text-align:center;line-height:1.4}.tag b{color:var(--ink);font-weight:700}
-  .cta{display:flex;align-items:center;gap:14px;font-size:15px;color:var(--ink);background:var(--accentWash);border:1.5px solid var(--accent);border-radius:10px;padding:13px 20px;margin-top:26px}
-  .cta .c{color:var(--accent);font-weight:700}
-  .proof{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--kicker);margin-top:16px}
+  /* bottom chip */
+  .chip{position:absolute;left:50%;top:512px;transform:translateX(-50%);z-index:7;font-size:17px;font-weight:800;border-radius:99px;padding:11px 20px;white-space:nowrap;opacity:0}
+  .chip.g{color:#062;background:var(--green)} .chip.tag{color:#FFD9D3;background:rgba(255,92,77,.22);border:2px solid var(--red)}
+
+  /* outro cta */
+  .cta{position:absolute;left:50%;top:512px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:12px;font-size:18px;font-weight:700;font-family:'SF Mono',ui-monospace,Menlo,monospace;color:var(--paper);background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.45);border-radius:14px;padding:14px 22px;opacity:0}
+  .cta .c{color:#B7AEFF;font-weight:800}
+  .proof{position:absolute;left:0;right:0;top:588px;text-align:center;z-index:7;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5);opacity:0}
+
+  /* persistent brand corner */
+  .brand{position:absolute;left:64px;top:52px;display:flex;align-items:center;gap:9px;z-index:8}
+  .brand .lg{width:28px;height:28px;border-radius:8px;background:var(--paper);display:flex;align-items:center;justify-content:center}
+  .brand .nm{font-size:15px;font-weight:900;color:var(--paper);letter-spacing:-.01em}
+  .ghc{position:absolute;right:64px;top:54px;z-index:8;font-size:13px;font-weight:800;color:rgba(255,255,255,.6)}
 </style></head>
-<body data-s="1">
+<body>
+<div id="stage">
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <filter id="spray" x="-16%" y="-16%" width="132%" height="132%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="12" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feGaussianBlur in="d" stdDeviation="0.9"/>
+    </filter>
+  </defs></svg>
 
-  <!-- ① THE BETRAYAL -->
-  <section class="scene" id="s1">
-    <div class="brandmark"><span class="lg"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff"/></svg></span><span class="nm">Compass</span></div>
-    <span class="footcta"><b>/plugin</b> install compass</span>
-    <div class="viz">
-      <div class="ship">
-        <div class="top"><div><h3>Pull request · refunds API</h3><div class="sub">what your AI shipped</div></div><span class="aibubble"><span class="ck">✓</span> AI: done — ready to merge</span></div>
-        <div class="row" style="margin-top:18px;gap:54px;align-items:flex-start">
-          <div style="flex:1">
-            <div class="chg"><span class="sgn add">+</span><span class="path num">POST /api/refunds</span><span class="what">— new endpoint</span></div>
-            <div class="chg"><span class="sgn add">+</span><span class="path">migration · add refunds table</span></div>
-            <div class="chg"><span class="sgn mod">~</span><span class="path num">lib/ledger.ts</span><span class="what">— touched</span></div>
-          </div>
-          <div class="met bad"><div class="mk">Refunds total</div><div class="mv num">₹1.21 Cr</div><span class="approvedref"><svg width="11" height="11" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> ledger says ₹1.16 Cr</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="cap"><div class="k kicker">The trouble with AI builds</div>
-      <h1>Your AI said <span class="g">“✓ done.”</span> — it shipped <span class="r">this.</span></h1></div>
-  </section>
+  <div id="redwash" class="wash"></div>
+  <div id="greenwash" class="wash"></div>
+  <div class="swarm" id="swarm"></div>
 
-  <!-- ② THE GATE REFUSES (money shot) -->
-  <section class="scene" id="s2">
-    <div class="brandmark"><span class="lg"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff"/></svg></span><span class="nm">Compass</span></div>
-    <span class="footcta"><b>/plugin</b> install compass</span>
-    <div class="viz">
-      <div class="card gatebox">
-        <div class="claim"><span class="av"><svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M8 12l3 3 5-6" fill="none" stroke="#E6F8F1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ct">agent ▸ <b>✓ done</b> — ready to merge…</span></div>
-        <div class="verdict">
-          <span class="stamp">NOT DONE · BLOCKED</span>
-          <span class="why">compass gate · reconcile + migration<br><b>refunds ₹1.21 Cr ≠ ledger ₹1.16 Cr · migration not reversible → FAIL</b></span>
-        </div>
-      </div>
-      <div class="gatesub">The agent doesn’t get to be the judge. <b>“Done” is a gate it can’t talk past.</b></div>
-    </div>
-    <div class="cap"><div class="k kicker">The teeth · proof, not vibes</div>
-      <h1>Compass makes <span class="a">“done”</span> something it has to <span class="a">prove.</span></h1></div>
-  </section>
+  <div class="brand" id="bcorner"><span class="lg"><svg width="17" height="17" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#4b40e6" stroke-width="2"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#4b40e6"/></svg></span><span class="nm">Compass</span></div>
+  <div class="ghc" id="ghc">Rishi4792/compass</div>
 
-  <!-- ③ ADVERSARIAL REVIEW -->
-  <section class="scene" id="s3">
-    <div class="brandmark"><span class="lg"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff"/></svg></span><span class="nm">Compass</span></div>
-    <span class="footcta"><b>/plugin</b> install compass</span>
-    <div class="viz">
-      <div class="kicker" style="margin-bottom:16px">Every release is built by running Compass on Compass</div>
-      <div class="lenses">
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>Its own gate</div><span class="pill red"><span class="dot"></span>CRITICAL</span><div class="find">would ship over an OPEN bug</div><div class="sev"><i style="width:92%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4-2.8 6.5-7 8.5-4.2-2-7-4.5-7-8.5V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Secret-scan</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">a fixture secret in a commit</div><div class="sev"><i style="width:58%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4 18v-4h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Back-compat</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">an old build would break</div><div class="sev"><i style="width:48%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Determinism</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">a flaky test under load</div><div class="sev"><i style="width:40%"></i></div></div>
-        <div class="card lens ok"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 5-7 4 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Reconcile</div><span class="pill green"><span class="dot"></span>clean</span><div class="find">suites green on prod</div><div class="sev"><i></i></div></div>
-      </div>
-      <div class="rounds num">
-        <span class="rc r1">round 1 · <span class="n">Critical + 9</span></span><span class="ar">→</span>
-        <span class="rc r2">rounds 2–5 · <span class="n">fixed</span></span><span class="ar">→</span>
-        <span class="rc r3">re-proven · <span class="n">~80 tests</span></span><span class="ar">→</span>
-        <span class="pill green" style="font-size:13px;padding:9px 15px"><span class="dot"></span>caught before <b>main</b></span>
-      </div>
-    </div>
-    <div class="cap"><div class="k kicker">Proof · it does this to itself</div>
-      <h1>It reviews its <span class="a">own</span> code — and caught a <span class="r">Critical</span> before it <span class="g">shipped.</span></h1></div>
-  </section>
+  <div class="head" id="head"><div class="k" id="kick"></div><h1 id="h1"></h1></div>
 
-  <!-- ④ RUNS ITSELF + BUDGET LEASH -->
-  <section class="scene" id="s4">
-    <div class="brandmark"><span class="lg"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff"/></svg></span><span class="nm">Compass</span></div>
-    <span class="footcta"><b>/plugin</b> install compass</span>
-    <div class="viz">
-      <div class="kicker" style="margin-bottom:24px">An explicit graph — every edge is a gate that must pass</div>
-      <div class="pipe">
-        <div class="railbase"></div><div class="railfill" style="width:50%"></div>
-        <div class="pstage"><div class="pnode"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pcard"><div class="pn">Contract</div><span class="pill green" style="font-size:11px;padding:3px 9px;margin:2px auto 0"><span class="dot"></span>receipt</span></div></div>
-        <div class="pstage"><div class="pnode"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pcard"><div class="pn">Plan</div><span class="pill green" style="font-size:11px;padding:3px 9px;margin:2px auto 0"><span class="dot"></span>receipt</span></div></div>
-        <div class="pstage"><div class="pnode"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pcard"><div class="pn">Build</div><span class="pill green" style="font-size:11px;padding:3px 9px;margin:2px auto 0"><span class="dot"></span>receipt</span></div></div>
-        <div class="pstage"><div class="pnode live"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pcard"><div class="pn">Ship</div><span class="pill accent" style="font-size:11px;padding:3px 9px;margin:2px auto 0"><span class="dot"></span>running…</span></div></div>
-      </div>
-      <div class="leash">
-        <div class="card lc t"><div class="lt"><span class="tasteicon"><svg width="17" height="17" viewBox="0 0 24 24"><circle cx="12" cy="9" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 19a6.5 6.5 0 0 1 13 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>stops for your call <span class="pill amber" style="font-size:10.5px;padding:3px 8px"><span class="dot"></span>taste</span></div><div class="ls">design, strategy, “ship despite a miss” — the one call a machine shouldn’t make</div></div>
-        <div class="card lc b"><div class="lt"><span class="tasteicon" style="background:var(--redBg);color:var(--redFg)"><svg width="17" height="17" viewBox="0 0 24 24"><path d="M5 19V8l7-4 7 4v11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 19v-6h6v6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></span>stops itself at the budget <span class="pill red" style="font-size:10.5px;padding:3px 8px"><span class="dot"></span>can’t run away</span></div><div class="meter"><i></i><span class="wall"></span></div><div class="ls">a hard, measurable ceiling — no runaway token bill</div></div>
-      </div>
-    </div>
-    <div class="cap"><div class="k kicker">Loops and graphs — with real edges</div>
-      <h1>Stages are nodes; the <span class="a">edges are exit-code scripts</span> — never <span class="r">model-chosen.</span></h1></div>
-  </section>
+  <div class="hero" id="hero"><div class="crisp" id="heroCrisp">Compass</div><div class="spray" id="heroSpray">Compass</div></div>
 
-  <!-- ⑤ OUTRO -->
-  <section class="scene" id="s5">
-    <div class="logo"><svg width="38" height="38" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff"/></svg></div>
-    <div class="brand">Compass</div>
-    <p class="tag">The gate your AI agent <b>can’t talk past.</b></p>
-    <div class="cta"><span><span class="c">/plugin</span> marketplace add Rishi4792/compass</span><svg width="15" height="15" viewBox="0 0 24 24" style="color:var(--mut)"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 15V5a2 2 0 0 1 2-2h10" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></div>
-    <div class="proof">free · MIT · builds itself · every release adversarially reviewed</div>
-  </section>
+  <div class="sub" id="sub">Write the contract. <b>Walk away.</b></div>
+  <div class="term" id="term"><span class="pr">$</span> /compass:start --auto</div>
 
+  <div class="roles" id="roles">
+    <div class="rp"><div class="rr">Eng Manager</div><div class="rn">Plans</div></div>
+    <div class="rp"><div class="rr">Coder</div><div class="rn">Builds</div></div>
+    <div class="rp"><div class="rr">QA</div><div class="rn">Reviews</div></div>
+    <div class="rp"><div class="rr">DevOps</div><div class="rn">Ships</div></div>
+  </div>
+
+  <div class="pipe" id="pipe">
+    <div class="st" id="s0"><div class="sr">EM</div><div class="sn">Contract</div></div>
+    <div class="conn" id="c0"><i></i><span class="g">exit 0</span></div>
+    <div class="st" id="s1"><div class="sr">EM</div><div class="sn">Plan</div></div>
+    <div class="conn" id="c1"><i></i><span class="g">exit 0</span></div>
+    <div class="st" id="s2"><div class="sr">Coder</div><div class="sn">Build</div></div>
+    <div class="conn" id="c2"><i></i><span class="g">exit 0</span></div>
+    <div class="st" id="s3"><div class="sr">QA</div><div class="sn">Review</div></div>
+    <div class="conn" id="c3"><i></i><span class="g">exit 0</span></div>
+    <div class="st" id="s4"><div class="sr">DevOps</div><div class="sn">Ship</div></div>
+  </div>
+
+  <div class="chip" id="chip"></div>
+  <div class="cta" id="cta"><span class="c">/plugin</span><span>marketplace add Rishi4792/compass</span></div>
+  <div class="proof" id="proof">an autonomous engineering team · free · MIT</div>
+
+  <div class="vign"></div>
+</div>
+<script>
+(function(){
+  var TOTAL=216;
+  function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+  function inv(f,a,b){return clamp((f-a)/(b-a),0,1);}
+  function es(t){return t*t*(3-2*t);}
+  function ep(f,a,b){return es(inv(f,a,b));}
+  function set(el,o){el.style.opacity=o;}
+  function hh(i,s){var x=Math.sin(i*12.9898+s*78.233)*43758.5453;return x-Math.floor(x);}
+
+  // swarm
+  var sw=document.getElementById('swarm'), N=54, parts=[], pkind=[];
+  for(var i=0;i<N;i++){
+    var e=document.createElement('div'); e.className='p';
+    var g = hh(i,3)<0.10 ? '✕' : (hh(i,9)<0.20 ? '◆' : '✓');
+    e.textContent=g; pkind.push(g);
+    e.style.fontSize=(11+Math.floor(hh(i,2)*20))+'px';
+    sw.appendChild(e); parts.push(e);
+  }
+  function swarm(f, red, green){
+    for(var i=0;i<N;i++){
+      var sp=0.25+hh(i,1)*0.85, dir=hh(i,4)<0.5?1:-1;
+      var x=((hh(i,6)*1360 + f*sp*dir)%1360+1360)%1360 - 40;
+      var y=hh(i,8)*720 + Math.sin(f*0.045 + i)*24;
+      var rot=(f*(0.5+hh(i,10))*dir)%360;
+      var tw=0.5+0.5*Math.sin(f*0.08 + i*1.7);
+      var p=parts[i], base=0.30+tw*0.5;
+      var col;
+      if(pkind[i]==='✕'){ col='rgba(255,120,110,'+(0.5+red*0.5).toFixed(2)+')'; }
+      else if(hh(i,5)<0.34){ col='rgba(90,236,187,'+(0.5+green*0.45+ (green*0.0)).toFixed(2)+')'; }
+      else { col='rgba(255,255,255,'+(0.34+hh(i,7)*0.3).toFixed(2)+')'; }
+      // mood surges lift matching glyphs
+      var op=base;
+      if(pkind[i]==='✕') op=base*(0.5+red);
+      if(pkind[i]==='✓' && hh(i,5)<0.34) op=base*(0.7+green*0.5);
+      p.style.transform='translate('+x+'px,'+y+'px) rotate('+rot+'deg)';
+      p.style.opacity=Math.min(1,op).toFixed(2);
+      p.style.color=col;
+    }
+  }
+
+  var BEATS=[
+    {a:0,b:34,   k:'Autonomous engineering team', h:'', hero:'Compass', hcol:'var(--paper)', hsize:190},
+    {a:34,b:64,  k:'One plugin. A whole team.',   h:'You write the spec. <span class="lav">It does the rest.</span>'},
+    {a:64,b:100, k:'It runs the whole build itself', h:'Plan. Build. Review. <span class="lav">Ship.</span>'},
+    {a:100,b:140,k:'It reviews its own code',      h:'It caught a <span class="r">Critical</span> — in its <span class="lav">own code.</span>', hero:'exit 1', hcol:'#FF5C4D', hsize:180},
+    {a:140,b:176,k:'Fixed · re-proven · shipped', h:'Fixed. Re-proven. <span class="g">Shipped to spec.</span>', hero:'SHIPPED', hcol:'#38E0A6', hsize:150},
+    {a:176,b:216,k:'', h:'', hero:'Compass', hcol:'var(--paper)', hsize:190}
+  ];
+
+  function render(f){
+    f=clamp(f,0,TOTAL-1);
+    // buzz the spray filter
+    var turb=document.querySelector('#spray feTurbulence');
+    if(turb){ turb.setAttribute('seed',(1+(f%13))); turb.setAttribute('baseFrequency',(0.64+0.06*Math.abs(Math.sin(f*0.16))).toFixed(3)); }
+
+    // beat lookup
+    var bi=0; for(var i=0;i<BEATS.length;i++){ if(f>=BEATS[i].a) bi=i; }
+    var B=BEATS[bi], loc=f-B.a, len=B.b-B.a;
+    var fin=(bi===0)?1:inv(loc,0,5), fout=1-inv(loc,len-5,len), beatOp=Math.min(fin,fout);
+
+    // moods
+    var red=Math.min(ep(f,100,110),1-ep(f,132,140));
+    var green=Math.max(Math.min(ep(f,146,156),1-ep(f,190,200)), 0);
+    set(document.getElementById('redwash'), red*0.9);
+    set(document.getElementById('greenwash'), green*0.75);
+    swarm(f, red, green);
+
+    // headline
+    var head=document.getElementById('head');
+    document.getElementById('h1').innerHTML=B.h; document.getElementById('kick').innerHTML=B.k;
+    set(head, (B.h||B.k)?beatOp:0);
+    head.style.transform='translateY('+((1-fin)*8)+'px)';
+
+    // spray hero
+    var hero=document.getElementById('hero'), hs=document.getElementById('heroSpray'), hc=document.getElementById('heroCrisp');
+    if(B.hero){ hs.textContent=B.hero; hc.textContent=B.hero; hs.style.color=B.hcol; hs.style.fontSize=B.hsize+'px'; hc.style.fontSize=B.hsize+'px'; hc.style.color=B.hcol;
+      var hop=beatOp; set(hero,hop);
+      var pop=0.9+0.1*fin; hero.style.transform='scale('+pop+')';
+    } else set(hero,0);
+
+    // hook-only bits
+    set(document.getElementById('sub'), bi===0?beatOp:0);
+    set(document.getElementById('term'), bi===0?beatOp:0);
+
+    // team roles
+    var roles=document.getElementById('roles').children;
+    for(var i=0;i<roles.length;i++){
+      var rp=inv(f,36+i*3,36+i*3+8);
+      roles[i].style.opacity=(bi===1?Math.min(rp,fout):0);
+      roles[i].style.transform='scale('+(0.8+0.2*rp)+') translateY('+((1-rp)*14)+'px)';
+    }
+
+    // pipeline (beats 2..4 show it: establish in runs, fail in wow, ship in shipped)
+    var showPipe = (f>=64 && f<176);
+    var pipe=document.getElementById('pipe');
+    var pipeOp = Math.min(ep(f,66,76), 1-ep(f,170,176));
+    set(pipe, showPipe?pipeOp:0);
+    var stz=['s0','s1','s2','s3','s4'];
+    var pass=[[76,80],[82,86],[88,94],[150,156],[158,164]];
+    for(var i=0;i<5;i++){
+      var st=document.getElementById(stz[i]); st.className='st';
+      if(i===3){ // review
+        if(f>=100 && f<136) st.className='st fail';
+        else if(f>=150) st.className='st pass';
+        else if(f>=94) st.className='st on';
+        else st.className='st';
+      } else {
+        if(f>=pass[i][0]) st.className='st pass';
+        else if(f>=pass[i][0]-6) st.className='st on';
+      }
+    }
+    var cfill=[[76,82],[82,88],[88,94],[152,158]]; // connectors 0..3 (c3 review->ship after fix)
+    for(var i=0;i<4;i++){
+      var c=document.getElementById('c'+i), fr=inv(f,cfill[i][0],cfill[i][1]);
+      c.querySelector('i').style.width=(fr*100)+'%';
+      set(c.querySelector('.g'), ep(f,cfill[i][1]-1,cfill[i][1]+3)*(1-ep(f,170,176)));
+    }
+
+    // bottom chip: wow tag + shipped chip
+    var chip=document.getElementById('chip');
+    if(f>=104 && f<140){ chip.className='chip tag'; chip.textContent='QA · Review → exit 1 · GATE FAIL'; set(chip, Math.min(ep(f,104,112),1-ep(f,134,140))); }
+    else if(f>=150 && f<176){ chip.className='chip g'; chip.textContent='✓ reconciled to spec · ~80 tests green'; set(chip, Math.min(ep(f,150,158),1-ep(f,170,176))); }
+    else set(chip,0);
+
+    // outro cta + proof
+    set(document.getElementById('cta'), bi===5?ep(f,186,196):0);
+    set(document.getElementById('proof'), bi===5?ep(f,190,200):0);
+
+    // brand corner hidden during outro (hero says Compass)
+    var bc=document.getElementById('bcorner'), gh=document.getElementById('ghc');
+    var cornerHide = ep(f,178,186);
+    set(bc, (bi===0?ep(f,8,16):1) * (1-cornerHide));
+    set(gh, 1-cornerHide);
+  }
+  window.__render=render;
+  var hsh=location.hash.replace('#','');
+  if(hsh!==''){ render(parseInt(hsh,10)||0); }
+  else { var f=0; (function t(){ render(f); f=(f+1)%TOTAL; setTimeout(t,1000/15); })(); }
+})();
+</script>
 </body></html>

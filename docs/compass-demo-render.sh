@@ -1,39 +1,65 @@
 #!/usr/bin/env bash
-# auto-demo-render.sh — render docs/compass-demo.html (5 designed scenes) into docs/compass-demo.gif.
-# Headless Chrome screenshots each scene at 2x, ffmpeg assembles with holds + crossfades.
-# Reproducible: bash docs/auto-demo-render.sh
+# compass-demo-render.sh — render docs/compass-demo.html into docs/compass-demo.gif.
+# FRAME-DETERMINISTIC: the HTML's render(f) draws the exact state for frame f (from the URL hash),
+# so this captures real animation (nodes lighting up, the red-flash bug-catch, the loop, the ship),
+# not slide crossfades. Headless Chrome screenshots each frame @2x; ffmpeg assembles a palette GIF.
+# Reproducible: bash docs/compass-demo-render.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HTML="$HERE/compass-demo.html"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-# 1) screenshot each scene (data-s toggled per file)
-for s in 1 2 3 4 5; do
-  # inject the scene selection by appending a script that sets body[data-s]
-  sed "s/<body data-s=\"1\">/<body data-s=\"$s\">/" "$HTML" > "$TMP/scene-$s.html"
-  "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-    --window-size=1280,720 --screenshot="$TMP/s$s.png" "file://$TMP/scene-$s.html" >/dev/null 2>&1
-done
-ls -1 "$TMP"/s*.png
+TOTAL=216      # frames (must match TOTAL in compass-demo.html)
+FPS=15
+W=1120         # output GIF width (16:9 → height auto)
+PAR=6          # parallel Chrome renders per batch
 
-# 2) assemble: long holds so each pillar's visual is absorbed (Rishi: give enough time).
-#    Holds (s): hook 3.8 · pillar1 5.5 · pillar2 5.5 · pillar3 5.5 · outro 4.5
-H1=4.0; H2=4.6; H3=4.6; H4=4.6; H5=3.0; XF=0.5
-ff() { ffmpeg -y -loglevel error "$@"; }
-i=1; for h in $H1 $H2 $H3 $H4 $H5; do
-  ff -loop 1 -t "$h" -i "$TMP/s$i.png" -vf "scale=1280:720,fps=30,format=yuv420p" "$TMP/c$i.mp4"
-  i=$((i+1))
+# 1) render each frame. UNIQUE profile dir per frame (shared profiles deadlock on Chrome's
+#    SingletonLock); a bash watchdog kills any Chrome that hangs (macOS has no `timeout`).
+echo "rendering $TOTAL frames…"
+shot(){ # $1 = frame index
+  local ff="$1" out; out="$(printf '%s/f%04d.png' "$TMP" "$ff")"
+  "$CHROME" --headless=new --disable-gpu --no-sandbox --no-first-run --no-default-browser-check \
+    --disable-extensions --disable-background-networking --hide-scrollbars \
+    --force-device-scale-factor=2 --window-size=1280,720 --virtual-time-budget=700 \
+    --user-data-dir="$TMP/u$ff" --screenshot="$out" "file://$HTML#$ff" >/dev/null 2>&1 &
+  local pid=$!
+  ( sleep 25; kill -9 "$pid" 2>/dev/null ) & local wd=$!
+  wait "$pid" 2>/dev/null || true
+  kill "$wd" 2>/dev/null || true
+}
+f=0
+while [ "$f" -lt "$TOTAL" ]; do
+  j=0
+  while [ "$j" -lt "$PAR" ]; do
+    ff=$((f+j)); [ "$ff" -ge "$TOTAL" ] && break
+    shot "$ff" &
+    j=$((j+1))
+  done
+  wait
+  printf '\r  %d/%d frames' "$((f+PAR<TOTAL?f+PAR:TOTAL))" "$TOTAL"
+  f=$((f+PAR))
 done
-# chain crossfades across 5 clips
-ff -i "$TMP/c1.mp4" -i "$TMP/c2.mp4" -i "$TMP/c3.mp4" -i "$TMP/c4.mp4" -i "$TMP/c5.mp4" -filter_complex "\
-[0][1]xfade=transition=fade:duration=$XF:offset=$(echo "$H1-$XF"|bc)[a]; \
-[a][2]xfade=transition=fade:duration=$XF:offset=$(echo "$H1+$H2-2*$XF"|bc)[b]; \
-[b][3]xfade=transition=fade:duration=$XF:offset=$(echo "$H1+$H2+$H3-3*$XF"|bc)[c]; \
-[c][4]xfade=transition=fade:duration=$XF:offset=$(echo "$H1+$H2+$H3+$H4-4*$XF"|bc)[v]" \
-  -map "[v]" -pix_fmt yuv420p "$TMP/full.mp4"
+echo
+n=$(ls "$TMP"/f*.png 2>/dev/null | wc -l | tr -d ' ')
+echo "captured $n / $TOTAL frames"
+[ "$n" -eq "$TOTAL" ] || { echo "ERROR: missing frames ($n/$TOTAL)"; exit 1; }
 
-# 3) mp4 → high-quality looping GIF via palette
-ff -i "$TMP/full.mp4" -vf "fps=18,scale=1040:-1:flags=lanczos,palettegen=stats_mode=diff" "$TMP/pal.png"
-ff -i "$TMP/full.mp4" -i "$TMP/pal.png" -lavfi "fps=18,scale=1040:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" "$HERE/compass-demo.gif"
-echo "rendered: $HERE/compass-demo.gif"
+# 2) frames → high-quality looping GIF (per-frame palette diff for crisp text + flat fills)
+ffmpeg -y -loglevel error -framerate "$FPS" -i "$TMP/f%04d.png" \
+  -vf "scale=$W:-1:flags=lanczos,palettegen=stats_mode=diff" "$TMP/pal.png"
+ffmpeg -y -loglevel error -framerate "$FPS" -i "$TMP/f%04d.png" -i "$TMP/pal.png" \
+  -lavfi "scale=$W:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  "$HERE/compass-demo.gif"
+
+sz=$(wc -c < "$HERE/compass-demo.gif" | tr -d ' ')
+echo "rendered: $HERE/compass-demo.gif  ($((sz/1024)) KB)"
+
+# 3) also emit an MP4 — GIFs don't animate on WhatsApp/messaging; MP4 autoplays there (and everywhere).
+#    H.264 high + yuv420p + faststart = maximum compatibility.
+ffmpeg -y -loglevel error -framerate "$FPS" -i "$TMP/f%04d.png" \
+  -movflags +faststart -pix_fmt yuv420p -vf "scale=$W:-2:flags=lanczos" \
+  -c:v libx264 -crf 20 -profile:v high -preset slow "$HERE/compass-demo.mp4"
+mp=$(wc -c < "$HERE/compass-demo.mp4" | tr -d ' ')
+echo "rendered: $HERE/compass-demo.mp4  ($((mp/1024)) KB)"
