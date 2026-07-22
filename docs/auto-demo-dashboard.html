@@ -57,11 +57,6 @@
   .ship th{background:var(--headBg);font-size:9.5px;font-weight:600;text-transform:uppercase;color:var(--mut);text-align:right;padding:6px 12px;border-bottom:1px solid var(--line)}
   .ship th:first-child,.ship td:first-child{text-align:left;font-weight:600}
   .ship td{text-align:right;padding:6px 12px;border-bottom:1px solid var(--line);color:var(--ink)}
-  .chg{display:flex;align-items:center;gap:12px;font-size:14px;padding:11px 0;border-top:1px solid var(--line)}
-  .chg:first-of-type{border-top:0}
-  .chg .sgn{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:0 0 auto}
-  .chg .sgn.add{background:var(--greenBg);color:var(--greenFg)} .chg .sgn.mod{background:var(--amberBg);color:var(--amberFg)}
-  .chg .path{font-weight:600;color:var(--ink)} .chg .what{color:var(--mut);font-size:12.5px}
 
   /* ── S2 the gate REFUSES (money shot) ── */
   .gatebox{width:880px;margin:0 auto;padding:0;overflow:hidden}
@@ -126,15 +121,13 @@
     <span class="footcta"><b>/plugin</b> install compass</span>
     <div class="viz">
       <div class="ship">
-        <div class="top"><div><h3>Pull request · refunds API</h3><div class="sub">what your AI shipped</div></div><span class="aibubble"><span class="ck">✓</span> AI: done — ready to merge</span></div>
-        <div class="row" style="margin-top:18px;gap:54px;align-items:flex-start">
-          <div style="flex:1">
-            <div class="chg"><span class="sgn add">+</span><span class="path num">POST /api/refunds</span><span class="what">— new endpoint</span></div>
-            <div class="chg"><span class="sgn add">+</span><span class="path">migration · add refunds table</span></div>
-            <div class="chg"><span class="sgn mod">~</span><span class="path num">lib/ledger.ts</span><span class="what">— touched</span></div>
-          </div>
-          <div class="met bad"><div class="mk">Refunds total</div><div class="mv num">₹1.21 Cr</div><span class="approvedref"><svg width="11" height="11" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> ledger says ₹1.16 Cr</span></div>
+        <div class="top"><div><h3>Revenue Dashboard</h3><div class="sub">what your AI shipped</div></div><span class="aibubble"><span class="ck">✓</span> AI: done — shipping now</span></div>
+        <div class="row">
+          <div class="met bad"><div class="mk">Total revenue</div><div class="mv num">₹1.21 Cr</div><span class="approvedref"><svg width="11" height="11" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> you approved ₹1.16 Cr</span></div>
+          <div class="met"><div class="mk">Active users</div><div class="mv num">8,420</div></div>
+          <div class="met"><div class="mk">Churn</div><div class="mv num">2.1%</div></div>
         </div>
+        <table class="num"><tr><th>Month</th><th>2025</th><th>2024</th></tr><tr><td>Jan</td><td>61,000</td><td>52,000</td></tr><tr><td>Feb</td><td>66,000</td><td>54,000</td></tr></table>
       </div>
     </div>
     <div class="cap"><div class="k kicker">The trouble with AI builds</div>
@@ -147,10 +140,10 @@
     <span class="footcta"><b>/plugin</b> install compass</span>
     <div class="viz">
       <div class="card gatebox">
-        <div class="claim"><span class="av"><svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M8 12l3 3 5-6" fill="none" stroke="#E6F8F1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ct">agent ▸ <b>✓ done</b> — ready to merge…</span></div>
+        <div class="claim"><span class="av"><svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M8 12l3 3 5-6" fill="none" stroke="#E6F8F1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ct">agent ▸ <b>✓ done</b> — closing the build…</span></div>
         <div class="verdict">
           <span class="stamp">NOT DONE · BLOCKED</span>
-          <span class="why">compass gate · reconcile + migration<br><b>refunds ₹1.21 Cr ≠ ledger ₹1.16 Cr · migration not reversible → FAIL</b></span>
+          <span class="why">compass gate · reconcile<br><b>expected ₹1.16 Cr (audited) · got ₹1.21 Cr → FAIL</b></span>
         </div>
       </div>
       <div class="gatesub">The agent doesn’t get to be the judge. <b>“Done” is a gate it can’t talk past.</b></div>
@@ -166,10 +159,10 @@
     <div class="viz">
       <div class="kicker" style="margin-bottom:16px">Pillar 2 · independent reviewers attack every stage</div>
       <div class="lenses">
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>Correctness</div><span class="pill red"><span class="dot"></span>2 found</span><div class="find">refund total ≠ ledger</div><div class="sev"><i style="width:80%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4-2.8 6.5-7 8.5-4.2-2-7-4.5-7-8.5V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Security</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">refund skips the auth check</div><div class="sev"><i style="width:60%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4 18v-4h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Regression</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">breaks /api/payments</div><div class="sev"><i style="width:45%"></i></div></div>
-        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Migration</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">not reversible</div><div class="sev"><i style="width:55%"></i></div></div>
+        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>Correctness</div><span class="pill red"><span class="dot"></span>2 found</span><div class="find">number doesn’t reconcile</div><div class="sev"><i style="width:80%"></i></div></div>
+        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4-2.8 6.5-7 8.5-4.2-2-7-4.5-7-8.5V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Security</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">an RBAC leak</div><div class="sev"><i style="width:45%"></i></div></div>
+        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4 18v-4h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Regression</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">breaks another page</div><div class="sev"><i style="width:45%"></i></div></div>
+        <div class="card lens"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6v6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Design</div><span class="pill red"><span class="dot"></span>1 found</span><div class="find">off the approved mockup</div><div class="sev"><i style="width:45%"></i></div></div>
         <div class="card lens ok"><div class="lh"><svg class="li" width="15" height="15" viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 5-7 4 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Performance</div><span class="pill green"><span class="dot"></span>clean</span><div class="find">within budget</div><div class="sev"><i></i></div></div>
       </div>
       <div class="rounds num">

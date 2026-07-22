@@ -17,9 +17,9 @@ for s in 1 2 3 4 5; do
 done
 ls -1 "$TMP"/s*.png
 
-# 2) assemble: each scene held, 0.5s crossfades. Holds give time to read the artifact + bar.
-#    Holds (s): claim 3.2 · drift-hero 4.2 · review 3.4 · runs-itself 3.8 · end 3.6
-H1=3.2; H2=4.2; H3=3.4; H4=3.8; H5=3.6; XF=0.5
+# 2) assemble: long holds so each pillar's visual is absorbed (Rishi: give enough time).
+#    Holds (s): hook 3.8 · pillar1 5.5 · pillar2 5.5 · pillar3 5.5 · outro 4.5
+H1=4.0; H2=4.6; H3=4.6; H4=4.6; H5=3.0; XF=0.5
 ff() { ffmpeg -y -loglevel error "$@"; }
 i=1; for h in $H1 $H2 $H3 $H4 $H5; do
   ff -loop 1 -t "$h" -i "$TMP/s$i.png" -vf "scale=1280:720,fps=30,format=yuv420p" "$TMP/c$i.mp4"
