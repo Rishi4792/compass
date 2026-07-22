@@ -59,7 +59,7 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 - [x] RECONCILE: `compass.sh reconcile <actual> <gold> <tol>` → PASS   (or N/A iff contract reconciliation is N/A)
 RECON-CMD: <the exact reproducing-query command>   (verbatim, so a parallel sibling's merged-recon can re-run it on the merged tree)
 - [x] (web) token <name>: getComputedStyle → <rgb> == <hex> PASS
-- [x] secret-scan: `compass.sh secret-scan .` → 0 hits
+- [x] secret-scan: `compass.sh secret-scan <build-dir>` (per-build text artifacts) + `compass.sh secret-scan --commits <base>..HEAD` (committed patches) → 0 hits
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> build`.
 

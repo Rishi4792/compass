@@ -3,7 +3,7 @@
 **Build software true to spec, with zero drift.** A contract-first build lifecycle for [Claude Code](https://claude.com/claude-code).
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.11.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.13.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 > **The problem in one line:** AI coding agents drift from what you asked — and worse, they say *"done"* when the numbers are wrong or a step was skipped. **Compass makes "done" something the agent has to *prove*, with a real gate it can't talk past.**
@@ -14,7 +14,7 @@
 
 ## Compass is a graph
 
-Stages are nodes, **script gates are the edges** (exit codes — never model-chosen), adversarial reviews and the post-ship critique loop are independent verifier nodes with fresh context and on-disk evidence only. Every cycle is bounded (caps + convergence bounds from the contract header + stall detection + budget metering inside the registration gate). `SHIPPED` is not the finish line: it is unwritable until the post-ship loop converges on the live system.
+Stages are nodes, **script gates are the edges** (exit codes — never model-chosen), adversarial reviews and the post-ship critique loop are independent verifier nodes with fresh context and on-disk evidence only. Every cycle is bounded (caps + convergence bounds from the contract header + stall detection + budget metering inside the registration gate), and every node must justify itself — a node you can't tie to a signal (specialty, fan-out, auditable branching, independent verification) gets collapsed back into the loop. `SHIPPED` is not the finish line: it is unwritable until the post-ship loop converges on the live system.
 
 **v0.13 — co-construct + sketch:** the contract interview scans your repo first, then EXPANDS your thinking (pre-mortem / constraint-relaxation / 10x / adjacent-use-case menus — with a hard "something must be rejected" gate so the expansion is real), and RENDERS what you're deciding as you decide it: a grayscale throwaway wireframe for UI (the accepted mockup becomes the binding spec, with a line-1 leak tracer so the throwaway can never ship) or an embedded Mermaid logic map for everything else. All of it enforced by `intake-gate` + `sketch-gate` exit codes riding the ordinary stage gates.
 

@@ -69,10 +69,20 @@ hdr_get() { # <file> <key>
 ps_open_rows() { # <ledger-file>
   local f="${1:-}"
   [ -f "$f" ] || { printf '0'; return 0; }
+  # status = the LAST real cell ($(NF-1), before the trailing empty field), NOT a hardcoded
+  # column — a `|` inside the free-text finding/fix/where cells shifts field numbers and would
+  # otherwise hide an OPEN row (matches the pre-existing ledger_open_rows convention).
   awk -F'|' '
-    function trim(x){ gsub(/^[ \t]+|[ \t]+$/,"",x); return x }
-    { id=trim($2); sev=trim($4); st=trim($8)
-      if (id ~ /^PS-[0-9]+-[0-9]+$/ && (sev=="CRITICAL" || sev=="MAJOR") && st=="OPEN") n++ }
+    function trim(x){ gsub(/^[ \t\r]+|[ \t\r]+$/,"",x); return x }
+    /^[[:space:]]*\|/ {
+      if ($0 ~ /^[[:space:]]*\|[-: |]+$/) next                      # separator row
+      id=trim($2); if (id !~ /^PS-[0-9]+-[0-9]+$/) next
+      sev=toupper(trim($4)); if (sev!="CRITICAL" && sev!="MAJOR") next
+      st=toupper(trim($(NF-1)))
+      exo=0; for(i=1;i<=NF;i++){ c=toupper(trim($i)); if(c ~ /^(OPEN|REOPENED)([ \t]*[(:—-]|$)/) exo=1 }
+      # OPEN unless the status cell is a close token (close word at a word boundary) AND no clean OPEN cell.
+      if (exo || st !~ /^(CLOSED|FIXED|RESOLVED|N\/A)([^A-Z0-9]|$)/) n++
+    }
     END { printf "%d", n }' "$f"
 }
 
@@ -567,22 +577,42 @@ cmd_reconcile() { # <actual> <gold> <tol>
   ok "reconciliation within tolerance."
 }
 
-cmd_secret_scan() { # <build-dir> [files...]
-  shift_dir="$1"; shift || true
-  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET\s*=\s*["'"'"'][^"'"'"' ]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+)'
-  local target="$*"
+cmd_secret_scan() { # <build-dir|--commits <range>|files...>
+  local first="${1:-}"
+  # Pattern with NO embedded ASCII single-quote (a literal ' in the _SECRET class used to terminate
+  # the xargs sh -c string — a pre-existing latent bug; the value side now just excludes whitespace).
+  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+)'
   local found=""
-  if [ -n "$target" ]; then
-    found="$(grep -REnI "$pat" $target 2>/dev/null || true)"
-  elif command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
-    local files; files="$(git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null)"
-    [ -n "$files" ] && found="$(printf '%s\n' "$files" | sort -u | xargs -I{} sh -c 'test -f "{}" && grep -EnI "'"$pat"'" "{}" | sed "s#^#{}:#"' 2>/dev/null || true)"
+  _ss_hit() { [ -z "$1" ] || die "possible secret — remove it / read from env instead:
+$1"; }
+  if [ "$first" = "--commits" ]; then
+    local range="${2:-}"; [ -n "$range" ] || die "usage: compass.sh secret-scan --commits <range>"
+    git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --commits: not a git repo."
+    git rev-list --quiet "$range" -- >/dev/null 2>&1 || die "secret-scan --commits: bad range '$range'."
+    found="$(git log -p "$range" -- 2>/dev/null | grep -E '^\+' | grep -EnI "$pat" || true)"
+    _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits."; return 0
   fi
-  if [ -n "$found" ]; then
-    die "possible secret committed — remove it / read from env instead:
-$found"
+  if [ -d "$first" ]; then
+    found="$(grep -REnI --exclude-dir='.git' "$pat" "$first" 2>/dev/null || true)"
+    _ss_hit "$found"; ok "secret scan ($first): 0 hits."; return 0
   fi
-  ok "secret scan: 0 hits."
+  if [ -n "$first" ]; then   # explicit file list
+    found="$(grep -EnI "$pat" "$@" 2>/dev/null || true)"
+    _ss_hit "$found"; ok "secret scan: 0 hits."; return 0
+  fi
+  # legacy no-arg: staged + working-tree-modified files (while-read loop, no sh -c pattern splice)
+  if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+    local f
+    while IFS= read -r f; do
+      [ -f "$f" ] || continue
+      local h; h="$(grep -EnI "$pat" "$f" 2>/dev/null || true)"
+      [ -n "$h" ] && found="$found$f: $h
+"
+    done <<EOF
+$( { git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null; } | sort -u )
+EOF
+  fi
+  _ss_hit "$found"; ok "secret scan: 0 hits."
 }
 
 set_index_status() { # <slug> <status>  — update the status= token on the slug's INDEX line
@@ -1268,7 +1298,9 @@ _fire_g1_locked() { # <dir> <slug>  (under gate lock)
 cmd_gate_clear() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh gate-clear <build-dir>"
   local slug ld; slug="$(basename "$dir")"; ld="$(locks_dir)"
-  with_lock "gate-$slug" sh -c 'rmdir "$1/'"$slug"'.gate-lock" 2>/dev/null || true' _ "$ld"
+  # slug is passed as a POSITIONAL arg ($2), never spliced into the sh -c string — a build dir whose
+  # basename contains shell metacharacters must not become code execution.
+  with_lock "gate-$slug" sh -c 'rmdir "$1/$2.gate-lock" 2>/dev/null || true' _ "$ld" "$slug"
   _chain_append "$dir" "-" "gate-cleared"
   ok "gate-clear: gate-lock released for '$slug'."
 }
@@ -1324,6 +1356,10 @@ cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattende
 _auto_spawn_maybe() { # <dir> <slug> <sid> <locks-dir>
   local dir="$1" slug="$2" sid="$3" ld="$4"
   [ -f "$dir/.auto-mode" ] || return 1
+  # SECURITY (R3): validate the slug BEFORE it is used in any lock name or `sh -c` command — a
+  # build-dir basename with shell metacharacters would otherwise be code execution. Legit slugs are
+  # [A-Za-z0-9._-]+; anything else refuses fail-closed, recorded honestly as spawn-failed.
+  case "$slug" in *[!A-Za-z0-9._-]*) _chain_append "$dir" "-" "spawn-failed"; echo "compass: auto-spawn refused — unsafe slug '$slug'." >&2; return 1 ;; esac
   # v0.12.0 S6a (F-SUSPEND): an interactive driver has suspended the self-spawn — refuse at THIS
   # seam so BOTH entry points (stop-guard AND direct auto-spawn) are dormant. .auto-mode stays,
   # so budget metering + the RC-8/VF-4 human-eyes refusals REMAIN ARMED while suspended.
@@ -1577,17 +1613,32 @@ cmd_loop_converged() { # <build-dir> <phase>
   # user-accepted escape (cap path): SET semantics — every OPEN PS id must be in the recorded list
   local ua; ua="$(hdr_get "$r" user-accepted 2>/dev/null || true)"
   if [ -n "$ua" ]; then
-    case "$ua" in ship-as-is*) : ;; *) echo "refuse: accepted-void" >&2; die "loop-converged: user-accepted line present but not the pinned 'ship-as-is — <PS ids> · <ts>' form." ;; esac
-    local missing=""
+    # Enforce the PINNED grammar at runtime (not just in smoke): 'ship-as-is — <PS ids> · <ts>'.
+    printf '%s\n' "user-accepted: $ua" | user_accepted_match || { echo "refuse: accepted-void" >&2; die "loop-converged: user-accepted line is not the pinned 'ship-as-is — <PS ids> · <ts>' form."; }
+    local missing="" accepted_ids idseg
+    # Parse ONLY the <PS ids> SEGMENT (between the first ' — ' and the LAST ' · '), so an id merely
+    # MENTIONED in the trailing annotation/timestamp can never count as accepted (R3 round-2 fix).
+    idseg="${ua#*— }"; idseg="${idseg% · *}"
+    accepted_ids="$(printf '%s' "$idseg" | grep -oE 'PS-[0-9]+-[0-9]+' || true)"
+    [ -n "$accepted_ids" ] || { echo "refuse: accepted-void" >&2; die "loop-converged: user-accepted names no valid PS id (empty or placeholder <PS ids> segment)."; }
     if [ -f "$ledger" ]; then
-      local id
+      local id found tok
       while IFS= read -r id; do
         [ -n "$id" ] || continue
-        printf '%s' "$ua" | grep -qF "$id" || missing="$missing $id"
+        found=0
+        while IFS= read -r tok; do [ "$tok" = "$id" ] && { found=1; break; }; done <<ACC
+$accepted_ids
+ACC
+        [ "$found" = 1 ] || missing="$missing $id"
       done <<EOF
-$(awk -F'|' 'function trim(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x}
-   { id=trim($2); sev=trim($4); st=trim($8)
-     if (id ~ /^PS-[0-9]+-[0-9]+$/ && (sev=="CRITICAL"||sev=="MAJOR") && st=="OPEN") print id }' "$ledger")
+$(awk -F'|' 'function trim(x){gsub(/^[ \t\r]+|[ \t\r]+$/,"",x);return x}
+   /^[[:space:]]*\|/ {
+     if ($0 ~ /^[[:space:]]*\|[-: |]+$/) next
+     id=trim($2); if (id !~ /^PS-[0-9]+-[0-9]+$/) next
+     sev=toupper(trim($4)); if (sev!="CRITICAL" && sev!="MAJOR") next
+     st=toupper(trim($(NF-1)))
+     exo=0; for(i=1;i<=NF;i++){ c=toupper(trim($i)); if(c ~ /^(OPEN|REOPENED)([ \t]*[(:—-]|$)/) exo=1 }
+     if (exo || st !~ /^(CLOSED|FIXED|RESOLVED|N\/A)([^A-Z0-9]|$)/) print id }' "$ledger")
 EOF
     fi
     if [ -n "$missing" ]; then
@@ -1624,9 +1675,13 @@ cmd_coldgo_gate() { # <build-dir>   (run from within the target repo)
     *)     die "coldgo-gate: unparseable cold-critic header value '${cc}'." ;;
   esac
   [ -f "$r" ] || { echo "refuse: streak" >&2; die "coldgo-gate: no receipts.md — no cold-critic runs recorded."; }
+  # Grammar tripwire (R3 round-2): any cold-critic header that matches none of the three pinned
+  # forms is a FAIL-CLOSED parse error — a malformed header must never shift the block window.
+  local bad; bad="$(grep -E '^## RECEIPT — cold-critic' "$r" | grep -vE '^## RECEIPT — cold-critic · (GO · tree=[a-z0-9]+|NO-GO · tree=[a-z0-9]+|HUMAN-GO · "[^"]*" · tree=[a-z0-9]+)$' || true)"
+  [ -z "$bad" ] || { echo "refuse: unparseable" >&2; die "coldgo-gate: unparseable cold-critic receipt header (grammar drift): $bad"; }
   local head12; head12="$(git rev-parse --short=12 HEAD 2>/dev/null || printf nogit)"
   # HUMAN-GO path first (one suffices; gated-only; fallback must be declared)
-  local hg; hg="$(grep -E '^## RECEIPT — cold-critic · HUMAN-GO · ".+" · tree=[a-z0-9]+' "$r" | tail -1 || true)"
+  local hg; hg="$(grep -E '^## RECEIPT — cold-critic · HUMAN-GO · "[^"]*[^" ][^"]*" · tree=[a-z0-9]+' "$r" | tail -1 || true)"
   if [ -n "$hg" ]; then
     [ -f "$dir/.auto-mode" ] && { echo "refuse: human-go-auto" >&2; die "coldgo-gate: HUMAN-GO under .auto-mode — an unattended session cannot certify human eyes (fire G2)."; }
     local fb; fb="$(hdr_get "$c" cold-critic-fallback || true)"
@@ -1637,7 +1692,7 @@ cmd_coldgo_gate() { # <build-dir>   (run from within the target repo)
     return 0
   fi
   # machine path: last 2 GO receipts, identical sha, clean-tree boxes, sha == HEAD
-  local last2; last2="$(grep -E '^## RECEIPT — cold-critic · (GO|NO-GO) · tree=' "$r" | tail -2)"
+  local last2; last2="$(grep -E '^## RECEIPT — cold-critic · (GO|NO-GO) · tree=' "$r" | tail -2 || true)"
   local n; n="$(printf '%s\n' "$last2" | grep -c 'cold-critic' || true)"
   [ "$n" = "2" ] || { echo "refuse: streak" >&2; die "coldgo-gate: need 2 consecutive cold GO receipts (have $n runs recorded)."; }
   printf '%s\n' "$last2" | grep -q 'NO-GO' && { echo "refuse: streak" >&2; die "coldgo-gate: a NO-GO sits in the last 2 runs — streak reset."; }
@@ -1645,14 +1700,20 @@ cmd_coldgo_gate() { # <build-dir>   (run from within the target repo)
   s1="$(printf '%s\n' "$last2" | sed -n '1p' | sed -nE 's/.*tree=([a-z0-9]+).*/\1/p')"
   s2="$(printf '%s\n' "$last2" | sed -n '2p' | sed -nE 's/.*tree=([a-z0-9]+).*/\1/p')"
   [ "$s1" = "$s2" ] || { echo "refuse: streak" >&2; die "coldgo-gate: the 2 GOs carry different tree shas ($s1 vs $s2) — a commit between GOs resets the streak."; }
-  # each of the last two GO blocks needs a checked clean-tree box
-  local blocks; blocks="$(awk -v want="## RECEIPT — cold-critic · GO · tree=$s1" '
-    index($0,want)==1 { cap=1; cnt++; buf[cnt]=$0 ORS; next }
-    cap && /^## / { cap=0 }
-    cap { buf[cnt]=buf[cnt] $0 ORS }
-    END { printf "%s%s", buf[cnt-1], buf[cnt] }' "$r")"
-  local nboxes; nboxes="$(printf '%s' "$blocks" | grep -cE '^\- \[x\] clean-tree: .*porcelain.*empty' || true)"
-  [ "$nboxes" -ge 2 ] || { echo "refuse: dirty-tree" >&2; die "coldgo-gate: both GO receipts need a checked 'clean-tree: git status --porcelain empty' box (the sha must pin the pixels)."; }
+  # EACH of the last two cold-critic blocks needs its OWN checked clean-tree box (R3 round-1
+  # fix: an aggregated count let a duplicated box in block 1 stand in for a missing one in
+  # block 2 — the sha would no longer pin the pixels for that GO).
+  local which nbox
+  for which in 1 2; do
+    nbox="$(awk -v w="$which" '
+      /^## RECEIPT — cold-critic · (GO|NO-GO) · tree=/ { cnt++; cur=cnt; blk[cur]="" ; inb=1; next }
+      inb && /^## / { inb=0 }
+      inb { blk[cur]=blk[cur] $0 ORS }
+      END { t=blk[cnt-(w-1)]; n=0; nl=split(t,L,ORS)
+            for(i=1;i<=nl;i++) if (L[i] ~ /^\- \[x\] clean-tree: .*porcelain.*empty/) n++
+            print n }' "$r")"
+    [ "${nbox:-0}" -ge 1 ] || { echo "refuse: dirty-tree" >&2; die "coldgo-gate: the $([ "$which" = 1 ] && echo last || echo second-to-last) GO receipt lacks its own checked 'clean-tree: git status --porcelain empty' box (the sha must pin the pixels — per block, not in aggregate)."; }
+  done
   [ "$s2" = "$head12" ] || { echo "refuse: stale-head" >&2; die "coldgo-gate: GOs at tree=$s2 but current HEAD is $head12 — a commit after the final GO invalidates it (RD-7)."; }
   ok "coldgo-gate: 2 consecutive cold GOs @ tree=$s2 == HEAD, clean trees — design gate PASS."
 }
@@ -1830,6 +1891,10 @@ postship_box_match() { # stdin: one receipt box line
 intake_box_match() { # stdin
   local l; l="$(cat)"; l="$(norm_line "$l")"
   printf '%s' "$l" | grep -qE '^[- ]*\[x\] intake-gate: compass.sh intake-gate .+ → 0$'
+}
+observation_box_match() { # stdin: the ship receipt's observation box line
+  local l; l="$(cat)"; l="$(norm_line "$l")"
+  printf '%s' "$l" | grep -qE '^[- ]*\[x\] observation (web|pipeline|library): `.+` → evidence/round-1/.+$'
 }
 sketch_box_match() { # stdin
   local l; l="$(cat)"; l="$(norm_line "$l")"

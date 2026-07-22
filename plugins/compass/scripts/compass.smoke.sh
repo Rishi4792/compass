@@ -4,8 +4,11 @@
 # Usage: bash compass.smoke.sh   (exits non-zero if any assertion fails)
 set -uo pipefail
 SH="$(cd "$(dirname "$0")" && pwd)/compass.sh"
-T="/tmp/compass-smoke (paren)/repo"; rm -rf "/tmp/compass-smoke (paren)"; mkdir -p "$T"; cd "$T"
-export COMPASS_WORKTREE_HOME="/tmp/compass-smoke (paren)/.worktrees"   # v0.6.0: never pollute the real ~/.compass
+SMOKE_TMP="$(mktemp -d)"; SMOKE_BASE="$SMOKE_TMP/compass-smoke (paren)"   # unique per run (R3 fix:
+# the fixed /tmp path let concurrent runs rm -rf each other's live sandbox — recon flaked); the
+# parens/space stay in the path so the quoting coverage is retained.
+T="$SMOKE_BASE/repo"; mkdir -p "$T"; cd "$T"
+export COMPASS_WORKTREE_HOME="$SMOKE_BASE/.worktrees"   # v0.6.0: never pollute the real ~/.compass
 git init -q; git config user.email t@t.t; git config user.name t
 mkdir -p "src/(dash)/active" src/email; echo a > "src/(dash)/active/p.tsx"; echo b > src/email/c.tsx; echo lk > package-lock.json
 git add -A; git commit -qm init
@@ -92,7 +95,7 @@ out="$(bash "$SH" builds 2>/dev/null)"
 ( echo "$out" | grep -q 'v6live' ); chk "$?" "0" "builds lists an in-flight build"
 ( echo "$out" | grep -q 'v6done' ); chk "$?" "1" "builds omits a terminal build"
 # INV-8/9: post-merge-check vs a REAL origin (bare remote)
-R="/tmp/compass-smoke (paren)/remote.git"; git init -q --bare "$R"
+R="$SMOKE_BASE/remote.git"; git init -q --bare "$R"
 git remote add origin "$R" 2>/dev/null; git push -q origin HEAD:main 2>/dev/null
 WT_PM="$(bash "$SH" worktree v6pm 2>/dev/null | tail -1)"   # base defaults to origin/main
 ( cd "$WT_PM" && bash "$SH" claim v6pm "src/email/*" >/dev/null 2>&1 )
@@ -204,7 +207,7 @@ tpl() { # <skill-file> <template-name> — prints the template block (fenced lin
     }' "$1"
 }
 inst() { # THE pinned map (VZ-5): first-branch rule for alternations
-  sed -e 's/<slug>/fixt/g' -e 's/<k>/1/g' -e 's/<CLEAN|MATERIAL>/CLEAN/g' -e 's/<GO|NO-GO>/GO/g'       -e 's/<git sha-12>/000000000000/g' -e 's/<sha>/000000000000/g'       -e 's/<PS ids>/PS-1-1/g' -e 's/<ISO ts>/2026-01-01T00:00:00Z/g'       -e 's/<command>/true/g' -e 's/<observed output>/OK/g'       -e 's|<prod url / system name — never a secret>|fixture-system|g'       -e 's|<dir>|/tmp/x|g' -e 's|<evidence path>|evidence/shot.png|g'       -e 's/<on (clean N \/ cap M)|off — reason>/on (clean 1 \/ cap 5)/g'
+  sed -e 's/<slug>/fixt/g' -e 's/<k>/1/g' -e 's/<CLEAN|MATERIAL>/CLEAN/g' -e 's/<GO|NO-GO>/GO/g'       -e 's/<git sha-12>/000000000000/g' -e 's/<sha>/000000000000/g'       -e 's/<PS ids>/PS-1-1/g' -e 's/<ISO ts>/2026-01-01T00:00:00Z/g'       -e 's/<command>/true/g' -e 's/<observed output>/OK/g'       -e 's|<prod url / system name — never a secret>|fixture-system|g'       -e 's|<dir>|/tmp/x|g' -e 's|<evidence path>|evidence/shot.png|g' -e 's/<facet>/library/g' -e 's/<capture-cmd>/true/g' -e 's|<file>|observe.txt|g'       -e 's/<on (clean N \/ cap M)|off — reason>/on (clean 1 \/ cap 5)/g'
 }
 SHIP="$PLUGIN_ROOT/skills/ship/SKILL.md"; BUILD="$PLUGIN_ROOT/skills/build/SKILL.md"; CSK2="$PLUGIN_ROOT/skills/contract/SKILL.md"
 tpl "$SHIP" round-receipt | inst | bash "$SH" __match round_receipt_match
@@ -219,6 +222,8 @@ tpl "$CSK2" intake-box | inst | bash "$SH" __match intake_box_match
 chk "$?" "0" "INV-TEMPLATES: contract intake receipt box accepted by intake_box_match"
 tpl "$CSK2" sketch-box | inst | bash "$SH" __match sketch_box_match
 chk "$?" "0" "INV-TEMPLATES: contract sketch receipt box accepted by sketch_box_match"
+tpl "$SHIP" observation-box | inst | bash "$SH" __match observation_box_match
+chk "$?" "0" "INV-TEMPLATES: ship observation box accepted by observation_box_match (the 7th pinned template)"
 
 # ── v0.13.0 S14: INV-WIRED — every gate provably INVOKED (seam greps; behavioral pairs live in selftest) ──
 ENG="$PLUGIN_ROOT/scripts/compass.sh"
@@ -231,5 +236,5 @@ chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "INV-WIR
 chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/review-build/SKILL.md")" "1" "INV-WIRED: review-build [C] invokes coldgo-gate"
 
 echo "──────── $pass passed, $fail failed ────────"
-cd /; rm -rf "/tmp/compass-smoke (paren)" 2>/dev/null
+cd /; rm -rf "$SMOKE_TMP" 2>/dev/null
 [ "$fail" = 0 ]

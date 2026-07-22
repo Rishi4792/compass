@@ -332,7 +332,12 @@ bash "$SH" scan-receipt "$SPok" ship >/dev/null 2>&1
 echo "  note  OLD MISSES — existing 'scan-receipt ship' on a clean-looking ship receipt exits $? (passes); only lifecycle-audit ties SHIPPED status to a CHECKED prod-verify."
 
 echo "── v0.10.0 --auto autonomous loop (INV-2..INV-8) ─────────────"
-LOCKS="$(bash "$SH" state-root 2>/dev/null)/.locks"
+# R3 round-2 fix: run this whole section inside an isolated git repo so state-root/.locks resolve
+# under $SB — never the real project locks dir (where a live external session caused the INV-5 flake).
+V10_ORIGIN="$PWD"; V10R="$SB/v10repo"; mkdir -p "$V10R/.claude/builds"
+( cd "$V10R" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init )
+cd "$V10R"
+LOCKS="$V10R/.claude/builds/.locks"
 # Idempotency: clear any stale v10* lock artifacts (incl. with_lock mutex dirs) from a prior
 # interrupted run, so a leftover mutex can't make fire-g2 time out without creating the gate-lock.
 rm -rf "$LOCKS"/v10* "$LOCKS"/.gate-v10*.lock "$LOCKS"/.budget-v10*.lock 2>/dev/null || true
@@ -432,6 +437,7 @@ sed -i.bak "s/^spent_wall=.*/spent_wall=10/; s/^session_start_ts=.*/session_star
 bash "$SH" budget-check "$RB7" >/dev/null 2>&1; chk "$?" "1" "RB-07: future session_start_ts (clock skew) → elapsed clamped ≥0 → prior 10s>8s ceiling still detected (exit 1)"
 
 rm -rf "$LOCKS"/v10*.gate-lock "$LOCKS"/v10*.owner "$LOCKS"/v10*.blocked 2>/dev/null || true
+cd "$V10_ORIGIN"   # R3 fix: restore cwd so later sandboxed sections resolve state-root correctly
 
 echo "── v0.11.0 autonomous self-spawn (INV-BC/STAGE/CONTINUABLE/HALT/GATE/TRIGGER/DEGRADE) ──"
 # Run ENTIRELY inside a sandbox git repo so all locks/state are isolated from the real ~/.claude
@@ -520,38 +526,36 @@ chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "spawned" "★ INV-ST
 # (all v0.11 state lived in the sandbox repos $V/$SG under $SB — auto-removed by the EXIT trap; no real locks touched)
 
 echo "── INV-ENGINEFIX (v0.12.0 S1): mutex-leak class BUG-1/BUG-2/BUG-3 ─────────────"
-# All three bugs are the same class: an `exit` (die) inside a with_lock critical section skips
-# the RETURN trap and leaks the mutex, deadlocking the NEXT caller into a 30s lock timeout.
-# Fixtures assert: the failing call exits non-zero FAST, and an IMMEDIATE second call acquires
-# the mutex without timeout (i.e. no leak). Timing bound: >5s ⇒ leaked (timeout is ~30s).
-EF="$SB/enginefix"; mkdir -p "$EF"
+# Sandboxed in an isolated git repo (R3 fix: these ran against the REAL project locks dir,
+# where a live external session could contend — the INV-5 flake class). state-root resolves
+# via cwd git, so every lock these fixtures touch lives under $SB.
+EFR="$SB/efrepo"; mkdir -p "$EFR"; ( cd "$EFR" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init )
+mkdir -p "$EFR/.claude/builds"
+EF="$EFR/.claude/builds/enginefix"; mkdir -p "$EF"
 printf '**Status:** Plan LOCKED\n' > "$EF/progress.md"
+EFLOCKS="$EFR/.claude/builds/.locks"
 
-# BUG-1/BUG-2 — fire-g1: fires (exit 1), then gate-clear must succeed instantly and remove the lock
 T0=$(date +%s)
-bash "$SH" fire-g1 "$EF" >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g1 fires → exit 1 (gate held)"
-bash "$SH" gate-clear "$EF" >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-1: gate-clear after fire-g1 → exit 0 (no ld-exec crash)"
+( cd "$EFR" && bash "$SH" fire-g1 .claude/builds/enginefix ) >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g1 fires → exit 1 (gate held)"
+( cd "$EFR" && bash "$SH" gate-clear .claude/builds/enginefix ) >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-1: gate-clear after fire-g1 → exit 0 (no ld-exec crash)"
 T1=$(date +%s)
 chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-2: fire-g1 leaked no mutex (gate-clear instant, no 30s timeout)"
-chk "$([ -d "$LOCKS/$(basename "$EF").gate-lock" ] && echo held || echo gone)" "gone" "INV-ENGINEFIX BUG-1: gate-lock dir removed by gate-clear (real locks dir, not a vacuous path)"
+chk "$([ -d "$EFLOCKS/enginefix.gate-lock" ] && echo held || echo gone)" "gone" "INV-ENGINEFIX BUG-1: gate-lock dir removed by gate-clear (sandboxed locks dir)"
 
-# BUG-2 — fire-g2 same shape
 T0=$(date +%s)
-bash "$SH" fire-g2 "$EF" enginefix-test >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g2 fires → exit 1"
-bash "$SH" gate-clear "$EF" >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-2: gate-clear after fire-g2 → exit 0"
+( cd "$EFR" && bash "$SH" fire-g2 .claude/builds/enginefix enginefix-test ) >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX: fire-g2 fires → exit 1"
+( cd "$EFR" && bash "$SH" gate-clear .claude/builds/enginefix ) >/dev/null 2>&1; chk "$?" "0" "INV-ENGINEFIX BUG-2: gate-clear after fire-g2 → exit 0"
 T1=$(date +%s)
 chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-2: fire-g2 leaked no mutex (instant clear)"
 
-# BUG-3 — budget-check at ceiling: exit 1 with the ceiling message, budget mutex NOT leaked,
-# budget.env intact, and an immediate second call also exits 1 fast (would hang ~30s pre-fix).
-BF="$SB/enginefix-budget"; mkdir -p "$BF"; printf '**Status:** Plan LOCKED\n' > "$BF/progress.md"
-bash "$SH" budget-init "$BF" --wall 99999 --sessions 1 --stages 99 >/dev/null 2>&1
+BF="$EFR/.claude/builds/enginefix-budget"; mkdir -p "$BF"; printf '**Status:** Plan LOCKED\n' > "$BF/progress.md"
+( cd "$EFR" && bash "$SH" budget-init .claude/builds/enginefix-budget --wall 99999 --sessions 1 --stages 99 ) >/dev/null 2>&1
 sed -i.bak "s/^spent_sessions=.*/spent_sessions=1/" "$BF/budget.env"; rm -f "$BF/budget.env.bak"
-OUT="$(bash "$SH" budget-check "$BF" 2>&1)"; RC=$?
+OUT="$(cd "$EFR" && bash "$SH" budget-check .claude/builds/enginefix-budget 2>&1)"; RC=$?
 chk "$RC" "1" "INV-ENGINEFIX BUG-3: budget-check at ceiling → exit 1"
 chk "$(printf '%s' "$OUT" | grep -c 'ceiling reached')" "1" "INV-ENGINEFIX BUG-3: identical ceiling message preserved (die outside the lock)"
 T0=$(date +%s)
-bash "$SH" budget-check "$BF" >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX BUG-3: immediate SECOND budget-check → exit 1 (mutex was released)"
+( cd "$EFR" && bash "$SH" budget-check .claude/builds/enginefix-budget ) >/dev/null 2>&1; chk "$?" "1" "INV-ENGINEFIX BUG-3: immediate SECOND budget-check → exit 1 (mutex was released)"
 T1=$(date +%s)
 chk "$([ $((T1-T0)) -lt 5 ] && echo fast || echo slow)" "fast" "INV-ENGINEFIX BUG-3: second call instant — no leaked .budget-*.lock"
 grep -q '^ceiling_sessions=1$' "$BF/budget.env"; chk "$?" "0" "INV-ENGINEFIX BUG-3: budget.env intact after at-ceiling refusal"
@@ -631,6 +635,11 @@ printf 'RECON-CMD: bash scripts/recon.sh\n' > "$PSR/receipts.md"
 bash "$SH" postship-signal "$PSR" >/dev/null 2>&1; chk "$?" "0" "INV-PS-NOVERIFIER: RECON-CMD alone suffices"
 
 echo "── INV-PS CAP/GROUND/LEDGER/ORDER/STALL/BUDGET (v0.12.0 S3): loop-round ────────"
+# R3 round-3: sandbox the loop-round/budget sections (they call budget-check → a budget-<slug>
+# lock in the REAL locks dir if cwd is the project repo). Isolate state-root under $SB.
+PS_ORIGIN="$PWD"; PSREPO="$SB/psrepo"; mkdir -p "$PSREPO/.claude/builds"
+( cd "$PSREPO" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init )
+cd "$PSREPO"
 mkps() { # <dir> [facets] — post-ship fixture factory (bold house-style headers)
   local d="$1" fac="${2:-library}"; mkdir -p "$d"
   printf '%s\n' "**Facets:** $fac" '**deploy:** in scope — x' '**post-ship-loop:** on (clean 2 / cap 5)' \
@@ -1062,6 +1071,255 @@ printf '<!-- COMPASS-MOCK slug=leak2 v=1 throwaway=true -->\n' > "$SKR/leak2.htm
 ( cd "$SKR" && git add leak2.html && git -c user.email=t@t -c user.name=t commit -qm leak2 )
 printf '\n## RECEIPT — review-build · fix · PASS\n- [x] done\n' >> "$SP/receipts.md"
 ( cd "$SKR" && bash "$SH" gate sk-pipe review-build ) >/dev/null 2>&1; chk "$?" "1" "INV-SKETCH: cmd_gate review-build seam FAILS on a line-1 leak (INV-WIRED behavioral)"
+
+echo "── R3 round-1 regressions (v0.12.0/v0.13.0 review-build fixes) ─────────────────"
+# CRITICAL: user-accepted set membership must be exact-token, never substring (PS-1-1 vs PS-1-10)
+UA="$SB/r3-ua"; mkps "$UA"
+printf '1|postship|1|MATERIAL|aaaaaaaaaaaa|1\n' > "$UA/loop.log"
+printf '| PS-1-1 | R1 | MAJOR | api | broken · cite=INV-X | f | OPEN |\n' > "$UA/review-ledger.md"
+printf 'user-accepted: ship-as-is — PS-1-10 · 2026-07-22T00:00:00Z\n' >> "$UA/receipts.md"
+ERR="$(bash "$SH" loop-converged "$UA" postship 2>&1 >/dev/null)"; chk "$?" "1" "R3-CRIT: open PS-1-1 vs recorded PS-1-10 → acceptance VOID (exact-token, no substring)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: accepted-void')" "1" "R3-CRIT reason code: accepted-void"
+# ps_open_rows: a pipe inside a free-text cell must not hide the status column
+PR="$SB/r3-pipe"; mkdir -p "$PR"
+printf '| PS-1-1 | R1 | CRITICAL | api | broken (a|b split) · cite=I | fix | OPEN |\n' > "$PR/ledger.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PR/ledger.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R3: ps_open_rows reads status from the LAST cell — pipes in free text can't hide an OPEN row"
+# coldgo: per-block clean-tree boxes (double box in one block can't cover the other)
+CGR2="$SB/r3-cg"; SHA3="$(mk_git_sandbox "$CGR2")"
+CB="$CGR2/b"; mkcold "$CB"
+{ printf '\n## RECEIPT — cold-critic · GO · tree=%s\n- [x] clean-tree: git status --porcelain empty\n- [x] clean-tree: git status --porcelain empty\n' "$SHA3"
+  printf '\n## RECEIPT — cold-critic · GO · tree=%s\n- [x] shots reviewed\n' "$SHA3"; } >> "$CB/receipts.md"
+ERR="$(cd "$CGR2" && bash "$SH" coldgo-gate b 2>&1 >/dev/null)"; chk "$?" "1" "R3: duplicated clean-tree box in block 1 cannot cover block 2 (per-block check)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: dirty-tree')" "1" "R3 reason code: dirty-tree (per block)"
+# coldgo: zero machine GO lines → coded refusal, not a silent set -e death
+CZ="$CGR2/bz"; mkcold "$CZ"
+ERR="$(cd "$CGR2" && bash "$SH" coldgo-gate bz 2>&1 >/dev/null)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: streak')" "1" "R3: zero cold-critic runs → coded refuse: streak (not a silent death)"
+# coldgo: whitespace-only HUMAN-GO quote rejected
+CWQ="$CGR2/bq"; mkcold "$CWQ"; printf 'cold-critic-fallback: human-eyeball\n' >> "$CWQ/contract.md"
+printf '\n## RECEIPT — cold-critic · HUMAN-GO · "   " · tree=%s\n- [x] x\n' "$SHA3" >> "$CWQ/receipts.md"
+( cd "$CGR2" && bash "$SH" coldgo-gate bq ) >/dev/null 2>&1; chk "$?" "1" "R3: whitespace-only HUMAN-GO quote refused (a real verbatim quote required)"
+# secret-scan: the dir argument is USED (build-dir text artifacts scanned)
+SS="$SB/r3-secrets"; mkdir -p "$SS"
+printf '%s = "AKIA%s"\n' 'AWS_SECRET' '1234567890ABCDEF' > "$SS/observe.txt"   # key+literal both from args — no trigger text in source
+bash "$SH" secret-scan "$SS" >/dev/null 2>&1; chk "$?" "1" "R3: secret-scan <dir> actually scans the dir (planted AKIA caught)"
+rm "$SS/observe.txt"; printf 'clean text\n' > "$SS/notes.md"
+bash "$SH" secret-scan "$SS" >/dev/null 2>&1; chk "$?" "0" "R3: secret-scan <dir> clean dir → 0 hits"
+# secret-scan --commits: a secret in a COMMITTED patch is caught even when the tree is clean now
+SCR="$SB/r3-screpo"; mk_git_sandbox "$SCR" >/dev/null
+( cd "$SCR" && printf 'token = "sk-%s"\n' 'abcdefghijklmnopqrstuvwx' > cfg.py && git add cfg.py && git -c user.email=t@t -c user.name=t commit -qm add && git rm -q cfg.py && git -c user.email=t@t -c user.name=t commit -qm rm )
+( cd "$SCR" && bash "$SH" secret-scan --commits HEAD~2..HEAD ) >/dev/null 2>&1; chk "$?" "1" "R3: secret-scan --commits catches a secret committed mid-build (tree clean now)"
+# spawn injection guard: metacharacter slug refuses, fail closed, no execution
+IJ="$SB/r3-inj"; mkdir -p "$IJ/pwn;dir"; : > "$IJ/pwn;dir/.auto-mode"
+printf 'ceiling_wall=99999\nceiling_sessions=9\nceiling_stages=99\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nsession_start_ts=1\n' > "$IJ/pwn;dir/budget.env"
+CANARY="$SB/r3-canary"; rm -f "$CANARY"
+( source "$SH"; set +e; COMPASS_SPAWN_CMD="touch $CANARY" _auto_spawn_maybe "$IJ/pwn;dir" "pwn;dir" "sid" "$IJ/.locks" ) >/dev/null 2>&1
+chk "$([ -f "$CANARY" ] && echo ran || echo refused)" "refused" "R3: metacharacter slug → spawn refused fail-closed (injection guard)"
+chk "$(cat "$IJ/pwn;dir/session-chain.log" 2>/dev/null | grep -c 'spawn-failed' || true)" "1" "R3: unsafe-slug refusal recorded honestly as spawn-failed"
+
+echo "── R3 round-2 regressions (re-attack fixes) ────────────────────────────────────"
+# user-accepted: id MENTIONED in the annotation/ts segment must NOT count as accepted (segment-scoped)
+UM="$SB/r3b-um"; mkps "$UM"
+printf '1|postship|1|MATERIAL|aa|1\n' > "$UM/loop.log"
+printf '| PS-2-4 | R2 | CRITICAL | x | y | fix | OPEN |\n' > "$UM/review-ledger.md"
+printf 'user-accepted: ship-as-is — PS-1-1 · 2026-07-22 (PS-2-4 still contested)\n' >> "$UM/receipts.md"
+ERR="$(bash "$SH" loop-converged "$UM" postship 2>&1 >/dev/null)"; chk "$?" "1" "R3b: open id mentioned only in the trailing annotation is NOT accepted (segment-scoped, not whole-line)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: accepted-void')" "1" "R3b reason: accepted-void (mention ≠ acceptance)"
+# user-accepted: malformed form rejected at runtime (pinned grammar, not just glob)
+UF="$SB/r3b-uf"; mkps "$UF"; printf '1|postship|1|MATERIAL|aa|0\n' > "$UF/loop.log"; : > "$UF/review-ledger.md"
+printf 'user-accepted: ship-as-is\n' >> "$UF/receipts.md"
+ERR="$(bash "$SH" loop-converged "$UF" postship 2>&1 >/dev/null)"; chk "$?" "1" "R3b: bare 'ship-as-is' (no <ids> · <ts>) refused — runtime pinned-grammar gate, 0 open rows notwithstanding"
+UT="$SB/r3b-ut"; mkps "$UT"; printf '1|postship|1|MATERIAL|aa|0\n' > "$UT/loop.log"; : > "$UT/review-ledger.md"
+printf 'user-accepted: ship-as-is — <PS ids> · <ts>\n' >> "$UT/receipts.md"
+ERR="$(bash "$SH" loop-converged "$UT" postship 2>&1 >/dev/null)"; chk "$?" "1" "R3b: unfilled TEMPLATE line copied verbatim refused (placeholder <PS ids> is not a PS token)"
+# coldgo: tree-less malformed block → unparseable tripwire (can't shift the window)
+CGR3="$SB/r3b-cg"; SHA4="$(mk_git_sandbox "$CGR3")"
+CBX="$CGR3/bx"; mkcold "$CBX"
+{ printf '\n## RECEIPT — cold-critic · GO · tree=%s\n- [x] shots\n' "$SHA4"
+  printf '\n## RECEIPT — cold-critic · GO · tree=%s\n- [x] clean-tree: git status --porcelain empty\n' "$SHA4"
+  printf '\n## RECEIPT — cold-critic · GO\n- [x] clean-tree: git status --porcelain empty\n'; } >> "$CBX/receipts.md"
+ERR="$(cd "$CGR3" && bash "$SH" coldgo-gate bx 2>&1 >/dev/null)"; chk "$?" "1" "R3b: tree-less malformed cold-critic block → refused (grammar tripwire, no window-shift laundering)"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: unparseable')" "1" "R3b reason: unparseable (coldgo grammar drift fails closed)"
+# secret-scan: --commits validates a bad range instead of fail-open
+SCR2="$SB/r3b-scr"; mk_git_sandbox "$SCR2" >/dev/null
+( cd "$SCR2" && bash "$SH" secret-scan --commits not..a..range ) >/dev/null 2>&1; chk "$?" "1" "R3b: secret-scan --commits bad range → die (not silent fail-open)"
+# secret-scan: dir mode uses filename exclude, not content filter — a secret on a line mentioning .png is CAUGHT
+SCD="$SB/r3b-scd"; mkdir -p "$SCD"
+printf 'screenshot home.png: AKIA%s leaked here\n' '1234567890ABCDEF' > "$SCD/verify.log"
+bash "$SH" secret-scan "$SCD" >/dev/null 2>&1; chk "$?" "1" "R3b: dir-mode secret on a line mentioning '.png:' is still CAUGHT (filename exclude, not content filter)"
+# secret-scan: legacy no-arg mode actually works now (single-quote-in-pattern bug fixed)
+SCL="$SB/r3b-scl"; mk_git_sandbox "$SCL" >/dev/null
+( cd "$SCL" && printf 'clean\n' > app.env && git add app.env && git -c user.email=t@t -c user.name=t commit -qm add && printf '%s = %s\n' 'API_SECRET' 'hunter2xyz' > app.env )
+( cd "$SCL" && bash "$SH" secret-scan ) >/dev/null 2>&1; chk "$?" "1" "R3b: legacy no-arg secret-scan catches a TRACKED-modified-file secret (xargs single-quote bug fixed)"
+
+cd "$PS_ORIGIN" 2>/dev/null || true   # R3: restore cwd after the sandboxed loop-round sections
+
+# ── R3 round-3 regressions (re-attack the round-3 fixes) ────────────────────────
+# secret-scan: double-quoted assignment (the most common form) is CAUGHT again
+DQR="$SB/r3c-dq"; mkdir -p "$DQR"
+printf '%s = %s\n' 'SESSION_SECRET' '"hunter2hunter2xyz"' > "$DQR/prod.env"
+bash "$SH" secret-scan "$DQR" >/dev/null 2>&1; chk "$?" "1" "R3c: double-quoted secret assignment is caught (round-2 rewrite had lost this form)"
+SQR="$SB/r3c-sq"; mkdir -p "$SQR"; printf 'export %s=%s\n' 'API_SECRET' "'a1b2c3d4e5f6g7h8'" > "$SQR/e.env"
+bash "$SH" secret-scan "$SQR" >/dev/null 2>&1; chk "$?" "1" "R3c: single-quoted + export-prefixed secret caught"
+UQR="$SB/r3c-uq"; mkdir -p "$UQR"; printf '%s=%s\n' 'JWT_SECRET' 'hunter2hunter2xyz' > "$UQR/u.env"
+bash "$SH" secret-scan "$UQR" >/dev/null 2>&1; chk "$?" "1" "R3c: unquoted secret still caught (no regression to the round-2 gain)"
+CLR="$SB/r3c-clean"; mkdir -p "$CLR"; printf 'JUST_A_NAME = hello world\nSECRET_KEY_NAME: documented\n' > "$CLR/ok.md"
+bash "$SH" secret-scan "$CLR" >/dev/null 2>&1; chk "$?" "0" "R3c: clean file → 0 hits (no false positive on prose)"
+# ps_open_rows fail-CLOSED: a malformed status row (trailing annotation shifts NF-1) still counts OPEN
+FCR="$SB/r3c-failclosed"; mkdir -p "$FCR"
+printf '| PS-9-1 | R9 | CRITICAL | where | finding | fix | OPEN | left a note |\n' > "$FCR/ledger.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$FCR/ledger.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R3c: ps_open_rows fail-CLOSED — a shifted/misparsed status still counts the CRITICAL as OPEN"
+CLR2="$SB/r3c-closed"; printf '| PS-1-1 | R1 | CRITICAL | w | f | fix | CLOSED |\n' > "$CLR2.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$CLR2.md")"; [ "$c" = "0" ] ); chk "$?" "0" "R3c: an explicitly CLOSED row is not counted (default-open, not count-everything)"
+
+# ── R3 round-4 regressions ──────────────────────────────────────────────────────
+# ps_open_rows: annotated house-convention closes MUST count as closed (not block forever)
+ANR="$SB/r4-anno"
+for status in "FIXED (v2)" "CLOSED (round 2)" "CLOSED — fixed in abc123" "RESOLVED (v2b)" "fixed"; do
+  printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | %s |\n' "$status" > "$ANR.md"
+  ( source "$SH"; set +e; c="$(ps_open_rows "$ANR.md")"; [ "$c" = "0" ] )
+  chk "$?" "0" "R4: annotated close '$status' counts as CLOSED (house convention, matches ledger_open_rows)"
+done
+# still fail-CLOSED on genuinely open + on a non-terminal annotation
+printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | OPEN (still contested) |\n' > "$ANR.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$ANR.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R4: 'OPEN (still contested)' counts as OPEN (no terminal marker)"
+printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | REOPENED |\n' > "$ANR.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$ANR.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R4: 'REOPENED' counts as OPEN (not a terminal synonym)"
+# ps_open_rows vs ledger_open_rows CONSISTENCY on an annotated close (the flagged inconsistency)
+printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | FIXED (v2) |\n' > "$ANR.md"
+( source "$SH"; set +e; a="$(ps_open_rows "$ANR.md")"; b="$(ledger_open_rows "$ANR.md" 'CRITICAL|MAJOR')"; [ "$a" = "$b" ] && [ "$a" = "0" ] )
+chk "$?" "0" "R4: ps_open_rows agrees with ledger_open_rows on an annotated close (internal consistency)"
+# secret-scan dir mode: a TEXT file named .png with a secret is now CAUGHT (png-exclude dropped)
+PNGT="$SB/r4-pngtext"; mkdir -p "$PNGT"
+printf 'openai_key=sk-%s\n' 'abcdefghijklmnopqrst' > "$PNGT/notreally.png"
+bash "$SH" secret-scan "$PNGT" >/dev/null 2>&1; chk "$?" "1" "R4: dir-mode catches a secret in a TEXT file named .png (exclude dropped; grep -I still skips real binaries)"
+
+# ── R3 round-5 regressions (the field-count-guard Critical) ─────────────────────
+# THE Critical: an open Crit/Maj PS row with a trailing 8th notes cell containing a marker word
+# must NOT be read as closed. Full end-to-end through loop-converged, not just the helper.
+FC="$SB/r5-fieldcount"; mkps "$FC"
+printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$FC/loop.log"
+printf '| PS-1-1 | R1 | CRITICAL | auth | token check skipped · cite=INV-AUTH | pending | OPEN | dup of PS-2-1, not yet fixed |\n' > "$FC/review-ledger.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$FC/review-ledger.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5-CRIT: open Crit row + trailing notes cell containing 'fixed' still counts OPEN (field-count guard)"
+bash "$SH" loop-converged "$FC" postship >/dev/null 2>&1; chk "$?" "1" "R5-CRIT: loop-converged REFUSES over the 8-cell open Critical (end-to-end, was the SHIP-authorization hole)"
+# 'not yet fixed' / 'was CLOSED prematurely' trailing prose — all still OPEN
+for note in "not yet fixed" "was CLOSED prematurely, reopened" "superseded by resolved PS-3-2" "N/A upstream but OPEN here"; do
+  printf '| PS-1-1 | R1 | MAJOR | w | f | fix | OPEN | %s |\n' "$note" > "$FC/rl.md"
+  ( source "$SH"; set +e; c="$(ps_open_rows "$FC/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5: 8-cell open row w/ notes '$note' → OPEN (field-count fail-closed)"
+done
+# missing trailing pipe (short row) → OPEN
+printf '| PS-1-1 | R1 | CRITICAL | w | fixed the join | fix | OPEN\n' > "$FC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$FC/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5: short row (missing trailing pipe) → OPEN (field-count fail-closed)"
+# canonical closed rows still close (no regression)
+for st in "CLOSED" "FIXED (v2)" "RESOLVED" "closed — abc123"; do
+  printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | %s |\n' "$st" > "$FC/rl.md"
+  ( source "$SH"; set +e; c="$(ps_open_rows "$FC/rl.md")"; [ "$c" = "0" ] ); chk "$?" "0" "R5: canonical closed '$st' still closes (no regression from the guard)"
+done
+# title-case severity now counts (toupper) — a 'Critical' OPEN row is caught
+printf '| PS-1-1 | R1 | Critical | w | f | fix | OPEN |\n' > "$FC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$FC/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5: title-case 'Critical' severity is counted (toupper — case-insensitive like ledger_open_rows)"
+
+# ── R5 fix-verify regressions: position-independent status (Critical + liveness both closed) ──
+PIC="$SB/r5v-pos"; mkdir -p "$PIC"
+# LIVENESS: a legitimately-CLOSED row with a pipe in a free-text cell must NOT strand (the fix-verify Major)
+printf '| PS-1-1 | R1 | CRITICAL | engine | regex /GO|NO-GO/ hardened · cite=INV-X | fixed | CLOSED |\n' > "$PIC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PIC/rl.md")"; [ "$c" = "0" ] ); chk "$?" "0" "R5v-LIVENESS: closed row with a pipe in free text is CLOSED, not stranded (position-independent)"
+printf '| PS-2-1 | R2 | MAJOR | sh | use a || b not a && b | fixed the join | RESOLVED (v2) |\n' > "$PIC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PIC/rl.md")"; [ "$c" = "0" ] ); chk "$?" "0" "R5v-LIVENESS: closed row with '||' and '&&' in free text is CLOSED (not stranded)"
+# CRITICAL still closed: open row + pipe in free text + trailing marker note → OPEN
+printf '| PS-1-1 | R1 | CRITICAL | api | broke /a|b/ split · cite=I | pending | OPEN | dup, not yet fixed |\n' > "$PIC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PIC/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5v-CRIT: open row with pipe in text + trailing 'not yet fixed' still counts OPEN (exact-OPEN-cell wins)"
+# open row whose fix cell contains 'fixed' but status OPEN → OPEN (isopen wins over a close-word in prose)
+printf '| PS-1-1 | R1 | MAJOR | x | y | will be fixed next round | OPEN |\n' > "$PIC/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PIC/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5v: OPEN status wins even when a prose cell contains a close-word"
+# end-to-end: a build whose ledger closes rows with pipes CONVERGES (liveness proven through loop-converged)
+LV="$SB/r5v-live"; mkps "$LV"
+printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$LV/loop.log"
+printf '| PS-1-1 | R1 | CRITICAL | e | regex /GO|NO-GO/ hardened | fixed | CLOSED |\n| PS-1-2 | R1 | MAJOR | s | a || b | fixed | RESOLVED |\n' > "$LV/review-ledger.md"
+bash "$SH" loop-converged "$LV" postship >/dev/null 2>&1; chk "$?" "0" "R5v-LIVENESS e2e: loop-converged CONVERGES over pipe-containing CLOSED rows (build not stranded)"
+# consistency with ledger_open_rows on the pipe-closed row
+printf '| PS-1-1 | R1 | CRITICAL | e | /GO|NO-GO/ | fixed | CLOSED |\n' > "$PIC/rl.md"
+( source "$SH"; set +e; a="$(ps_open_rows "$PIC/rl.md")"; b="$(ledger_open_rows "$PIC/rl.md" 'CRITICAL|MAJOR')"; [ "$a" = "0" ] && [ "$b" = "0" ] ); chk "$?" "0" "R5v: ps_open_rows and ledger_open_rows agree (both closed) on a pipe-in-cell closed row"
+
+# ── R5 posfix-verify regressions: clean-token-at-position (all 3 iterations' cases) ──
+PT="$SB/r5w-pt"; mkdir -p "$PT"
+ps_is() { printf '%s\n' "$2" > "$PT/rl.md"; ( source "$SH"; set +e; c="$(ps_open_rows "$PT/rl.md")"; [ "$c" = "$1" ] ); chk "$?" "0" "R5w: $3"; }
+# annotated-OPEN forms (house convention) must count OPEN — the iteration-3 Critical
+ps_is 1 '| PS-1-1 | R1 | CRITICAL | w | finding | Fixed the join in a draft | OPEN (regressed) |' "OPEN (regressed) + a 'Fixed…' fix cell → OPEN (annotated-open, not fooled by prose close-word)"
+ps_is 1 '| PS-1-1 | R1 | MAJOR | w | Resolved partially, still broken | pending | REOPENED |' "REOPENED + 'Resolved…' finding → OPEN"
+ps_is 1 '| PS-1-1 | R1 | CRITICAL | w | finding | Closed the wrong ticket by mistake | OPEN (still contested) |' "OPEN (still contested) + 'Closed…' fix → OPEN"
+ps_is 1 '| PS-1-1 | R1 | MAJOR | w | N/A on desktop but broken on mobile | pending | OPEN — see note |' "OPEN — see note → OPEN"
+# trailing-note attacks (iteration-1 Critical) incl. a note that is a close SENTENCE
+ps_is 1 '| PS-1-1 | R1 | CRITICAL | w | finding | fix | OPEN | not yet fixed |' "trailing note 'not yet fixed' → OPEN"
+ps_is 1 '| PS-1-1 | R1 | CRITICAL | w | finding | fix | OPEN | Resolved upstream but open here |' "trailing note leading with 'Resolved' (a SENTENCE, not a clean token) → OPEN (the case that broke iterations 1-2)"
+# liveness (iteration-2 Major): pipe in prose of a CLOSED row must NOT strand
+ps_is 0 '| PS-1-1 | R1 | CRITICAL | engine | regex /GO|NO-GO/ hardened · cite=INV-X | fixed | CLOSED |' "closed row, pipe in finding → CLOSED (not stranded)"
+ps_is 0 '| PS-2-1 | R2 | MAJOR | sh | use a || b not a && b | done | FIXED (v2) |' "closed row, '||'/'&&' in finding → CLOSED"
+# canonical happy paths + annotated closes
+ps_is 1 '| PS-1-1 | R1 | CRITICAL | api | broke | pending | OPEN |' "canonical OPEN → OPEN"
+ps_is 0 '| PS-1-1 | R1 | CRITICAL | api | broke | fix | CLOSED |' "canonical CLOSED → CLOSED"
+ps_is 0 '| PS-1-1 | R1 | CRITICAL | api | broke | fix | FIXED (v2) |' "annotated close FIXED (v2) → CLOSED"
+ps_is 0 '| PS-1-1 | R1 | CRITICAL | api | broke | fix | CLOSED: superseded by PS-2-1 |' "annotated close 'CLOSED: superseded' → CLOSED"
+# a PROSE cell containing a close-word must NOT strand a CLOSED row (status position is authoritative)
+ps_is 0 '| PS-1-1 | R1 | CRITICAL | Open redirect vuln | finding | fixed | CLOSED |' "closed row whose WHERE cell starts with 'Open' → CLOSED (status position read, not prose scan)"
+# CRLF on the status cell
+printf '| PS-1-1 | R1 | CRITICAL | w | finding | fix | OPEN |\r\n' > "$PT/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$PT/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5w: CRLF line ending on an OPEN status → OPEN (\r stripped)"
+# end-to-end: annotated-open Critical blocks SHIPPED; pipe-closed ledger converges
+EW="$SB/r5w-e2e"; mkps "$EW"; printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$EW/loop.log"
+printf '| PS-1-1 | R1 | CRITICAL | w | finding | Fixed in a draft | OPEN (regressed) |\n' > "$EW/review-ledger.md"
+bash "$SH" loop-converged "$EW" postship >/dev/null 2>&1; chk "$?" "1" "R5w-e2e: annotated-open Critical BLOCKS loop-converged (SHIPPED not authorized)"
+printf '| PS-1-1 | R1 | CRITICAL | e | /GO|NO-GO/ | fixed | CLOSED |\n| PS-1-2 | R1 | MAJOR | s | a || b | done | RESOLVED (v2) |\n' > "$EW/review-ledger.md"
+bash "$SH" loop-converged "$EW" postship >/dev/null 2>&1; chk "$?" "0" "R5w-e2e: pipe-containing CLOSED rows CONVERGE (not stranded)"
+
+# ── R5 composite-status regressions (iteration-4: the 4 remaining holes) ────────
+CT="$SB/r5x-ct"; mkdir -p "$CT"
+cps() { printf '%b' "$2" > "$CT/rl.md"; ( source "$SH"; set +e; c="$(ps_open_rows "$CT/rl.md")"; [ "$c" = "$1" ] ); chk "$?" "0" "R5x: $3"; }
+# THE trailing bare-close-word Critical: an OPEN row with a trailing cell that is a BARE close word
+cps 1 '| PS-1-1 | R1 | CRITICAL | auth | admin bypass | NOT FIXED YET | OPEN | N/A |\n' "trailing bare 'N/A' note on an OPEN row → OPEN (exact-OPEN-cell rescue) [was the iter-4 Critical]"
+cps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | OPEN | Closed |\n' "trailing bare 'Closed' note on OPEN → OPEN"
+cps 1 '| PS-1-1 | R1 | MAJOR | w | f | x | OPEN | Fixed |\n' "trailing bare 'Fixed' note on OPEN → OPEN"
+cps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | REOPENED | N/A (dup) |\n' "REOPENED + trailing 'N/A (dup)' → OPEN"
+# genuinely CLOSED (no bare-OPEN cell) still closes
+cps 0 '| PS-1-1 | R1 | CRITICAL | w | f | patched | N/A |\n' "closed row status N/A (no bare OPEN cell) → CLOSED"
+cps 0 '| PS-1-1 | R1 | CRITICAL | w | f | patched | CLOSED |\n' "canonical CLOSED → CLOSED"
+# blank-line crash (iter-4 Major): a ledger with blank lines must NOT abort
+printf '| PS-1-1 | R1 | CRITICAL | login | broke | patched | CLOSED |\n\n' > "$CT/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$CT/rl.md")"; [ "$c" = "0" ] ); chk "$?" "0" "R5x: trailing blank line → no awk crash, CLOSED counts 0 (was exit-2 abort)"
+printf '\n| PS-1-1 | R1 | CRITICAL | w | f | fix | OPEN |\n\n| PS-1-2 | R1 | MAJOR | w | f | fix | CLOSED |\n' > "$CT/rl.md"
+( source "$SH"; set +e; c="$(ps_open_rows "$CT/rl.md")"; [ "$c" = "1" ] ); chk "$?" "0" "R5x: interstitial + leading + trailing blank lines → no crash, 1 open (the OPEN row)"
+# natural close delimiters (iter-4 Major strand): period/comma/semicolon must CLOSE, not strand
+cps 0 '| PS-1-1 | R1 | CRITICAL | w | f | x | FIXED. |\n' "close with trailing period 'FIXED.' → CLOSED (no strand)"
+cps 0 '| PS-1-1 | R1 | CRITICAL | w | f | x | RESOLVED, verified |\n' "close with comma 'RESOLVED, verified' → CLOSED (no strand)"
+cps 0 '| PS-1-1 | R1 | CRITICAL | w | f | x | FIXED; done |\n' "close with semicolon 'FIXED; done' → CLOSED"
+cps 0 '| PS-1-1 | R1 | MAJOR | w | f | x | CLOSED! |\n' "close with bang 'CLOSED!' → CLOSED"
+# a status that only CONTAINS a close word but is not close (NOT FIXED / not a close token) → OPEN
+cps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | NOT FIXED |\n' "'NOT FIXED' status → OPEN (close word not at the start; stricter than ledger_open_rows)"
+cps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | UNRESOLVED |\n' "'UNRESOLVED' → OPEN (not a leading close word)"
+# 'FIXEDX' (close word glued to more letters) is NOT a close token → OPEN (word-boundary check)
+cps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | FIXEDLATER |\n' "'FIXEDLATER' (no boundary) → OPEN"
+# e2e: a CLOSED build with period/comma close forms converges (liveness)
+EX="$SB/r5x-e2e"; mkps "$EX"; printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$EX/loop.log"
+printf '| PS-1-1 | R1 | CRITICAL | w | f | x | FIXED. |\n| PS-1-2 | R1 | MAJOR | w | f | x | RESOLVED, verified |\n' > "$EX/review-ledger.md"
+bash "$SH" loop-converged "$EX" postship >/dev/null 2>&1; chk "$?" "0" "R5x-e2e: period/comma close forms CONVERGE (not stranded)"
+printf '| PS-1-1 | R1 | CRITICAL | w | admin bypass | not fixed | OPEN | N/A |\n' > "$EX/review-ledger.md"
+bash "$SH" loop-converged "$EX" postship >/dev/null 2>&1; chk "$?" "1" "R5x-e2e: trailing bare-close note on an OPEN Critical BLOCKS (ship not authorized)"
+
+# ── R5 iteration-5: annotated-open status + trailing close-note must count OPEN ──
+AO="$SB/r5y-ao"; mkdir -p "$AO"
+aps() { printf '%b' "$2" > "$AO/rl.md"; ( source "$SH"; set +e; c="$(ps_open_rows "$AO/rl.md")"; [ "$c" = "$1" ] ); chk "$?" "0" "R5y: $3"; }
+aps 1 '| PS-2-1 | R2 | CRITICAL | auth | admin token check skipped | OPEN (regressed) | N/A |\n' "annotated-open 'OPEN (regressed)' + trailing 'N/A' note → OPEN (clean-open-token rescue) [was the iter-5 Critical]"
+aps 1 '| PS-1-1 | R1 | CRITICAL | w | f | OPEN (regressed) | CLOSED |\n' "'OPEN (regressed)' + trailing 'CLOSED' → OPEN"
+aps 1 '| PS-1-1 | R1 | MAJOR | w | f | REOPENED (dup) | N/A |\n' "'REOPENED (dup)' + trailing 'N/A' → OPEN"
+aps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | OPEN — see PR |\n' "annotated-open with em-dash → OPEN"
+aps 1 '| PS-1-1 | R1 | CRITICAL | w | f | x | OPEN: pending |\n' "annotated-open with colon → OPEN"
+# closed row whose FIX cell reads 'fixed the join' but status CLOSED stays CLOSED (no false-open from prose)
+aps 0 '| PS-1-1 | R1 | CRITICAL | w | finding | fixed the join | CLOSED |\n' "closed row, fix cell 'fixed the join' → CLOSED (prose close-word does not open it)"
+aps 0 '| PS-1-1 | R1 | CRITICAL | w | Open redirect vuln | patched | CLOSED |\n' "closed row, finding 'Open redirect vuln' → CLOSED (prose 'Open…' is not a clean open token)"
+# e2e: annotated-open + trailing note BLOCKS ship
+EY="$SB/r5y-e2e"; mkps "$EY"; printf '1|postship|1|CLEAN|aa|0\n1|postship|2|CLEAN|bb|0\n' > "$EY/loop.log"
+printf '| PS-2-1 | R2 | CRITICAL | auth | admin bypass | OPEN (regressed) | N/A |\n' > "$EY/review-ledger.md"
+bash "$SH" loop-converged "$EY" postship >/dev/null 2>&1; chk "$?" "1" "R5y-e2e: annotated-open + trailing close-note BLOCKS loop-converged (ship not authorized)"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"

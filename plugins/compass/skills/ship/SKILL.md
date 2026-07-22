@@ -37,8 +37,8 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 5. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy), record what happened.
 
 ## Emit
-**Terminal-status guard (v0.7.0):** before recording SHIPPED, run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** (a stage receipt is missing/soft-passed, or prod-verify is unchecked). Only on PASS write the status.
-`progress.md` = `SHIPPED` (or `ROLLED-BACK`). **EMIT RECEIPT**:
+**Terminal-status guard (v0.7.0, re-ordered v0.13.0):** FIRST run `compass.sh postship-required <dir>`. **N/A / waived** → run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write SHIPPED (exactly the pre-v0.12 flow). **REQUIRED** → do NOT attempt `lifecycle-audit … SHIPPED` yet (G-O1 correctly fails with zero rounds — that is not a broken chain, it is the loop demanding to run): emit the ship receipt, set `**Status:** post-ship (round 1/cap)`, and enter §5; `lifecycle-audit … SHIPPED` runs only after `loop-converged` exits 0, and only then is SHIPPED written.
+**EMIT the ship receipt** (both paths emit it — the deploy happened):
 ```
 ## RECEIPT — ship · <slug> · PASS
 - [x] gate: review-build receipt OK
@@ -46,13 +46,18 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 - [x] prod reconcile: `compass.sh reconcile <actual> <gold> <tol>` → PASS
 - [x] observability emits in prod: `<cmd>` → <signal seen>
 - [x] critical flow smoke (prod, read-only): <result>
-- [x] post-ship loop: <converged round n/cap · waived: <reason> · legacy-N/A> — `compass.sh loop-converged <dir> postship` → <exit>
+- [x] post-ship loop: <open (round 1/cap — §5 in progress) · converged round n/cap · waived: <reason> · legacy-N/A> — `compass.sh loop-converged <dir> postship` → <exit>
+<!-- TEMPLATE: observation-box -->
 - [x] observation <facet>: `<capture-cmd>` → evidence/round-1/<file>
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> ship`.
 
+**Then set the terminal status — by branch (NEVER write SHIPPED unconditionally):**
+- **N/A / waived path:** run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write `progress.md` = `**Status:** SHIPPED` (or `ROLLED-BACK` on a rollback). Done — no §5. (The post-ship loop box reads `waived: <reason>` or `legacy-N/A`.)
+- **REQUIRED path:** do NOT run `lifecycle-audit … SHIPPED` yet and do NOT write SHIPPED — write `progress.md` = `**Status:** post-ship (round 1/cap)` (the receipt's post-ship box reads `open (round 1/cap — §5 in progress)`), then enter §5. SHIPPED is written only at §5.6, after `loop-converged` passes AND `lifecycle-audit … SHIPPED` re-runs clean.
+
 ## §5 — Post-ship critique loop (v0.12.0): SHIPPED is not the finish line
-After the Emit receipt passes `lifecycle-audit`, run `compass.sh postship-required <dir>`:
+(Entered from §Emit when `postship-required` said REQUIRED — the Emit receipt exists; the SHIPPED audit deliberately has NOT run yet.) Recap of the policy:
 - **N/A / waived** (deploy waived · `post-ship-loop: off — <reason>` · legacy header-less contract) → record `**Status:** SHIPPED` exactly as before. Done.
 - **REQUIRED** (header `on (clean N / cap M)` — the v0.12 contract skill writes it for every new shipping build) → the loop below. First, pre-flight: `compass.sh postship-signal <dir>` — **non-zero → `compass.sh fire-g2 <dir> "post-ship: no external verifier"`** (the loop NEVER grades on self-critique alone). Set column-0 `**Status:** post-ship (round 1/cap)`.
 
@@ -68,7 +73,7 @@ After the Emit receipt passes `lifecycle-audit`, run `compass.sh postship-requir
    ```
 4. **REGISTER** — `compass.sh loop-round <dir> postship <CLEAN|MATERIAL> --sig $(git rev-parse --short=12 HEAD)` (non-git target → `--sig nogit`). The gate owns every refusal (cap · receipt · evidence · ledger · order · stalls · budget-in-auto). A refusal names its code — fix the cause or fire-g2; never re-word the receipt to slip past.
 5. **MATERIAL →** smallest fix → `post-merge-check` → **gated mode: present a 4-option AskUserQuestion menu BEFORE the redeploy (a DISTINCT menu — never the canonical GATE block)** → re-claim ship lock → redeploy via the repo's own path (full Procedure 1-4) → close the PS rows with re-run proof → `ship-release` → fresh ship receipt → next round.
-6. **CONVERGED** — `compass.sh loop-converged <dir> postship` exit 0 → write `**Status:** SHIPPED (post-ship CONVERGED n/cap)` (only now does `lifecycle-audit … SHIPPED` pass its G-O1). 
+6. **CONVERGED** — `compass.sh loop-converged <dir> postship` exit 0 → update the ship receipt's post-ship box to `converged round n/cap` → run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** (fix the named gap, re-audit) — and **only on PASS** write `progress.md` = `**Status:** SHIPPED (post-ship CONVERGED n/cap)`. Audit BEFORE the terminal write, never after. 
 7. **CAP with open findings** — `compass.sh fire-g2 <dir> "post-ship cap: <open PS ids>"` + a 4-option menu: **Accept & ship-as-is** (write the pinned column-0 line into receipts.md:
    <!-- TEMPLATE: user-accepted -->
    `user-accepted: ship-as-is — <PS ids> · <ISO ts>`

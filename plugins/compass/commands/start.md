@@ -14,6 +14,7 @@ Compass's lifecycle is an explicit directed graph — drawn at design time, neve
 
 - **The org-graph (fixed):** contract → review-contract → plan → review-plan → build → review-build → ship. Nodes are stages; **edges are script gates** (`compass.sh gate`, exit codes) — the next stage is never chosen by a model.
 - **Independent verifier nodes:** the adversarial reviews, the cold-critic (fresh subagent, cold screenshots only, 2 consecutive GOs on one tree sha), and the **post-ship critique loop** (v0.12.0) — a bounded cycle after ship: critique the LIVE system against the contract, loop back on material findings, terminate on N consecutive clean rounds or the cap, `SHIPPED` unwritable until `loop-converged` passes. A verifier that shares the builder's context shares its blind spots — Compass's critics get fresh context and on-disk evidence only.
+- **Collapsibility rule:** every node must justify itself (a distinct specialty, a parallel fan-out, auditable branching, or independent verification) — a node you can't tie to a signal gets collapsed back into the loop it came from.
 - **Bounded cycles, evidence-based stop rules:** every loop carries a cap, a convergence bound read from the contract header, stall/oscillation detection, and budget metering owned by the registration gate itself.
 
 (Vocabulary kept Compass-native; the July-2026 "graph engineering" discourse this release coincided with is cited in the CHANGELOG.)
