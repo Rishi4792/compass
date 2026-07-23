@@ -14,188 +14,318 @@
 <meta name="twitter:image" content="https://rishi4792.github.io/compass/compass-film-poster.jpg">
 <style>
   :root{
-    --bg:#080b16; --bg2:#0d1430; --panel:#111834; --line:#26305a;
-    --ink:#eceeffe0; --ink-strong:#f6f7ff; --muted:#9aa0c0;
-    --violet:#a78bfa; --violet-2:#8a63d2; --mint:#5eead4; --amber:#f6ad9c;
-    --radius:14px; --maxw:960px;
-    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
-    --page-grad:radial-gradient(1200px 700px at 50% -10%, #1a2350 0%, rgba(13,20,48,0) 60%),
-                linear-gradient(180deg,#0a0e20 0%, var(--bg) 55%, #05070f 100%);
+    --accent:#7C74FF; --accentB:#B8B2FF; --accentDeep:#5B52F0;
+    --void:#05060F; --deep:#0A0C22; --paper:#EFEDFF; --ink:#D9D4FF;
+    --mut:#8E88C4; --mut2:#5A5690; --green:#3BE6AD; --red:#FF6152; --amber:#FFC24B;
+    --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'Inter',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   }
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{
-    background:var(--page-grad);
-    color:var(--ink); font-family:var(--sans);
-    line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden;
-  }
-  a{color:var(--violet)}
-  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
-  /* nav */
-  .nav{display:flex; align-items:center; justify-content:space-between; padding:20px 0; font-size:14px}
-  .brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:.14em; color:var(--ink-strong); text-transform:uppercase; font-size:13px}
-  .brand .dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--violet);position:relative}
-  .brand .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:conic-gradient(var(--violet),transparent 60%)}
-  .nav a.ghost{color:var(--muted); text-decoration:none; border:1px solid var(--line); padding:7px 14px; border-radius:9px}
-  .nav a.ghost:hover{color:var(--ink-strong); border-color:var(--violet-2)}
-  /* hero */
-  .hero{text-align:center; padding:34px 0 8px}
-  .eyebrow{font-size:12.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--violet); font-weight:700; margin-bottom:18px}
-  h1{font-size:clamp(30px,6.2vw,58px); line-height:1.04; margin:0 0 16px; letter-spacing:-.02em; color:var(--ink-strong); font-weight:800}
-  h1 .g{background:linear-gradient(92deg,var(--violet) 0%,#c4b5fd 60%,var(--mint) 130%);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{font-size:clamp(16px,2.3vw,20px); color:var(--muted); max-width:640px; margin:0 auto 26px}
-  .sub b{color:var(--ink)}
-  /* film */
-  .film{position:relative; max-width:900px; margin:6px auto 0; border-radius:var(--radius); overflow:hidden;
-    border:1px solid var(--line); box-shadow:0 30px 80px -30px #000, 0 0 0 1px #ffffff08 inset}
-  .film video{display:block; width:100%; height:auto; background:#05070f}
-  .cta{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:26px 0 6px}
-  .btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:650;font-size:15px;padding:12px 20px;border-radius:11px}
-  .btn.primary{background:linear-gradient(180deg,#9a78f0,#7b53c9);color:#fff;box-shadow:0 10px 30px -10px #7b53c9aa}
-  .btn.primary:hover{filter:brightness(1.06)}
-  .btn.secondary{color:var(--ink);border:1px solid var(--line);background:#ffffff06}
-  .btn.secondary:hover{border-color:var(--violet-2);color:var(--ink-strong)}
-  /* install */
-  .install{max-width:620px;margin:24px auto 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;text-align:left;overflow:hidden}
-  .install .bar{display:flex;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:center}
-  .install .bar i{width:11px;height:11px;border-radius:50%;display:block}
-  .install .bar .t{margin-left:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
-  .install pre{margin:0;padding:16px 18px;font-family:var(--mono);font-size:13.5px;color:var(--ink);overflow-x:auto}
-  .install .p{color:var(--violet)} .install .c{color:#7f87ab}
-  /* proof */
-  .proof{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:56px 0 10px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
-  .card h3{margin:0 0 8px;font-size:16px;color:var(--ink-strong)}
-  .card p{margin:0;font-size:14px;color:var(--muted)}
-  .card .k{font-family:var(--mono);font-size:12px;color:var(--mint);display:block;margin-top:10px}
-  /* section head */
-  .section-head{text-align:center;margin:60px 0 4px}
-  .section-head .eyebrow{margin-bottom:10px}
-  .section-head h2{font-size:clamp(24px,4.4vw,40px);margin:0;letter-spacing:-.02em;color:var(--ink-strong);font-weight:800}
-  .section-head h2 .g{background:linear-gradient(92deg,var(--violet),#c4b5fd 70%,var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .section-head p{color:var(--muted);max-width:620px;margin:12px auto 0;font-size:15px}
-  /* team */
-  .team{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0 0}
-  .team .role{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center}
-  .team .role .ic{font-size:22px;display:block;margin-bottom:9px}
-  .team .role h4{margin:0 0 3px;font-size:15px;color:var(--ink-strong)}
-  .team .role .r{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--violet);display:block;margin-bottom:9px}
-  .team .role p{margin:0;font-size:12.5px;color:var(--muted)}
-  /* engine */
-  .engine-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:22px 0 0}
-  .engine-grid .card h3{color:var(--violet)}
-  @media (max-width:720px){ .team{grid-template-columns:1fr 1fr} .engine-grid{grid-template-columns:1fr} }
-  /* flow */
-  .flow{margin:52px auto 8px;text-align:center}
-  .flow .steps{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;font-family:var(--mono);font-size:13px;color:var(--muted)}
-  .flow .steps b{color:var(--ink)} .flow .steps .arw{color:var(--violet-2)}
-  .flow .note{color:var(--muted);font-size:13.5px;margin-top:14px}
-  .flow .note .mint{color:var(--mint)}
-  footer{border-top:1px solid var(--line);margin-top:64px;padding:26px 0 60px;color:var(--muted);font-size:13.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
-  footer a{color:var(--muted)}
-  @media (max-width:720px){ .proof{grid-template-columns:1fr} }
-  @media (prefers-color-scheme:light){
-    :root{--bg:#f4f5fb;--ink:#20243a;--ink-strong:#0d1024;--muted:#5a6084;--panel:#ffffff;--line:#e2e5f2;--violet:#6b46d0;--violet-2:#7c3aed;--mint:#0d9488;
-      --page-grad:radial-gradient(1000px 600px at 50% -10%,#e9e6fb 0%,rgba(244,245,251,0) 60%),linear-gradient(180deg,#f7f7fd,#eef0f9)}
-    .btn.primary{color:#fff}
-    .install pre .c{color:#9aa0b8}
-  }
-  :root[data-theme="dark"]{--bg:#080b16;--ink:#eceffe0;--ink-strong:#f6f7ff;--muted:#9aa0c0;--panel:#111834;--line:#26305a;--violet:#a78bfa;--violet-2:#8a63d2;--mint:#5eead4;
-    --page-grad:radial-gradient(1200px 700px at 50% -10%,#1a2350 0%,rgba(13,20,48,0) 60%),linear-gradient(180deg,#0a0e20 0%,#080b16 55%,#05070f 100%)}
-  :root[data-theme="dark"] .install pre .c{color:#7f87ab}
-  :root[data-theme="light"]{--bg:#f4f5fb;--ink:#20243a;--ink-strong:#0d1024;--muted:#5a6084;--panel:#ffffff;--line:#e2e5f2;--violet:#6b46d0;--violet-2:#7c3aed;--mint:#0d9488;
-    --page-grad:radial-gradient(1000px 600px at 50% -10%,#e9e6fb 0%,rgba(244,245,251,0) 60%),linear-gradient(180deg,#f7f7fd,#eef0f9)}
-  :root[data-theme="light"] .btn.primary{color:#fff}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .mono{font-family:var(--mono)}
+  a{color:var(--accentB);text-decoration:none}
+
+  /* ===== fixed cinematic environment (drifts behind everything) ===== */
+  #bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% -10%, #171A3E 0%, #0C0E28 40%, #070818 68%, #04050E 100%)}
+  .rays{position:absolute;left:50%;top:-360px;width:1900px;height:1400px;transform:translateX(-50%);
+    background:conic-gradient(from 178deg at 50% 0%, transparent 0deg, rgba(150,140,255,.09) 3deg, transparent 7deg, rgba(150,140,255,.06) 12deg, transparent 17deg, rgba(150,140,255,.10) 22deg, transparent 27deg, rgba(150,140,255,.05) 33deg, transparent 39deg);
+    filter:blur(8px);mix-blend-mode:screen;opacity:.9}
+  .rays.r2{transform:translateX(-50%) scaleX(-1);opacity:.7}
+  .bloom{position:absolute;left:50%;top:20%;transform:translate(-50%,-50%);width:1200px;height:900px;
+    background:radial-gradient(closest-side, rgba(150,142,255,.24), rgba(120,112,255,.06) 44%, transparent 70%);filter:blur(12px)}
+  .haze{position:absolute;border-radius:50%;filter:blur(70px);mix-blend-mode:screen}
+  .hL{left:2%;top:36%;width:560px;height:400px;background:radial-gradient(closest-side, rgba(90,84,180,.22), transparent);opacity:.5}
+  .hR{right:1%;top:58%;width:600px;height:440px;background:radial-gradient(closest-side, rgba(70,66,150,.20), transparent);opacity:.45}
+  #dust{position:absolute;inset:0}#dust .d{position:absolute;border-radius:50%;background:#CFC9FF;will-change:transform,opacity}
+  #grain{position:fixed;inset:-30%;z-index:40;opacity:.09;mix-blend-mode:overlay;pointer-events:none}
+  #vign{position:fixed;inset:0;z-index:39;pointer-events:none;background:radial-gradient(120% 90% at 50% 30%, transparent 40%, rgba(2,3,10,.78) 100%)}
+  /* letterbox HUD bars (fixed, mission-control) */
+  .bar{position:fixed;left:0;right:0;height:34px;z-index:41;background:rgba(3,4,12,.5);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,4vw,40px)}
+  .bar.top{top:0;border-bottom:1px solid rgba(124,116,255,.14)}
+  .bar.bot{bottom:0;border-top:1px solid rgba(124,116,255,.14)}
+  .hud{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--mut)}
+  .hud .g{color:var(--green)} .hud .a{color:var(--accentB)}
+  @media (max-width:640px){ .bar .hud.hide{display:none} }
+
+  /* ===== layout ===== */
+  main{position:relative;z-index:2;max-width:1000px;margin:0 auto;padding:0 22px}
+  section{padding:clamp(64px,11vh,120px) 0}
+  .kick{text-align:center;font-size:12px;font-weight:700;letter-spacing:.4em;text-transform:uppercase;color:var(--mut);margin-bottom:22px}
+  .kick .a{color:var(--accentB)}
+  .reveal{opacity:0;transform:translateY(26px) scale(.985);transition:opacity .9s cubic-bezier(.16,1,.3,1),transform 1.05s cubic-bezier(.16,1,.3,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ===== HERO ===== */
+  .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:34px}
+  .compass{position:relative;width:132px;height:132px;margin:0 auto 26px}
+  .compass svg{width:100%;height:100%;overflow:visible}
+  .lockflash{position:absolute;inset:-40px;border-radius:50%;background:radial-gradient(closest-side, rgba(203,198,255,.55), transparent 60%);opacity:0;pointer-events:none}
+  .shock{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--accentB);transform:translate(-50%,-50%) scale(1);opacity:0;pointer-events:none}
+  .wordwrap{position:relative;height:clamp(72px,15vw,168px);width:100%}
+  .word,.wordGlow{position:absolute;left:0;right:0;top:0;font-weight:900;letter-spacing:-.045em;line-height:1;
+    font-size:clamp(64px,16vw,190px)}
+  .wordGlow{color:#8E86FF;filter:blur(26px);opacity:.55}
+  .word{color:var(--paper);filter:url(#spray)}
+  .word .sweep{background:linear-gradient(100deg,var(--paper) 0%,var(--paper) 40%,#fff 50%,var(--paper) 60%,var(--paper) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    background-size:280% 100%;animation:sweep 6s ease-in-out infinite}
+  @keyframes sweep{0%,100%{background-position:120% 0}45%{background-position:-20% 0}}
+  h1.tag{font-size:clamp(22px,3.4vw,34px);font-weight:800;letter-spacing:-.02em;color:var(--paper);margin:20px auto 0;max-width:720px;line-height:1.12}
+  h1.tag .g{background:linear-gradient(96deg,var(--accentB),#d8d4ff 55%,var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:clamp(15px,2vw,18px);color:var(--mut);max-width:560px;margin:16px auto 0}
+  .lede b{color:var(--ink);font-weight:700}
+
+  /* lit terminal panel (real depth, not cards) */
+  .panel{background:linear-gradient(180deg, rgba(23,18,58,.82), rgba(12,9,34,.9));
+    border:1px solid rgba(124,116,255,.24);border-radius:15px;
+    box-shadow:0 44px 120px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06) inset;overflow:hidden;text-align:left}
+  .panel .tb{display:flex;align-items:center;gap:10px;padding:13px 20px;border-bottom:1px solid rgba(124,116,255,.14);background:rgba(255,255,255,.02)}
+  .panel .tb i{width:9px;height:9px;border-radius:50%}
+  .panel .tb .c1{background:#ff5f57}.panel .tb .c2{background:#febc2e}.panel .tb .c3{background:#28c840}
+  .panel .tb .cmd{font-size:13px;font-weight:600;color:#CFC9FF;margin-left:6px;font-family:var(--mono)}
+  .panel .tb .cmd .p{color:var(--accentB)}
+  .panel .tb .st{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--green)}
+  .panel pre{margin:0;padding:16px 20px;font-family:var(--mono);font-size:13px;line-height:1.75;color:var(--ink);overflow-x:auto}
+  .panel pre .p{color:var(--accentB)} .panel pre .c{color:var(--mut2)} .panel pre .n{color:var(--green);font-weight:700}
+  .panel .row{display:flex;align-items:center;gap:12px;padding:8px 20px;font-family:var(--mono);font-size:13.5px;border-top:1px solid rgba(124,116,255,.06)}
+  .panel .row .chk{color:var(--green);filter:drop-shadow(0 0 6px rgba(59,230,173,.5))}
+  .panel .row .x{color:var(--amber)}
+  .panel .row .tx{color:#D9D4FF}.panel .row .tx b{color:#fff;font-weight:800}.panel .row .tx .n{color:var(--green);font-weight:800}
+
+  .install{max-width:560px;margin:30px auto 0}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:14.5px;padding:13px 22px;border-radius:11px;letter-spacing:.01em;
+    transition:transform .5s cubic-bezier(.16,1.4,.3,1),filter .3s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn.primary{background:linear-gradient(180deg,#8b7bf5,#6a52d6);color:#fff;box-shadow:0 14px 34px -12px var(--accentDeep)}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{color:var(--ink);border:1px solid rgba(124,116,255,.3);background:rgba(255,255,255,.03)}
+  .btn.ghost:hover{border-color:var(--accent)}
+  .scrollcue{margin-top:44px;font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--mut2);animation:bob 2.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0);opacity:.6}50%{transform:translateY(5px);opacity:1}}
+
+  /* ===== section heads ===== */
+  .shead{text-align:center;margin-bottom:34px}
+  .shead h2{font-size:clamp(26px,4.6vw,46px);font-weight:900;letter-spacing:-.03em;color:var(--paper);line-height:1.02}
+  .shead h2 .g{background:linear-gradient(96deg,var(--accentB),#d8d4ff 60%,var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .shead p{color:var(--mut);max-width:600px;margin:14px auto 0;font-size:15px}
+
+  /* ===== film frame ===== */
+  .filmframe{position:relative;border:1px solid rgba(124,116,255,.24);border-radius:16px;overflow:hidden;
+    box-shadow:0 50px 140px -40px #000, 0 0 0 1px rgba(255,255,255,.04) inset, 0 0 90px -30px var(--accentDeep)}
+  .filmframe .fhud{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;justify-content:space-between;
+    padding:10px 16px;font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);
+    background:linear-gradient(180deg,rgba(4,5,14,.7),transparent);pointer-events:none}
+  .filmframe video{display:block;width:100%;height:auto;background:#04050E}
+
+  /* ===== roster (personas, HUD) ===== */
+  .roster{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .who{border:1px solid rgba(124,116,255,.18);border-radius:14px;padding:20px 18px;background:linear-gradient(180deg,rgba(20,16,48,.5),rgba(8,9,24,.4));position:relative;overflow:hidden}
+  .who::before{content:"";position:absolute;left:0;top:0;width:100%;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.5}
+  .who .id{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accentB);margin-bottom:8px}
+  .who h3{font-size:17px;color:var(--paper);margin-bottom:2px;letter-spacing:-.01em}
+  .who .role{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut2);margin-bottom:11px}
+  .who p{font-size:13px;color:var(--mut);line-height:1.5}
+  .who.adv{border-color:rgba(255,97,82,.34)}.who.adv::before{background:linear-gradient(90deg,transparent,var(--red),transparent)}
+  .who.adv .id{color:var(--red)}
+  .who .creed{margin-top:11px;font-family:var(--mono);font-size:11px;color:var(--ink);border-left:2px solid var(--accent);padding-left:9px;font-style:italic}
+  .who.adv .creed{border-color:var(--red)}
+
+  /* ===== engine (loops + graphs) ===== */
+  .pipe{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;margin:8px auto 18px;max-width:760px}
+  .node{border:1px solid rgba(124,116,255,.3);border-radius:9px;padding:9px 13px;color:var(--paper);font-weight:700;background:rgba(20,16,48,.5)}
+  .node.gate{border-color:rgba(59,230,173,.4);color:var(--green);font-size:11px;padding:9px 10px}
+  .node.loop{border-color:var(--red);color:var(--red);box-shadow:0 0 26px -6px var(--red)}
+  .arw{color:var(--accent)}
+  .engine-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+  .egc{border:1px solid rgba(124,116,255,.18);border-radius:14px;padding:22px;background:linear-gradient(180deg,rgba(20,16,48,.45),rgba(8,9,24,.35))}
+  .egc h3{color:var(--accentB);font-size:16px;margin-bottom:8px}
+  .egc p{color:var(--mut);font-size:14px}
+
+  footer{position:relative;z-index:2;border-top:1px solid rgba(124,116,255,.14);margin-top:20px;padding:30px 22px 70px;
+    max-width:1000px;margin-left:auto;margin-right:auto;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;color:var(--mut2);font-size:12.5px;font-family:var(--mono)}
+
+  @media (max-width:760px){ .roster{grid-template-columns:1fr 1fr} .engine-grid{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <nav class="nav">
-    <span class="brand"><span class="dot"></span> Compass</span>
-    <a class="ghost" href="https://github.com/Rishi4792/compass">GitHub ↗</a>
-  </nav>
+<!-- fractal-noise defs: buzz spray + film grain -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <filter id="spray" x="-8%" y="-24%" width="116%" height="150%"><feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="2" seed="5" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="0.35"/></filter>
+  <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter>
+</defs></svg>
 
-  <header class="hero">
-    <div class="eyebrow">An autonomous engineering team · in one Claude Code plugin</div>
-    <h1>Your AI says <span class="g">“done.”</span><br>Compass makes it prove it.</h1>
-    <p class="sub">Write <b>one contract</b>. Walk away. Compass plans, builds, tests, and ships to spec —
-      and it won't call anything <b>done</b> until a real check passes.</p>
+<div id="bg">
+  <div class="rays" id="rays1"></div><div class="rays r2" id="rays2"></div>
+  <div class="bloom"></div><div class="haze hL"></div><div class="haze hR"></div>
+  <div id="dust"></div>
+</div>
+<div id="grain"><svg width="100%" height="100%"><rect width="100%" height="100%" filter="url(#noise)"/></svg></div>
+<div id="vign"></div>
 
-    <div class="film">
-      <video src="compass-film.mp4" poster="compass-film-poster.jpg"
-             autoplay muted loop playsinline controls preload="metadata"></video>
+<div class="bar top"><span class="hud">&#9673;&nbsp; Compass <span class="hud hide">&nbsp;·&nbsp; Autonomous Build</span></span><span class="hud">V0.13 &nbsp;·&nbsp; <span class="g">Gates Armed</span></span></div>
+<div class="bar bot"><span class="hud hide">Contract &rarr; Ship</span><span class="hud a">Proof, not vibes</span><span class="hud hide">MIT · Open Source</span></div>
+
+<main>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="kick">An autonomous engineering team <span class="a">·</span> in one Claude Code plugin</div>
+
+    <div class="compass" id="compass">
+      <div class="lockflash" id="lockflash"></div><div class="shock" id="shock"></div>
+      <svg viewBox="0 0 132 132" fill="none">
+        <circle cx="66" cy="66" r="60" stroke="rgba(124,116,255,.28)" stroke-width="1"/>
+        <circle cx="66" cy="66" r="50" stroke="rgba(124,116,255,.14)" stroke-width="1"/>
+        <g stroke="rgba(184,178,255,.5)" stroke-width="1.4">
+          <line x1="66" y1="8" x2="66" y2="18"/><line x1="66" y1="114" x2="66" y2="124"/>
+          <line x1="8" y1="66" x2="18" y2="66"/><line x1="114" y1="66" x2="124" y2="66"/></g>
+        <text x="66" y="26" text-anchor="middle" fill="var(--mut)" font-size="9" font-family="monospace">N</text>
+        <g id="needle" transform="rotate(-300 66 66)">
+          <path d="M66 20 L72 66 L66 74 L60 66 Z" fill="var(--accentB)"/>
+          <path d="M66 112 L60 66 L66 58 L72 66 Z" fill="#3a3670"/>
+          <circle cx="66" cy="66" r="4.5" fill="var(--paper)"/>
+        </g>
+      </svg>
     </div>
 
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/Rishi4792/compass">Get it on GitHub</a>
-      <a class="btn secondary" href="https://github.com/Rishi4792/compass#readme">Read the docs</a>
+    <div class="wordwrap">
+      <div class="wordGlow">COMPASS</div>
+      <div class="word"><span class="sweep">COMPASS</span></div>
     </div>
 
-    <div class="install">
-      <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="t">claude — install</span></div>
+    <h1 class="tag">Your AI says <span class="g">“done.”</span> Compass makes it prove it.</h1>
+    <p class="lede">Write <b>one contract</b>. Walk away. It plans, builds, tests, and ships to spec —
+      and won't call anything done until a real check passes.</p>
+
+    <div class="panel install">
+      <div class="tb"><i class="c1"></i><i class="c2"></i><i class="c3"></i><span class="cmd"><span class="p">~</span> claude — install</span><span class="st">MIT</span></div>
       <pre><span class="p">/plugin</span> marketplace add Rishi4792/compass
 <span class="p">/plugin</span> install compass@compass
-<span class="c"># then: /compass:start  ·  write the contract, walk away</span></pre>
+<span class="c"># then /compass:start — write the contract, walk away</span></pre>
     </div>
-  </header>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/Rishi4792/compass">Get it on GitHub</a>
+      <a class="btn ghost" href="#film">Watch the film ▸</a>
+    </div>
+    <div class="scrollcue">scroll · seeking true north</div>
+  </section>
 
-  <section class="proof">
-    <div class="card">
-      <h3>It catches its own bugs</h3>
-      <p>Every release is built by running Compass on Compass. Its own adversarial reviews caught a Critical in its own gate — before it shipped.</p>
-      <span class="k">dogfooded · every release since v0.5.0</span>
-    </div>
-    <div class="card">
-      <h3>A real gate, not a prompt</h3>
-      <p>The build advances only on a passing exit code an agent can't argue with. Correctness is arithmetic, not opinion.</p>
-      <span class="k">349 selftest + 94 smoke · all green</span>
-    </div>
-    <div class="card">
-      <h3>You choose how hands-off</h3>
-      <p>Gated at every step, or fully autonomous — bounded by a budget it can't exceed, so a walk-away build can't run away.</p>
-      <span class="k">--auto · two human gates only</span>
+  <!-- FILM -->
+  <section id="film" class="reveal">
+    <div class="shead"><div class="kick">The film <span class="a">·</span> 59s</div>
+      <h2>Write the contract. <span class="g">Walk away.</span></h2></div>
+    <div class="filmframe">
+      <video src="compass-film.mp4" poster="compass-film-poster.jpg" autoplay muted loop playsinline controls preload="metadata"></video>
     </div>
   </section>
 
-  <div class="section-head">
-    <div class="eyebrow">Meet the team</div>
-    <h2>Four specialists. <span class="g">One plugin.</span></h2>
-    <p>Not a prompt, not a checklist — a full engineering org, autonomous, with one contract as the single source of truth they all answer to.</p>
-  </div>
-  <section class="team">
-    <div class="role"><span class="ic">🏛️</span><h4>The Architect</h4><span class="r">Engineering Manager</span><p>Locks the contract, scans the codebase, writes the plan — every step with a verify.</p></div>
-    <div class="role"><span class="ic">⌨️</span><h4>The Builder</h4><span class="r">Coder</span><p>Builds one step at a time. A step isn't done until its check passes. Proof, not vibes.</p></div>
-    <div class="role"><span class="ic">🎯</span><h4>The Adversary</h4><span class="r">QA · Review</span><p>Assumes it's wrong and tries to break it — and loops until it can't.</p></div>
-    <div class="role"><span class="ic">🚀</span><h4>The Operator</h4><span class="r">DevOps</span><p>Ships via your own deploy path, re-checks the number on prod — or holds.</p></div>
-  </section>
-
-  <div class="section-head">
-    <div class="eyebrow">The engine</div>
-    <h2>Loops and graphs, <span class="g">with real edges.</span></h2>
-    <p>The architecture serious builders are converging on — and one you can install today.</p>
-  </div>
-  <section class="engine-grid">
-    <div class="card"><h3>It's a graph</h3><p>The stages are nodes; the edges are exit-code scripts. The build advances only when a gate returns zero — never because a model decided it "looked done." A state machine doesn't verify; this does.</p></div>
-    <div class="card"><h3>And it's loops</h3><p>Adversarial reviews repeat until two clean rounds; a post-ship critic runs on the live system until it finds nothing. Every loop is bounded — and when it runs itself, by a budget it can't exceed.</p></div>
-  </section>
-
-  <section class="flow">
-    <div class="steps">
-      <b>contract</b> <span class="arw">→</span> review <span class="arw">→</span>
-      <b>plan</b> <span class="arw">→</span> review <span class="arw">→</span>
-      <b>build</b> <span class="arw">→</span> review <span class="arw">→</span> <b>ship</b> <span class="arw">↻</span> <span style="color:var(--mint)">post-ship critic</span>
+  <!-- PROOF (terminal depth — real work) -->
+  <section class="reveal">
+    <div class="shead"><div class="kick">Proof, not vibes</div>
+      <h2>It caught a Critical — <span class="g">in its own code.</span></h2>
+      <p>Every release is built by running Compass on Compass. Its own adversarial review keeps catching the bugs the project exists to kill — before <span class="mono">main</span>.</p></div>
+    <div class="panel" style="max-width:660px;margin:0 auto">
+      <div class="tb"><i class="c1"></i><i class="c2"></i><i class="c3"></i><span class="cmd"><span class="p">$</span> compass review --build</span><span class="st">Adversarial</span></div>
+      <div class="row"><span class="chk">✓</span><span class="tx"><b>CI</b> <span class="n">349</span> selftest · <span class="n">94</span> smoke — all green</span></div>
+      <div class="row"><span class="chk">✓</span><span class="tx">secret + license scan · <b>clean</b></span></div>
+      <div class="row"><span class="chk">✓</span><span class="tx">reconcile · arithmetic, not opinion — <b>PASS</b></span></div>
+      <div class="row"><span class="x">◉</span><span class="tx">adversarial review · <i>“assume it's wrong, try to break it”</i> → caught a Critical, looped, re-proved</span></div>
     </div>
-    <p class="note">Every arrow is an exit-code gate — never a model deciding it “looked done.”
-       <span class="mint">Nothing ships on a claim.</span></p>
   </section>
 
-  <footer>
-    <span>MIT © 2026 Rishi Kapoor</span>
-    <span><a href="https://github.com/Rishi4792/compass">github.com/Rishi4792/compass</a></span>
-  </footer>
+  <!-- ROSTER -->
+  <section class="reveal">
+    <div class="shead"><div class="kick">Meet the team</div>
+      <h2>Four specialists. <span class="g">One plugin.</span></h2>
+      <p>Not a prompt, not a checklist — a full engineering org, autonomous, answering to one contract.</p></div>
+    <div class="roster">
+      <div class="who"><div class="id">01 · EM</div><h3>The Architect</h3><div class="role">Engineering Manager</div><p>Locks the contract, scans the codebase, writes the plan — every step with a verify.</p></div>
+      <div class="who"><div class="id">02 · Coder</div><h3>The Builder</h3><div class="role">One step at a time</div><p>A step isn't done until its check passes.</p><div class="creed">proof, not vibes</div></div>
+      <div class="who adv"><div class="id">03 · QA</div><h3>The Adversary</h3><div class="role">Review · red-team</div><p>Tries to break every output — and loops until it can't.</p><div class="creed">assume it's wrong</div></div>
+      <div class="who"><div class="id">04 · DevOps</div><h3>The Operator</h3><div class="role">Ship · verify</div><p>Ships via your own deploy path, re-checks the number on prod — or holds.</p></div>
+    </div>
+  </section>
 
-</div>
+  <!-- ENGINE: loops + graphs -->
+  <section class="reveal">
+    <div class="shead"><div class="kick">The engine</div>
+      <h2>Loops and graphs, <span class="g">with real edges.</span></h2>
+      <p>The architecture serious builders are converging on — one you can install today.</p></div>
+    <div class="pipe">
+      <span class="node">contract</span><span class="arw">→</span><span class="node gate">gate</span><span class="arw">→</span>
+      <span class="node">plan</span><span class="arw">→</span><span class="node gate">gate</span><span class="arw">→</span>
+      <span class="node">build</span><span class="arw">→</span><span class="node loop">✕ caught</span><span class="arw">↺</span>
+      <span class="node">ship</span>
+    </div>
+    <div class="engine-grid">
+      <div class="egc"><h3>It's a graph</h3><p>The stages are nodes; the edges are exit-code scripts. The build advances only when a gate returns zero — never because a model decided it “looked done.” A state machine doesn't verify; this does.</p></div>
+      <div class="egc"><h3>And it's loops</h3><p>Adversarial reviews repeat until two clean rounds; a post-ship critic runs on the live system until it finds nothing. Every loop is bounded — and when it runs itself, by a budget it can't exceed.</p></div>
+    </div>
+  </section>
+
+  <!-- OUTRO -->
+  <section class="hero reveal" style="min-height:auto;padding:clamp(70px,12vh,130px) 0">
+    <div class="kick">Install today</div>
+    <div class="wordwrap" style="height:clamp(56px,11vw,120px)"><div class="wordGlow" style="font-size:clamp(48px,12vw,140px)">COMPASS</div><div class="word" style="font-size:clamp(48px,12vw,140px)"><span class="sweep">COMPASS</span></div></div>
+    <p class="lede" style="margin-top:18px">Write the contract. Walk away. <b>It builds to spec.</b></p>
+    <div class="cta"><a class="btn primary" href="https://github.com/Rishi4792/compass">Get it on GitHub ▸</a></div>
+  </section>
+
+</main>
+<footer><span>MIT © 2026 Rishi Kapoor</span><span><a href="https://github.com/Rishi4792/compass">github.com/Rishi4792/compass</a></span></footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- drifting dust + ray shimmer (rAF) ----
+  var dust=document.getElementById('dust'), ND=30, dp=[];
+  function hh(i,s){var x=Math.sin(i*12.9898+s*78.233)*43758.5453;return x-Math.floor(x);}
+  for(var i=0;i<ND;i++){var e=document.createElement('div');e.className='d';var s=(1+hh(i,2)*3);
+    e.style.width=s+'px';e.style.height=s+'px';if(hh(i,3)<.4)e.style.filter='blur(1.4px)';dust.appendChild(e);dp.push(e);}
+  var W=innerWidth,H=innerHeight; addEventListener('resize',function(){W=innerWidth;H=innerHeight;});
+  var r1=document.getElementById('rays1'), sprayTb=document.querySelector('#spray feTurbulence'), t=0;
+  function tick(){ t++;
+    for(var i=0;i<ND;i++){var x=hh(i,6)*W, by=hh(i,8)*H;
+      var y=((by - t*(0.25+hh(i,1)*0.7))%(H+40)+(H+40))%(H+40)-20;
+      var tw=0.5+0.5*Math.sin(t*0.03+i*1.3);
+      dp[i].style.transform='translate('+x+'px,'+y+'px)'; dp[i].style.opacity=(0.08+tw*0.24).toFixed(2);}
+    if(r1) r1.style.transform='translateX(-50%) rotate('+(Math.sin(t*0.006)*1.4).toFixed(2)+'deg)';
+    if(sprayTb && t%3===0) sprayTb.setAttribute('seed', 1+(t/3|0)%11);
+    requestAnimationFrame(tick);
+  }
+  if(!reduce) requestAnimationFrame(tick);
+
+  // ---- compass needle: damped-harmonic SEEK → LOCK (the signature move) ----
+  var needle=document.getElementById('needle'), flash=document.getElementById('lockflash'), shock=document.getElementById('shock');
+  var start=-300, dur=1500, t0=null, locked=false;
+  function damp(p){ return 1 - Math.exp(-4.6*p)*Math.cos(7.2*p); }        // overshoot → settle
+  function seek(ts){ if(t0===null)t0=ts; var p=Math.min((ts-t0)/dur,1);
+    var ang=start*(1-damp(p));
+    var blur=Math.min(Math.abs((damp(Math.min(p+0.02,1))-damp(p)))*90,3.5);
+    needle.setAttribute('transform','rotate('+ang.toFixed(2)+' 66 66)');
+    needle.style.filter = blur>0.15 ? 'blur('+blur.toFixed(2)+'px)' : 'none';
+    if(p<1){ requestAnimationFrame(seek); }
+    else if(!locked){ locked=true; needle.style.filter='drop-shadow(0 0 10px var(--accent))';
+      // LOCK: flash + expanding shockwave
+      flash.style.transition='opacity .12s'; flash.style.opacity='.85';
+      setTimeout(function(){flash.style.transition='opacity .5s';flash.style.opacity='0';},120);
+      shock.style.transition='transform .6s cubic-bezier(.2,.9,.3,1),opacity .6s'; shock.style.opacity='.9'; shock.style.transform='translate(-50%,-50%) scale(11)';
+      setTimeout(function(){shock.style.opacity='0';},120);
+    }
+  }
+  if(reduce){ needle.setAttribute('transform','rotate(0 66 66)'); needle.style.filter='drop-shadow(0 0 10px var(--accent))'; }
+  else requestAnimationFrame(seek);
+
+  // ---- scroll reveal (physics-y settle) ----
+  var io=new IntersectionObserver(function(es){es.forEach(function(en){ if(en.isIntersecting){en.target.classList.add('in');io.unobserve(en.target);} });},{threshold:0.14});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+})();
+</script>
 </body>
 </html>
