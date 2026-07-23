@@ -178,18 +178,24 @@
     <div class="kick">An autonomous engineering team <span class="a">·</span> in one Claude Code plugin</div>
 
     <div class="compass" id="compass">
-      <div class="lockflash" id="lockflash"></div><div class="shock" id="shock"></div>
-      <svg viewBox="0 0 132 132" fill="none">
-        <circle cx="66" cy="66" r="60" stroke="rgba(124,116,255,.28)" stroke-width="1"/>
-        <circle cx="66" cy="66" r="50" stroke="rgba(124,116,255,.14)" stroke-width="1"/>
-        <g stroke="rgba(184,178,255,.5)" stroke-width="1.4">
-          <line x1="66" y1="8" x2="66" y2="18"/><line x1="66" y1="114" x2="66" y2="124"/>
-          <line x1="8" y1="66" x2="18" y2="66"/><line x1="114" y1="66" x2="124" y2="66"/></g>
-        <text x="66" y="26" text-anchor="middle" fill="var(--mut)" font-size="9" font-family="monospace">N</text>
-        <g id="needle" transform="rotate(-300 66 66)">
-          <path d="M66 20 L72 66 L66 74 L60 66 Z" fill="var(--accentB)"/>
-          <path d="M66 112 L60 66 L66 58 L72 66 Z" fill="#3a3670"/>
-          <circle cx="66" cy="66" r="4.5" fill="var(--paper)"/>
+      <div class="lockflash" id="lockflash"></div>
+      <svg viewBox="0 0 140 140" fill="none">
+        <defs>
+          <linearGradient id="ndBlue" x1="70" y1="68" x2="70" y2="116" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#A29BFF"/><stop offset="1" stop-color="#5B52F0"/></linearGradient>
+          <radialGradient id="ndGlow"><stop offset="0" stop-color="rgba(150,142,255,.5)"/><stop offset="55%" stop-color="rgba(124,116,255,.13)"/><stop offset="100%" stop-color="rgba(124,116,255,0)"/></radialGradient>
+        </defs>
+        <circle id="lockglow" cx="70" cy="70" r="54" fill="url(#ndGlow)" style="opacity:0"/>
+        <circle cx="70" cy="70" r="62" stroke="rgba(150,142,255,.2)" stroke-width="1"/>
+        <circle cx="70" cy="70" r="55" stroke="rgba(150,142,255,.3)" stroke-width="3" stroke-dasharray="1 6.1"/>
+        <g fill="var(--mut)" font-family="monospace" font-size="8" text-anchor="middle">
+          <text x="70" y="19">N</text><text x="125" y="73">E</text><text x="70" y="129">S</text><text x="15" y="73">W</text></g>
+        <g id="needle" style="opacity:0">
+          <path d="M70 27 L74.4 70 L70 73 L65.6 70 Z" fill="#F4F2FF"/>
+          <path d="M70 114 L65.6 70 L70 67 L74.4 70 Z" fill="url(#ndBlue)"/>
+          <circle cx="70" cy="70" r="5.2" fill="#0A0C22"/>
+          <circle cx="70" cy="70" r="5.2" fill="none" stroke="#EDEBFF" stroke-width="1.5"/>
+          <circle cx="70" cy="70" r="1.5" fill="#EDEBFF"/>
         </g>
       </svg>
     </div>
@@ -302,26 +308,32 @@
   }
   if(!reduce) requestAnimationFrame(tick);
 
-  // ---- compass needle: damped-harmonic SEEK → LOCK (the signature move) ----
-  var needle=document.getElementById('needle'), flash=document.getElementById('lockflash'), shock=document.getElementById('shock');
-  var start=-300, dur=1500, t0=null, locked=false;
-  function damp(p){ return 1 - Math.exp(-4.6*p)*Math.cos(7.2*p); }        // overshoot → settle
-  function seek(ts){ if(t0===null)t0=ts; var p=Math.min((ts-t0)/dur,1);
-    var ang=start*(1-damp(p));
-    var blur=Math.min(Math.abs((damp(Math.min(p+0.02,1))-damp(p)))*90,3.5);
-    needle.setAttribute('transform','rotate('+ang.toFixed(2)+' 66 66)');
-    needle.style.filter = blur>0.15 ? 'blur('+blur.toFixed(2)+'px)' : 'none';
+  // ---- compass needle: fly in from below + rotate to true north, OVERSHOOT → oscillate → LOCK (film-exact) ----
+  var needle=document.getElementById('needle'), glow=document.getElementById('lockglow'),
+      flash=document.getElementById('lockflash'), cue=document.querySelector('.scrollcue');
+  var A0=-116, Y0=42, delay=340, dur=2150, t0=null, locked=false;      // start: pointing left-ish, 42u below
+  function damp(p){ return 1 - Math.exp(-4.0*p)*Math.cos(6.7*p); }      // decisive overshoot → settle
+  function place(ang,ty){ needle.setAttribute('transform','translate(0 '+ty.toFixed(2)+') rotate('+ang.toFixed(2)+' 70 70)'); }
+  function seek(ts){ if(t0===null)t0=ts; var e=ts-t0;
+    if(e<delay){ place(A0,Y0); needle.style.opacity=Math.min(e/delay,1); requestAnimationFrame(seek); return; }
+    needle.style.opacity=1;
+    var p=Math.min((e-delay)/dur,1), s=damp(p), ang=A0*(1-s), ty=Y0*(1-s);
+    var s2=damp(Math.min(p+0.014,1)), vel=Math.abs(A0*(1-s2)-ang)+Math.abs(Y0*(1-s2)-ty);
+    var blur=Math.min(vel*0.55,4.2);
+    place(ang,ty);
+    needle.style.filter = blur>0.2 ? 'blur('+blur.toFixed(2)+'px)' : 'drop-shadow(0 0 6px rgba(184,178,255,.5))';
     if(p<1){ requestAnimationFrame(seek); }
-    else if(!locked){ locked=true; needle.style.filter='drop-shadow(0 0 10px var(--accent))';
-      // LOCK: flash + expanding shockwave
-      flash.style.transition='opacity .12s'; flash.style.opacity='.85';
-      setTimeout(function(){flash.style.transition='opacity .5s';flash.style.opacity='0';},120);
-      shock.style.transition='transform .6s cubic-bezier(.2,.9,.3,1),opacity .6s'; shock.style.opacity='.9'; shock.style.transform='translate(-50%,-50%) scale(11)';
-      setTimeout(function(){shock.style.opacity='0';},120);
+    else if(!locked){ locked=true; place(0,0);   // snap exactly to true north
+      needle.style.filter='drop-shadow(0 0 9px rgba(200,196,255,.75))';
+      flash.style.transition='opacity .1s'; flash.style.opacity='.85';
+      setTimeout(function(){flash.style.transition='opacity .7s';flash.style.opacity='0';},100);
+      if(glow){ glow.style.transition='opacity .9s'; glow.style.opacity='1'; }      // inner glow blooms
+      if(cue){ cue.textContent='true north · locked'; cue.style.color='var(--green)'; cue.style.animation='none'; }  // HUD flip
     }
   }
-  if(reduce){ needle.setAttribute('transform','rotate(0 66 66)'); needle.style.filter='drop-shadow(0 0 10px var(--accent))'; }
-  else requestAnimationFrame(seek);
+  if(reduce){ place(0,0); needle.style.opacity=1; needle.style.filter='drop-shadow(0 0 9px rgba(200,196,255,.7))';
+    if(glow)glow.style.opacity='1'; if(cue){cue.textContent='true north · locked';cue.style.color='var(--green)';cue.style.animation='none';} }
+  else { requestAnimationFrame(seek); }
 
   // ---- scroll reveal (physics-y settle) ----
   var io=new IntersectionObserver(function(es){es.forEach(function(en){ if(en.isIntersecting){en.target.classList.add('in');io.unobserve(en.target);} });},{threshold:0.14});
