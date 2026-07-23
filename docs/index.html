@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compass — write the contract, walk away, it builds to spec</title>
+<meta name="description" content="An autonomous engineering team in one Claude Code plugin. Write one contract; Compass plans, builds, tests, and ships to spec — and won't call it done until a real check passes.">
+<meta property="og:title" content="Compass — your AI says 'done.' Compass makes it prove it.">
+<meta property="og:description" content="An autonomous engineering team in one Claude Code plugin. Contract → plan → build → adversarial reviews → ship, gated by real exit codes.">
+<meta property="og:type" content="website">
+<meta property="og:video" content="https://rishi4792.github.io/compass/compass-film.mp4">
+<meta property="og:image" content="https://rishi4792.github.io/compass/compass-film-poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://rishi4792.github.io/compass/compass-film-poster.jpg">
+<style>
+  :root{
+    --bg:#080b16; --bg2:#0d1430; --panel:#111834; --line:#26305a;
+    --ink:#eceeffe0; --ink-strong:#f6f7ff; --muted:#9aa0c0;
+    --violet:#a78bfa; --violet-2:#8a63d2; --mint:#5eead4; --amber:#f6ad9c;
+    --radius:14px; --maxw:960px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    --page-grad:radial-gradient(1200px 700px at 50% -10%, #1a2350 0%, rgba(13,20,48,0) 60%),
+                linear-gradient(180deg,#0a0e20 0%, var(--bg) 55%, #05070f 100%);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page-grad);
+    color:var(--ink); font-family:var(--sans);
+    line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  a{color:var(--violet)}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
+  /* nav */
+  .nav{display:flex; align-items:center; justify-content:space-between; padding:20px 0; font-size:14px}
+  .brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:.14em; color:var(--ink-strong); text-transform:uppercase; font-size:13px}
+  .brand .dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--violet);position:relative}
+  .brand .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:conic-gradient(var(--violet),transparent 60%)}
+  .nav a.ghost{color:var(--muted); text-decoration:none; border:1px solid var(--line); padding:7px 14px; border-radius:9px}
+  .nav a.ghost:hover{color:var(--ink-strong); border-color:var(--violet-2)}
+  /* hero */
+  .hero{text-align:center; padding:34px 0 8px}
+  .eyebrow{font-size:12.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--violet); font-weight:700; margin-bottom:18px}
+  h1{font-size:clamp(30px,6.2vw,58px); line-height:1.04; margin:0 0 16px; letter-spacing:-.02em; color:var(--ink-strong); font-weight:800}
+  h1 .g{background:linear-gradient(92deg,var(--violet) 0%,#c4b5fd 60%,var(--mint) 130%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:clamp(16px,2.3vw,20px); color:var(--muted); max-width:640px; margin:0 auto 26px}
+  .sub b{color:var(--ink)}
+  /* film */
+  .film{position:relative; max-width:900px; margin:6px auto 0; border-radius:var(--radius); overflow:hidden;
+    border:1px solid var(--line); box-shadow:0 30px 80px -30px #000, 0 0 0 1px #ffffff08 inset}
+  .film video{display:block; width:100%; height:auto; background:#05070f}
+  .cta{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:26px 0 6px}
+  .btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:650;font-size:15px;padding:12px 20px;border-radius:11px}
+  .btn.primary{background:linear-gradient(180deg,#9a78f0,#7b53c9);color:#fff;box-shadow:0 10px 30px -10px #7b53c9aa}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn.secondary{color:var(--ink);border:1px solid var(--line);background:#ffffff06}
+  .btn.secondary:hover{border-color:var(--violet-2);color:var(--ink-strong)}
+  /* install */
+  .install{max-width:620px;margin:24px auto 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;text-align:left;overflow:hidden}
+  .install .bar{display:flex;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:center}
+  .install .bar i{width:11px;height:11px;border-radius:50%;display:block}
+  .install .bar .t{margin-left:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .install pre{margin:0;padding:16px 18px;font-family:var(--mono);font-size:13.5px;color:var(--ink);overflow-x:auto}
+  .install .p{color:var(--violet)} .install .c{color:#7f87ab}
+  /* proof */
+  .proof{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:56px 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+  .card h3{margin:0 0 8px;font-size:16px;color:var(--ink-strong)}
+  .card p{margin:0;font-size:14px;color:var(--muted)}
+  .card .k{font-family:var(--mono);font-size:12px;color:var(--mint);display:block;margin-top:10px}
+  /* section head */
+  .section-head{text-align:center;margin:60px 0 4px}
+  .section-head .eyebrow{margin-bottom:10px}
+  .section-head h2{font-size:clamp(24px,4.4vw,40px);margin:0;letter-spacing:-.02em;color:var(--ink-strong);font-weight:800}
+  .section-head h2 .g{background:linear-gradient(92deg,var(--violet),#c4b5fd 70%,var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .section-head p{color:var(--muted);max-width:620px;margin:12px auto 0;font-size:15px}
+  /* team */
+  .team{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0 0}
+  .team .role{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center}
+  .team .role .ic{font-size:22px;display:block;margin-bottom:9px}
+  .team .role h4{margin:0 0 3px;font-size:15px;color:var(--ink-strong)}
+  .team .role .r{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--violet);display:block;margin-bottom:9px}
+  .team .role p{margin:0;font-size:12.5px;color:var(--muted)}
+  /* engine */
+  .engine-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:22px 0 0}
+  .engine-grid .card h3{color:var(--violet)}
+  @media (max-width:720px){ .team{grid-template-columns:1fr 1fr} .engine-grid{grid-template-columns:1fr} }
+  /* flow */
+  .flow{margin:52px auto 8px;text-align:center}
+  .flow .steps{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;font-family:var(--mono);font-size:13px;color:var(--muted)}
+  .flow .steps b{color:var(--ink)} .flow .steps .arw{color:var(--violet-2)}
+  .flow .note{color:var(--muted);font-size:13.5px;margin-top:14px}
+  .flow .note .mint{color:var(--mint)}
+  footer{border-top:1px solid var(--line);margin-top:64px;padding:26px 0 60px;color:var(--muted);font-size:13.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer a{color:var(--muted)}
+  @media (max-width:720px){ .proof{grid-template-columns:1fr} }
+  @media (prefers-color-scheme:light){
+    :root{--bg:#f4f5fb;--ink:#20243a;--ink-strong:#0d1024;--muted:#5a6084;--panel:#ffffff;--line:#e2e5f2;--violet:#6b46d0;--violet-2:#7c3aed;--mint:#0d9488;
+      --page-grad:radial-gradient(1000px 600px at 50% -10%,#e9e6fb 0%,rgba(244,245,251,0) 60%),linear-gradient(180deg,#f7f7fd,#eef0f9)}
+    .btn.primary{color:#fff}
+    .install pre .c{color:#9aa0b8}
+  }
+  :root[data-theme="dark"]{--bg:#080b16;--ink:#eceffe0;--ink-strong:#f6f7ff;--muted:#9aa0c0;--panel:#111834;--line:#26305a;--violet:#a78bfa;--violet-2:#8a63d2;--mint:#5eead4;
+    --page-grad:radial-gradient(1200px 700px at 50% -10%,#1a2350 0%,rgba(13,20,48,0) 60%),linear-gradient(180deg,#0a0e20 0%,#080b16 55%,#05070f 100%)}
+  :root[data-theme="dark"] .install pre .c{color:#7f87ab}
+  :root[data-theme="light"]{--bg:#f4f5fb;--ink:#20243a;--ink-strong:#0d1024;--muted:#5a6084;--panel:#ffffff;--line:#e2e5f2;--violet:#6b46d0;--violet-2:#7c3aed;--mint:#0d9488;
+    --page-grad:radial-gradient(1000px 600px at 50% -10%,#e9e6fb 0%,rgba(244,245,251,0) 60%),linear-gradient(180deg,#f7f7fd,#eef0f9)}
+  :root[data-theme="light"] .btn.primary{color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand"><span class="dot"></span> Compass</span>
+    <a class="ghost" href="https://github.com/Rishi4792/compass">GitHub ↗</a>
+  </nav>
+
+  <header class="hero">
+    <div class="eyebrow">An autonomous engineering team · in one Claude Code plugin</div>
+    <h1>Your AI says <span class="g">“done.”</span><br>Compass makes it prove it.</h1>
+    <p class="sub">Write <b>one contract</b>. Walk away. Compass plans, builds, tests, and ships to spec —
+      and it won't call anything <b>done</b> until a real check passes.</p>
+
+    <div class="film">
+      <video src="compass-film.mp4" poster="compass-film-poster.jpg"
+             autoplay muted loop playsinline controls preload="metadata"></video>
+    </div>
+
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/Rishi4792/compass">Get it on GitHub</a>
+      <a class="btn secondary" href="https://github.com/Rishi4792/compass#readme">Read the docs</a>
+    </div>
+
+    <div class="install">
+      <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="t">claude — install</span></div>
+      <pre><span class="p">/plugin</span> marketplace add Rishi4792/compass
+<span class="p">/plugin</span> install compass@compass
+<span class="c"># then: /compass:start  ·  write the contract, walk away</span></pre>
+    </div>
+  </header>
+
+  <section class="proof">
+    <div class="card">
+      <h3>It catches its own bugs</h3>
+      <p>Every release is built by running Compass on Compass. Its own adversarial reviews caught a Critical in its own gate — before it shipped.</p>
+      <span class="k">dogfooded · every release since v0.5.0</span>
+    </div>
+    <div class="card">
+      <h3>A real gate, not a prompt</h3>
+      <p>The build advances only on a passing exit code an agent can't argue with. Correctness is arithmetic, not opinion.</p>
+      <span class="k">349 selftest + 94 smoke · all green</span>
+    </div>
+    <div class="card">
+      <h3>You choose how hands-off</h3>
+      <p>Gated at every step, or fully autonomous — bounded by a budget it can't exceed, so a walk-away build can't run away.</p>
+      <span class="k">--auto · two human gates only</span>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <div class="eyebrow">Meet the team</div>
+    <h2>Four specialists. <span class="g">One plugin.</span></h2>
+    <p>Not a prompt, not a checklist — a full engineering org, autonomous, with one contract as the single source of truth they all answer to.</p>
+  </div>
+  <section class="team">
+    <div class="role"><span class="ic">🏛️</span><h4>The Architect</h4><span class="r">Engineering Manager</span><p>Locks the contract, scans the codebase, writes the plan — every step with a verify.</p></div>
+    <div class="role"><span class="ic">⌨️</span><h4>The Builder</h4><span class="r">Coder</span><p>Builds one step at a time. A step isn't done until its check passes. Proof, not vibes.</p></div>
+    <div class="role"><span class="ic">🎯</span><h4>The Adversary</h4><span class="r">QA · Review</span><p>Assumes it's wrong and tries to break it — and loops until it can't.</p></div>
+    <div class="role"><span class="ic">🚀</span><h4>The Operator</h4><span class="r">DevOps</span><p>Ships via your own deploy path, re-checks the number on prod — or holds.</p></div>
+  </section>
+
+  <div class="section-head">
+    <div class="eyebrow">The engine</div>
+    <h2>Loops and graphs, <span class="g">with real edges.</span></h2>
+    <p>The architecture serious builders are converging on — and one you can install today.</p>
+  </div>
+  <section class="engine-grid">
+    <div class="card"><h3>It's a graph</h3><p>The stages are nodes; the edges are exit-code scripts. The build advances only when a gate returns zero — never because a model decided it "looked done." A state machine doesn't verify; this does.</p></div>
+    <div class="card"><h3>And it's loops</h3><p>Adversarial reviews repeat until two clean rounds; a post-ship critic runs on the live system until it finds nothing. Every loop is bounded — and when it runs itself, by a budget it can't exceed.</p></div>
+  </section>
+
+  <section class="flow">
+    <div class="steps">
+      <b>contract</b> <span class="arw">→</span> review <span class="arw">→</span>
+      <b>plan</b> <span class="arw">→</span> review <span class="arw">→</span>
+      <b>build</b> <span class="arw">→</span> review <span class="arw">→</span> <b>ship</b> <span class="arw">↻</span> <span style="color:var(--mint)">post-ship critic</span>
+    </div>
+    <p class="note">Every arrow is an exit-code gate — never a model deciding it “looked done.”
+       <span class="mint">Nothing ships on a claim.</span></p>
+  </section>
+
+  <footer>
+    <span>MIT © 2026 Rishi Kapoor</span>
+    <span><a href="https://github.com/Rishi4792/compass">github.com/Rishi4792/compass</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

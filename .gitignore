@@ -5,6 +5,8 @@ node_modules/
 # Local session catch-up — never publish
 CONTEXT.md
 
-# Local launch/marketing working doc — never publish
+# Local launch/marketing working docs — never publish
 LAUNCH-KIT.md
 LAUNCH-KIT.html
+GTM-PLAN.md
+posts/

@@ -14,6 +14,9 @@ Built on the architecture serious builders are converging on — an explicit **g
 
 ![Compass hero: write the contract and walk away → an autonomous team (EM · Coder · QA · DevOps) runs a gated pipeline → it catches a Critical in its own code (exit 1) → fixed, re-proven, and shipped to spec](docs/compass-demo.gif)
 
+<!-- film-link -->
+**▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)** — the whole story in one minute.
+
 ---
 
 ## Meet the team
