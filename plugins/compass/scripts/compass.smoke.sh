@@ -181,7 +181,7 @@ rm -rf "$(dirname "$FSD")"
 for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins INV group: $nm"
 done
-chk "$(grep -c 'FLOOR_SELFTEST=118' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the selftest floor 118"
+chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
 chk "$(grep -c 'FLOOR_SMOKE=114' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the smoke floor 114 (re-baselined)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──

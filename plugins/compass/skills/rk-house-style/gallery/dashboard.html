@@ -13,7 +13,6 @@
     --redFg:#A41C00; --redBg:#FCE8E6;
     --chipFg:#3F4650; --chipBg:#E9EBEF;
     --bg:#F9FAFB; --surface:#FFFFFF; --headBg:#FBFBFC; --line:#F2F4F5; --grid:#F0F1F3;
-    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   }
   *{box-sizing:border-box;margin:0}
   body{background:var(--bg);color:var(--ink);
@@ -61,30 +60,30 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><div class="kicker">Portfolio overview</div><h1>Origination performance</h1></div>
-    <div class="sub">Fiscal year to date · updated 2 min ago</div>
+    <div><div class="kicker">Product overview</div><h1>Growth dashboard</h1></div>
+    <div class="sub">Last 30 days · updated 2 min ago</div>
   </div>
 
   <div class="grid-top">
     <div class="card hero">
-      <div class="kicker">Total disbursed</div>
-      <div class="big">1,284.6</div>
+      <div class="kicker">Monthly revenue</div>
+      <div class="big">$84.2K</div>
       <div class="row">
-        <span class="pill"><span class="dot"></span>Ahead of pace</span>
-        <span class="sub" style="font-size:13px;color:var(--mut)">₹ Cr · +12.4% vs target</span>
+        <span class="pill"><span class="dot"></span>Ahead of plan</span>
+        <span class="sub" style="font-size:13px;color:var(--mut)">+12.4% vs plan</span>
       </div>
-      <div class="ctx">Target for the period was <b>1,142 Cr</b>; the run-rate closes the year at <b>1,910 Cr</b> if it holds.</div>
+      <div class="ctx">Plan for the month was <b>$75.0K</b>; the current run-rate reaches <b>$1.02M ARR</b> if it holds.</div>
       <hr>
       <div class="substats">
-        <div><div class="kicker">Live loans</div><div class="v">38,204</div><div class="c">+1,046 this month</div></div>
-        <div><div class="kicker">Avg ticket</div><div class="v">33,620</div><div class="c">₹ · stable</div></div>
-        <div><div class="kicker">Approval rate</div><div class="v">71.8%</div><div class="c">+2.1 pts</div></div>
+        <div><div class="kicker">Active users</div><div class="v">12,480</div><div class="c">+1,046 this month</div></div>
+        <div><div class="kicker">Conversion</div><div class="v">3.8%</div><div class="c">trial → paid</div></div>
+        <div><div class="kicker">Net retention</div><div class="v">112%</div><div class="c">+4 pts</div></div>
       </div>
     </div>
 
     <div class="card chartcard">
-      <div class="hd"><div class="kicker">Cumulative vs target</div><div class="val">₹ Cr</div></div>
-      <svg viewBox="0 0 320 150" role="img" aria-label="Cumulative disbursal tracking ahead of the dashed target line">
+      <div class="hd"><div class="kicker">Revenue vs plan</div><div class="val">$K</div></div>
+      <svg viewBox="0 0 320 150" role="img" aria-label="Cumulative revenue tracking ahead of the dashed plan line">
         <line x1="0" y1="120" x2="320" y2="120" stroke="var(--grid)"/>
         <line x1="0" y1="80" x2="320" y2="80" stroke="var(--grid)"/>
         <line x1="0" y1="40" x2="320" y2="40" stroke="var(--grid)"/>
@@ -100,18 +99,18 @@
   </div>
 
   <div class="tiles">
-    <div class="tile"><div class="kicker">On-time rate</div><div class="v">96.2%</div><div class="c">rolling 90-day</div></div>
-    <div class="tile"><div class="kicker">Overdue &gt; 30d</div><div class="v warn">1.9%</div><div class="c">alert if ≥ 2.0%</div></div>
-    <div class="tile"><div class="kicker">Active branches</div><div class="v">214</div><div class="c">+6 onboarded</div></div>
-    <div class="tile"><div class="kicker">Yield</div><div class="v">14.3%</div><div class="c">net of cost</div></div>
+    <div class="tile"><div class="kicker">Uptime</div><div class="v">99.98%</div><div class="c">rolling 90-day</div></div>
+    <div class="tile"><div class="kicker">Error rate</div><div class="v warn">0.42%</div><div class="c">alert if ≥ 0.50%</div></div>
+    <div class="tile"><div class="kicker">New signups</div><div class="v">1,240</div><div class="c">+180 wk/wk</div></div>
+    <div class="tile"><div class="kicker">NPS</div><div class="v">62</div><div class="c">+5 vs Q2</div></div>
   </div>
 
   <div class="card funnel">
-    <div class="kicker">Pipeline by stage</div>
-    <div class="frow"><div class="lbl">Applications</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="amt">9,120</div></div>
-    <div class="frow"><div class="lbl">Underwriting</div><div class="track"><div class="fill" style="width:74%"></div></div><div class="amt">6,749</div></div>
-    <div class="frow"><div class="lbl">Approved</div><div class="track"><div class="fill" style="width:58%"></div></div><div class="amt">5,290</div></div>
-    <div class="frow"><div class="lbl">Disbursed</div><div class="track"><div class="fill" style="width:46%"></div></div><div class="amt">4,196</div></div>
+    <div class="kicker">Activation funnel</div>
+    <div class="frow"><div class="lbl">Visitors</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="amt">48,900</div></div>
+    <div class="frow"><div class="lbl">Signups</div><div class="track"><div class="fill" style="width:62%"></div></div><div class="amt">9,120</div></div>
+    <div class="frow"><div class="lbl">Activated</div><div class="track"><div class="fill" style="width:41%"></div></div><div class="amt">5,980</div></div>
+    <div class="frow"><div class="lbl">Paid</div><div class="track"><div class="fill" style="width:24%"></div></div><div class="amt">3,470</div></div>
   </div>
 </div>
 </body>

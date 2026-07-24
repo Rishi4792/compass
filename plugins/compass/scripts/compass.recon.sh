@@ -18,7 +18,7 @@ SM_CMD_DEFAULT="bash \"$HERE/compass.smoke.sh\""
 ST_CMD="${COMPASS_RECON_SELFTEST_CMD:-$ST_CMD_DEFAULT}"
 SM_CMD="${COMPASS_RECON_SMOKE_CMD:-$SM_CMD_DEFAULT}"
 
-FLOOR_SELFTEST=118
+FLOOR_SELFTEST=349
 FLOOR_SMOKE=114
 # PINNED literal INV-group list (v0.12; S15 appends the v0.13 groups). Authored from the plan's
 # INV map — NEVER derived from the suites this script runs (circularity closed, Q4b).
