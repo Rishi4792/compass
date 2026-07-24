@@ -131,7 +131,7 @@ Or, once it's listed in the Anthropic community marketplace:
 /plugin install compass@claude-community
 ```
 
-**The simplest way in is just `/compass`.** It reads where your build is and asks what to do next, then routes you into the right stage — you never have to remember a command. Add `--auto` on a new build to run the lifecycle autonomously.
+**The simplest way in is `/compass:go`.** It reads where your build is and asks what to do next, then routes you into the right stage — you never have to remember a command. Add `--auto` on a new build to run the lifecycle autonomously.
 
 > **Prefer typing commands directly? Every stage is still its own command** (all optional): `/compass:start` for the full lifecycle, `/compass:contract`, `/compass:plan`, `/compass:review-plan`, `/compass:build`, `/compass:ship`, and `/compass:resume` to pick up where you left off. Each is also reachable as a bare skill (e.g. `/build`, which auto-triggers on natural language like "build it"), and each presents its 4-button next-step gate at its transition.
 

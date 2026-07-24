@@ -2,9 +2,9 @@
 description: The Compass front door — one command that reads where your build is and asks what to do next, then routes you into the right stage (contract, plan, review, build, ship, or resume). The simplest way to use Compass.
 ---
 
-# /compass — the front door
+# /compass:go — the front door
 
-**This is the single entry point for Compass.** You don't need to remember the stage commands — `/compass` reads the current state and asks you where to go, every time.
+**This is the single entry point for Compass.** You don't need to remember the stage commands — `/compass:go` reads the current state and asks you where to go, every time.
 
 ## What to do when invoked
 
@@ -25,4 +25,4 @@ description: The Compass front door — one command that reads where your build 
 - **A chosen downstream stage whose Step-0 gate isn't satisfied** (e.g. the user picks "build" but no plan is LOCKED): route to that stage anyway — its OWN `compass.sh gate` will surface the block and offer the prior stage. The router NEVER fakes readiness or skips a gate.
 
 ## Note
-Everything `/compass` does is also reachable directly by the namespaced stage commands (`/compass:start`, `/compass:contract`, `/compass:plan`, …) and `/compass:resume` — `/compass` is just the friendly way in that means you never have to remember which one.
+Everything `/compass:go` does is also reachable directly by the namespaced stage commands (`/compass:start`, `/compass:contract`, `/compass:plan`, …) and `/compass:resume` — `/compass:go` is just the friendly way in that means you never have to remember which one.
