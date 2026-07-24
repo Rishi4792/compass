@@ -1,0 +1,52 @@
+{
+  "ink": "#2B2016",
+  "mut": "#766556",
+  "mut2": "#857260",
+  "kicker": "#7F6C5C",
+  "accent": "#15803D",
+  "accentDark": "#0C4B24",
+  "accentWash": "rgba(21,128,61,0.07)",
+  "greenFg": "#0E6245",
+  "greenBg": "#E6F8F1",
+  "amberFg": "#9A6A14",
+  "amberBg": "#FFF9EE",
+  "amberBorder": "#F5E3BC",
+  "redFg": "#A41C00",
+  "redBg": "#FCE8E6",
+  "chipFg": "#53473C",
+  "chipBg": "#F0ECE8",
+  "bg": "#FCFAF8",
+  "surface": "#FFFFFF",
+  "headBg": "#FCFBFB",
+  "line": "#F6F4F2",
+  "grid": "#F3F1EF",
+  "fontSans": "'DM Sans',system-ui,sans-serif",
+  "spacing": {
+    "cardPad": "20px 22px",
+    "grid": 4
+  },
+  "radii": {
+    "card": 12,
+    "chip": 6,
+    "pill": 99,
+    "inset": 8,
+    "control": 9
+  },
+  "shadow": {
+    "card": "0 1px 2px rgba(43,32,22,0.04)"
+  },
+  "motion": {
+    "enter": "0.55s cubic-bezier(.22,.61,.36,1)",
+    "stagger": 0.06,
+    "hover": "120ms"
+  },
+  "_meta": {
+    "seeds": {
+      "accent": "#15803D",
+      "neutral": "warm",
+      "font": "'DM Sans',system-ui,sans-serif",
+      "density": "airy",
+      "radius": "soft"
+    }
+  }
+}

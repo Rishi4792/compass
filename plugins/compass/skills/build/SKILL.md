@@ -24,7 +24,7 @@ Then run `compass.sh gate "$(compass.sh state-root)/<slug>" review-plan`. **Non-
 Re-read the relevant `contract.md` part. **A step that would deviate — even slightly — STOPS and asks.** Never "improve" beyond the contract silently.
 
 ## Per-step loop (each unchecked step, in order)
-1. **Build** exactly as specified — no scope creep.
+1. **Build** exactly as specified — no scope creep. **(web, v0.14.0) Apply the design-standard:** before building any UI surface, load the contract's `design-standard` bundled skill — invoke `/compass:rk-house-style` (product surfaces: dashboards/tables/forms/charts) and/or `/compass:cinematic-hero` (hero/launch/motion) — and compose from ITS pinned tokens + component recipes; never invent off-system styles. The contract's `## Design Spec` (extracted from that same bundled skill) is the binding target, and its gates (`rk-house-style` anti-drift + compose-check against the active theme) are the per-surface craft check.
 2. **Test** — run/add the deterministic test the plan named.
 3. **Verify (adversarial)** — lowest project-facet rung that genuinely proves it; record the exact command + fresh output:
    - **web:** typecheck → DB query → page HTML → API → **Playwright** (assert DOM text + computed CSS + a11y basics) → Chrome MCP (last resort). **pipeline/CLI:** exit code → golden-file diff → asserts → numeric reconciliation → determinism (run twice → identical) → idempotent re-run.

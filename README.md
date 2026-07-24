@@ -5,7 +5,7 @@
 An autonomous **engineering team in one plugin** for [Claude Code](https://claude.com/claude-code) — Engineering Manager, coder, QA, DevOps. You finalize one super-contract; it does the rest: **plan → code → tests → ship**, following the engineering best-practices a real team would, and it doesn't stop until the work is *proven* against your spec.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.13.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.14.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 Built on the architecture serious builders are converging on — an explicit **graph** of stages with hard gates as edges, and adversarial **loops** that make every output top-notch. *(That's the whole trick — [see below](#how-it-works-loops-and-graphs-with-real-edges).)*
@@ -94,7 +94,7 @@ Loops *and* graphs, both bounded and enforced: an explicit stage-graph whose edg
 
 | # | Stage | Role · what it does |
 |---|-------|--------------|
-| ① | `/compass:contract` | **EM** — interviews you into an airtight, locked spec; expands your thinking + sketches the UI/logic; pins the facets (`web` / `pipeline` / `library`), the acceptance INVARIANTs, and **reconciliation to an *independent* gold figure**. Won't finish with gaps. |
+| ① | `/compass:contract` | **EM** — interviews you into an airtight, locked spec; expands your thinking + sketches the UI/logic; for a web/dashboard build **asks which design aesthetic and binds it** (a bundled design system, so the prototype is high-craft by default); pins the facets (`web` / `pipeline` / `library`), the acceptance INVARIANTs, and **reconciliation to an *independent* gold figure**. Won't finish with gaps. |
 | ② | `/compass:review-contract` | **QA (light)** — pressure-tests completeness, ambiguity, testability, and that reconciliation is pinned, independent, exact. One clean pass; cap 2. |
 | ③ | `/compass:plan` | **EM** — scans the live codebase first, then writes the step-by-step plan: each step a verify command, every INVARIANT a non-deferred check, every migration a dry-run-on-a-copy. |
 | ④ | `/compass:review-plan` | **QA (full)** — traceability, invariant coverage, migration, dependencies, blast radius, rollback, tests, perf, security, secret-leak. Two clean rounds; cap 3. |
@@ -131,9 +131,11 @@ Or, once it's listed in the Anthropic community marketplace:
 /plugin install compass@claude-community
 ```
 
-Then `/compass:start` for the full lifecycle (add `--auto` to run it autonomously), or invoke any stage by name (`/compass:contract`, `/compass:plan`, …). Resume anytime with `/compass:resume`.
+**The simplest way in is just `/compass`.** It reads where your build is and asks what to do next, then routes you into the right stage — you never have to remember a command. Add `--auto` on a new build to run the lifecycle autonomously.
 
-> Plugin commands are namespaced (`/compass:start`, not `/compass`). Every stage is also reachable as the bare skill `/build` (which auto-triggers on natural language like "build it"), and every stage presents its 4-button next-step gate at its transition.
+> **Prefer typing commands directly? Every stage is still its own command** (all optional): `/compass:start` for the full lifecycle, `/compass:contract`, `/compass:plan`, `/compass:review-plan`, `/compass:build`, `/compass:ship`, and `/compass:resume` to pick up where you left off. Each is also reachable as a bare skill (e.g. `/build`, which auto-triggers on natural language like "build it"), and each presents its 4-button next-step gate at its transition.
+
+> **High-craft prototypes by default (v0.14.0).** Compass ships a bundled design system — `rk-house-style` (dashboards, tables, forms, charts, with a pinned neutral theme, component recipes, and drift gates) and `cinematic-hero` (hero/launch motion + stills). For any web/dashboard build, the contract asks which aesthetic you want and binds it, so the prototype comes out looking world-class. It installs with the plugin — nothing extra to add.
 
 ## State & resumability
 Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — so closing the terminal loses nothing; `/compass:resume` picks up exactly where it left off.

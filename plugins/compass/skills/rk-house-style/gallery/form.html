@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neutral-indigo · form gold</title>
+<style>
+  :root{
+    --ink:#0A2540; --mut:#5A6472; --mut2:#657081; --kicker:#606B7B;
+    --accent:#4F46E5; --accentDark:#271DD0;
+    --greenFg:#0E6245; --greenBg:#E6F8F1;
+    --amberFg:#9A6A14; --amberBg:#FFF9EE; --amberBorder:#F5E3BC;
+    --redFg:#A41C00; --redBg:#FCE8E6;
+    --chipFg:#3F4650; --chipBg:#E9EBEF;
+    --bg:#F9FAFB; --surface:#FFFFFF; --headBg:#FBFBFC; --line:#F2F4F5; --grid:#F0F1F3;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--ink);
+       font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       -webkit-font-smoothing:antialiased;padding:40px 26px}
+  .card{max-width:620px;margin:0 auto;background:var(--surface);border:1px solid var(--line);
+        border-radius:12px;box-shadow:0 1px 2px rgba(10,37,64,.04);overflow:hidden}
+  .head{padding:22px 26px;border-bottom:1px solid var(--line)}
+  .kicker{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--kicker)}
+  .head h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin-top:6px}
+  .head p{font-size:13px;color:var(--mut);margin-top:5px;line-height:1.5}
+  .tabs{display:flex;gap:24px;padding:0 26px;border-bottom:1px solid var(--line)}
+  .tab{font-size:13px;color:var(--mut);font-weight:500;padding:12px 0;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
+  .body{padding:22px 26px;display:flex;flex-direction:column;gap:18px}
+  .field{display:flex;flex-direction:column;gap:7px}
+  label .lk{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--kicker)}
+  input,select{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);
+        border:1px solid var(--line);border-radius:9px;padding:10px 12px;width:100%;outline:none}
+  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.07)}
+  input.err{border-color:var(--redFg);box-shadow:0 0 0 3px rgba(164,28,0,.06)}
+  input.ok{border-color:var(--greenFg)}
+  .hint{font-size:12px;color:var(--mut2)}
+  .msg{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+  .msg .g{width:6px;height:6px;border-radius:99px;background:currentColor}
+  .msg.err{color:var(--redFg)}
+  .msg.ok{color:var(--greenFg)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;background:var(--greenBg);color:var(--greenFg)}
+  .chip.n{background:var(--chipBg);color:var(--chipFg)}
+  .note{font-size:12.5px;color:var(--amberFg);background:var(--amberBg);border:1px solid var(--amberBorder);
+        border-radius:8px;padding:10px 12px;line-height:1.5}
+  .foot{display:flex;justify-content:flex-end;gap:10px;padding:18px 26px;border-top:1px solid var(--line);background:var(--headBg)}
+  .btn{font:inherit;font-size:13px;font-weight:600;padding:9px 16px;border-radius:9px;border:1px solid transparent;cursor:pointer}
+  .btn.ghost{background:var(--surface);border-color:var(--line);color:var(--mut)}
+  .btn.primary{background:var(--accent);color:#FFFFFF}
+</style>
+</head>
+<body>
+  <form class="card">
+    <div class="head">
+      <div class="kicker">New institute</div>
+      <h1>Onboard a partner branch</h1>
+      <p>Details are verified against the registry before the branch goes live.</p>
+    </div>
+    <div class="tabs">
+      <div class="tab active">Profile</div>
+      <div class="tab">Commercials</div>
+      <div class="tab">Documents</div>
+    </div>
+    <div class="body">
+      <div class="field">
+        <label><span class="lk">Legal name</span></label>
+        <input class="ok" value="Northline Education Trust">
+        <span class="msg ok"><span class="g"></span>Matches the registry record</span>
+      </div>
+      <div class="field">
+        <label><span class="lk">Branch code</span></label>
+        <input class="err" value="NL-009-">
+        <span class="msg err"><span class="g"></span>Code must be 3 groups — e.g. NL-009-MUM</span>
+      </div>
+      <div class="field">
+        <label><span class="lk">Region</span></label>
+        <select><option>West · Mumbai</option><option>South · Bengaluru</option></select>
+        <span class="hint">Determines the approving zonal manager.</span>
+      </div>
+      <div class="field">
+        <label><span class="lk">Tags</span></label>
+        <div class="chips">
+          <span class="chip">Priority</span>
+          <span class="chip">NOC ready</span>
+          <span class="chip n">Tier 2</span>
+        </div>
+      </div>
+      <div class="note">One tranche is pending a signed mandate. The branch can be saved as a draft and activated once it clears.</div>
+    </div>
+    <div class="foot">
+      <button type="button" class="btn ghost">Save draft</button>
+      <button type="button" class="btn primary">Submit for approval</button>
+    </div>
+  </form>
+</body>
+</html>

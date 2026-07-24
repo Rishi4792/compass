@@ -1,0 +1,54 @@
+{
+  "_name": "neutral-indigo",
+  "_note": "The DEFAULT bundled house theme — a brand-neutral slate/indigo, generated deterministically by seeds-to-tokens.mjs from neutral-indigo.seeds.json. Belongs to no product; a product gets its own identity via the 4-seed opt-in.",
+  "ink": "#0A2540",
+  "mut": "#5A6472",
+  "mut2": "#657081",
+  "kicker": "#606B7B",
+  "accent": "#4F46E5",
+  "accentDark": "#271DD0",
+  "accentWash": "rgba(79,70,229,0.07)",
+  "greenFg": "#0E6245",
+  "greenBg": "#E6F8F1",
+  "amberFg": "#9A6A14",
+  "amberBg": "#FFF9EE",
+  "amberBorder": "#F5E3BC",
+  "redFg": "#A41C00",
+  "redBg": "#FCE8E6",
+  "chipFg": "#3F4650",
+  "chipBg": "#E9EBEF",
+  "bg": "#F9FAFB",
+  "surface": "#FFFFFF",
+  "headBg": "#FBFBFC",
+  "line": "#F2F4F5",
+  "grid": "#F0F1F3",
+  "fontSans": "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+  "spacing": {
+    "cardPad": "20px 22px",
+    "grid": 4
+  },
+  "radii": {
+    "card": 12,
+    "chip": 6,
+    "pill": 99,
+    "inset": 8,
+    "control": 9
+  },
+  "shadow": {
+    "card": "0 1px 2px rgba(10,37,64,0.04)"
+  },
+  "motion": {
+    "enter": "0.55s cubic-bezier(.22,.61,.36,1)",
+    "stagger": 0.06,
+    "hover": "120ms"
+  },
+  "_meta": {
+    "seeds": {
+      "accent": "#4F46E5",
+      "neutral": "cool",
+      "font": "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+      "density": "airy",
+      "radius": "soft"
+    }
+  }
+}

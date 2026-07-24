@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<!-- ============================================================================================
+     CINEMATIC-HERO — reusable canvas + physics-motion library.  House style: buzz.xyz energy ·
+     SpaceX sophistication · Christopher Nolan gravitas.  Frame-deterministic: render(f) draws the
+     EXACT state for integer frame f (read from location.hash).  No hash → autoplays the loop.
+     Rendered by render.sh (headless Chrome per-frame → ffmpeg GIF + MP4, or a single-frame still).
+
+     HOW TO USE
+       1. Set --accent to the brand color; keep the cinematic void/paper/grade unless told otherwise.
+       2. Set TOTAL (frames) and FPS (15 default) to match render.sh.
+       3. Write your beats in the BEATS array + the render(f) body, composing from the PATTERNS below.
+       4. Keep the environment (rays/bloom/haze/dust/grain/vign/HUD) — it's what makes it cinematic.
+       5. Motion is PHYSICS, never linear: use ep()/eo()/damp() + mblur() + lock().  Weight over speed.
+     ============================================================================================ -->
+<html lang="en"><head><meta charset="utf-8"><style>
+  :root{
+    /* ---- swap --accent for the brand color; the rest is the cinematic grade (keep) ---- */
+    --accent:#7C74FF; --accentB:#B8B2FF; --accentDeep:#5B52F0;
+    --void:#05060F; --deep:#0A0C22; --paper:#EFEDFF; --mut:#8E88C4; --mut2:#5A5690;
+    --green:#3BE6AD; --red:#FF6152; --amber:#FFC24B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1280px;height:720px;overflow:hidden}         /* set to your target size */
+  body{font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;background:#000}
+  .mono{font-family:'SF Mono',ui-monospace,Menlo,monospace}
+
+  /* ===== THE CINEMATIC ENVIRONMENT (reusable — this is the "look") ===== */
+  #stage{position:relative;width:1280px;height:720px;overflow:hidden;
+    background:radial-gradient(120% 130% at 50% -10%, #171A3E 0%, #0C0E28 38%, #070818 66%, #04050E 100%)}
+  /* volumetric god-rays from a top light source */
+  .rays{position:absolute;left:50%;top:-320px;width:1700px;height:1200px;transform:translateX(-50%);z-index:1;
+    background:conic-gradient(from 178deg at 50% 0%, transparent 0deg, rgba(150,140,255,.09) 3deg, transparent 7deg, rgba(150,140,255,.06) 12deg, transparent 17deg, rgba(150,140,255,.10) 22deg, transparent 27deg, rgba(150,140,255,.05) 33deg, transparent 39deg);
+    filter:blur(7px);mix-blend-mode:screen;opacity:0}
+  .rays.r2{transform:translateX(-50%) scaleX(-1)}
+  .bloom{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:1100px;height:820px;z-index:1;
+    background:radial-gradient(closest-side, rgba(150,142,255,.30), rgba(120,112,255,.08) 44%, transparent 70%);filter:blur(11px);opacity:0}
+  .haze{position:absolute;z-index:1;border-radius:50%;filter:blur(60px);mix-blend-mode:screen}
+  .hL{left:6%;top:44%;width:520px;height:360px;background:radial-gradient(closest-side, rgba(90,84,180,.26), transparent);opacity:.55}
+  .hR{right:5%;top:30%;width:560px;height:420px;background:radial-gradient(closest-side, rgba(70,66,150,.22), transparent);opacity:.5}
+  .dust{position:absolute;inset:0;z-index:3}.d{position:absolute;border-radius:50%;background:#CFC9FF}
+  .flash{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;mix-blend-mode:screen;
+    background:radial-gradient(closest-side at 50% 44%, rgba(203,198,255,.6), rgba(150,142,255,.2) 30%, transparent 46%)}
+  .grain{position:absolute;inset:-30%;z-index:9;opacity:.10;mix-blend-mode:overlay;pointer-events:none}
+  .vign{position:absolute;inset:0;z-index:9;pointer-events:none;background:radial-gradient(120% 100% at 50% 42%, transparent 38%, rgba(2,3,10,.72) 100%)}
+  /* mission-control HUD (letterbox bars) — SpaceX gravitas */
+  .bar{position:absolute;left:0;right:0;height:30px;z-index:8;background:rgba(3,4,12,.55);display:flex;align-items:center;justify-content:space-between;padding:0 34px;opacity:0}
+  .bar.top{top:0;border-bottom:1px solid rgba(124,116,255,.12)} .bar.bot{bottom:0;border-top:1px solid rgba(124,116,255,.12)}
+  .hud{font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--mut)}
+  .hud .g{color:var(--green)} .hud .a{color:var(--accentB)}
+
+  /* ===== TYPE PATTERNS ===== */
+  .kick{position:absolute;left:0;right:0;text-align:center;z-index:6;font-size:13px;font-weight:700;letter-spacing:.42em;text-transform:uppercase;color:var(--mut);opacity:0}   /* SpaceX label */
+  .hero,.heroGlow{position:absolute;left:0;right:0;text-align:center;font-weight:900;letter-spacing:-.04em;line-height:1}  /* buzz spray-paint hero */
+  .heroGlow{color:#8E86FF;filter:blur(24px);opacity:0} .hero{color:var(--paper);filter:url(#spray)}
+  .sub{position:absolute;left:0;right:0;text-align:center;z-index:6;font-size:25px;font-weight:600;letter-spacing:.02em;color:var(--paper);opacity:0}.sub b{color:var(--accentB);font-weight:800}
+
+  /* ===== BEAT PATTERN: lit terminal that shows REAL work (depth, not abstraction) ===== */
+  .panel{position:absolute;left:50%;transform:translateX(-50%);z-index:5;background:linear-gradient(180deg, rgba(23,18,58,.92), rgba(12,9,34,.94));
+    border:1px solid rgba(124,116,255,.22);border-radius:16px;box-shadow:0 40px 120px rgba(0,0,0,.55),0 1px 0 rgba(255,255,255,.06) inset;overflow:hidden;opacity:0}
+  .panel .tb{display:flex;align-items:center;gap:12px;padding:15px 22px;border-bottom:1px solid rgba(124,116,255,.14);background:rgba(255,255,255,.02)}
+  .panel .tb .dot{width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  .panel .tb .cmd{font-size:15px;font-weight:600;color:#CFC9FF}.panel .tb .cmd .p{color:var(--accent)}
+  .panel .tb .st{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+  .row{display:flex;align-items:center;gap:14px;padding:9px 24px;font-size:16.5px;opacity:0}
+  .row .chk{color:var(--green);filter:drop-shadow(0 0 6px rgba(59,230,173,.55))}
+  .row .tx{color:#D9D4FF;font-weight:500}.row .tx b{color:#fff;font-weight:800}.row .tx .n{color:var(--green);font-weight:800}
+</style></head>
+<body>
+<div id="stage">
+  <svg width="0" height="0"><defs>
+    <!-- buzz spray-paint: displace text edges by fractal noise + soft blur; animate seed for shimmer -->
+    <filter id="spray" x="-14%" y="-30%" width="128%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves="2" seed="5" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="11" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="0.7"/></filter>
+    <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter>
+  </defs></svg>
+
+  <div class="rays" id="rays1"></div><div class="rays r2" id="rays2"></div>
+  <div class="bloom" id="bloom"></div>
+  <div class="haze hL"></div><div class="haze hR"></div>
+  <div class="dust" id="dust"></div>
+  <div class="flash" id="flash"></div>
+
+  <div class="bar top" id="bartop"><span class="hud">&#9673; Brand &nbsp;·&nbsp; label</span><span class="hud">status &nbsp;·&nbsp; <span class="g">ready</span></span></div>
+  <div class="bar bot" id="barbot"><span class="hud">left</span><span class="hud mono" id="tc">center</span><span class="hud a">right</span></div>
+
+  <!-- EXAMPLE BEAT A: kinetic spray-paint hero wordmark -->
+  <div class="kick" id="kick" style="top:170px">Kicker label</div>
+  <div style="position:absolute;left:0;right:0;top:214px;height:230px;z-index:6">
+    <div class="heroGlow" id="heroGlow" style="font-size:200px">Wordmark</div>
+    <div class="hero" id="hero" style="font-size:200px">Wordmark</div>
+  </div>
+  <div class="sub" id="sub" style="top:474px">Tagline. <b>Emphasis.</b> Close.</div>
+
+  <div class="grain"><svg width="100%" height="100%"><rect width="100%" height="100%" filter="url(#noise)"/></svg></div>
+  <div class="vign"></div>
+</div>
+<script>
+(function(){
+  // ===== timing (must match render.sh) =====
+  var TOTAL=64, FPS=15;
+
+  // ===== MOTION LIBRARY (physics, never linear) =====
+  function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+  function inv(f,a,b){return clamp((f-a)/(b-a),0,1);}              // linear progress 0..1
+  function es(t){return t*t*(3-2*t);}                              // smoothstep
+  function eo(t){return 1-Math.pow(1-t,3);}                        // ease-out cubic (decelerate)
+  function ep(f,a,b){return es(inv(f,a,b));}                       // eased progress over [a,b]
+  function hh(i,s){var x=Math.sin(i*12.9898+s*78.233)*43758.5453;return x-Math.floor(x);} // deterministic rand
+  function set(el,o){el.style.opacity=o;}
+  // damped-harmonic SEEK: sweeps from `start`(deg) to 0, OVERSHOOTS, oscillates, converges. The
+  // signature Nolan move — give any rotating/settling element weight. window [a,b]; higher d = tighter.
+  function damp(f,a,b,start,d,k){ if(f<=a) return start; var t=inv(f,a,b);
+    var spring=1-Math.exp(-(d||4.5)*t)*Math.cos((k||7.3)*t); return start*(1-spring); }
+  // velocity-based motion blur: call with a value-fn; blurs while fast, sharp when settled.
+  function mblur(el,fn,f,scale){ var v=Math.abs(fn(f)-fn(f-1)); el.style.filter='blur('+clamp(v*(scale||0.10),0,4).toFixed(2)+'px)'; }
+  // decisive LOCK pulse (triangular) at frame `at` — drive flash + shockwave + element ignite with it.
+  function lock(f,at,w){ return Math.min(ep(f,at-3,at),1-ep(f,at,at+(w||8))); }
+
+  // ===== environment (drive every frame; keeps the scene alive) =====
+  var dust=document.getElementById('dust'), ND=28, dp=[];
+  for(var i=0;i<ND;i++){var e=document.createElement('div');e.className='d';var s=(1+hh(i,2)*3.2);
+    e.style.width=s+'px';e.style.height=s+'px';e.style.filter=hh(i,3)<0.4?'blur(1.5px)':'none';dust.appendChild(e);dp.push(e);}
+  function env(f){
+    // buzz shimmer: nudge the spray filter's turbulence each frame
+    var tb=document.querySelector('#spray feTurbulence'); if(tb){tb.setAttribute('seed',1+(f%11));tb.setAttribute('baseFrequency',(0.58+0.05*Math.abs(Math.sin(f*0.15))).toFixed(3));}
+    set(document.getElementById('bloom'), ep(f,4,18)*0.9);
+    var rr=ep(f,6,26); set(document.getElementById('rays1'),rr); set(document.getElementById('rays2'),rr*0.8);
+    document.getElementById('rays1').style.transform='translateX(-50%) rotate('+(Math.sin(f*0.02)*1.2)+'deg)';
+    for(var i=0;i<ND;i++){var p=dp[i];var x=hh(i,6)*1280,by=hh(i,8)*720;
+      var y=((by-f*(0.5+hh(i,1)*1.1))%760+760)%760-20;var tw=0.5+0.5*Math.sin(f*0.05+i*1.3);
+      p.style.transform='translate('+x+'px,'+y+'px)';p.style.opacity=(0.10+tw*0.28).toFixed(2);}
+    set(document.getElementById('bartop'),ep(f,10,20)); set(document.getElementById('barbot'),ep(f,12,22));
+  }
+
+  // ===== YOUR BEATS =====  (this example: one kinetic hero wordmark. Add beats by frame windows.)
+  function render(f){
+    f=clamp(f,0,TOTAL-1);
+    env(f);
+    // kicker + hero + sub, revealed on eased windows
+    set(document.getElementById('kick'), ep(f,12,20));
+    var tw=ep(f,14,32), hero=document.getElementById('hero'), hg=document.getElementById('heroGlow');
+    set(hero,tw); set(hg,tw*0.9);
+    hero.parentElement.style.transform='scale('+(1.12-0.12*tw)+')'; hero.parentElement.style.transformOrigin='50% 40%';  // subtle push-in
+    set(document.getElementById('sub'), ep(f,34,44));
+  }
+  /* ---- MORE PATTERNS (copy into render as beats) ----
+     LOGO-REVEAL (needle/mark finds "true north"):
+        var ang=damp(f,16,50,-308,4.5,7.3); needleEl.setAttribute('transform','rotate('+ang+' cx cy)');
+        mblur(needleEl, function(g){return damp(g,16,50,-308,4.5,7.3);}, f);
+        var L=lock(f,48); set(flashEl,L*0.62); set(ringEl,(1-inv(f,48,64))*ep(f,48,51));  // flash + shockwave
+     TERMINAL-DEPTH (show REAL work — CI/lint/security ticking in): stagger rows with ep(f,start+i*6,...).
+     DECISIVE color flip (fail→pass, seeking→locked): swap text/color at the lock frame, not gradually.
+     Beats cross-fade by giving each its own [a,b] windows; nothing is ever fully static (env keeps drifting). */
+
+  window.__render=render;
+  var h=location.hash.replace('#','');
+  if(h!==''){ render(parseInt(h,10)||0); }
+  else { var f=0; (function t(){ render(f); f=(f+1)%TOTAL; setTimeout(t,1000/FPS); })(); }
+})();
+</script>
+</body></html>

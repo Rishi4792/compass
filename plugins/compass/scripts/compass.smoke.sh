@@ -182,7 +182,7 @@ for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO I
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=118' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the selftest floor 118"
-chk "$(grep -c 'FLOOR_SMOKE=60' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins the smoke floor 60"
+chk "$(grep -c 'FLOOR_SMOKE=114' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the smoke floor 114 (re-baselined)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -234,6 +234,37 @@ chk "$(awk '/^cmd_loop_round\(\)/{f=1} f&&/^\}$/{f=0} f&&/cmd_budget_check/{n++}
 chk "$(grep -c 'Post-ship: round' "$ENG")" "1" "INV-WIRED: cmd_status carries the loop line"
 chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "INV-WIRED: build skill invokes coldgo-gate (final web verify)"
 chk "$(grep -c 'coldgo-gate' "$PLUGIN_ROOT/skills/review-build/SKILL.md")" "1" "INV-WIRED: review-build [C] invokes coldgo-gate"
+
+# ── v0.14.0: bundled design system (neutralized) + generated gold + /compass front door ──
+RK="$PLUGIN_ROOT/skills/rk-house-style"; CH="$PLUGIN_ROOT/skills/cinematic-hero"; REPO="$(cd "$PLUGIN_ROOT/../.." && pwd)"
+CSKV="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSKV="$PLUGIN_ROOT/skills/build/SKILL.md"; RTR="$PLUGIN_ROOT/commands/compass.md"
+# INV-BUNDLE — both skills ship with the plugin
+chk "$([ -f "$CH/SKILL.md" ] && [ -f "$CH/template.html" ] && [ -f "$CH/render.sh" ] && echo 1 || echo 0)" "1" "v0.14 cinematic-hero bundled (SKILL+template+render)"
+chk "$(grep -c '^name: cinematic-hero' "$CH/SKILL.md" 2>/dev/null)" "1" "v0.14 cinematic-hero frontmatter name"
+chk "$([ -f "$RK/SKILL.md" ] && [ -f "$RK/SYSTEM.md" ] && [ -f "$RK/seeds-to-tokens.mjs" ] && echo 1 || echo 0)" "1" "v0.14 rk-house-style bundled (SKILL+SYSTEM+generator)"
+chk "$([ -f "$RK/gates/anti-drift-grep.mjs" ] && [ -f "$RK/gates/compose-check.mjs" ] && echo 1 || echo 0)" "1" "v0.14 rk-house-style gates bundled"
+chk "$([ -f "$RK/themes/neutral-indigo.json" ] && echo 1 || echo 0)" "1" "v0.14 neutral-indigo default theme present"
+# INV-NEUTRAL — privacy, non-negotiable: zero GQ bytes in the bundled copy
+chk "$(grep -rIiE 'grayquest|gq-stripe|gq_|my-performance|\bgq\b' "$RK" | wc -l | tr -d ' ')" "0" "v0.14 INV-NEUTRAL: 0 GQ strings in bundled rk-house-style (text only, incl. standalone GQ)"
+chk "$([ -f "$RK/themes/gq-stripe-blue.json" ] && echo present || echo absent)" "absent" "v0.14 INV-NEUTRAL: private gq-stripe-blue theme absent"
+chk "$(ls "$RK/gallery"/ref-*.png 2>/dev/null | wc -l | tr -d ' ')" "0" "v0.14 INV-NEUTRAL: real GQ gallery screenshots absent"
+# INV-GOLD-EXISTS — the 3 neutral gold pages + PNGs
+chk "$(ls "$RK/gallery"/*.html 2>/dev/null | wc -l | tr -d ' ')" "3" "v0.14 3 neutral gold HTML pages present"
+chk "$(ls "$RK/gallery"/*.png 2>/dev/null | wc -l | tr -d ' ')" "3" "v0.14 3 neutral gold PNGs present"
+# INV-CONTRACT-DESIGN
+chk "$(grep -c 'Design aesthetic — ASK' "$CSKV")" "1" "v0.14 contract skill asks the design aesthetic"
+chk "$( { grep -q 'rk-house-style' "$CSKV" && grep -q 'cinematic-hero' "$CSKV"; } && echo 1 || echo 0)" "1" "v0.14 contract skill routes to both bundled design skills"
+# INV-BUILD-APPLIES
+chk "$(grep -c 'Apply the design-standard' "$BSKV")" "1" "v0.14 build skill applies the design-standard on UI steps"
+# INV-ROUTER
+chk "$([ -f "$RTR" ] && echo 1 || echo 0)" "1" "v0.14 /compass router command exists"
+chk "$(grep -c 'AskUserQuestion' "$RTR")" "1" "v0.14 router ALWAYS asks (AskUserQuestion)"
+chk "$(grep -c '^description: .\+' "$RTR")" "1" "v0.14 router has a non-empty description"
+chk "$(grep -cE 'INDEX|CURRENT|progress' "$RTR" | awk '{print ($1>=1)?1:0}')" "1" "v0.14 router reads build state"
+chk "$(grep -c 'Edge states' "$RTR")" "1" "v0.14 router documents the edge states"
+# INV-README
+chk "$(grep -c 'The simplest way in is just' "$REPO/README.md")" "1" "v0.14 README leads with /compass"
+chk "$(grep -c 'Every stage is still its own command' "$REPO/README.md")" "1" "v0.14 README keeps namespaced commands as advanced/optional"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

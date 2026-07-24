@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neutral-indigo · table gold</title>
+<style>
+  :root{
+    --ink:#0A2540; --mut:#5A6472; --mut2:#657081; --kicker:#606B7B;
+    --accent:#4F46E5; --accentDark:#271DD0;
+    --greenFg:#0E6245; --greenBg:#E6F8F1;
+    --amberFg:#9A6A14; --amberBg:#FFF9EE; --amberBorder:#F5E3BC;
+    --redFg:#A41C00; --redBg:#FCE8E6;
+    --chipFg:#3F4650; --chipBg:#E9EBEF;
+    --bg:#F9FAFB; --surface:#FFFFFF; --headBg:#FBFBFC; --line:#F2F4F5; --grid:#F0F1F3;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--ink);
+       font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;padding:34px 26px}
+  .wrap{max-width:940px;margin:0 auto}
+  .kicker{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--kicker)}
+  .head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+  .head h1{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .head .sub{font-size:13px;color:var(--mut)}
+  .tablecard{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;
+             box-shadow:0 1px 2px rgba(10,37,64,.04)}
+  table{width:100%;border-collapse:collapse}
+  thead th{background:var(--headBg);font-size:9.5px;font-weight:600;letter-spacing:.05em;
+           text-transform:uppercase;color:var(--mut);text-align:right;padding:10px 14px;border-bottom:1px solid var(--line)}
+  th:first-child{text-align:left}
+  tbody td{font-size:12px;border-bottom:1px solid var(--line);padding:10px 14px;
+           text-align:right;font-variant-numeric:tabular-nums}
+  td:first-child{text-align:left;font-weight:600;color:var(--ink)}
+  tbody tr:last-child td{border-bottom:0}
+  .col-active{background:rgba(79,70,229,.05)}
+  th.col-active{color:var(--accent)}
+  .muted{color:var(--mut)}
+  .chip{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px}
+  .chip.ok{background:var(--greenBg);color:var(--greenFg)}
+  .chip.warn{background:var(--amberBg);color:var(--amberFg)}
+  .chip.risk{background:var(--redBg);color:var(--redFg)}
+  .foot{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:var(--headBg);border-top:1px solid var(--line)}
+  .foot .n{font-size:12px;color:var(--mut2)}
+  .foot .tot{font-size:12px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div><div class="kicker">Monthly progress</div><h1>Branch performance</h1></div>
+    <div class="sub">April – September · ₹ Lakh</div>
+  </div>
+  <div class="tablecard">
+    <table>
+      <thead>
+        <tr>
+          <th>Branch</th><th>Target</th><th>Apr</th><th>Jul</th>
+          <th class="col-active">Sep</th><th>Attainment</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Mumbai · West</td><td class="muted">420.0</td><td>61.4</td><td>78.9</td><td class="col-active">92.3</td><td>108%</td><td><span class="chip ok">Ahead</span></td></tr>
+        <tr><td>Bengaluru · South</td><td class="muted">510.0</td><td>70.2</td><td>74.1</td><td class="col-active">80.6</td><td>96%</td><td><span class="chip warn">On track</span></td></tr>
+        <tr><td>Delhi · North</td><td class="muted">385.0</td><td>44.8</td><td>52.0</td><td class="col-active">58.7</td><td>71%</td><td><span class="chip risk">Behind</span></td></tr>
+        <tr><td>Pune · West</td><td class="muted">298.0</td><td>39.1</td><td>55.7</td><td class="col-active">66.2</td><td>103%</td><td><span class="chip ok">Ahead</span></td></tr>
+        <tr><td>Chennai · South</td><td class="muted">340.0</td><td>41.0</td><td>49.9</td><td class="col-active">61.4</td><td>88%</td><td><span class="chip warn">On track</span></td></tr>
+      </tbody>
+    </table>
+    <div class="foot"><span class="n">5 branches · 214 total</span><span class="tot">Portfolio 93.4% of target</span></div>
+  </div>
+</div>
+</body>
+</html>

@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.14.0] — 2026-07-24
+
+**High-craft prototypes + a single front door.** Two things: Compass now ships a bundled design system so every prototype comes out looking world-class, and `/compass` becomes the one command you need.
+
+- **Bundled design system (auto-installed).** Two skills ship WITH the plugin — `rk-house-style` (product UI: dashboards, tables, forms, charts; a pinned `neutral-indigo` default theme, 14 component recipes, and drift gates: anti-drift-grep + compose-check + an independent gestalt scorer) and `cinematic-hero` (hero/launch motion + stills). No external dependency — public installers get the full quality machinery. The bundled `rk-house-style` is **neutralized**: the private theme + real gallery are stripped and replaced by freshly generated neutral **visual gold** (dashboard / form / table), each PROVEN to pass its own gates (0 off-theme tokens + composed-from-the-kit) and reviewed world-class by an independent scorer.
+- **Design aesthetic wired into the lifecycle.** For any web/dashboard build, the contract now ASKS which aesthetic and binds it (`design-standard: rk-house-style | cinematic-hero | both`), and the build stage applies that skill's tokens + recipes on every UI step — so "high craft" is the default, not a hope.
+- **`/compass` — the front door.** One command reads where your build is and asks what to do next, then routes you into the right stage. The seven namespaced stage commands stay as the engine and remain fully usable for direct access; the README now leads with `/compass`.
+- **Reconciliation.** Smoke gains a v0.14 assertion block (bundled files present, 0 GQ bytes in the neutralized copy, the 3 gold pages + PNGs, the contract/build wiring, the router, the README lead) and its floor is re-pinned to the new baseline; selftest unchanged. Dogfooded end-to-end through Compass's own contract → review → plan → review → build → review → ship.
+
 ## [0.13.0] — 2026-07-21
 
 **Co-construct + sketch.** The contract interview stops transcribing and starts co-designing: a six-phase Intake Protocol that scans the repo first, GENERATES possibilities the user hasn't considered (pre-mortem / constraint-relaxation / 10x / adjacent-use-cases — reacted to as menus, never "anything else?"), converges a NOW/LATER/NEVER scope ladder, clarifies only what the scan couldn't answer (hard question budget), and locks — while a Sketch Loop renders what's being decided AS it's decided (grayscale throwaway wireframe for web, Mermaid logic map otherwise, A/B/C alternatives side-by-side before contested questions).
