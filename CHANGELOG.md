@@ -3,6 +3,14 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.15.3] — 2026-07-28
+
+**Third post-ship patch — completing a partial fix.** v0.15.2's post-ship critique caught that the v0.15.2 security-card fix was half-done: it taught the *badge* to detect never-show in any format, but the shareable **scrubber** still read only the inline `never-show:` key. So a never-show declared as a **list** (`Never-show fields:` + bullets) or a per-field label was not scrubbed, and the leak gate **blessed the shareable copy at exit 0** with the field names present — a soft-pass on a format the product's own tests use.
+
+The shareable scrubber now collects never-show fields in **every supported format** (inline, list, per-field label, multi-value) → list/per-field never-show HARD-STOP at exit 3 with the names absent. Regression-guarded, including the missing `--shareable` list-fixture test (smoke floor 189 → 191).
+
+**Known limitation (Phase-2).** The shareable-Brief leak gate is a **best-effort** scrub over free-form markdown; making it airtight across every conceivable format is deferred to a Phase-2 redesign (or a strict-declared-format re-scope). The structural guarantee always holds — the reconciliation-gold *card* is always badged and the shareable Artifact is opt-in + operator-reviewed.
+
 ## [0.15.2] — 2026-07-28
 
 **Second post-ship patch — more parser edges, hardened.** v0.15.1's post-ship critique loop found a second soft-pass class and two Brief format edges:

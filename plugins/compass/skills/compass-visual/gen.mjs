@@ -110,10 +110,25 @@ function scope() {
 function security() {
   const body = sec('Security') || sec('data-sensitivity');
   if (!body) return { present: false };
+  // Collect never-show field tokens in EVERY supported format so the shareable scrub (which iterates this
+  // list) actually redacts them — inline `never-show: a, b`, a `Never-show fields:` bullet list, and a
+  // per-field row ending in a `never-show` label. A list-format never-show that isn't collected here would
+  // ship the field names in a "blessed" (exit 0) shareable copy — a soft-pass (post-ship PS-1 round 4).
   const neverShow = [];
-  for (const l of body.split('\n')) {
-    const m = l.match(/never-show\s*:\s*(.+?)\s*$/i);
-    if (m) neverShow.push(m[1].trim());
+  const addTok = (s) => { for (const t of String(s).split(/[,;\s]+/)) { const c = t.replace(/[.,;]+$/, '').trim(); if (c) neverShow.push(c); } };
+  let inNsList = false;
+  for (const raw of body.split('\n')) {
+    const l = raw.trim();
+    const inline = l.match(/never-show\s*:\s*(\S.*?)\s*$/i);
+    if (inline) { addTok(inline[1]); inNsList = false; continue; }
+    if (/never-show\b[^:]*:\s*$/i.test(l)) { inNsList = true; continue; }   // "Never-show fields:" header
+    if (inNsList) {
+      const b = l.match(/^[-*]\s*([A-Za-z0-9_.\-]+)/);
+      if (b) { neverShow.push(b[1]); continue; }
+      if (l) inNsList = false;
+    }
+    const perField = l.match(/^[-*]\s*([A-Za-z0-9_.\-]+)\b.*\bnever[-\s]?show\b/i);
+    if (perField) neverShow.push(perField[1]);
   }
   // "N/A" ONLY when the block LEADS with it (the whole block is N/A) AND declares no real sensitive surface.
   // An "N/A" buried in a STRIDE line ("Repudiation — N/A") or a role×view cell ("guest → N/A") must NOT flip

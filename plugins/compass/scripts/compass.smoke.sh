@@ -182,7 +182,7 @@ for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO I
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
-chk "$(grep -c 'FLOOR_SMOKE=189' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 189 (re-baselined after review-build + post-ship asserts)"
+chk "$(grep -c 'FLOOR_SMOKE=191' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 191 (re-baselined after review-build + post-ship asserts)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -307,6 +307,8 @@ mkdir -p "$SECF/list" "$SECF/vocab"
 printf '%s\n' '# c' '## Security & data-sensitivity' 'N/A — internal API, no external sensitive surface.' 'Never-show fields:' '- card_pan' '- ssn' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/list/contract.md"
 node "$VIS15/gen.mjs" "$SECF/list" brief --out "$SECF/list.html" >/dev/null 2>&1
 chk "$( { ! grep -q 'N/A — no sensitive surface' "$SECF/list.html" && grep -q 'card_pan' "$SECF/list.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: a never-show LIST + leading N/A renders the fields, not a false N/A badge (post-ship PS-3)"
+( node "$VIS15/gen.mjs" "$SECF/list" brief --shareable --out "$SECF/list-share.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.15 INV-BRIEF-LEAK: a LIST-format never-show is scrubbed in the shareable Brief → HARD-STOP exit 3 (post-ship PS-1 round4 — scrub covers list/per-field, not just inline)"
+chk "$( { ! grep -q 'card_pan' "$SECF/list-share.html" && ! grep -q 'ssn' "$SECF/list-share.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF-LEAK: list-format never-show field names ABSENT from the shareable copy (post-ship PS-1 round4)"
 printf '%s\n' '# c' '## Security & data-sensitivity' 'N/A for public pages. Internal: ssn → confidential, salary → restricted.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/vocab/contract.md"
 node "$VIS15/gen.mjs" "$SECF/vocab" brief --out "$SECF/vocab.html" >/dev/null 2>&1
 chk "$(node "$VIS15/gen.mjs" "$SECF/vocab" brief 2>/dev/null | grep -c 'N/A — no sensitive surface')" "0" "v0.15 INV-BRIEF: off-spec sensitivity vocabulary (confidential/restricted) + leading N/A shows no false badge (post-ship PS-3b)"
