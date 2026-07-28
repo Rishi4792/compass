@@ -924,16 +924,16 @@ mkstub() { # <file> <tail-line> [names]
 }
 NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK"
 ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 349 passed, 0 failed" "$NAMES12"
-SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 183 passed, 0 failed ────────"
+SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 186 passed, 0 failed ────────"
 COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
 chk "$?" "0" "INV-RECON: healthy stubbed tails + all pinned names → PASS"
 ST_LOW="$SB/st-low.sh"; mkstub "$ST_LOW" "selftest: 348 passed, 0 failed" "$NAMES12"
 ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_LOW" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"; RCC=$?
 chk "$RCC" "1" "INV-RECON refuse: selftest 348 < floor 349"
 chk "$(printf '%s' "$ERR" | grep -c 'refuse: floor-selftest')" "1" "INV-RECON reason code: floor-selftest"
-SM_LOW="$SB/sm-low.sh"; mkstub "$SM_LOW" "──────── 182 passed, 0 failed ────────"
+SM_LOW="$SB/sm-low.sh"; mkstub "$SM_LOW" "──────── 185 passed, 0 failed ────────"
 ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_LOW" bash "$RC" 2>&1 >/dev/null)"
-chk "$(printf '%s' "$ERR" | grep -c 'refuse: floor-smoke')" "1" "INV-RECON refuse+code: smoke 182 < floor 183"
+chk "$(printf '%s' "$ERR" | grep -c 'refuse: floor-smoke')" "1" "INV-RECON refuse+code: smoke 185 < floor 186"
 ST_NONAME="$SB/st-noname.sh"; mkstub "$ST_NONAME" "selftest: 349 passed, 0 failed" "INV-ENGINEFIX INV-GRAMMAR"
 ERR="$(COMPASS_RECON_SELFTEST_CMD="$ST_NONAME" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" 2>&1 >/dev/null)"
 chk "$(printf '%s' "$ERR" | grep -c 'refuse: inv-missing')" "1" "INV-RECON refuse+code: a pinned INV group name absent"

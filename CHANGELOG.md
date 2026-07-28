@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.15.1] — 2026-07-28
+
+**Post-ship patch — the loop caught what the review missed.** v0.15.0's post-ship critique loop, running against the freshly-published artifact, found two defects the pre-ship review rounds had not:
+
+- **The Contract Brief could hide a real sensitive surface (MAJOR).** `compass-visual`'s security-card "N/A" detection was unanchored, so an `N/A` inside a *required* STRIDE-lite line ("Repudiation — N/A") or a role×view cell flipped a contract that declares **PII + never-show** fields to a false green **"N/A — no sensitive surface"** badge — exactly the "user locks something they didn't understand" failure the Brief exists to prevent. The N/A badge now fires only when the security block **leads** with N/A **and** declares no sensitive fields; otherwise the per-field classification + never-show list render.
+- **`config-parity` tab-anchor parity (minor).** Its header anchor omitted tabs (`restore-point`'s already included them), so a tab-indented `env-keys-referenced:` line was skipped → soft-pass. Both now use `^[-*[:space:]]*`.
+
+Both regression-guarded (smoke floor 183 → 186). No other behavior change. This is the post-ship loop working as designed: SHIPPED is not the finish line — the live artifact is re-critiqued, and a real finding is fixed and re-shipped.
+
 ## [0.15.0] — 2026-07-28
 
 **Trust made real, and shown.** Compass's reasoning was already strong; this release hardens its weakest seams and makes the rigor legible to a first-time user. Two halves (Phase 1 of a phased program, grounded in a 16-agent audit of all five stage-agents), built `--auto` on Compass itself.

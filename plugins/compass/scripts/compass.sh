@@ -673,8 +673,8 @@ cmd_config_parity() { # <slug|build-dir> — HARD STOP if new code needs a prod 
   # first-match-wins (hdr_get) let a stale `env-keys-referenced: none` stub above a real-keys line soft-pass
   # the parity check (R3-R2-D3). Anchored to line-start so a prose mention can't steal the parse.
   local refs prod ref_keys="" k
-  refs="$(sed -nE 's/^[-* ]*env-keys-referenced:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
-  prod="$(sed -nE 's/^[-* ]*prod-keys:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
+  refs="$(sed -nE 's/^[-*[:space:]]*env-keys-referenced:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
+  prod="$(sed -nE 's/^[-*[:space:]]*prod-keys:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
   for k in $refs; do case "$(printf '%s' "$k" | tr 'A-Z' 'a-z')" in none|n/a|-|'') : ;; *) ref_keys="$ref_keys $k" ;; esac; done
   ref_keys="$(printf '%s' "$ref_keys" | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//')"
   # no REAL new env keys referenced (absent, or only the explicit `none` placeholder) → nothing to verify.

@@ -110,13 +110,19 @@ function scope() {
 function security() {
   const body = sec('Security') || sec('data-sensitivity');
   if (!body) return { present: false };
-  const naMatch = /\bN\/A\b\s*[—-]?\s*(.*)/i.exec(firstPara(body));
   const neverShow = [];
   for (const l of body.split('\n')) {
     const m = l.match(/never-show\s*:\s*(.+?)\s*$/i);
     if (m) neverShow.push(m[1].trim());
   }
-  return { present: true, na: !!naMatch, naReason: naMatch ? naMatch[1].trim() : '', body, neverShow };
+  // "N/A" ONLY when the block LEADS with it (the whole block is N/A) AND declares no real sensitive surface.
+  // An "N/A" buried in a STRIDE line ("Repudiation — N/A") or a role×view cell ("guest → N/A") must NOT flip
+  // a PII / never-show block to a false green "no sensitive surface" badge that hides the binding classification
+  // a user locks against (post-ship PS-2-1 / CRITIQUE-TARGET #3).
+  const lead = /^\s*\**\s*N\/A\b\s*[—-]?\s*(.*)/i.exec(firstPara(body));
+  const declaresSensitive = neverShow.length > 0 || /\b(PII|commercial-sensitive)\b/i.test(body);
+  const na = !!lead && !declaresSensitive;
+  return { present: true, na, naReason: na ? (lead[1] || '').trim() : '', body, neverShow };
 }
 // ── reconciliation gold literal (the section body) ──
 const goldBody = sec('Reconciliation');

@@ -182,7 +182,7 @@ for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO I
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
-chk "$(grep -c 'FLOOR_SMOKE=183' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 183 (re-baselined after review-build R3 asserts)"
+chk "$(grep -c 'FLOOR_SMOKE=186' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 186 (re-baselined after review-build + post-ship asserts)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -292,6 +292,15 @@ printf '%s\n' '# Contract — leak' '## Goal & scope' 'NAV $9,999,999.00 (42 cro
 chk "$( { ! grep -q '9,999,999' "$LKF/share.html" && ! grep -q '42 crore' "$LKF/share.html" && ! grep -q '1\.5' "$LKF/share.html" && ! grep -q '12,00,000' "$LKF/share.html" && ! grep -q '8 750 000' "$LKF/share.html" && ! grep -qi 'SecretField' "$LKF/share.html" && ! grep -q 'sk-ABCD1234' "$LKF/share.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF-LEAK: shareable copy holds NEITHER the gold literals (currency/spelled-unit/decimal + comma-regrouped '12,00,000'↔'1,200,000' + SPACE-grouped '8 750 000'↔'8,750,000') NOR the never-show NOR the secret (R3-C2 + D2 + D1/D3 + D4-1 + R3-R5-D5-01)"
 node "$VIS15/gen.mjs" "$LKF" brief --out "$LKF/local.html" >/dev/null 2>&1
 chk "$( [ "$(grep -c '9,999,999' "$LKF/local.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: the LOCAL Brief still renders the full gold literal (F-BRIEF two-variant, distinct from shareable)"
+# INV-BRIEF security-card fidelity (post-ship PS-2-1): an N/A buried in a STRIDE/role line must NOT flip a
+# PII/never-show block to a false green "no sensitive surface" badge (which would hide the binding surface).
+SECF="$(dirname "$VSMK")/sec"; mkdir -p "$SECF" "$SECF/na"
+printf '%s\n' '# c' '## Security & data-sensitivity' 'Per-field: card_pan (PII). never-show: card_pan. Role×view: guest → N/A. STRIDE-lite: Repudiation — N/A.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/contract.md"
+node "$VIS15/gen.mjs" "$SECF" brief --out "$SECF/b.html" >/dev/null 2>&1
+chk "$( { ! grep -q 'N/A — no sensitive surface' "$SECF/b.html" && grep -q 'card_pan' "$SECF/b.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: a PII/never-show block with 'N/A' buried in a STRIDE line renders the classification, NOT a false green N/A badge (post-ship PS-2-1)"
+printf '%s\n' '# c' '## Security & data-sensitivity' 'N/A — pure library, no sensitive surface.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/na/contract.md"
+node "$VIS15/gen.mjs" "$SECF/na" brief --out "$SECF/na.html" >/dev/null 2>&1
+chk "$(grep -c 'N/A — no sensitive surface' "$SECF/na.html")" "1" "v0.15 INV-BRIEF: a genuinely-N/A security block still renders the N/A badge (post-ship PS-2-1 keeps the true-N/A path)"
 rm -rf "$(dirname "$VSMK")"
 # INV-LOCK
 chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-LOCK: contract skill produces the Brief + requires an explicit lock"
@@ -361,6 +370,7 @@ FXP="$(cd "$(dirname "$SH")" && pwd)/fixtures"
 ( bash "$SH" config-parity "$FXP/config-parity/no-prod-declaration" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: keys referenced + no prod-keys declaration → HARD STOP"
 ( bash "$SH" config-parity "$FXP/config-parity/none-referenced"    >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-PARITY: no new env keys referenced → N/A-pass"
 ( bash "$SH" config-parity "$FXP/config-parity/dup-none-stub"      >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: a stale 'env-keys-referenced: none' stub above real keys cannot hide them → HARD STOP (R3-R2-D3 union)"
+( bash "$SH" config-parity "$FXP/config-parity/tab-indented"       >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: a TAB-indented env-keys-referenced header is not skipped → HARD STOP (post-ship PS-2-2, anchor parity with restore-point)"
 SHIPSK="$PLUGIN_ROOT/skills/ship/SKILL.md"
 chk "$( { grep -q 'restore-point' "$SHIPSK" && grep -q 'config-parity' "$SHIPSK" && grep -q 'without a redeploy' "$SHIPSK"; } && echo 1 || echo 0)" "1" "v0.15 INV-RESTORE/PARITY/FLAG: ship skill wires restore-point + config-parity + flag-OFF-without-redeploy"
 PSD="$SMOKE_TMP/psd"; mkdir -p "$PSD"
