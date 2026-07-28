@@ -11,6 +11,7 @@ The contract is the **single source of truth** — the invariant every later ste
 - Create `<state-root>/<slug>/` (resolve `<state-root>` via `compass.sh state-root`). Write the slug to `<state-root>/CURRENT` (a non-authoritative hint only — resume disambiguates by worktree, not this file); append to `<state-root>/INDEX`: `<slug> · <goal> · status=draft · facets=<…> · touches=<rough paths, refined by plan>`.
 - **Isolation (REQUIRED iff this build may run in PARALLEL and touches DB schema):** declare `isolation.db_provision` and `isolation.db_teardown` shell commands that stand up / tear down a **per-worktree** database (e.g. a fresh Postgres schema, emitting its `DATABASE_URL` into the worktree's `.env.compass`). Without this, `compass.sh check-db-isolation` REFUSES a schema-touching parallel build — concurrent migrations on one shared dev DB corrupt the migration history. Mark **N/A** for single-build or no-schema builds.
 - **`schema-touching: yes|no` (REQUIRED, v0.7.0):** a header field declaring whether this build changes DB schema. `yes` → build/review-build/ship run `compass.sh migration-gate` (STRICT: a real migration in the deploy's canonical dir must reproduce the schema on a fresh DB; `db execute`/hand-apply, stray dir, or replay-fail = FAIL). For non-Prisma tools add a `## Migration recipe` block (`canonical_migrations_dir`, `migrate_diff_cmd`, `migrate_deploy_fresh_cmd`). `no` → migration-gate is N/A. Silent omission = the gate refuses to run.
+- **`destructive-backfill: yes|no` + `env-keys-referenced: <KEY … | none>` (+ `prod-keys: <KEY …>`) — machine-readable prod-safety signals (v0.15.0, REQUIRED for F-RESTORE/F-PARITY):** the ship stage's `compass.sh restore-point` / `config-parity` HARD STOPs read THESE header fields (not the prose §Rollout/§Security blocks below), so the interview MUST write them. `destructive-backfill: yes` — a row-rewriting/deleting backfill even when `schema-touching: no` — makes `restore-point` demand a confirmed snapshot. `env-keys-referenced:` names the env keys the change newly references; when it is non-`none`, `prod-keys:` names the keys prod declares, and `config-parity` HARD-STOPs on any referenced key prod lacks. Write `destructive-backfill: no` + `env-keys-referenced: none` for the common case — **silent omission leaves both gates with no signal, so they N/A-pass: the exact soft-pass this floor exists to kill.**
 - **`deploy: out-of-scope — <reason>` (optional):** ship is MANDATORY unless this exact line is present. Without it, a build cannot reach a final state without `compass:ship` (enforced by `lifecycle-audit` + the Stop hook).
 - **Project facets (one OR MORE — composable):** `web` · `pipeline` · `library`. A CRM with a data sync is `web + pipeline` → both facets' sections and verify rungs apply. (touches here is a coarse pre-filter; plan rewrites it with the real file list.)
 - Optional **budget**: token/time ceiling for the whole build (Compass surfaces "approaching budget" rather than grinding silently).
@@ -26,7 +27,7 @@ Six phases, recorded live in `<state-root>/<slug>/intake.md` (append-only, colum
 - **Phase 1 — FRAME (1 call, 2 questions):** WHY menu (recurring pain / new capability / defensive / efficiency) + success-anchor menu (3-4 concrete "this succeeded if …" statements anchored in a specific past event — never "would you use X?"). Record as `Q: … → A: …`.
 - **Phase 2 — EXPAND (FULL only; 4 multiSelect menus, one per generator):** GENERATE concrete possibilities the user hasn't considered — they react to menus, never "anything else?": **premortem** ("it shipped and FAILED — the 4 likeliest post-mortems"), **constraint relaxation** ("if <detected limit> weren't a limit…"), **10x** ("the 10x version is…"), **adjacent** ("this almost also gives you … for <adjacent user>"). ≥2 options per generator; ≥1 option per interview explicitly "recommend AGAINST — here's the cost" (anti-yes-bias). Selected → NOW; unselected → LATER. **Premortem items binned NOW become `CRITIQUE-TARGET: <failure>` lines in contract.md — the post-ship critic's seed list.**
 - **Phase 3 — CONVERGE (1 call, loops until locked):** print the scope ladder (NOW = walking skeleton / LATER / NEVER→Non-goals) — web facet: the ASCII sketch prints FIRST (§2b renders alongside); menu: **Lock ladder (Recommended) / Promote-demote / Expand more / Pause**. On lock: `SCOPE` lines into intake.md AND a `## Scope ladder` section into contract.md in the same step (the gate count-syncs them).
-- **Phase 4 — CLARIFY (≤4 questions FULL / ≤2 LIGHT, hard cap):** only residual gaps the scan couldn't answer, impact×uncertainty-ranked, one per call. Every menu carries a recommended default WITH its reason — EXCEPT questions flagged OPEN-CALL (irreversible / pure product taste), where the recommendation is deliberately withheld. Confirm here (not interrogate): the classic required sections — **Goal & scope · Data derivation · Schema/output shape · Scale · Dependencies (version pins) · Features ("when X → Y") · Acceptance & INVARIANTs · Idempotency/failure/retry · Rollback · Observability · Non-goals** — plus the facet extras below. Fill or mark explicit N/A (silent omission = defect).
+- **Phase 4 — CLARIFY (≤4 questions FULL / ≤2 LIGHT, hard cap):** only residual gaps the scan couldn't answer, impact×uncertainty-ranked, one per call. Every menu carries a recommended default WITH its reason — EXCEPT questions flagged OPEN-CALL (irreversible / pure product taste), where the recommendation is deliberately withheld. Confirm here (not interrogate): the classic required sections — **Goal & scope · Data derivation · Schema/output shape · Scale · Dependencies (version pins) · Features ("when X → Y") · Acceptance & INVARIANTs · Idempotency/failure/retry · Rollback · Rollout & kill-switch · Security & data-sensitivity · Observability · Non-goals** — plus the facet extras below. Fill or mark explicit N/A (silent omission = defect).
 - **Phase 5 — LOCK:** write contract.md v1 (+ `## Scope ladder`; NEVER items → Non-goals; premortem-NOW → CRITIQUE-TARGET lines), then §4's receipt + self-checks.
 
 ### 2b. Sketch Loop — render, don't describe (runs inside Phases 1-3)
@@ -37,7 +38,7 @@ Six phases, recorded live in `<state-root>/<slug>/intake.md` (append-only, colum
 - **F-AUTODEGRADE:** a headless/--auto contract run writes v1 sketch + extraction with `picked=auto · render=file-only`, skips all menus, records `intake: classic`, and never authors intake.md.
 
 ### Facet extras (confirmed in Phase 4)
-**All facets:** Goal & scope · Data derivation · Schema/output shape · Scale (volume, concurrency) · Dependencies/integrations (incl. version pins) · Features (as behaviors "when X → Y") · Acceptance & accuracy goals (measurable; mark non-negotiables **INVARIANT**) · Idempotency/failure & retry · Rollback (what "revert" means; what must not be lost) · Observability (the exact metric/log that proves it's correct in prod) · Non-goals (e.g. "docs/changelog out of scope" — state it).
+**All facets:** Goal & scope · Data derivation · Schema/output shape · Scale (volume, concurrency) · Dependencies/integrations (incl. version pins) · Features (as behaviors "when X → Y") · Acceptance & accuracy goals (measurable; mark non-negotiables **INVARIANT**) · Idempotency/failure & retry · Rollback (what "revert" means; what must not be lost) · **Rollout & kill-switch** (v0.15.0 — REQUIRED: a flag name or `no flag — <reason>`, its default state, a one-command disable path, and the canary segment; also write the machine-readable `env-keys-referenced`/`prod-keys` + `destructive-backfill` header fields per §1 that `config-parity`/`restore-point` consume) · **Security & data-sensitivity** (v0.15.0 — REQUIRED: per-field classification public/internal/commercial-sensitive/PII + literal never-show fields · a **role×view** allow/deny matrix · a 3-line **STRIDE**-lite; explicit `N/A — <reason>` allowed when there is no sensitive surface) · Observability (the exact metric/log that proves it's correct in prod) · Non-goals (e.g. "docs/changelog out of scope" — state it).
 
 **Reconciliation goal (REQUIRED when the build outputs any number; INVARIANT by default):**
 - **Gold figure must be INDEPENDENT** — a *published / audited / human-signed* number (data-room Excel, gold MIS, board figure), pinned as a **literal** in `contract.md`. **It may NOT be computed by the reproducing query** (a query agreeing with itself proves nothing). Name its provenance.
@@ -70,11 +71,45 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
   - [x] intake-gate: compass.sh intake-gate <dir> → 0
   <!-- TEMPLATE: sketch-box -->
   - [x] sketch-gate: compass.sh sketch-gate <dir> → 0
+  <!-- TEMPLATE: contract-brief-box -->
+  - [x] Contract Brief produced (compass-visual → brief.html + brief.png) and shown; shareable-on-request stated
+  <!-- TEMPLATE: mode-choice-box -->
+  - [x] explicit lock recorded ("This is the contract — lock it") + mode choice (Auto | Human-gated); in --auto, G1 is the lock
+  <!-- TEMPLATE: security-box -->
+  - [x] security block (per-field classification + role×view + STRIDE-lite) filled or explicit N/A — <reason>
+  <!-- TEMPLATE: prodsafety-box -->
+  - [x] prod-safety signals written: schema-touching / destructive-backfill / env-keys-referenced (+ prod-keys when non-none)
   ```
 - **Self-check:** run `compass.sh scan-receipt .claude/builds/<slug> contract` AND `compass.sh intake-gate .claude/builds/<slug>` AND `compass.sh sketch-gate .claude/builds/<slug>` (each must exit 0).
 
 ## 5. STOP
 The receipt boxes ARE the done-criteria — if any can't be honestly checked, set status FAIL and fix it first.
+
+## 6. Contract Brief → explicit LOCK → mode choice (at closure, before anything proceeds)
+Once the receipt passes, do NOT slide silently into planning. Close the contract deliberately:
+
+1. **Produce the Contract Brief.** Invoke the bundled **`compass-visual`** skill to generate the visual **Contract Brief** from `contract.md` — `node skills/compass-visual/gen.mjs <dir> brief --out <dir>/brief.html` then render it to `<dir>/brief.png` (via `cinematic-hero/render.sh`). Show the user the Brief (the PNG or the local HTML) — it renders, in plain sight, exactly what they're about to lock: the goal, what it touches, the reconciliation gold, the invariants, the NOW/LATER/NEVER scope, and the security classification. **Tell the user a shareable copy exists on request** (`--shareable` redacts the gold literal + never-show values and runs the leak gate) — but never hand one off unasked.
+2. **Require an explicit LOCK.** Nothing downstream runs until the user explicitly locks: they must say **"This is the contract — lock it"** (or clearly equivalent). Until then the contract is `draft` — no plan, no build. This is the one human checkpoint that guarantees a user never locks something they didn't understand. On lock, set `progress.md` status to `contract-LOCKED`.
+3. **Then the mode choice (AskUserQuestion).** After the lock, ask how they want the rest of the lifecycle to run, each option explained:
+   - **Auto** — Compass runs the whole assembly line itself and stops for you only at the two real decision points (the contract you just locked, and any gate it can't clear). Fastest; best when you trust the contract.
+   - **Human-gated** — Compass pauses at every stage transition for your Approve/Revise/Amend/Pause. Most control; best for high-stakes or exploratory work.
+   Record the choice; **Human-gated** proceeds via the per-stage 4-button gate below, **Auto** runs the `--auto` orchestrator loop (two human gates only).
+
+**In `--auto` mode:** the operator's up-front **G1** approval of the contract **is** the lock and the mode choice — do NOT block waiting for a typed "lock it" (that would hang an unattended run). The lock/mode interaction above is the **gated-mode** path; `--auto` records the equivalent via the existing G1 machinery and continues.
+
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** We turned your idea into a locked, airtight spec — the contract — and rendered it as a one-page **Contract Brief** you can see and lock.
+**Why it matters.** Everything after this is checked against the contract. Lock a vague spec and you get drift; lock this one and every later stage has a real target.
+**Your options:**
+- **Approve & continue** — move to review-contract (an independent pass that tries to break the spec now, while it's cheap).
+- **Revise** — re-run the interview with a change you name.
+- **Amend** — a real scope change: bump the contract version and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve & continue — pressure-test the spec before any code exists.
+Progress — ① contract drafted + Brief shown · next: ② review-contract.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "Before we build anything, we lock a spec — and I won't let it lock until it's airtight. I pin the exact fields and what each means, mark the promises that can never break as INVARIANTs, and tie every number to a real published figure we can check against — not a number the code makes up about itself. I pin which fields are sensitive so nothing leaks later, and a one-command off-switch. You see all of this as a one-page brief and you personally lock it — nothing gets built that isn't in that brief."
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

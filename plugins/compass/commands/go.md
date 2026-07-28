@@ -6,6 +6,18 @@ description: The Compass front door — one command that reads where your build 
 
 **This is the single entry point for Compass.** You don't need to remember the stage commands — `/compass:go` reads the current state and asks you where to go, every time.
 
+## Welcome — how Compass works in 20 seconds
+
+New here? Here's the whole idea in plain words, and you can trust the machine because its rigor is real and shown.
+
+**Compass builds software true to a spec you lock first** — so what gets built is what you actually meant, with zero drift.
+
+- **Contract-first.** Before any code, you and Compass write a short *contract*: what we're building, what "done" means, and the guardrails. You review it and **lock it**. That locked contract is the single source of truth for everything after — every later stage is checked against it.
+- **Then it's an assembly line with gates.** Compass moves through fixed stations — contract → review → plan → review → build → review → ship. Between every station sits a *gate*: a real script check that refuses to let the work advance until it proves it still matches the contract. No vibes, no "looks right" — actual pass/fail with the command and its output on the receipt.
+- **You're never lost.** At every step Compass tells you, in plain English, what just happened, why it matters, your options, and the single next thing to do. Stop any time — nothing is lost; `/compass:go` picks you up exactly where you left off.
+
+That's the mental model. When you're ready, this front door reads your build's state and asks what you'd like to do next.
+
 ## What to do when invoked
 
 1. **Read the build state** (never guess it):

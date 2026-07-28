@@ -26,6 +26,12 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 - Then `compass.sh merged-recon <this-slug> <sibling-slug> <base-branch>` — re-runs **both** builds' recorded `RECON-CMD` on the *merged* tree (resolve `package-lock.json`/migration-order conflicts first — whoever merged first wins, you rebase). **Non-zero → STOP.** Then `compass.sh gc`.
   - **Non-reconciling (library) builds (v0.9.0):** a build with no `RECON-CMD` (library/tooling, no numeric gold) has no merged-recon teeth — so on the merged tree **re-run its test suite** (`compass.sh`'s own `compass.selftest.sh` + `compass.smoke.sh`, or the repo's equivalent) and require green before shipping. The post-merge-check (base-advanced + blast-radius) above is the primary loser-re-check; the merged test-suite green is its reconciliation analogue.
 
+## Step 0.6 — prod-safety pre-flight (v0.15.0, F-RESTORE / F-PARITY — UNCONDITIONAL HARD STOP)
+Run **both**, always, **before the first deploy action** — never operator-skippable; an N/A is *invoked and recorded as an N/A-pass*, not skipped:
+- **`compass.sh restore-point <slug>`** — HARD STOP before any destructive migration/backfill: requires a confirmed, COMPLETE snapshot (snapshot-id + timestamp + restore command) whenever the contract declares `schema-touching: yes` or `destructive-backfill: yes`; N/A-passes (recorded) when nothing destructive is declared. **Non-zero → STOP, take the snapshot, re-run.**
+- **`compass.sh config-parity <slug>`** — HARD STOP if the change references a prod env key prod lacks (diffs the contract's `env-keys-referenced:` vs `prod-keys:`); N/A-passes when no new keys are referenced. **Non-zero → STOP, provision the key in prod, re-run.**
+Record `restore-point: exit N` and `config-parity: exit N` into the ship receipt (the `prodsafety-box`). `compass.sh ship-prodsafety-receipt-match <dir>` verifies **both** lines are present — a silent skip fails the suite, so the HARD STOPs cannot be bypassed.
+
 ## Procedure
 1. **Deploy via the repo's own path** — the deploy/predeploy scripts Phase 0 found; never an ad-hoc deploy. Respect the contract's rollout order + flags.
 2. **Post-deploy reconciliation on PROD data** — run the reproducing query against prod (read-only), then `compass.sh reconcile <actual> <gold> <tol>`. **Non-zero = STOP and roll back** via the contract's exact revert path.
@@ -34,7 +40,9 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 3. **Confirm observability EMITS in prod** — the exact metric/log the contract named is actually flowing (query it / tail it), not just present in code.
 4. **Smoke the critical flow** — the contract's headline behavior works in prod (read-only asserts; Playwright against prod with env-supplied auth, never a committed token).
    - **Prod route-smoke is a HARD STOP (v0.8.0, when the plan declares `## Affected routes`):** GET **each declared route on prod** (200-with-content, read-only) + a reversible **create→assert→delete** probe for write flows; record one canonical line per route in the ship receipt: `- [x] route <path>: <prod-cmd> → 200 <content-assert> (prod)`. **Prod unreachable / any route not 200 ⇒ the build CANNOT be marked SHIPPED** — it stays CLOSED, you surface the blocker. `lifecycle-audit … SHIPPED` enforces a CHECKED prod route-smoke line per declared route — missing = STOP. (The exact `pg-method-rates` failure was a named-but-never-loaded route reaching prod.)
-5. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy), record what happened.
+5. **Kill-switch proof (v0.15.0, F-FLAG)** — confirm the feature flag disables the feature **without a redeploy**: flip the declared flag OFF in prod (config / flag service — no new deploy), assert the feature is dark, flip it back; record it. (Contract `no flag — <reason>` waives this.)
+6. **Secret-scan the release patch (v0.15.0)** — once the release commit exists, `compass.sh secret-scan --commits <prev-tag>..HEAD` → 0 hits, so the actual committed patch is proven clean (review-build scans the pre-commit working tree; this covers anything the release commit itself introduces). **Any hit → STOP, scrub, re-commit before push.**
+7. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy): pre-push `git reset --hard <prev-tag> && git clean -fd`; post-push `git revert <prev-tag>..<ship-HEAD>` — then `git status --porcelain` empty + suites at floors. Record what happened.
 
 ## Emit
 **Terminal-status guard (v0.7.0, re-ordered v0.13.0):** FIRST run `compass.sh postship-required <dir>`. **N/A / waived** → run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write SHIPPED (exactly the pre-v0.12 flow). **REQUIRED** → do NOT attempt `lifecycle-audit … SHIPPED` yet (G-O1 correctly fails with zero rounds — that is not a broken chain, it is the loop demanding to run): emit the ship receipt, set `**Status:** post-ship (round 1/cap)`, and enter §5; `lifecycle-audit … SHIPPED` runs only after `loop-converged` exits 0, and only then is SHIPPED written.
@@ -42,7 +50,12 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
 ```
 ## RECEIPT — ship · <slug> · PASS
 - [x] gate: review-build receipt OK
+<!-- TEMPLATE: prodsafety-box -->
+- [x] restore-point: exit <N>   (`compass.sh restore-point <slug>` — pre-deploy HARD STOP / N/A-pass)
+- [x] config-parity: exit <N>   (`compass.sh config-parity <slug>` — pre-deploy HARD STOP / N/A-pass)
+- [x] kill-switch: flag OFF disables the feature WITHOUT a redeploy (or `no flag — <reason>`)
 - [x] deployed via repo path: `<cmd>` → <result>
+- [x] release-patch secret-scan: `compass.sh secret-scan --commits <prev-tag>..HEAD` → 0 hits
 - [x] prod reconcile: `compass.sh reconcile <actual> <gold> <tol>` → PASS
 - [x] observability emits in prod: `<cmd>` → <signal seen>
 - [x] critical flow smoke (prod, read-only): <result>
@@ -79,6 +92,20 @@ Self-check: `compass.sh scan-receipt .claude/builds/<slug> ship`.
    `user-accepted: ship-as-is — <PS ids> · <ISO ts>`
    — any PS row opened AFTER it voids the acceptance) / **Keep trying** (one more capped loop — WITHDRAWN once `g2_fires` ≥ 3, the v0.10 rule) / **Re-scope** (Amend) / **Pause**. Never fake done.
 `ship-release` still fires on EVERY exit path, including between rounds. If prod reconciliation drifts LATER (a future month), that's a new signal → reopen via `compass:contract` (amend) — the drift guard doesn't end at deploy.
+
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** I deployed safely, not just deployed: took a restore point, confirmed prod has every setting the new code needs, re-ran the reconciliation against real prod data, and confirmed the monitoring signal emits.
+**Why it matters.** A deploy that isn't proven in prod isn't done. There's a one-flip kill switch that disables the change without a redeploy if we ever need it off.
+**Your options:**
+- **Approve & continue** — mark the build SHIPPED (the prod checks passed).
+- **Revise** — re-run ship with a change you name.
+- **Amend** — a real scope change: bump the contract and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve — the prod checks passed.
+Progress — ⑦ ship: deployed + proven in prod · done — build SHIPPED.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "Deploying safely, not just deploying. First I take a restore point and confirm the prod environment has every setting the new code needs. I re-run the reconciliation against real prod data, confirm the monitoring signal emits, and there's a one-flip kill switch if we need it off — no redeploy required."
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

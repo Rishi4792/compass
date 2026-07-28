@@ -41,6 +41,20 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> plan`.
 
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** I read your live codebase first — real files, real readers and writers — then wrote a step-by-step build plan where every step has a command that proves it works.
+**Why it matters.** Every promise in the contract now maps to a step and a test, so "done" will mean proven, not assumed. It also names what breaks if an outside service is slow, and the exact one-command undo.
+**Your options:**
+- **Approve & continue** — move to review-plan (independent reviewers tear the plan apart before any code).
+- **Revise** — re-run planning with a change you name.
+- **Amend** — a real scope change: bump the contract and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve & continue — send the plan to an independent review before writing code.
+Progress — ③ plan drafted (grounded in the real codebase) · next: ④ review-plan.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "I read your live codebase first — real file paths, real readers and writers — then wrote a build plan where every step has a command that proves it works. Every contract promise maps to a step and a test. I've listed what breaks if each outside service is slow or down, and the exact one-command way to undo this."
+
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 

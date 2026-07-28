@@ -25,6 +25,7 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 
 ## Per-step loop (each unchecked step, in order)
 1. **Build** exactly as specified — no scope creep. **(web, v0.14.0) Apply the design-standard:** before building any UI surface, load the contract's `design-standard` bundled skill — invoke `/compass:rk-house-style` (product surfaces: dashboards/tables/forms/charts) and/or `/compass:cinematic-hero` (hero/launch/motion) — and compose from ITS pinned tokens + component recipes; never invent off-system styles. The contract's `## Design Spec` (extracted from that same bundled skill) is the binding target, and its gates (`rk-house-style` anti-drift + compose-check against the active theme) are the per-surface craft check.
+   - **(v0.15.0) Kill-switch spine (F-FLAG):** any **user-visible** change is built behind the contract's declared feature flag, **flag defaulted OFF** (dark). The step's verify must exercise **both states**: flag OFF = the old behavior is intact (no user-visible change), flag ON = the new behavior. A user-visible change with only one state proven is not done. (`no flag — <reason>` in the contract waives this for that build.)
 2. **Test** — run/add the deterministic test the plan named.
 3. **Verify (adversarial)** — lowest project-facet rung that genuinely proves it; record the exact command + fresh output:
    - **web:** typecheck → DB query → page HTML → API → **Playwright** (assert DOM text + computed CSS + a11y basics) → Chrome MCP (last resort). **pipeline/CLI:** exit code → golden-file diff → asserts → numeric reconciliation → determinism (run twice → identical) → idempotent re-run.
@@ -62,6 +63,20 @@ RECON-CMD: <the exact reproducing-query command>   (verbatim, so a parallel sibl
 - [x] secret-scan: `compass.sh secret-scan <build-dir>` (per-build text artifacts) + `compass.sh secret-scan --commits <base>..HEAD` (committed patches) → 0 hits
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> build`.
+
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** I built the plan one small step at a time, and didn't check a box until a command proved that step actually works on real data — not just that it compiles.
+**Why it matters.** Risky changes went behind an off-by-default switch, and every number was reconciled against the locked gold figure with a script, not an opinion. If anything drifted from the spec, I stopped and asked.
+**Your options:**
+- **Approve & continue** — move to review-build (the final adversarial pass before deploy).
+- **Revise** — re-run a build step with a change you name.
+- **Amend** — a real scope change: bump the contract and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve & continue to the final adversarial review.
+Progress — ⑤ build complete (each step proof-gated) · next: ⑥ review-build.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "I build one small step at a time and don't check the box until a command proves that step actually works on real data — not just that it compiles. Risky changes go behind an off-by-default switch. I reconcile every number against the locked gold figure with a script, not an opinion, and I stop and ask if anything drifts from the spec."
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

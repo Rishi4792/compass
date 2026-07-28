@@ -615,6 +615,91 @@ EOF
   _ss_hit "$found"; ok "secret scan: 0 hits."
 }
 
+# ── v0.15.0 prod-safety floor (F-RESTORE / F-PARITY) ──────────────────────────
+# Both model cmd_migration_gate: a required signal ABSENT → die (never a soft pass);
+# an N/A-pass fires ONLY when the contract explicitly declares "nothing to protect/verify".
+_cv_dir() { # <slug-or-build-dir> → resolves to a build dir with a contract.md (fixture dir OR registered slug)
+  local a="${1:-}"
+  if [ -d "$a" ] && [ -f "$a/contract.md" ]; then printf '%s' "$a"; else printf '%s' "$(state_root)/$a"; fi
+}
+
+# a snapshot attestation field is REAL only if non-empty AND not an obvious placeholder token
+# (none/n/a/tbd/todo/pending/- and placeholder-PREFIXED forms like "none-yet"/"pending-soon") — a
+# placeholder is the operator falsely attesting (R3-n2 + R3-R2-D-min hardening).
+_attest_real() {
+  local v; v="$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  case "$v" in
+    ''|none|n/a|na|tbd|tba|tbc|todo|pending|-) return 1 ;;
+    none[!a-z0-9]*|n/a[!a-z0-9]*|tbd[!a-z0-9]*|todo[!a-z0-9]*|pending[!a-z0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+cmd_restore_point() { # <slug|build-dir> — HARD STOP before a destructive migration/backfill (F-RESTORE)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh restore-point <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || die "restore-point: no contract.md in $dir"
+  # Parse the FIRST alpha token per header, and defend against two soft-pass tricks the round-1 fix missed:
+  #  1) hdr_get returns the WHOLE value incl. trailing prose ("yes → <reason>"), so an exact "!= yes" test
+  #     misreads a declared-destructive build as N/A (R3-C1). Extract the token, not the line.
+  #  2) ANCHOR to line-start so a `schema-touching: no` in PROSE can't steal the parse, and take a FAIL-SAFE
+  #     UNION across all anchored header lines — destructive if ANY reads yes, so a stale `no` stub above a
+  #     real `yes` (or a leading-prose decoy) cannot hide it (R3-R2-D1). schema-touching stays REQUIRED.
+  # Anchor allows list/bold markers AND leading whitespace incl. TABS, then the value is coerced FAIL-SAFE:
+  # destructive unless EVERY anchored value is exactly `no`. A truthy synonym (`true`/`y`), a quoted value,
+  # or any unrecognized token is treated as destructive — matching migration-gate's `*) die` fail-safe, so a
+  # `destructive-backfill: true` can't soft-pass the sole snapshot guard (R3-C1 → R3-R2-D1 → R3-R3-D2).
+  local st_vals bf_vals st bf
+  st_vals="$(sed -nE 's/^[-*[:space:]]*schema-touching:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  bf_vals="$(sed -nE 's/^[-*[:space:]]*destructive-backfill:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  [ -n "$st_vals" ] || die "restore-point: contract.md missing required 'schema-touching: yes|no' — cannot judge destructiveness (HARD STOP, never a soft pass)."
+  if printf '%s\n' "$st_vals" | grep -vqx no; then st=yes; else st=no; fi
+  if [ -n "$bf_vals" ] && printf '%s\n' "$bf_vals" | grep -vqx no; then bf=yes; else bf=no; fi
+  if [ "$st" != "yes" ] && [ "$bf" != "yes" ]; then
+    ok "restore-point: no destructive migration/backfill declared (schema-touching:$st, destructive-backfill:$bf) — N/A-pass. (Honest boundary: an UNDECLARED destructive backfill is not detectable here; the contract interview elicits the declaration.)"
+    return 0
+  fi
+  # destructive is declared → require a COMPLETE snapshot attestation: all three fields non-empty.
+  local sid sts scmd; sid="$(hdr_get "$contract" snapshot-id || true)"; sts="$(hdr_get "$contract" snapshot-ts || true)"; scmd="$(hdr_get "$contract" restore-cmd || true)"
+  { _attest_real "$sid" && _attest_real "$sts" && _attest_real "$scmd"; } || die "restore-point: DESTRUCTIVE op declared (schema-touching:$st, destructive-backfill:${bf:-no}) but the snapshot attestation is INCOMPLETE or placeholder — need a REAL snapshot-id + snapshot-ts + restore-cmd (got id='$sid' ts='$sts' cmd='$scmd'). HARD STOP — never a soft pass."
+  ok "restore-point: confirmed snapshot — id=$sid ts=$sts; restore: $scmd"
+}
+
+cmd_config_parity() { # <slug|build-dir> — HARD STOP if new code needs a prod env key prod lacks (F-PARITY)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh config-parity <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || die "config-parity: no contract.md in $dir"
+  # UNION all anchored env-keys-referenced / prod-keys lines and drop the literal `none` placeholder token —
+  # first-match-wins (hdr_get) let a stale `env-keys-referenced: none` stub above a real-keys line soft-pass
+  # the parity check (R3-R2-D3). Anchored to line-start so a prose mention can't steal the parse.
+  local refs prod ref_keys="" k
+  refs="$(sed -nE 's/^[-* ]*env-keys-referenced:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
+  prod="$(sed -nE 's/^[-* ]*prod-keys:\**[[:space:]]*(.+)/\1/p' "$contract" | tr '\n' ' ')"
+  for k in $refs; do case "$(printf '%s' "$k" | tr 'A-Z' 'a-z')" in none|n/a|-|'') : ;; *) ref_keys="$ref_keys $k" ;; esac; done
+  ref_keys="$(printf '%s' "$ref_keys" | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//')"
+  # no REAL new env keys referenced (absent, or only the explicit `none` placeholder) → nothing to verify.
+  if [ -z "$ref_keys" ]; then
+    ok "config-parity: no new env keys referenced (env-keys-referenced:${refs:-<none>}) — N/A-pass. (Honest boundary: a key referenced in code but not declared is not caught here; the F-FLAG/config interview elicits the declaration.)"
+    return 0
+  fi
+  # real keys ARE referenced → a prod-key declaration MUST exist and cover every one (absent → die, never a soft pass).
+  [ -n "$(printf '%s' "$prod" | tr -d '[:space:]')" ] || die "config-parity: the change references env keys [$ref_keys] but there is NO 'prod-keys:' declaration to diff against — HARD STOP (never a soft pass)."
+  local missing=""
+  for k in $ref_keys; do case " $prod " in *" $k "*) : ;; *) missing="$missing $k" ;; esac; done
+  [ -z "$missing" ] || die "config-parity: prod is MISSING env key(s):$missing — referenced by the change, absent from prod-keys. HARD STOP before deploy."
+  ok "config-parity: all referenced env keys present in prod ($ref_keys)."
+}
+
+cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST record both prod-safety invocations (F-RESTORE/PARITY)
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh ship-prodsafety-receipt-match <build-dir>"
+  local f="$dir/receipts.md"; [ -f "$f" ] || die "ship-prodsafety-receipt-match: no receipts.md in $dir"
+  local blk; blk="$(last_block "$f" ship)"
+  [ -n "$blk" ] || die "ship-prodsafety-receipt-match: no ship receipt to check."
+  printf '%s' "$blk" | grep -qE 'restore-point: exit' || die "ship-prodsafety-receipt-match: ship receipt is MISSING the 'restore-point: exit N' line — the pre-deploy HARD STOP was skipped (never allowed)."
+  printf '%s' "$blk" | grep -qE 'config-parity: exit'  || die "ship-prodsafety-receipt-match: ship receipt is MISSING the 'config-parity: exit N' line — the pre-deploy HARD STOP was skipped (never allowed)."
+  ok "ship-prodsafety-receipt-match: restore-point + config-parity both invoked and recorded."
+}
+
 set_index_status() { # <slug> <status>  — update the status= token on the slug's INDEX line
   local idx; idx="$(state_root)/INDEX"; [ -f "$idx" ] || return 0
   local esc; esc="$(printf '%s' "$1" | sed 's/[.[\*^$/]/\\&/g')"
@@ -1965,6 +2050,9 @@ main() {
     intake-gate)       cmd_intake_gate "$@" ;;
     intake-phase)      cmd_intake_phase "$@" ;;
     sketch-gate)       cmd_sketch_gate "$@" ;;
+    restore-point)     cmd_restore_point "$@" ;;
+    config-parity)     cmd_config_parity "$@" ;;
+    ship-prodsafety-receipt-match) cmd_ship_prodsafety_receipt_match "$@" ;;
     postship-signal)   cmd_postship_signal "$@" ;;
     __match)           cmd___match "$@" ;;
     check-session-chain) cmd_check_session_chain "$@" ;;

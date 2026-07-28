@@ -13,6 +13,11 @@ Run `compass.sh gate .claude/builds/<slug> contract` (slug from `.claude/builds/
 ## Engine
 - **Ledger:** create `.claude/builds/<slug>/review-ledger.md` if absent. Append-only rows, `Status` in place. Columns: `Issue ID | Review (R1/R2/R3) | Round # | Affected area | Failure mode | Impacted invariant | Severity | Root cause | Fix | Validation | Owner stream | Status`.
 - **Material** = new Critical/Major. **Converged = ONE clean pass** (zero new material). Cap **2**. Footer per round: `> Round N (R1): new Crit/Maj=0. Clean? yes`.
+<!-- BUGBAR:START -->
+- **Severity bug-bar — every ledger `Severity` cell MUST cite one clause.** **CRITICAL** — data loss/corruption · a security or commercial leak · a wrong number that ships · an unassertable INVARIANT · an irreversible migration · prod-down. **MAJOR** — wrong behavior with a workaround · a drift-prone duplicated canonical set · a missing guard on a reachable path. **MINOR** — cosmetic / log-wording.
+<!-- BUGBAR:END -->
+- **Self-refutation (before a Critical/Major counts):** in the Root-cause cell, record that the triggering input is **reachable from a real entry point** AND that it is **not already guarded** (no existing guard handles it); an unreachable or already-guarded finding is downgraded or dropped — it never resets convergence.
+- **Dedupe & rank:** collapse findings that share a root cause into ONE parent row; present **Critical-first**; the round footer names the **top blocker** (not just a count). Derive expected behavior from `contract.md` **before** reading `plan.md`'s implementation (**contract before** plan — the contract wins on any divergence).
 - Proof here = **grounding** (checked against real schema/data, or flagged as an owned risk — a flag is not a pass). **Agent agreement is not evidence.**
 - Cap without convergence → **no level above the contract → STOP, hand to the USER** with the open questions.
 
@@ -36,6 +41,20 @@ Run the streams; log + apply fixes (surface intent questions, don't guess). One 
 - [x] 0 open Critical/Major; progress.md = Contract LOCKED
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> review-contract`.
+
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** Independent reviewers tried to break the contract before it costs anything — every term defined, every requirement testable, the reconciliation number real and exact, the edge cases handled.
+**Why it matters.** Fixing a spec now is nearly free; fixing it after the build is expensive. A finding only counts if it's proven really reachable — no crying wolf.
+**Your options:**
+- **Approve & continue** — move to plan (turn the locked contract into a step-by-step build plan).
+- **Revise** — re-run the review with a change you name.
+- **Amend** — a real scope change: bump the contract and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve & continue once the review is clean.
+Progress — ② contract pressure-tested · next: ③ plan.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "I just tried to break the spec before it costs anything — every term defined, every requirement testable, the reconciliation number real and exact, every edge case (empty, huge, permission-denied) handled. If I flag a blocker, I first prove it's really reachable — no crying wolf."
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

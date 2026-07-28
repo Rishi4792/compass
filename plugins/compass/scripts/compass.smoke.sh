@@ -178,11 +178,11 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED; do
-  chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.12 recon.sh pins INV group: $nm"
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK; do
+  chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
-chk "$(grep -c 'FLOOR_SMOKE=114' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the smoke floor 114 (re-baselined)"
+chk "$(grep -c 'FLOOR_SMOKE=183' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 183 (re-baselined after review-build R3 asserts)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -265,6 +265,123 @@ chk "$(grep -c 'Edge states' "$RTR")" "1" "v0.14 router documents the edge state
 # INV-README
 chk "$(grep -c 'simplest way in is .*compass:go' "$REPO/README.md")" "1" "v0.14.1 README leads with /compass:go"
 chk "$(grep -c 'Every stage is still its own command' "$REPO/README.md")" "1" "v0.14 README keeps namespaced commands as advanced/optional"
+
+# ── v0.15.0 slice ①: clarity/UX — welcome · compass-visual Brief · explicit lock · mode · explain · Feynman ──
+GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/commands/explain.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
+# INV-WELCOME
+chk "$(grep -c 'Welcome — how Compass works' "$GO15")" "1" "v0.15 INV-WELCOME: go.md carries the confidence welcome"
+chk "$( { grep -q 'Contract-first' "$GO15" && grep -q 'assembly line' "$GO15"; } && echo 1 || echo 0)" "1" "v0.15 INV-WELCOME: go.md teaches the mental model (contract-first → assembly line)"
+# INV-BRIEF (presence/structure + the pure-node house gates run below on the generated body; the PNG>5KB render stays build-time — Chrome not guaranteed on user machines)
+chk "$([ -f "$VIS15/SKILL.md" ] && [ -f "$VIS15/gen.mjs" ] && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: compass-visual skill + gen.mjs bundled"
+chk "$(grep -c '^name: compass-visual' "$VIS15/SKILL.md")" "1" "v0.15 INV-BRIEF: compass-visual frontmatter name"
+VSMK="$(mktemp -d)/v"; mkdir -p "$VSMK"
+printf '%s\n' '# Contract — vsmk' '## Goal & scope' 'A tiny fixture to exercise the generator.' '## Reconciliation' 'Numeric N/A.' '## Acceptance & INVARIANTs' '- **INV-X:** a bound.' '- **INV-Y:** guards the thing → CRITICAL. → *assert:* grep it.' '## Scope ladder' '- NOW: a' '- LATER: b' '- NEVER: c' > "$VSMK/contract.md"
+node "$VIS15/gen.mjs" "$VSMK" brief-body --out "$VSMK/body.html" >/dev/null 2>&1
+chk "$(head -1 "$VSMK/body.html" 2>/dev/null | grep -c '^<!doctype html>')" "1" "v0.15 INV-BRIEF/INV-NO-LEAK: generated body line-1 is doctype, not COMPASS-MOCK"
+# INV-BRIEF durable house-gates (R3-M5): the pure-node gates run on the generated body IN THE SUITE (no Chrome)
+RKG="$PLUGIN_ROOT/skills/rk-house-style"
+( node "$RKG/gates/anti-drift-grep.mjs" "$VSMK/body.html" "$RKG/themes/neutral-indigo.json" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-BRIEF: generated brief-body passes rk-house-style anti-drift (durable gold, no Chrome)"
+( node "$RKG/gates/compose-check.mjs" "$VSMK/body.html" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-BRIEF: generated brief-body passes rk-house-style compose-check (durable gold)"
+# INV-BRIEF invariant completeness (R3-M2): keep the internal '→ CRITICAL', drop ONLY the '→ *assert:*' tail
+node "$VIS15/gen.mjs" "$VSMK" brief --out "$VSMK/brief.html" >/dev/null 2>&1
+chk "$( { grep -q 'INV-Y' "$VSMK/brief.html" && grep -q 'CRITICAL' "$VSMK/brief.html" && ! grep -q 'grep it' "$VSMK/brief.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: Brief invariant summary keeps the binding '→ CRITICAL' tail and drops only the assert recipe"
+# INV-BRIEF-LEAK (R3-M3 / R3-C2 regression): a shareable Brief with a gold FIGURE / never-show / secret HARD-STOPs, literals ABSENT
+LKF="$(dirname "$VSMK")/leak"; mkdir -p "$LKF"
+printf '%s\n' '# Contract — leak' '## Goal & scope' 'NAV $9,999,999.00 (42 crore), coverage 1.5 turns; partner AUM 12,00,000, FY rev 8 750 000 for the book; ops key sk-ABCD1234EFGH lives in the env.' '## Reconciliation' 'N/A for counts; gold = $9,999,999.00, i.e. 42 crore, coverage 1.5 turns, AUM 1,200,000, FY rev 8,750,000 (board-signed).' '## Security & data-sensitivity' 'never-show: SecretField' '## Acceptance & INVARIANTs' '- **INV-X:** a bound.' '## Scope ladder' '- NOW: a' '- LATER: b' '- NEVER: c' > "$LKF/contract.md"
+( node "$VIS15/gen.mjs" "$LKF" brief --shareable --out "$LKF/share.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.15 INV-BRIEF-LEAK: shareable Brief with gold figures (incl. 'N/A', a decimal, a comma-regrouped AND a SPACE-grouped restatement)/never-show/secret → HARD-STOP exit 3"
+chk "$( { ! grep -q '9,999,999' "$LKF/share.html" && ! grep -q '42 crore' "$LKF/share.html" && ! grep -q '1\.5' "$LKF/share.html" && ! grep -q '12,00,000' "$LKF/share.html" && ! grep -q '8 750 000' "$LKF/share.html" && ! grep -qi 'SecretField' "$LKF/share.html" && ! grep -q 'sk-ABCD1234' "$LKF/share.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF-LEAK: shareable copy holds NEITHER the gold literals (currency/spelled-unit/decimal + comma-regrouped '12,00,000'↔'1,200,000' + SPACE-grouped '8 750 000'↔'8,750,000') NOR the never-show NOR the secret (R3-C2 + D2 + D1/D3 + D4-1 + R3-R5-D5-01)"
+node "$VIS15/gen.mjs" "$LKF" brief --out "$LKF/local.html" >/dev/null 2>&1
+chk "$( [ "$(grep -c '9,999,999' "$LKF/local.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: the LOCAL Brief still renders the full gold literal (F-BRIEF two-variant, distinct from shareable)"
+rm -rf "$(dirname "$VSMK")"
+# INV-LOCK
+chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-LOCK: contract skill produces the Brief + requires an explicit lock"
+# INV-MODE
+chk "$( { grep -q '\*\*Auto\*\*' "$CSK15" && grep -q 'Human-gated' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-MODE: contract skill offers Auto vs Human-gated (each explained)"
+# INV-EXPLAIN
+chk "$([ -f "$EXP15" ] && grep -q '^description: .\+' "$EXP15" && grep -q 'feynman-walkthrough' "$EXP15" && echo 1 || echo 0)" "1" "v0.15 INV-EXPLAIN: commands/explain.md exists with description + teaching invocation"
+# INV-FEYNMAN — unique markers, ordered feynman<confidence<GATE:START, non-blank window 1..28
+feyn_ok() { local f="$1" fc cc fl cl gl nb
+  fc=$(grep -c '<!-- FEYNMAN -->' "$f"); cc=$(grep -c '<!-- CONFIDENCE -->' "$f")
+  [ "$fc" = 1 ] && [ "$cc" = 1 ] || return 1
+  fl=$(grep -n '<!-- FEYNMAN -->' "$f" | head -1 | cut -d: -f1)
+  cl=$(grep -n '<!-- CONFIDENCE -->' "$f" | head -1 | cut -d: -f1)
+  gl=$(awk -v a="$fl" 'NR>a && /<!-- GATE:START -->/{print NR; exit}' "$f")
+  [ -n "$gl" ] || return 1
+  [ "$fl" -lt "$cl" ] && [ "$cl" -lt "$gl" ] || return 1
+  nb=$(awk -v a="$fl" -v b="$gl" 'NR>a && NR<b && NF>0{c++} END{print c+0}' "$f")
+  [ "$nb" -gt 0 ] && [ "$nb" -le 28 ] || return 1
+  return 0; }
+for s in contract review-contract plan review-plan build review-build ship; do
+  feyn_ok "$PLUGIN_ROOT/skills/$s/SKILL.md"; chk "$?" "0" "v0.15 INV-FEYNMAN: $s carries a unique, ordered, ≤28-line Feynman + confidence block"
+done
+FFX15="$(mktemp -d)"
+printf '%s\n' 'intro' '<!-- GATE:START -->' 'gate' '<!-- FEYNMAN -->' 'x' '<!-- CONFIDENCE -->' 'y' > "$FFX15/after.md"
+feyn_ok "$FFX15/after.md"; chk "$?" "1" "v0.15 INV-FEYNMAN fixture: a marker placed AFTER GATE:START → FAIL (fail-closed)"
+printf '%s\n' '<!-- FEYNMAN -->' 'a' '<!-- FEYNMAN -->' 'b' '<!-- CONFIDENCE -->' 'c' '<!-- GATE:START -->' > "$FFX15/dup.md"
+feyn_ok "$FFX15/dup.md"; chk "$?" "1" "v0.15 INV-FEYNMAN fixture: a duplicate marker → FAIL"
+rm -rf "$FFX15"
+
+# ── v0.15.0 slice ②: review-integrity — severity bug-bar · self-refutation · dedupe/rank ──
+RC15="$PLUGIN_ROOT/shared/review-core.md"
+bugbar_n=0
+for f in "$RC15" "$PLUGIN_ROOT/skills/review-contract/SKILL.md" "$PLUGIN_ROOT/skills/review-plan/SKILL.md" "$PLUGIN_ROOT/skills/review-build/SKILL.md"; do
+  if grep -q 'a wrong number that ships' "$f" && grep -q 'drift-prone duplicated canonical set' "$f" && grep -q 'cosmetic' "$f"; then bugbar_n=$((bugbar_n+1)); fi
+done
+chk "$bugbar_n" "4" "v0.15 INV-BUGBAR: 3-clause severity rubric in review-core + all 3 review skills"
+# INV-BUGBAR single-source equality (R3-M6): the rubric island must be byte-identical across the 3 review skills
+bbisl(){ awk '/BUGBAR:START/{f=1} f{print} /BUGBAR:END/{f=0}' "$1"; }
+chk "$( diff <(bbisl "$PLUGIN_ROOT/skills/review-contract/SKILL.md") <(bbisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md") >/dev/null 2>&1 && diff <(bbisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md") <(bbisl "$PLUGIN_ROOT/skills/review-build/SKILL.md") >/dev/null 2>&1 && [ -n "$(bbisl "$PLUGIN_ROOT/skills/review-build/SKILL.md")" ] && echo 1 || echo 0)" "1" "v0.15 INV-BUGBAR: severity-rubric island byte-identical across all 3 review skills (single-source, no silent drift)"
+bbstart_n=0; for s in review-contract review-plan review-build; do bbstart_n=$((bbstart_n + $(grep -c 'BUGBAR:START' "$PLUGIN_ROOT/skills/$s/SKILL.md"))); done
+chk "$bbstart_n" "3" "v0.15 INV-BUGBAR: exactly one BUGBAR island per review skill (3 total, no dup)"
+refute_n=0
+for s in review-contract review-plan review-build; do
+  f="$PLUGIN_ROOT/skills/$s/SKILL.md"
+  if grep -q 'reachable from a real entry point' "$f" && grep -q 'not already guarded' "$f"; then refute_n=$((refute_n+1)); fi
+done
+chk "$refute_n" "3" "v0.15 INV-REFUTE: self-refutation (reachable + not-already-guarded) in all 3 review skills"
+dedupe_n=0
+for s in review-contract review-plan review-build; do
+  f="$PLUGIN_ROOT/skills/$s/SKILL.md"
+  if grep -q 'top blocker' "$f" && grep -q 'Critical-first' "$f" && grep -q 'contract before' "$f"; then dedupe_n=$((dedupe_n+1)); fi
+done
+chk "$dedupe_n" "3" "v0.15 INV-DEDUPE: dedupe + Critical-first + top-blocker + contract-before-plan in all 3 review skills"
+
+# ── v0.15.0 slice ③: prod-safety (restore-point/config-parity) · flag spine · security pin · commercial scan ──
+FXP="$(cd "$(dirname "$SH")" && pwd)/fixtures"
+( bash "$SH" restore-point "$FXP/restore-point/confirmed"  >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-RESTORE: confirmed complete snapshot → 0"
+( bash "$SH" restore-point "$FXP/restore-point/missing"    >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-RESTORE: destructive + no snapshot → HARD STOP"
+( bash "$SH" restore-point "$FXP/restore-point/incomplete" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-RESTORE: incomplete attestation → HARD STOP"
+( bash "$SH" restore-point "$FXP/restore-point/na"         >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-RESTORE: no destructive op declared → N/A-pass"
+( bash "$SH" restore-point "$FXP/restore-point/undeclared-destructive" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-RESTORE: undeclared destructive → N/A-pass (documented honest boundary)"
+( bash "$SH" restore-point "$FXP/restore-point/prose-destructive" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-RESTORE: declared-destructive via header prose ('yes → gloss', repo house-style) + no snapshot → HARD STOP (R3-C1 regression)"
+( bash "$SH" restore-point "$FXP/restore-point/decoy-destructive" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-RESTORE: a leading-PROSE decoy above the real destructive header cannot steal the parse → HARD STOP (R3-R2-D1 anchor+union)"
+( bash "$SH" restore-point "$FXP/restore-point/coerce-destructive" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-RESTORE: a truthy synonym (destructive-backfill: true) fails CLOSED, not soft-pass → HARD STOP (R3-R3-D2 coercion)"
+( bash "$SH" config-parity "$FXP/config-parity/match"              >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-PARITY: all referenced keys present in prod → 0"
+( bash "$SH" config-parity "$FXP/config-parity/missing-key"        >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: a referenced key missing from prod → HARD STOP"
+( bash "$SH" config-parity "$FXP/config-parity/no-prod-declaration" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: keys referenced + no prod-keys declaration → HARD STOP"
+( bash "$SH" config-parity "$FXP/config-parity/none-referenced"    >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-PARITY: no new env keys referenced → N/A-pass"
+( bash "$SH" config-parity "$FXP/config-parity/dup-none-stub"      >/dev/null 2>&1 ); chk "$?" "1" "v0.15 INV-PARITY: a stale 'env-keys-referenced: none' stub above real keys cannot hide them → HARD STOP (R3-R2-D3 union)"
+SHIPSK="$PLUGIN_ROOT/skills/ship/SKILL.md"
+chk "$( { grep -q 'restore-point' "$SHIPSK" && grep -q 'config-parity' "$SHIPSK" && grep -q 'without a redeploy' "$SHIPSK"; } && echo 1 || echo 0)" "1" "v0.15 INV-RESTORE/PARITY/FLAG: ship skill wires restore-point + config-parity + flag-OFF-without-redeploy"
+PSD="$SMOKE_TMP/psd"; mkdir -p "$PSD"
+printf '## RECEIPT — ship · x · PASS\n- [x] restore-point: exit 0\n- [x] config-parity: exit 0\n' > "$PSD/receipts.md"
+( bash "$SH" ship-prodsafety-receipt-match "$PSD" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 ship-prodsafety-receipt-match: both prod-safety exit lines present → 0"
+printf '## RECEIPT — ship · x · PASS\n- [x] deployed\n' > "$PSD/receipts.md"
+( bash "$SH" ship-prodsafety-receipt-match "$PSD" >/dev/null 2>&1 ); chk "$?" "1" "v0.15 ship-prodsafety-receipt-match: a silent skip (missing lines) → FAIL"
+CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK="$PLUGIN_ROOT/skills/build/SKILL.md"
+chk "$(grep -c 'Rollout & kill-switch' "$CSK")" "2" "v0.15 INV-FLAG: contract requires Rollout & kill-switch in BOTH mirrored required-section lists"
+chk "$( { grep -q 'flag defaulted OFF' "$BSK" && grep -q 'both states' "$BSK"; } && echo 1 || echo 0)" "1" "v0.15 INV-FLAG: build skill has flag-off-default + both-states-verified rule"
+chk "$(grep -c 'Security & data-sensitivity' "$CSK")" "2" "v0.15 INV-SECPIN: contract requires Security & data-sensitivity in BOTH mirrored lists"
+chk "$( { grep -q 'role×view' "$CSK" && grep -q 'STRIDE' "$CSK"; } && echo 1 || echo 0)" "1" "v0.15 INV-SECPIN: contract security block names a role×view matrix + STRIDE-lite"
+# R3-M1: the contract interview must ELICIT the machine-readable signals restore-point/config-parity consume
+chk "$( { grep -q 'env-keys-referenced' "$CSK" && grep -q 'destructive-backfill' "$CSK"; } && echo 1 || echo 0)" "1" "v0.15 INV-PARITY/RESTORE: contract skill elicits the machine-readable env-keys-referenced + destructive-backfill signals (R3-M1 — gate had no input before)"
+csisl(){ awk '/COMMSCAN:START/{f=1} f{print} /COMMSCAN:END/{f=0}' "$1"; }
+chk "$( diff <(csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md") <(csisl "$PLUGIN_ROOT/skills/review-build/SKILL.md") >/dev/null 2>&1 && [ -n "$(csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md")" ] && echo 1 || echo 0)" "1" "v0.15 INV-COMMSCAN: COMMSCAN island byte-identical across review-plan + review-build"
+chk "$(grep -c 'COMMSCAN:START' "$PLUGIN_ROOT/skills/review-plan/SKILL.md")" "1" "v0.15 INV-COMMSCAN: exactly one COMMSCAN island in review-plan (no drift/dup)"
+chk "$( { csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md" | grep -q 'IRR' && csisl "$PLUGIN_ROOT/skills/review-build/SKILL.md" | grep -q 'IRR'; } && echo 1 || echo 0)" "1" "v0.15 INV-COMMSCAN: the island scans IRR / take-rate / gross-rev% / COF in both review skills"
+# INV-NO-LEAK durable coverage (R3-m3): recon-guard a clean secret-scan of the new fixtures + the compass-visual skill
+( bash "$SH" secret-scan "$FXP" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on the prod-safety fixtures → 0 hits (now recon-guarded, R3-m3)"
+( bash "$SH" secret-scan "$VIS15" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on skills/compass-visual → 0 hits (now recon-guarded, R3-m3)"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

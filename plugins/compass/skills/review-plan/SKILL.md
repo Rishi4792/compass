@@ -13,6 +13,11 @@ Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `
 ## Engine
 - **Ledger** (create if absent): same columns as the other reviews.
 - **Material** = new Critical/Major. **Clean round** = zero new material AND the deterministic checks re-ran green. **Proof-of-work:** the footer carries evidence or it doesn't count — `> Round N (R2): checks=\`<cmd>\` exit=0; new Crit/Maj=0. Clean? yes`. **Converged = two consecutive clean rounds.** Cap **3**.
+<!-- BUGBAR:START -->
+- **Severity bug-bar — every ledger `Severity` cell MUST cite one clause.** **CRITICAL** — data loss/corruption · a security or commercial leak · a wrong number that ships · an unassertable INVARIANT · an irreversible migration · prod-down. **MAJOR** — wrong behavior with a workaround · a drift-prone duplicated canonical set · a missing guard on a reachable path. **MINOR** — cosmetic / log-wording.
+<!-- BUGBAR:END -->
+- **Self-refutation (before a Critical/Major counts):** in the Root-cause cell, record that the triggering input is **reachable from a real entry point** AND that it is **not already guarded** (no existing guard handles it); an unreachable or already-guarded finding is downgraded or dropped — it never resets convergence.
+- **Dedupe & rank:** collapse findings that share a root cause into ONE parent row; present **Critical-first**; the round footer names the **top blocker** (not just a count). Derive expected behavior from `contract.md` **before** reading `plan.md`'s implementation (**contract before** plan — the contract wins on any divergence).
 - **Fan-out economy:** round 1 spawns all groups; **rounds 2+ spawn ONLY the agent groups whose surface the last round's fixes touched** — the full deterministic suite still re-runs every round (that, not re-spawning every agent, is what guards un-reviewed surfaces). A confirming clean round with no new fixes = just the suite re-run + footer. A fix is closed only when its Validation command is **re-run with fresh output**; agent agreement is not evidence.
 - **Cap 3 un-converged = NOT converged** → contract likely under-specified → **`compass.sh supersede .claude/builds/<slug> contract` then STOP and escalate to `compass:contract`** with the open questions.
 
@@ -25,6 +30,9 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
 - **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
 - **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
 - **[E] Security/RBAC/cost** — *independent agent* (keep separate; the adversarial independence is load-bearing).
+<!-- COMMSCAN:START -->
+- **Commercial-sensitivity scan (F-COMMSCAN):** every business-facing view/API is scanned for **IRR / take-rate / gross-revenue% / COF** on a non-management surface — any hit is a **CRITICAL** that blocks CLOSED. Field set canonical to the `commercial-sensitivity-guard` skill; this delimited block is byte-identical across the review skills so the set can't silently drift.
+<!-- COMMSCAN:END -->
 - **[F] Secret-leak** — *independent agent*: no planned harness embeds a real cookie/JWT/key (`compass.sh secret-scan`).
 
 ## Procedure → emit
@@ -39,6 +47,20 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 - [x] converged in <n> rounds; progress.md = Plan LOCKED
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> review-plan`.
+
+<!-- FEYNMAN -->
+## In plain words — where we are and what's next
+**What just happened.** A team of independent reviewers — security, database safety, back-compat, performance, secret-leaks — each starting fresh, tried to tear the plan apart.
+**Why it matters.** Catching a design flaw now is far cheaper than mid-build. I loop until two clean rounds in a row, and the last round re-attacks the fixes themselves — agreement isn't evidence, a passing command is.
+**Your options:**
+- **Approve & continue** — move to build (execute the plan, one proof-gated step at a time).
+- **Revise** — re-run the review with a change you name.
+- **Amend** — a real scope change: bump the contract and re-review just the delta.
+- **Pause** — stop cleanly; you resume exactly here, nothing lost.
+**My recommendation.** Approve & continue once two clean rounds land.
+Progress — ④ plan pressure-tested · next: ⑤ build.
+<!-- CONFIDENCE -->
+**The rigor I'm applying, so you can trust the machine:** "A team of independent reviewers — one each for security, database safety, back-compat, performance, and secret-leaks — tried to tear the plan apart, each starting fresh so they don't just agree with each other. I keep looping until two clean rounds in a row, and the last round re-attacks the fixes themselves. Agreement isn't evidence; a passing command is."
 
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)

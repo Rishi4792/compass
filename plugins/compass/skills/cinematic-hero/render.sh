@@ -14,6 +14,10 @@
 # ============================================================================================
 set -euo pipefail
 HTML="$1"
+# Resolve to an ABSOLUTE path — a RELATIVE input makes `file://$HTML` parse its first segment as a
+# hostname (e.g. `file://.claude/…/brief.html` → Chrome ERR_INVALID_URL → a screenshot of the error
+# page, which still passes a size check). Absolute paths pass through unchanged.
+case "$HTML" in /*) : ;; *) HTML="$(cd "$(dirname "$HTML")" && pwd)/$(basename "$HTML")" ;; esac
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 [ -x "$CHROME" ] || CHROME="$(command -v google-chrome || command -v chromium || echo "$CHROME")"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT

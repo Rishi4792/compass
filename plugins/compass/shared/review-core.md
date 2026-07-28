@@ -12,6 +12,13 @@
 2. **Assume it fails.** Every finding: what breaks · impacted invariant · severity (Critical/Major/Minor) · concrete fix · the Validation command that proves the fix.
 3. **Prove, don't vibe. Agent agreement is NOT evidence — restate this every round.** At contract/plan stages there's no code; proof = grounding (checked against real repo/data, or flagged as an owned open risk — a flag is not a pass).
 
+### Severity bug-bar (v0.15.0 — the load-bearing copies are INLINED in each review skill; this is documentation)
+Every ledger `Severity` cell MUST cite one clause:
+- **CRITICAL** — data loss/corruption · a security or commercial leak · a wrong number that ships · an unassertable INVARIANT · an irreversible migration · prod-down.
+- **MAJOR** — wrong behavior with a workaround · a drift-prone duplicated canonical set · a missing guard on a reachable path.
+- **MINOR** — cosmetic / log-wording.
+**Self-refutation:** a Critical/Major only counts once its trigger is proven **reachable from a real entry point** AND **not already guarded**. **Dedupe & rank:** collapse same-root-cause rows to one parent, present **Critical-first**, and the round footer names the **top blocker** — deriving expected behavior from `contract.md` **before** the plan's implementation.
+
 ## The ledger (`review-ledger.md`) — created by whichever review runs first
 Rows append-only; only the `Status` cell updates in place. Stable columns (identical in all three reviews):
 

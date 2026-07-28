@@ -5,7 +5,7 @@
 An autonomous **engineering team in one plugin** for [Claude Code](https://claude.com/claude-code) — Engineering Manager, coder, QA, DevOps. You finalize one super-contract; it does the rest: **plan → code → tests → ship**, following the engineering best-practices a real team would, and it doesn't stop until the work is *proven* against your spec.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.14.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.15.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 Built on the architecture serious builders are converging on — an explicit **graph** of stages with hard gates as edges, and adversarial **loops** that make every output top-notch. *(That's the whole trick — [see below](#how-it-works-loops-and-graphs-with-real-edges).)*
@@ -136,6 +136,8 @@ Or, once it's listed in the Anthropic community marketplace:
 > **Prefer typing commands directly? Every stage is still its own command** (all optional): `/compass:start` for the full lifecycle, `/compass:contract`, `/compass:plan`, `/compass:review-plan`, `/compass:build`, `/compass:ship`, and `/compass:resume` to pick up where you left off. Each is also reachable as a bare skill (e.g. `/build`, which auto-triggers on natural language like "build it"), and each presents its 4-button next-step gate at its transition.
 
 > **High-craft prototypes by default (v0.14.0).** Compass ships a bundled design system — `rk-house-style` (dashboards, tables, forms, charts, with a pinned neutral theme, component recipes, and drift gates) and `cinematic-hero` (hero/launch motion + stills). For any web/dashboard build, the contract asks which aesthetic you want and binds it, so the prototype comes out looking world-class. It installs with the plugin — nothing extra to add.
+
+> **Trust made real, and shown (v0.15.0).** The review gate is no longer gameable — a calibrated Critical/Major/Minor bug-bar, a self-refutation rule (a finding only counts if it's reachable and unguarded), and dedupe with a top-blocker footer. The prod cutover gains two HARD STOPs (`restore-point`, `config-parity`) that refuse honestly rather than soft-pass. The contract now pins a kill-switch and a data-sensitivity block. And it's legible: `/compass:go` welcomes and teaches, a bundled `compass-visual` skill renders a visual **Contract Brief** you explicitly lock and a progress **Cockpit**, every stage ends with a plain-English "here's what happened and what's next," and `/compass:explain` teaches on demand.
 
 ## State & resumability
 Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — so closing the terminal loses nothing; `/compass:resume` picks up exactly where it left off.
