@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.15.2] — 2026-07-28
+
+**Second post-ship patch — more parser edges, hardened.** v0.15.1's post-ship critique loop found a second soft-pass class and two Brief format edges:
+
+- **`config-parity` soft-passed a missing prod key named in a COMMENT (MAJOR).** A trailing `# STRIPE_KEY not yet provisioned` on the `prod-keys:` line made the commented key count as *declared* — flipping the HARD STOP to PASS while prod actually lacked it. Comments (`# …`, `<!-- … -->`) are now stripped from `env-keys-referenced` / `prod-keys` before tokenizing.
+- **The Contract Brief's security card is now format- and vocabulary-robust.** It renders the sensitive surface (no false "N/A — no sensitive surface" badge) whenever a block declares never-show fields in **any** format (inline `never-show:` *or* a "Never-show fields:" list) or uses common sensitivity words (PII / PHI / commercial-sensitive / confidential / restricted) — even when the block leads with "N/A".
+
+Regression-guarded (smoke floor 186 → 189). Two off-spec residuals remain disclosed as Phase-2 hardening (multi-line env-key lists; genuinely-exotic sensitivity vocabulary) — the documented single-line format and the F-SECPIN vocabulary are fully protected.
+
 ## [0.15.1] — 2026-07-28
 
 **Post-ship patch — the loop caught what the review missed.** v0.15.0's post-ship critique loop, running against the freshly-published artifact, found two defects the pre-ship review rounds had not:

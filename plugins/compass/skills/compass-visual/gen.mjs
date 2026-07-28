@@ -120,7 +120,12 @@ function security() {
   // a PII / never-show block to a false green "no sensitive surface" badge that hides the binding classification
   // a user locks against (post-ship PS-2-1 / CRITIQUE-TARGET #3).
   const lead = /^\s*\**\s*N\/A\b\s*[—-]?\s*(.*)/i.exec(firstPara(body));
-  const declaresSensitive = neverShow.length > 0 || /\b(PII|commercial-sensitive)\b/i.test(body);
+  // "declares a sensitive surface" catches never-show in ANY format (inline `never-show:` OR a
+  // "Never-show fields:" list) + the common sensitivity vocabulary — so a block that LEADS with N/A but
+  // still classifies fields can't flip to a false green "no sensitive surface" badge (post-ship PS-2-1 /
+  // PS-3 / PS-3b). "sensitive" alone is intentionally NOT a trigger (a genuine "no sensitive surface" N/A).
+  const declaresSensitive = neverShow.length > 0 || /\bnever-show\b/i.test(body)
+    || /\b(PII|PHI|commercial-sensitive|confidential|restricted)\b/i.test(body);
   const na = !!lead && !declaresSensitive;
   return { present: true, na, naReason: na ? (lead[1] || '').trim() : '', body, neverShow };
 }
