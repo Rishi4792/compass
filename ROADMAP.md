@@ -4,7 +4,7 @@ Compass is a contract-first build lifecycle (**contract → review → plan → 
 
 This roadmap is a **three-phase program** to make every stage-agent world-class *and* make the whole tool legible to a first-time user — grounded in a multi-agent audit of all five stage-agents.
 
-**Where we are:** **Phase 1 is shipped (v0.15.x).** Phases 2 and 3 are planned below.
+**Where we are:** **Phase 1 shipped (v0.15.x).** **Phase 2 contract 1 — "survive the cutover" — shipped (v0.16.0).** The rest of Phase 2 and all of Phase 3 are planned below.
 
 **How it's delivered:** each phase is a set of **focused, independently-shippable contracts run sequentially** — never one mega build. A single contract with too many invariants can't converge in review (Compass's own `review-build` has a hard cap and a "split rather than grind" rule), so the roadmap is deliberately chunked; each build's regression tests raise the floor that protects the next.
 
@@ -34,7 +34,7 @@ The "80% of the trust for 20% of the effort" slice.
 
 *The infrastructure and review method that make prod cutover safe. Each group below is its own contract.*
 
-**Survive the cutover**
+**Survive the cutover  ✅ Shipped (v0.16.0, contract 1)**
 - Canary / progressive rollout — deploy to a slice, reconcile against it, promote only on green.
 - Bake window — a required soak under load before the terminal SHIPPED write.
 - Burn-rate auto-abort — metric thresholds that fire the rehearsed rollback automatically.
