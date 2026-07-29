@@ -18,7 +18,7 @@
 //                   and HARD-STOPs (exit 3) on any hit. Never a soft pass.
 //     --out <file>  write to <file> (default: stdout, so `diff <(gen) <(gen)` is exact).
 //
-// Exit: 0 ok · 2 usage/missing-state · 3 leak gate HARD-STOP.
+// Exit: 0 ok · 2 usage/missing-state OR a MALFORMED brief-data fence on --shareable · 3 leak gate HARD-STOP.
 // The first line of every generated asset is `<!doctype html>` — NEVER a `<!-- COMPASS-MOCK` marker.
 // ============================================================================================
 
@@ -279,7 +279,11 @@ function briefBody() {
     <span class="chip">facet: ${txt(facets)}</span>
     ${deploy ? `<span class="chip">deploy: ${txt(deploy.split('—')[0])}</span>` : ''}
     ${mode ? `<span class="chip">mode: ${txt(mode.split('—')[0])}</span>` : ''}
-  </div>
+  </div>${shareable ? `
+  <div class="card" style="border-color:var(--amberBorder);background:var(--amberBg)">
+    <span class="badge warn">Best-effort redaction — review before sending</span>
+    <p style="margin-top:8px">Declared values (the reconciliation gold + never-show fields pinned in the brief-data fence) of 3+ significant digits are scrubbed with certainty across every numeric locale form. <b>Undeclared</b> restatements in free prose — unit words, spelled-out numbers, exotic formats — and very short (≤2-digit) or unit-suffixed values are best-effort. Read this copy before you send it.</p>
+  </div>` : ''}
 
   <div class="grid2">
     <div class="card"><div class="kicker">What it touches</div><p>${txt(firstPara(touchesBody) || 'see plan')}</p></div>
@@ -410,10 +414,97 @@ function page(styleBlocks, bodyMarkup) {
 `;
 }
 
+// ── brief-data fence (the shareable scrub's declared source of truth, v0.17.0) ──────────────────
+// Recognition (contract RP-M3/RP2-m3/m4 — this LINE is the fail-open boundary): a code-fence opener
+// LINE (≥3 backticks OR ≥3 tildes) whose info-string — lowercased, CR/space-trimmed, [-_ ] collapsed
+// — equals 'compassbriefdata'. First recognized opener wins; its closer is the next same-char fence
+// of length ≥ the opener. No opener line → absent (a prose/inline mention is NOT an opener). Unclosed
+// opener, or a non-blank body line that is neither `none` nor a recognized `gold:`/`never-show:` key
+// → malformed. Empty/none-only body → declaredNothing (valid, no error). Deterministic (file order).
+function parseBriefData(md) {
+  const lines = String(md).split(/\r?\n/);   // CRLF-agnostic (R3 D-1): a Windows/pasted CRLF opener must still be recognized, never fail-open to "absent"
+  const norm = (s) => s.replace(/\r/g, '').trim().toLowerCase().replace(/[-_\s]+/g, '');  // collapse ALL whitespace (tab/NBSP too, RB3 D-R3-1) — the split uses \s+, so norm must match
+  let openIdx = -1, fenceCh = '', fenceLen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(`{3,}|~{3,})(.*)$/s);   // /s so (.*) spans U+2028/U+2029 line-separators inside the info-string, which norm then collapses (RB4 D-R4-1) — lines are already \n-split, so /s changes nothing else
+    if (!m) continue;
+    // Recognize the fence on ANY of: the full info-string, its first whitespace token, or that token
+    // minus a trailing .ext — all normalized (RB2-m2). Covers ```compass-brief-data, the ```compass-brief-data json
+    // markdown info-string reflex (D-2), a space-separated ```compass brief data, and a dotted ```compass-brief-data.json,
+    // while NEVER mis-recognizing an unrelated tag like ```compass-brief-database. Never silently downgrade a real
+    // declaration to "absent" (the fail-open this build exists to kill).
+    const info = (m[2] || '').trim(); const firstTok = info.split(/\s+/)[0] || ''; const T = 'compassbriefdata';
+    if (norm(info) === T || norm(firstTok) === T || norm(firstTok.replace(/\.[a-z0-9]+$/i, '')) === T) { openIdx = i; fenceCh = m[1][0]; fenceLen = m[1].length; break; }
+  }
+  if (openIdx < 0) return { present: false };
+  let closeIdx = -1;
+  for (let j = openIdx + 1; j < lines.length; j++) {
+    const c = lines[j].match(/^\s*(`{3,}|~{3,})\s*$/);
+    if (c && c[1][0] === fenceCh && c[1].length >= fenceLen) { closeIdx = j; break; }
+  }
+  if (closeIdx < 0) return { present: true, malformed: true };            // unclosed
+  const gold = [], neverShow = [];
+  for (const raw of lines.slice(openIdx + 1, closeIdx)) {
+    const l = raw.replace(/\r/g, '').trim();
+    if (!l || /^none$/i.test(l)) continue;
+    const g = l.match(/^gold\s*:\s*(.*)$/i);
+    const n = l.match(/^never-?show\s*:\s*(.*)$/i);
+    if (g) { for (const t of g[1].split(',')) { const v = t.trim(); if (v) gold.push(v); } continue; }
+    if (n) { for (const t of n[1].split(',')) { const v = t.trim(); if (v) neverShow.push(v); } continue; }
+    return { present: true, malformed: true };                           // junk body line
+  }
+  if (gold.length === 0 && neverShow.length === 0) return { present: true, declaredNothing: true };
+  return { present: true, gold, neverShow };
+}
+
+// ── genForms: the bounded-certainty set generated FROM a declared gold literal (contract RP-C1 /
+//    RP2-M1 / RP3-m1/m2). Normalize to a bare integer magnitude (strip currency + all grouping
+//    separators; a lone trailing period before fractional digits is the decimal and is preserved,
+//    all other periods are grouping and stripped), then emit {Western-3, Indian-2-2-3} × {plain,
+//    comma, ASCII/NBSP/thin/narrow space, apostrophe ('/’), European period} × {no-prefix, currency}.
+//    The exact declared literal is ALWAYS scrubbed. A literal with letters (e.g. '87.5 lakh') or <3
+//    digits is scrubbed EXACT-ONLY (no cross-product) — RP3-m2 / RP-m6 fail-safe floor. ──
+// Single source of truth for grouping separators (R3 F2): the SAME set seeds genForms' generated output
+// AND the best-effort NUMRUN matcher (built from GROUP_SEPS in shareableScrub) so the two cannot drift.
+// Members: comma, ASCII space, NBSP, thin space, narrow space, apostrophe(U+2019) and apostrophe(U+0027).
+// European period is grouping in genForms OUTPUT ONLY (decimal-ambiguous) -> appended for genForms,
+// deliberately EXCLUDED from the best-effort matcher.
+const GROUP_SEPS = [',', '\u0020', '\u00a0', '\u2009', '\u202f', '\u2019', '\u0027'];
+function groupWestern(d) { return d.replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function groupIndian(d) { if (d.length <= 3) return d; const last3 = d.slice(-3), rest = d.slice(0, -3); return rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + last3; }
+function genForms(literal) {
+  const lit = String(literal).trim();
+  if (!lit) return [];
+  const stripped = lit.replace(/[$₹€£’',\s]/g, '');   // strip currency + both apostrophes + comma + \s (NBSP/thin/narrow)
+  let intPart = stripped, frac = '';
+  const periods = (stripped.match(/\./g) || []).length;
+  if (periods >= 2) intPart = stripped.replace(/\./g, '');
+  else if (periods === 1) { const m = stripped.match(/^(\d+)\.(\d+)$/); if (m) { intPart = m[1]; frac = m[2]; } else intPart = stripped.replace(/\./g, ''); }
+  if (!/^\d+$/.test(intPart)) return [lit];                               // has letters/symbols (e.g. '87.5 lakh', '1.5x') -> exact-only
+  intPart = intPart.replace(/^0+(?=\d)/, '');                             // strip leading zeros so '0042' -> '42' (RB4 D-R4-2: gate on significant digits, not char length)
+  if (intPart.length < 3) return frac ? [lit] : [...new Set([lit, intPart])];  // <3-digit: scrub the exact literal AND (when no decimal tail) the bare integer magnitude, so a declared '₹42' also catches a bare '42' (RB3 D-R3-2). Over-redaction is the safe direction; a genuine decimal like '1.5' stays exact-only to avoid nuking its '1'.
+  const forms = new Set([lit]);                                          // >=3-digit pure-numeric -> scrub exact + the full cross-product
+  const SEPS = [...GROUP_SEPS, '.'];                                      // + European period (output-only)
+  const PREF = ['', '$', '₹', '€', '£'];
+  const tail = frac ? '.' + frac : '';
+  const groupings = [intPart, groupWestern(intPart), groupIndian(intPart)];  // [0]=plain (no separator)
+  for (let gi = 0; gi < groupings.length; gi++) {
+    const seps = gi === 0 ? [''] : SEPS;
+    for (const sep of seps) {
+      if (sep === '.' && frac) continue;                                  // period-grouping ambiguous w/ a decimal
+      const withSep = gi === 0 ? intPart : groupings[gi].replace(/,/g, sep);
+      for (const p of PREF) forms.add(p + withSep + tail);
+    }
+  }
+  return [...forms];
+}
+
 // ── leak gate (shareable only) — SCRUB then HARD-STOP: any secret class / commercial VALUE / gold
 //    or never-show residue is scrubbed from the written copy (so the literal is truly absent) AND
-//    reported as a hit that forces exit 3. Never a soft pass: a leak both scrubs AND stops. ──
-function shareableScrub(html) {
+//    reported as a hit that forces exit 3. Never a soft pass: a leak both scrubs AND stops. The
+//    `declared` arg (from parseBriefData) adds the CERTAIN declared-value cross-product + seeds the
+//    normalized layer + declared never-show — ADDITIVE to the existing best-effort scrub (v0.17.0). ──
+function shareableScrub(html, declared = {}) {
   const hits = [];
   const R = '<span class="chip">⟨redacted ✓⟩</span>';
   const SECRETS = [
@@ -438,6 +529,15 @@ function shareableScrub(html) {
     const re = new RegExp(esc_re(fig), 'g');
     if (re.test(out)) { hits.push('gold residue'); out = out.replace(re, R); }
   }
+  // DECLARED gold values (v0.17.0, brief-data fence) — CERTAIN: scrub every generated form of each
+  // declared literal (the bounded cross-product). ADDITIVE to the best-effort layers above/below.
+  for (const g of (declared.gold || [])) {
+    for (const form of genForms(g)) {
+      if (!form) continue;
+      const re = new RegExp(esc_re(form), 'g');
+      if (re.test(out)) { hits.push('declared gold residue'); out = out.replace(re, R); }
+    }
+  }
   // normalized-numeric residue (R3-R4-D4-1): the exact-string scrub above misses the SAME figure restated
   // with different digit-grouping / symbol / insignificant trailing zeros (gold "1,200,000" vs Goal
   // "12,00,000" — Indian vs Western). Match on a digits-only KEY instead. ≥3 significant digits so a
@@ -449,10 +549,16 @@ function shareableScrub(html) {
   // the first is EXACTLY 3 digits (so unrelated adjacent numbers in prose aren't glued) — OR a plain
   // digit/comma run. numKey then collapses EVERY locale formatting of the same value to one digits-only key,
   // so a gold figure restated with different grouping/symbol is caught (R3-R4-D4-1 + R3-R5-D5-01).
-  const SEP = '[,\\u0020\\u00a0\\u202f\\u2009\\u2019\\u0027]';
+  // built from the SAME GROUP_SEPS as genForms (R3 F2 — single source, cannot drift). European period is
+  // intentionally NOT here (it is decimal-ambiguous in the best-effort matcher; it lives in genForms output only).
+  const SEP = '[' + GROUP_SEPS.map((c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).join('') + ']';
   const NUMRUN = new RegExp('\\d{1,3}(?:' + SEP + '\\d{3})+(?:\\.\\d+)?|\\d[\\d,]*(?:\\.\\d+)?', 'g');
   const goldKeys = new Set();
   for (const src of [...goldFigures(), ...((goldBody || '').match(NUMRUN) || [])]) { const k = numKey(src); if (nDigits(k) >= 3) goldKeys.add(k); }
+  // seed the normalized layer from DECLARED values too (INV-BRIEF-ADDITIVE / RP-M5): so the best-effort
+  // "suspenders" catch an undeclared regrouping EVEN when the Reconciliation section is N/A (the intended
+  // hybrid setup — the canonical value lives in the fence, not the gold prose).
+  for (const g of (declared.gold || [])) { const k = numKey(g); if (nDigits(k) >= 3) goldKeys.add(k); }
   if (goldKeys.size) {
     out = out.replace(NUMRUN, (m) => {
       const k = numKey(m);
@@ -461,7 +567,8 @@ function shareableScrub(html) {
     });
   }
   // never-show VALUES — case-INSENSITIVE (a mis-cased restatement must not slip past exact-substring).
-  for (const v of (security().neverShow || [])) {
+  // Union of the security-block never-show tokens AND any declared via the brief-data fence (v0.17.0).
+  for (const v of [...(security().neverShow || []), ...(declared.neverShow || [])]) {
     if (!v) continue;
     const re = new RegExp(esc_re(v), 'gi');
     if (re.test(out)) { hits.push('never-show residue'); out = out.replace(re, R); }
@@ -481,7 +588,19 @@ if (view === 'brief-body') {
 }
 
 if (shareable && (view === 'brief' || view === 'brief-body')) {
-  const { out, hits } = shareableScrub(html);
+  // brief-data fence: parsed ONLY on the shareable path (LOCAL never touches it — INV-BRIEF-LOCAL-FULL).
+  const bd = parseBriefData(contract);
+  if (bd.malformed) {
+    // MALFORMED (unclosed OR unparseable body) never fails OPEN: write an error stub (truncating any
+    // prior --out so a stale unscrubbed copy can't be shared — RP-m7), then HARD-STOP exit 2. Distinct
+    // from "absent"/"none" (best-effort, exit 0) — INV-BRIEF-FAILCLOSED.
+    const stub = '<!doctype html>\n<title>brief-data MALFORMED</title>\n<!-- compass-visual: brief-data fence MALFORMED (unclosed or unparseable body) — shareable Brief REFUSED (exit 2). This is NOT a blessed copy. Fix the fence in contract.md. -->\n';
+    if (outFile) writeFileSync(outFile, stub);
+    else process.stdout.write(stub);
+    console.error('compass-visual: brief-data fence MALFORMED (unclosed or unparseable body) — shareable Brief refused (exit 2). Fix the fence in contract.md; the --out copy is an error stub, NOT blessed.');
+    process.exit(2);
+  }
+  const { out, hits } = shareableScrub(html, bd);
   if (hits.length) {
     // Write the fully-SCRUBBED copy (every literal absent) so it is inspectable, then HARD-STOP.
     if (outFile) writeFileSync(outFile, out);

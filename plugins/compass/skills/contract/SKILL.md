@@ -89,6 +89,14 @@ The receipt boxes ARE the done-criteria — if any can't be honestly checked, se
 Once the receipt passes, do NOT slide silently into planning. Close the contract deliberately:
 
 1. **Produce the Contract Brief.** Invoke the bundled **`compass-visual`** skill to generate the visual **Contract Brief** from `contract.md` — `node skills/compass-visual/gen.mjs <dir> brief --out <dir>/brief.html` then render it to `<dir>/brief.png` (via `cinematic-hero/render.sh`). Show the user the Brief (the PNG or the local HTML) — it renders, in plain sight, exactly what they're about to lock: the goal, what it touches, the reconciliation gold, the invariants, the NOW/LATER/NEVER scope, and the security classification. **Tell the user a shareable copy exists on request** (`--shareable` redacts the gold literal + never-show values and runs the leak gate) — but never hand one off unasked.
+   - **Emit the `brief-data` fence (v0.17.0 — makes the shareable leak-gate CERTAIN for declared values).** When the contract pins a **numeric reconciliation gold** and/or **never-show fields**, write a machine-readable fence into `contract.md`, in its **own trailing block OUTSIDE any `## ` section** (so a later prose scraper never re-reads it), declaring the canonical literal(s):
+     ```
+     ```compass-brief-data
+     gold: <canonical gold literal(s), comma-separated — declare each display form you restate, e.g. `8750000, 87.5 lakh`>
+     never-show: <field tokens, comma-separated>
+     ```
+     ```
+     With the fence present, a `--shareable` Brief scrubs each declared value and **every numeric locale reformatting** of it with certainty (undeclared unit/word-spelled forms stay best-effort, honestly labelled). When gold **and** never-show are both **N/A**, emit **no fence** (or `none`) — an N/A build must not hard-error its own Brief.
 2. **Require an explicit LOCK.** Nothing downstream runs until the user explicitly locks: they must say **"This is the contract — lock it"** (or clearly equivalent). Until then the contract is `draft` — no plan, no build. This is the one human checkpoint that guarantees a user never locks something they didn't understand. On lock, set `progress.md` status to `contract-LOCKED`.
 3. **Then the mode choice (AskUserQuestion).** After the lock, ask how they want the rest of the lifecycle to run, each option explained:
    - **Auto** — Compass runs the whole assembly line itself and stops for you only at the two real decision points (the contract you just locked, and any gate it can't clear). Fastest; best when you trust the contract.

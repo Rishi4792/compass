@@ -318,6 +318,105 @@ mkdir -p "$SECF/multi"
 printf '%s\n' '# c' '## Reconciliation' 'The gold source is the ledger export, human-signed.' '' 'Expected settled total = $8,750,000.00' 'Tolerance: exact.' '## Security & data-sensitivity' 'Per-field: irr (commercial-sensitive). never-show: irr.' '' 'Role×view: CBO=all; KAM=masked.' 'STRIDE-lite: Spoofing — session guard.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/multi/contract.md"
 node "$VIS15/gen.mjs" "$SECF/multi" brief --out "$SECF/multi.html" >/dev/null 2>&1
 chk "$( { grep -q '8,750,000' "$SECF/multi.html" && grep -q 'Tolerance' "$SECF/multi.html" && grep -q 'CBO' "$SECF/multi.html" && grep -q 'STRIDE' "$SECF/multi.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: LOCAL Brief renders the FULL reconciliation + security body (later-para figure/tolerance + role×view + STRIDE not dropped) (post-ship PS-1r4-B)"
+
+# ── v0.17.0: brief-data fence — DECLARED-value certain scrub + fail-closed recognition + honest banner ──
+BDF="$(dirname "$VSMK")/bd"; mkdir -p "$BDF/ds" "$BDF/grp" "$BDF/unit" "$BDF/add" "$BDF/malf" "$BDF/none" "$BDF/prose" "$BDF/pure" "$BDF/crlf" "$BDF/info" "$BDF/uncl" "$BDF/spc" "$BDF/dot" "$BDF/dbase" "$BDF/short" "$BDF/nbsp" "$BDF/cur" "$BDF/lsep" "$BDF/zpad"
+# INV-BRIEF-DECLARED-SAFE — declared gold 8750000, Indian×NON-comma restatements in prose (the RP-C1 leak class) → exit 3, forms ABSENT
+printf '%s\n' '# c' '## Goal & scope' 'NAV restated 87 50 000 and 87.50.000 and 8 750 000.' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 8750000' '```' > "$BDF/ds/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/ds" brief --shareable --out "$BDF/ds/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: declared gold + Indian×non-comma (space/period) restatements → HARD-STOP exit 3 (RP-C1)"
+chk "$( { ! grep -q '87 50 000' "$BDF/ds/s.html" && ! grep -q '87.50.000' "$BDF/ds/s.html" && ! grep -q '8 750 000' "$BDF/ds/s.html"; } && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-DECLARED-SAFE: Indian×non-comma declared forms ABSENT from the shareable copy"
+# RP2-M1 — grouped/currency INPUT gold normalizes to the bare magnitude → same certain set
+printf '%s\n' '# c' '## Goal & scope' 'Value 87 50 000 in prose.' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: ₹87,50,000' '```' > "$BDF/grp/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/grp" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: grouped/currency INPUT gold (₹87,50,000) normalizes → exit 3 (RP2-M1)"
+# RP-C2 — a declared unit/display token is scrubbed exact
+printf '%s\n' '# c' '## Goal & scope' 'Book is 87.5 lakh.' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 87.5 lakh' '```' > "$BDF/unit/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/unit" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: a declared unit/display token (87.5 lakh) scrubbed exact → exit 3 (RP-C2)"
+# INV-BRIEF-ADDITIVE — declared value seeds the normalized layer so an undeclared regroup is caught with Reconciliation N/A
+printf '%s\n' '# c' '## Goal & scope' 'Partner AUM 1,200,000.00 in prose.' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 1200000' '```' > "$BDF/add/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/add" brief --shareable --out "$BDF/add/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-ADDITIVE: declared value seeds the normalized layer → undeclared regroup caught w/ Reconciliation N/A → exit 3 (RP-M5)"
+chk "$( ! grep -q '1,200,000' "$BDF/add/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-ADDITIVE: the undeclared trailing-zero-decimal restatement is ABSENT (RP2-m2)"
+# INV-BRIEF-FAILCLOSED — malformed → exit 2 + error stub; brief-body --shareable is a shareable surface; LOCAL ignores the fence
+printf '%s\n' '# c' '## Goal & scope' 'x' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 100' 'garbage-line' '```' > "$BDF/malf/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/malf" brief --shareable --out "$BDF/malf/s.html" >/dev/null 2>&1 ); chk "$?" "2" "v0.17 INV-BRIEF-FAILCLOSED: a MALFORMED fence on --shareable → HARD-STOP exit 2 (never fail-open, never silently absent)"
+chk "$( { [ "$(grep -c 'MALFORMED' "$BDF/malf/s.html")" -ge 1 ] && ! grep -q 'Contract Brief' "$BDF/malf/s.html"; } && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-FAILCLOSED: malformed --out is an error stub (says MALFORMED, is NOT the rendered Brief) — RP-m7"
+( node "$VIS15/gen.mjs" "$BDF/malf" brief-body --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "2" "v0.17 INV-BRIEF-FAILCLOSED: brief-body --shareable is ALSO a shareable surface → malformed → exit 2 (RP-m9)"
+node "$VIS15/gen.mjs" "$BDF/malf" brief --out "$BDF/malf/local.html" >/dev/null 2>&1; MRC=$?
+chk "$( { [ "$MRC" = 0 ] && grep -q 'Contract Brief' "$BDF/malf/local.html"; } && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-LOCAL-FULL: LOCAL brief IGNORES the fence (a malformed fence does NOT break the lock surface)"
+# 'none'/declared-nothing → best-effort exit 0 (distinct from malformed); prose-mention → absent exit 0
+printf '%s\n' '# c' '## Goal & scope' 'x' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'none' '```' > "$BDF/none/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/none" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "0" "v0.17 INV-BRIEF-FAILCLOSED: a 'none'/declared-nothing fence → best-effort exit 0 (distinct from malformed, RP-M3)"
+printf '%s\n' '# c' '## Goal & scope' 'We mention the compass-brief-data fence in prose only.' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' > "$BDF/prose/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/prose" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "0" "v0.17 INV-BRIEF-FAILCLOSED: a prose/inline MENTION (not a fence opener) → absent/best-effort exit 0 (no false hard-error, MINOR-2)"
+# INV-BRIEF-HONEST — banner present in shareable, ABSENT from LOCAL
+chk "$(node "$VIS15/gen.mjs" "$BDF/none" brief --shareable 2>/dev/null | grep -c 'Best-effort redaction')" "1" "v0.17 INV-BRIEF-HONEST: the shareable Brief carries the best-effort caveat banner"
+chk "$(node "$VIS15/gen.mjs" "$BDF/none" brief 2>/dev/null | grep -c 'Best-effort redaction')" "0" "v0.17 INV-BRIEF-HONEST/LOCAL-FULL: the banner is ABSENT from the LOCAL lock surface (RP-m5)"
+# INV-BRIEF-PURE — byte-identical with a fence present
+printf '%s\n' '# c' '## Goal & scope' 'x' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 8750000' '```' > "$BDF/pure/contract.md"
+node "$VIS15/gen.mjs" "$BDF/pure" brief > "$BDF/pure/a.html" 2>/dev/null; node "$VIS15/gen.mjs" "$BDF/pure" brief > "$BDF/pure/b.html" 2>/dev/null
+chk "$(diff "$BDF/pure/a.html" "$BDF/pure/b.html" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-PURE: byte-identical output with a brief-data fence present (deterministic parse)"
+# INV-EMIT — the contract skill documents emitting the fence at LOCK
+chk "$([ "$(grep -c 'compass-brief-data' "$CSK15")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.17 INV-EMIT: contract skill documents emitting the brief-data fence at LOCK"
+# INV-BRIEF-DECLARED-SAFE COVERAGE (R3 F1) — drive off genForms: assert it emits the FULL promised set (independent expected list) AND every generated form actually scrubs (exit 3, 0 leaked). Catches a dropped separator/prefix that a hand-picked sample would miss.
+cat > "$BDF/cov.mjs" <<'COVEOF'
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os"; import { join } from "node:path";
+const GEN = process.argv[2];
+const src = readFileSync(GEN, "utf8");
+const grab=(n)=>{const i=src.indexOf("function "+n);let d=0,j=i;for(;j<src.length;j++){if(src[j]==="{")d++;else if(src[j]==="}"){d--;if(d===0){j++;break;}}}return src.slice(i,j);};
+const gs = src.match(/const GROUP_SEPS = \[[^\]]*\];/)[0];
+const { genForms } = await import("data:text/javascript,"+encodeURIComponent(gs+"\n"+grab("groupWestern")+"\n"+grab("groupIndian")+"\n"+grab("genForms")+"\nexport {genForms};"));
+const NB="\u00a0", TH="\u2009", NA="\u202f", AP="\u2019";
+const expected = ["8750000","8,750,000","87,50,000","8 750 000","87 50 000","8"+NB+"750"+NB+"000","87"+NB+"50"+NB+"000","8"+TH+"750"+TH+"000","8"+NA+"750"+NA+"000","87"+NA+"50"+NA+"000","8"+AP+"750"+AP+"000","87"+AP+"50"+AP+"000","8'750'000","87'50'000","8.750.000","87.50.000","$8,750,000","\u20b987,50,000","\u20ac8.750.000","\u00a38 750 000"];
+const forms = genForms("8750000");
+const missing = expected.filter(f => !forms.includes(f));
+if (missing.length) { console.log("MISSING:"+missing.length); process.exit(0); }
+const d = mkdtempSync(join(tmpdir(),"cov"));
+writeFileSync(join(d,"contract.md"), "# c\n## Goal & scope\n"+forms.join(" ~ ")+"\n## Reconciliation\nN/A\n## Scope ladder\n- NOW: a\n\n\x60\x60\x60compass-brief-data\ngold: 8750000\n\x60\x60\x60\n");
+let ec=0; try { execFileSync("node",[GEN,d,"brief","--shareable","--out",join(d,"s.html")],{stdio:"ignore"}); } catch(e){ ec=e.status||0; }
+const out = readFileSync(join(d,"s.html"),"utf8");
+const leaked = forms.filter(f => out.includes(f));
+console.log(ec===3 && leaked.length===0 ? "PASS" : "FAIL:ec="+ec+":leaked="+leaked.length);
+COVEOF
+chk "$(node "$BDF/cov.mjs" "$VIS15/gen.mjs" 2>/dev/null)" "PASS" "v0.17 INV-BRIEF-DECLARED-SAFE COVERAGE: genForms emits the FULL promised set AND every form scrubs → exit 3, 0 leaked (coverage not sample, R3 F1)"
+# R3 D-1 regression: a CRLF-line-ending fence is still recognized (never fail-open to absent) → declared gold scrubs → exit 3
+printf '# c\r\n## Goal & scope\r\nNAV 8,750,000 restated here\r\n## Reconciliation\r\nN/A\r\n## Scope ladder\r\n- NOW: a\r\n\r\n```compass-brief-data\r\ngold: 8750000\r\n```\r\n' > "$BDF/crlf/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/crlf" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: a CRLF-line-ending fence is recognized (not fail-open to absent) → exit 3 (R3 D-1)"
+# R3 D-2 regression: an info-string token after the tag is still recognized → declared gold scrubs → exit 3
+printf '%s\n' '# c' '## Goal & scope' 'NAV 8,750,000 restated here' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data json' 'gold: 8750000' '```' > "$BDF/info/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/info" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: an info-string token after the fence tag is still recognized (not absent) → exit 3 (R3 D-2)"
+# RB2-m2: a space-separated OR dotted-.ext fence tag is still recognized (not fail-open to absent); an unrelated tag is NOT mis-recognized
+printf '%s\n' '# c' '## Goal & scope' 'gold 1200000 restated 1,200,000 here' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass brief data' 'gold: 1200000' '```' > "$BDF/spc/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/spc" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-FAILCLOSED: a space-separated fence tag (\`\`\`compass brief data) is recognized (not absent) → exit 3 (RB2-m2)"
+printf '%s\n' '# c' '## Goal & scope' 'gold 1200000 restated 1,200,000 here' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data.json' 'gold: 1200000' '```' > "$BDF/dot/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/dot" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-FAILCLOSED: a dotted-.ext fence tag (\`\`\`compass-brief-data.json) is recognized (not absent) → exit 3 (RB2-m2)"
+printf '%s\n' '# c' '## Goal & scope' 'unrelated 1,200,000 in prose' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-database' 'CREATE TABLE x;' '```' > "$BDF/dbase/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/dbase" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "0" "v0.17 INV-BRIEF-FAILCLOSED: an unrelated tag (\`\`\`compass-brief-database) is NOT mis-recognized as our fence → no false hard-error, exit 0 (RB2-m2)"
+# RB2-M1: a short (<3-digit) declared gold is EXACT-only scrubbed (fail-safe over-redaction), NOT skipped (which would fail-OPEN)
+printf '%s\n' '# c' '## Goal & scope' 'the value 42 here exactly' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 42' '```' > "$BDF/short/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/short" brief --shareable --out "$BDF/short/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: a short (<3-digit) declared gold is exact-only scrubbed (fail-safe), NOT skipped-and-leaked → exit 3 (RB2-M1)"
+chk "$( ! grep -q 'value 42 here' "$BDF/short/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-DECLARED-SAFE: the short declared value is ABSENT from the shareable copy (RB2-M1 — no fail-open)"
+# RB3 D-R3-1: a NBSP-separated fence tag (a common Word/Notion/PDF copy-paste artifact) is recognized (norm collapses ALL whitespace) → declared gold scrubs → exit 3
+printf '# c\n## Goal & scope\nvaluation is 12345678 exactly here\n## Reconciliation\nNumeric N/A.\n## Scope ladder\n- NOW: a\n\n```compass\xc2\xa0brief\xc2\xa0data\ngold: 12345678\n```\n' > "$BDF/nbsp/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/nbsp" brief --shareable --out "$BDF/nbsp/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-FAILCLOSED: a NBSP-separated fence tag is recognized (not fail-open to absent) → exit 3 (RB3 D-R3-1)"
+chk "$( ! grep -q '12345678' "$BDF/nbsp/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-FAILCLOSED: the declared gold behind a NBSP-tag fence is ABSENT from the shareable copy (RB3 D-R3-1)"
+# RB3 D-R3-2: a currency-prefixed SHORT declared gold also scrubs its BARE magnitude → a bare '42' restatement is caught → exit 3, absent
+printf '%s\n' '# c' '## Goal & scope' 'valuation is 42 exactly here' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: ₹42' '```' > "$BDF/cur/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/cur" brief --shareable --out "$BDF/cur/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: a currency-prefixed short gold (₹42) also scrubs its bare magnitude → exit 3 (RB3 D-R3-2)"
+chk "$( ! grep -q 'valuation is 42' "$BDF/cur/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-DECLARED-SAFE: the bare magnitude of a currency-prefixed short gold is ABSENT from the shareable copy (RB3 D-R3-2)"
+# RB4 D-R4-1: a U+2028 line-separator inside the fence tag is recognized (opener regex is dotAll, norm collapses it) → declared gold scrubs → exit 3 (no silent fail-open)
+printf '# c\n## Goal & scope\ntarget is 12345678 here\n## Reconciliation\nNumeric N/A.\n## Scope ladder\n- NOW: a\n\n```compass\xe2\x80\xa8brief\xe2\x80\xa8data\ngold: 12345678\n```\n' > "$BDF/lsep/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/lsep" brief --shareable --out "$BDF/lsep/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-FAILCLOSED: a U+2028-separated fence tag is recognized (dotAll opener) → exit 3, not a silent fail-open (RB4 D-R4-1)"
+chk "$( ! grep -q '12345678' "$BDF/lsep/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-FAILCLOSED: the declared gold behind a U+2028-tag fence is ABSENT (RB4 D-R4-1)"
+# RB4 D-R4-2: a zero-padded short gold (gold: 0042) is gated on significant digits → the bare '42' restatement is caught → exit 3
+printf '%s\n' '# c' '## Goal & scope' 'the value 42 here' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 0042' '```' > "$BDF/zpad/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/zpad" brief --shareable --out "$BDF/zpad/s.html" >/dev/null 2>&1 ); chk "$?" "3" "v0.17 INV-BRIEF-DECLARED-SAFE: a zero-padded short gold (0042) scrubs its bare magnitude 42 → exit 3 (RB4 D-R4-2)"
+chk "$( ! grep -q 'value 42 here' "$BDF/zpad/s.html" && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-DECLARED-SAFE: the bare magnitude of a zero-padded short gold is ABSENT (RB4 D-R4-2)"
+# R3 F3: an UNCLOSED fence → malformed → exit 2
+printf '%s\n' '# c' '## Goal & scope' 'x' '## Reconciliation' 'N/A' '## Scope ladder' '- NOW: a' '' '```compass-brief-data' 'gold: 8750000' > "$BDF/uncl/contract.md"
+( node "$VIS15/gen.mjs" "$BDF/uncl" brief --shareable --out /dev/null >/dev/null 2>&1 ); chk "$?" "2" "v0.17 INV-BRIEF-FAILCLOSED: an UNCLOSED fence → malformed → exit 2 (R3 F3)"
+# R3 F3: docs are gated — SKILL.md documents bounded-certainty + gen.mjs header notes exit-2 dual meaning
+chk "$( { grep -qi 'certainty' "$VIS15/SKILL.md" && grep -q 'MALFORMED brief-data fence' "$VIS15/gen.mjs"; } && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-HONEST: SKILL.md documents bounded-certainty + gen.mjs header notes exit-2 dual meaning (R3 F3)"
 rm -rf "$(dirname "$VSMK")"
 # INV-LOCK
 chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-LOCK: contract skill produces the Brief + requires an explicit lock"
