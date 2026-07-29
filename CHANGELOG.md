@@ -3,6 +3,12 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.15.4] — 2026-07-29
+
+**Fourth post-ship patch — the Brief now shows the FULL block it asks you to lock.** The post-ship critique loop caught that the **local** Contract Brief rendered only the *first paragraph* of the reconciliation and security sections. So a reconciliation figure/tolerance written in a later paragraph — and the F-SECPIN **role×view matrix + STRIDE-lite** (which sit below the classification line in every real security block) — were silently dropped from the surface the operator locks against, contradicting the skill's "renders the full block" promise (CRITIQUE-TARGET #3).
+
+The local Brief now renders the **full section body** (figure, tolerance, role×view matrix, STRIDE-lite all included). The shareable path is unchanged — it still redacts the gold to a badge and scrubs never-show values. Regression-guarded with a multi-paragraph fixture (smoke floor 191 → 192).
+
 ## [0.15.3] — 2026-07-28
 
 **Third post-ship patch — completing a partial fix.** v0.15.2's post-ship critique caught that the v0.15.2 security-card fix was half-done: it taught the *badge* to detect never-show in any format, but the shareable **scrubber** still read only the inline `never-show:` key. So a never-show declared as a **list** (`Never-show fields:` + bullets) or a per-field label was not scrubbed, and the leak gate **blessed the shareable copy at exit 0** with the field names present — a soft-pass on a format the product's own tests use.

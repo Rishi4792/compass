@@ -80,6 +80,13 @@ function firstPara(body) {
   const paras = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   return paras[0] || '';
 }
+// ── render a FULL section body as paragraphs (blank-line separated; lines joined by <br>) — used on the
+//    LOCAL Brief so the reconciliation figure/tolerance and the F-SECPIN role×view matrix + STRIDE-lite are
+//    NOT dropped from the lock surface (post-ship PS-1r4-B). The shareable path stays firstPara + redaction. ──
+function bodyHtml(body) {
+  return String(body || '').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
+    .map((p) => `<p>${p.split('\n').map((ln) => txt(ln.trim())).filter(Boolean).join('<br>')}</p>`).join('') || '<p>—</p>';
+}
 // ── bullet lines from a section matching a prefix predicate ──
 function bullets(body, re) {
   return body.split('\n').map((l) => l.trim()).filter((l) => re.test(l));
@@ -238,7 +245,7 @@ function briefBody() {
   const goldCard = shareable
     ? `<span class="badge">gold pinned ✓</span>
        <p style="margin-top:8px">The reconciliation gold is pinned in this build's <b>local</b> Brief and enforced by the suites; its literal is withheld from the shareable copy.</p>`
-    : `<p>${txt(firstPara(goldBody) || goldBody)}</p>`;
+    : bodyHtml(goldBody);   // LOCAL: the FULL gold literal (figure + tolerance in any paragraph) — SKILL.md:34 (post-ship PS-1r4-B)
 
   // security card: honest about present / genuine-N/A / absent
   let secCard;
@@ -248,10 +255,14 @@ function briefBody() {
   } else if (security_.na) {
     secCard = `<span class="badge">N/A — no sensitive surface</span>
       <p style="margin-top:8px">${txt(security_.naReason || 'declared N/A with reason')}</p>`;
-  } else {
-    const nsList = (security_.neverShow || []).map((v) =>
-      `<li><b>never-show:</b> ${shareable ? '<span class="chip">⟨redacted ✓⟩</span>' : txt(v)}</li>`).join('');
+  } else if (shareable) {
+    // SHAREABLE: classification LABEL (first para) + never-show VALUES redacted (accepted best-effort leak gate; Phase-2).
+    const nsList = (security_.neverShow || []).map(() =>
+      `<li><b>never-show:</b> <span class="chip">⟨redacted ✓⟩</span></li>`).join('');
     secCard = `<p>${txt(firstPara(security_.body))}</p>${nsList ? `<ul style="margin-top:8px">${nsList}</ul>` : ''}`;
+  } else {
+    // LOCAL: the FULL security block — classification + never-show + role×view matrix + STRIDE-lite (post-ship PS-1r4-B).
+    secCard = bodyHtml(security_.body);
   }
 
   const invRows = inv.map((r, i) =>

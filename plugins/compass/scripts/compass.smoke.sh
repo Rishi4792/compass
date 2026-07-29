@@ -182,7 +182,7 @@ for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO I
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
-chk "$(grep -c 'FLOOR_SMOKE=191' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 191 (re-baselined after review-build + post-ship asserts)"
+chk "$(grep -c 'FLOOR_SMOKE=192' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 192 (re-baselined after review-build + post-ship asserts)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -312,6 +312,12 @@ chk "$( { ! grep -q 'card_pan' "$SECF/list-share.html" && ! grep -q 'ssn' "$SECF
 printf '%s\n' '# c' '## Security & data-sensitivity' 'N/A for public pages. Internal: ssn → confidential, salary → restricted.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/vocab/contract.md"
 node "$VIS15/gen.mjs" "$SECF/vocab" brief --out "$SECF/vocab.html" >/dev/null 2>&1
 chk "$(node "$VIS15/gen.mjs" "$SECF/vocab" brief 2>/dev/null | grep -c 'N/A — no sensitive surface')" "0" "v0.15 INV-BRIEF: off-spec sensitivity vocabulary (confidential/restricted) + leading N/A shows no false badge (post-ship PS-3b)"
+# post-ship PS-1r4-B: the LOCAL Brief must render the FULL body of the reconciliation + security sections —
+# a figure/tolerance in a LATER paragraph, or the role×view matrix + STRIDE below the classification line, must NOT drop.
+mkdir -p "$SECF/multi"
+printf '%s\n' '# c' '## Reconciliation' 'The gold source is the ledger export, human-signed.' '' 'Expected settled total = $8,750,000.00' 'Tolerance: exact.' '## Security & data-sensitivity' 'Per-field: irr (commercial-sensitive). never-show: irr.' '' 'Role×view: CBO=all; KAM=masked.' 'STRIDE-lite: Spoofing — session guard.' '## Goal & scope' 'x' '## Scope ladder' '- NOW: a' > "$SECF/multi/contract.md"
+node "$VIS15/gen.mjs" "$SECF/multi" brief --out "$SECF/multi.html" >/dev/null 2>&1
+chk "$( { grep -q '8,750,000' "$SECF/multi.html" && grep -q 'Tolerance' "$SECF/multi.html" && grep -q 'CBO' "$SECF/multi.html" && grep -q 'STRIDE' "$SECF/multi.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: LOCAL Brief renders the FULL reconciliation + security body (later-para figure/tolerance + role×view + STRIDE not dropped) (post-ship PS-1r4-B)"
 rm -rf "$(dirname "$VSMK")"
 # INV-LOCK
 chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-LOCK: contract skill produces the Brief + requires an explicit lock"
