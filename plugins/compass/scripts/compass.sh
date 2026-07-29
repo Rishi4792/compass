@@ -702,6 +702,255 @@ cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST re
   ok "ship-prodsafety-receipt-match: restore-point + config-parity both invoked and recorded."
 }
 
+# ── v0.16.0 survive-the-cutover: the production-cutover safety net ─────────────
+# Five gates Compass hands to the MANAGED build's prod, in the restore-point/config-parity shape:
+# fail-CLOSED, line-anchored, UNION-across-lines-take-WORST, _attest_real on any attestation token,
+# byte-inert (N/A-pass) for any contract that declares no cutover config. See the survive-cutover
+# contract INV-CANARY/BAKE/BURNRATE/WATCHER/ABORT/NA-EXPLICIT/BC.
+
+# INV-ABORT — the mid-flight abort sentinel. `abort` sets it; the build step-loop checks it at the top
+# of each step AND before every mutating op (build/SKILL.md) → a set abort halts before the next
+# mutation, bounding blast radius. abort-check exits 3 (distinct) when active so callers can branch.
+_abort_file() { printf '%s/.abort' "$1"; }   # <build-dir>
+cmd_abort() { # <slug|build-dir> — SET the abort sentinel (idempotent)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh abort <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"; [ -d "$dir" ] || die "abort: no build dir for '$a'."
+  : > "$(_abort_file "$dir")"
+  ok "abort: sentinel SET for $(basename "$dir") — the build halts before its next step / mutating op. Clear with: compass.sh abort-clear $(basename "$dir")."
+}
+cmd_abort_check() { # <slug|build-dir> — 0 = clear, 3 = aborting
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh abort-check <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"
+  if [ -e "$(_abort_file "$dir")" ]; then echo "ABORT: ACTIVE"; return 3; fi   # -e: a dir sentinel also counts (fail-safe)
+  echo "ABORT: clear"; return 0
+}
+cmd_abort_clear() { # <slug|build-dir> — CLEAR the sentinel (idempotent)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh abort-clear <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"; rm -f "$(_abort_file "$dir")"
+  ok "abort-clear: sentinel cleared for $(basename "$dir")."
+}
+
+# INV-BAKE — a required soak under load before the terminal SHIPPED write. The bound is a DECLARED
+# INPUT (bake-bound:), NEVER inferred: NUMERIC (err/lat/mem ceilings) or LIBRARY (re-run the suites).
+# FAIL-CLOSED on every ambiguity (R2-C1): a signal with no ceiling OR no reading is NEVER in-bound
+# (esp. memory); multi-line bake-observed is UNIONed to the WORST reading (R2-M4).
+_dur_secs() { # <5m|600|2h|30s> → integer seconds; empty on garbage (set -e/pipefail safe → always returns 0)
+  local d="${1:-}" n
+  case "$d" in
+    *h) n="${d%h}"; if _is_num "$n"; then echo $((n*3600)); fi ;;
+    *m) n="${d%m}"; if _is_num "$n"; then echo $((n*60));   fi ;;
+    *s) n="${d%s}"; if _is_num "$n"; then echo "$n";        fi ;;
+    *)               if _is_num "$d"; then echo "$d";        fi ;;
+  esac
+  return 0
+}
+_nofence() { awk '/^[[:space:]]*(```|~~~)/{f=!f; next} !f' "$1"; }   # print only lines OUTSIDE ``` or ~~~ fences (RB-M6 + RB2-M1)
+_thdr_lines() { # <dir> <key> → every anchored value of <key>, tab-tolerant + fence-skipped, from contract.md + receipts.md
+  local dir="$1" key="$2" f
+  for f in "$dir/contract.md" "$dir/receipts.md"; do
+    if [ -f "$f" ]; then _nofence "$f" | sed -nE "s/^[-*[:space:]]*$key:\\**[[:space:]]*(.+)/\\1/p"; fi
+  done 2>/dev/null
+  return 0
+}
+_bake_tok() { # <token> <min|max> ; stdin lines → the min/max non-negative-int value of token=…, or empty
+  awk -v t="$1" -v mode="$2" '
+    { for(i=1;i<=NF;i++){ if($i ~ ("^" t "=")){ v=substr($i,length(t)+2)
+        if(v ~ /^[0-9]+$/){ if(!seen){best=v+0;seen=1}
+          else if(mode=="max"&&v+0>best)best=v+0
+          else if(mode=="min"&&v+0<best)best=v+0 } } } }
+    END{ if(seen)print best }'
+}
+cmd_bake_gate() { # <slug|build-dir> — INV-BAKE
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh bake-gate <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"; local c="$dir/contract.md"
+  [ -f "$c" ] || die "bake-gate: no contract.md in $dir"
+  # bake-window: MAX seconds across all declared lines (tab-tolerant; stale-stub safe). N/A if none.
+  local wl; wl="$(_thdr_lines "$dir" bake-window)"
+  [ -n "$wl" ] || { ok "bake-gate: no bake-window declared — N/A-pass (byte-inert). BAKE: N/A"; return 0; }
+  local winsec=0 w s
+  while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    s="$(_dur_secs "$w")"
+    if _is_num "$s" && [ "$s" -gt "$winsec" ]; then winsec="$s"; fi
+  done <<<"$wl"
+  { [ "$winsec" -ge 1 ] && [ "$winsec" -le 31536000 ]; } || die "bake-gate: bake-window unparseable/out-of-range (from '$wl' → ${winsec}s; need 1s..1y — guards overflow + a zero soak). BAKE: NO-BOUND (fail-closed)"
+  # bake-bound: UNION all anchored lines (RB-C3 — no first-match stale stub).
+  local bound; bound="$(_thdr_lines "$dir" bake-bound)"
+  [ -n "$bound" ] || die "bake-gate: bake-window declared but NO bake-bound — an undefined bound is NEVER in-bound. BAKE: NO-BOUND (fail-closed)"
+  # observed soak: MIN dur across all (fence-skipped) lines — the least-elapsed reading wins.
+  local dur; dur="$(printf '%s\n' "$(_thdr_lines "$dir" bake-observed)" | _bake_tok dur min)"
+  [ -n "$dur" ] || die "bake-gate: no numeric bake-observed 'dur=' reading — cannot prove the soak elapsed. BAKE: NO-READING (dur)"
+  # MODE by STRUCTURE, not free-text substring (RB-C1): any numeric err=/lat=/mem= token → NUMERIC (enforce
+  # ALL three); otherwise a library keyword → LIBRARY (re-run the channel); neither → fail-closed.
+  if printf '%s\n' "$bound" | grep -qE '(err|lat|mem)=[0-9]'; then
+    local sig ceil rdg
+    for sig in err lat mem; do
+      ceil="$(printf '%s\n' "$bound" | _bake_tok "$sig" min)"   # UNION → TIGHTEST (min) ceiling
+      [ -n "$ceil" ] || die "bake-gate: NUMERIC bound missing a numeric '${sig}=' ceiling — an undefined signal is never in-bound (esp. memory). BAKE: NO-BOUND (fail-closed)"
+    done
+    [ "$dur" -ge "$winsec" ] || die "bake-gate: soak dur=${dur}s < window ${winsec}s. BAKE: NOT-ELAPSED"
+    for sig in err lat mem; do
+      ceil="$(printf '%s\n' "$bound" | _bake_tok "$sig" min)"
+      rdg="$(printf '%s\n' "$(_thdr_lines "$dir" bake-observed)" | _bake_tok "$sig" max)"   # UNION → WORST (max) reading
+      [ -n "$rdg" ] || die "bake-gate: bound has a '${sig}=' ceiling but NO '${sig}=' reading — an absent signal is NEVER in-bound. BAKE: NO-READING (${sig})"
+      [ "$rdg" -le "$ceil" ] || die "bake-gate: signal ${sig}=${rdg} exceeds tightest ceiling ${ceil}. BAKE: OUT-OF-BOUND (${sig})"
+    done
+    ok "bake-gate: NUMERIC bound — soak ${dur}s ≥ ${winsec}s; err/lat/mem each have a ceiling+reading and are within bound. BAKE: ${dur}s IN-BOUND"; return 0
+  fi
+  if printf '%s\n' "$bound" | grep -qiE 'suite|observation-channel|recon'; then   # LIBRARY bound — re-run the channel (R2-M3)
+    [ "$dur" -ge "$winsec" ] || die "bake-gate: soak dur=${dur}s < window ${winsec}s. BAKE: NOT-ELAPSED"
+    local scr obscmd; scr="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+    obscmd="${COMPASS_BAKE_OBSCMD:-bash \"$scr/compass.recon.sh\"}"
+    if eval "$obscmd" >/dev/null 2>&1; then
+      ok "bake-gate: LIBRARY bound — soak ${dur}s ≥ ${winsec}s AND observation-channel green (no floor regression). BAKE: ${dur}s IN-BOUND"; return 0
+    else
+      die "bake-gate: LIBRARY bound — observation-channel NOT green (suites/recon failed or regressed). BAKE: OUT-OF-BOUND"
+    fi
+  fi
+  die "bake-gate: bake-bound names neither numeric ceilings (err=/lat=/mem=) nor a library channel (suites/recon) — cannot assert. BAKE: NO-BOUND (fail-closed)"
+}
+
+# INV-CANARY + INV-BURNRATE — promote a canary slice only on INDEPENDENT green; a burn-rate breach must
+# auto-fire the rehearsed rollback. Only literal `none` routes to SUBSTITUTED-BAKE, which REQUIRES a
+# bake-window (R2-C2); green may never be self-computed — gold-cmd≠slice-cmd + gold not the build's own
+# artifacts (R2-M2). Reads the canary block from contract.md + receipts.md (fixtures put it in contract.md).
+_hdr1() { sed -nE "s/^[-*[:space:]]*$1:\**[[:space:]]*(.+)/\1/p" | head -1; }   # first anchored value of <key> from stdin
+_normcmd() { printf '%s' "${1:-}" | tr -d '*' | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//'; }   # strip *, collapse+trim ws (RB-C2)
+# _attest_cmd: attest a COMMAND value, stripping wrapping punctuation first so a parenthesized placeholder
+# like `(todo)` / `[tbd]` cannot dodge _attest_real's bare-token list (RB-M1 miss).
+_attest_cmd() { local v; v="$(printf '%s' "${1:-}" | sed -E 's/^[^A-Za-z0-9]+//; s/[^A-Za-z0-9]+$//')"; _attest_real "$v"; }
+_last_out() { printf '%s' "${1:-}" | sed -E 's/.*(→|->)[[:space:]]*//'; }   # text AFTER the last arrow (the real outcome; RB4)
+_is_neg()   { printf '%s' "${1:-}" | grep -qiE 'fail|not[[:space:]]|n[o0]t-|error|drift|deny|reject|✗'; }   # a recorded-failure word
+cmd_canary_analysis() { # <slug|build-dir> — INV-CANARY + INV-BURNRATE
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh canary-analysis <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"; local c="$dir/contract.md"
+  [ -f "$c" ] || die "canary-analysis: no contract.md in $dir"
+  local cv; cv="$(hdr_get "$c" canary || true)"
+  [ -n "$cv" ] || { ok "canary-analysis: no canary declared — N/A-pass (byte-inert). CANARY: N/A"; return 0; }
+  local tok; tok="$(printf '%s' "$cv" | sed -nE 's/^[^A-Za-z]*([A-Za-z]+).*/\1/p' | tr 'A-Z' 'a-z')"
+  if [ "$tok" = "none" ]; then
+    local win; win="$(hdr_get "$c" bake-window || true)"
+    [ -n "$win" ] || die "canary-analysis: canary:none (no traffic split) but NO bake-window — a no-traffic-split cutover MUST bake. CANARY: SUBSTITUTED-BAKE-NO-WINDOW (fail-closed)"
+    ok "canary-analysis: no traffic split → SUBSTITUTED-BAKE (bake-window ${win} declared; ship asserts bake-gate IN-BOUND). CANARY: SUBSTITUTED-BAKE"; return 0
+  fi
+  # a real segment → require the FULL canary block (contract.md + receipts.md, fence-skipped). Greps use a
+  # HERESTRING (no pipe → no SIGPIPE×pipefail false-negative on a large blob — RB-M3).
+  local blob; blob="$( { _nofence "$c"; [ -f "$dir/receipts.md" ] && _nofence "$dir/receipts.md"; } 2>/dev/null; true )"
+  # TAKE-WORST across lines, LAST-arrow per line (RB4-M1): EVERY canary-reconcile line's real outcome must be
+  # PASS and EVERY canary-route-smoke line's must be 200/loaded — one recorded failure (a failing route decoy,
+  # a multi-arrow `→ PASS … → 500`, a negation word) blocks. A truly adversarial prose recording that begins
+  # with PASS/200 and carries no failure word is the disclosed best-effort residual (these are operator-recorded
+  # receipt lines — the structural teeth are gold≠slice, fail-closed-on-absence, breach⇒rollback).
+  local rl sl line out any
+  rl="$(grep -iE '^[-*[:space:]]*canary-reconcile:' <<<"$blob" || true)"
+  [ -n "$rl" ] || die "canary-analysis: canary segment '$cv' but no 'canary-reconcile: … → PASS' line. CANARY: NO-RECONCILE (fail-closed)"
+  any=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue; any=1; out="$(_last_out "$line")"
+    { printf '%s' "$out" | grep -qE '^PASS(ED)?([^A-Za-z]|$)'; } && ! _is_neg "$out" \
+      || die "canary-analysis: a canary-reconcile outcome (after its last arrow) is not a clean PASS: '$out'. CANARY: RECONCILE-FAILED (fail-closed)"
+  done <<<"$rl"
+  [ "$any" = 1 ] || die "canary-analysis: no non-empty canary-reconcile line. CANARY: NO-RECONCILE (fail-closed)"
+  sl="$(grep -iE '^[-*[:space:]]*canary-route-smoke:' <<<"$blob" || true)"
+  [ -n "$sl" ] || die "canary-analysis: no 'canary-route-smoke: <route> → 200' line. CANARY: NO-ROUTE-SMOKE (fail-closed)"
+  any=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue; any=1; out="$(_last_out "$line")"
+    { printf '%s' "$out" | grep -qiE '^(200([^0-9]|$)|loaded([^a-z]|$))'; } && ! _is_neg "$out" \
+      || die "canary-analysis: a canary-route-smoke outcome (after its last arrow) is not a clean 200/loaded: '$out'. CANARY: ROUTE-SMOKE-FAILED (fail-closed)"
+  done <<<"$sl"
+  [ "$any" = 1 ] || die "canary-analysis: no non-empty canary-route-smoke line. CANARY: NO-ROUTE-SMOKE (fail-closed)"
+  local goldc slicec
+  goldc="$(_hdr1 canary-gold-cmd <<<"$blob")"
+  slicec="$(_hdr1 canary-slice-cmd <<<"$blob")"
+  { _attest_real "$goldc" && _attest_real "$slicec"; } || die "canary-analysis: canary-gold-cmd / canary-slice-cmd missing or placeholder — green provenance unproven. CANARY: NO-PROVENANCE (fail-closed)"
+  # NORMALIZE before comparing (RB-C2): strip `*`, collapse internal whitespace, trim — so a trailing space
+  # or a **bold** wrapper cannot disguise a self-computed green as independent.
+  [ "$(_normcmd "$goldc")" != "$(_normcmd "$slicec")" ] || die "canary-analysis: canary-gold-cmd ≡ canary-slice-cmd (after normalizing) — green is SELF-COMPUTED (the canary reconciles against itself). CANARY: SELF-COMPUTED (fail-closed)"
+  case "$(printf '%s' "$goldc" | tr 'A-Z' 'a-z')" in   # lowercase — a case-insensitive FS resolves CONTRACT.MD (RB2-M2)
+    *contract.md*|*receipts.md*|*.claude/builds*) die "canary-analysis: canary-gold-cmd reads the build's OWN artifacts — the gold must be independent/external. CANARY: GOLD-IN-BUILDDIR (fail-closed)" ;;
+  esac
+  # INV-BURNRATE: a recorded burn-rate BREACH must have auto-fired the rehearsed rollback, and never promotes.
+  # Match anywhere (even a commented/blockquoted breach must trip — RB-m8). Herestring, not a pipe (RB-M3).
+  if grep -qiE 'burn-rate.*BREACH' <<<"$blob"; then
+    grep -qE '^[-*[:space:]]*rollback-fired:' <<<"$blob" \
+      || die "canary-analysis: a burn-rate BREACH is recorded but NO 'rollback-fired:' line — a breach MUST auto-fire the rehearsed rollback. CANARY: BREACH-NO-ROLLBACK (fail-closed)"
+    die "canary-analysis: burn-rate BREACH → rehearsed rollback fired; promotion REFUSED. CANARY: BREACH (rolled back — not a ship)"
+  fi
+  ok "canary-analysis: canary GREEN — reconcile PASS + route-smoke 200 + INDEPENDENT gold (gold-cmd≠slice-cmd, external). Promote. CANARY: PASS"
+}
+
+# INV-WATCHER — an opted-in cutover cannot reach SHIPPED without a NAMED watcher (real name via
+# _attest_real, R2-M5) OR, in --auto, a PROVEN-armed rollback (`rollback-rehearsed: … → exit 0`, not a
+# bare `armed`, R2-M1). Byte-inert for a build that declares no cutover config.
+cmd_watcher_check() { # <slug|build-dir> — INV-WATCHER
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh watcher-check <slug|build-dir>"
+  local dir; dir="$(_cv_dir "$a")"; local c="$dir/contract.md"
+  [ -f "$c" ] || die "watcher-check: no contract.md in $dir"
+  local cv win; cv="$(hdr_get "$c" canary || true)"; win="$(hdr_get "$c" bake-window || true)"
+  if [ -z "$cv" ] && [ -z "$win" ]; then ok "watcher-check: no cutover declared — N/A-pass (byte-inert). WATCHER: N/A"; return 0; fi
+  local blob; blob="$( { _nofence "$c"; [ -f "$dir/receipts.md" ] && _nofence "$dir/receipts.md"; } 2>/dev/null; true )"
+  local wl name after; wl="$(_hdr1 watcher <<<"$blob")"
+  if [ -n "$wl" ]; then
+    # `watcher: <name> · window <…>` — the window token MUST be AFTER the `·`, and the name must contain a
+    # real alphanumeric run (RB-m9: `windowsill` in the name, or a punctuation-only name, no longer count).
+    name="$(printf '%s' "$wl" | sed -nE 's/^([^·]*)·.*/\1/p')"
+    after="$(printf '%s' "$wl" | sed -nE 's/^[^·]*·(.*)/\1/p')"
+    if [ -n "$name" ] && _attest_real "$name" && printf '%s' "$name" | grep -qE '[A-Za-z0-9]' && grep -qi 'window' <<<"$after"; then
+      ok "watcher-check: named watcher '$(_normcmd "$name")' + a watch window. WATCHER: NAMED"; return 0
+    fi
+  fi
+  if [ -f "$dir/.auto-mode" ]; then
+    # the --auto substitute: a PROVEN-armed rollback. The command before the arrow must itself pass
+    # _attest_real (RB-M1: `rollback-rehearsed: (todo) → exit 0` / `none → exit 0` no longer count), and
+    # the outcome must be literally `exit 0` (a `→ exit 1` fails). Herestring, not a pipe (RB-M3).
+    local rr rcmd; rr="$(_hdr1 rollback-rehearsed <<<"$blob")"
+    rcmd="${rr%%→*}"; rcmd="${rcmd%%->*}"
+    # require a clean `exit 0` AND no recorded non-zero exit anywhere (take-worst — RB4-M3: `→ exit 1 → exit 0`
+    # is not armed), AND a real command (RB-M1).
+    if [ -n "$rr" ] && grep -qE '(→|->)[[:space:]]*exit 0([^0-9]|$)' <<<"$rr" && ! grep -qE 'exit[[:space:]]*[1-9]' <<<"$rr" && _attest_cmd "$rcmd"; then
+      ok "watcher-check: --auto with a PROVEN-armed rollback (rollback-rehearsed '$(_normcmd "$rcmd")' → exit 0). WATCHER: AUTO-ARMED"; return 0
+    fi
+    die "watcher-check: --auto but NO proven-armed rollback — need 'rollback-rehearsed: <real-cmd> → exit 0' (a placeholder command or a bare 'armed' is not proof). WATCHER: AUTO-UNARMED (fail-closed)"
+  fi
+  die "watcher-check: opted into the cutover net but NEITHER a named watcher NOR (in --auto) a proven-armed rollback. WATCHER: NONE (HARD STOP)"
+}
+
+# INV-NA-EXPLICIT — the ship receipt MUST record all three cutover invocations (canary/bake/watcher),
+# N/A or real — a silent skip fails the suite (mirrors ship-prodsafety-receipt-match). And for a
+# `deploy: in scope` build, the three cannot ALL be N/A without an explicit `cutover: waived — <reason>`
+# (a real deploy must not fail-OPEN by omitting cutover config — R2-M6).
+cmd_ship_cutover_receipt_match() { # <build-dir> — INV-NA-EXPLICIT
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh ship-cutover-receipt-match <build-dir>"
+  local f="$dir/receipts.md"; [ -f "$f" ] || die "ship-cutover-receipt-match: no receipts.md in $dir"
+  local blk; blk="$(last_block "$f" ship)"
+  [ -n "$blk" ] || die "ship-cutover-receipt-match: no ship receipt to check."
+  grep -qE 'canary: exit'  <<<"$blk" || die "ship-cutover-receipt-match: ship receipt MISSING the 'canary: exit N' line — the cutover gate was skipped (never allowed)."
+  grep -qE 'bake: exit'    <<<"$blk" || die "ship-cutover-receipt-match: ship receipt MISSING the 'bake: exit N' line — the cutover gate was skipped (never allowed)."
+  grep -qE 'watcher: exit' <<<"$blk" || die "ship-cutover-receipt-match: ship receipt MISSING the 'watcher: exit N' line — the cutover gate was skipped (never allowed)."
+  # R2-M6 fail-open guard for deploy:in-scope. Anchor the DISPOSITION to the value start (RB-M2): prose after
+  # the disposition (e.g. `in scope — canary out-of-scope for now`) must not flip the guard off.
+  local c="$dir/contract.md" deploy="" dl
+  [ -f "$c" ] && deploy="$(hdr_get "$c" deploy || true)"
+  dl="$(printf '%s' "$deploy" | tr 'A-Z' 'a-z' | sed 's/^[[:space:]]*//')"
+  case "$dl" in
+    ""|out-of-scope*|out_of_scope*|"out of scope"*) : ;;   # deploy waived/absent → N/As are fine
+    *)
+      local allna=1 g
+      for g in canary bake watcher; do
+        # match the disposition token N/A / NA / N/A-pass (RB2-m3 + RB4-M2), preceded by a separator so mid-word
+        # "na" (e.g. in "canary"/"NAMED") never counts, and followed by a word boundary so `N/A-pass` DOES.
+        grep -iE "^[-*[:space:]]*\[x\][[:space:]]*$g: exit" <<<"$blk" | grep -qiE '(^|[[:space:]:·])n/?a([^a-z0-9]|$)' || allna=0
+      done
+      if [ "$allna" = 1 ]; then
+        grep -qiE '^[-*[:space:]]*cutover: waived [—-]' <<<"$blk" \
+          || die "ship-cutover-receipt-match: deploy IS in scope but canary+bake+watcher are ALL N/A and there is no 'cutover: waived — <reason>' — a real deploy must not fail-OPEN by omitting cutover config (R2-M6). CUTOVER: FAIL-OPEN"
+      fi
+      ;;
+  esac
+  ok "ship-cutover-receipt-match: canary + bake + watcher all invoked and recorded (and not a silent fail-open)."
+}
+
 set_index_status() { # <slug> <status>  — update the status= token on the slug's INDEX line
   local idx; idx="$(state_root)/INDEX"; [ -f "$idx" ] || return 0
   local esc; esc="$(printf '%s' "$1" | sed 's/[.[\*^$/]/\\&/g')"
@@ -2055,6 +2304,13 @@ main() {
     restore-point)     cmd_restore_point "$@" ;;
     config-parity)     cmd_config_parity "$@" ;;
     ship-prodsafety-receipt-match) cmd_ship_prodsafety_receipt_match "$@" ;;
+    abort)             cmd_abort "$@" ;;
+    abort-check)       cmd_abort_check "$@" ;;
+    abort-clear)       cmd_abort_clear "$@" ;;
+    bake-gate)         cmd_bake_gate "$@" ;;
+    canary-analysis)   cmd_canary_analysis "$@" ;;
+    watcher-check)     cmd_watcher_check "$@" ;;
+    ship-cutover-receipt-match) cmd_ship_cutover_receipt_match "$@" ;;
     postship-signal)   cmd_postship_signal "$@" ;;
     __match)           cmd___match "$@" ;;
     check-session-chain) cmd_check_session_chain "$@" ;;

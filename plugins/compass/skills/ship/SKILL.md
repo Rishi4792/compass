@@ -32,6 +32,15 @@ Run **both**, always, **before the first deploy action** — never operator-skip
 - **`compass.sh config-parity <slug>`** — HARD STOP if the change references a prod env key prod lacks (diffs the contract's `env-keys-referenced:` vs `prod-keys:`); N/A-passes when no new keys are referenced. **Non-zero → STOP, provision the key in prod, re-run.**
 Record `restore-point: exit N` and `config-parity: exit N` into the ship receipt (the `prodsafety-box`). `compass.sh ship-prodsafety-receipt-match <dir>` verifies **both** lines are present — a silent skip fails the suite, so the HARD STOPs cannot be bypassed.
 
+## Step 0.7 — cutover safety net (v0.16.0, survive-the-cutover — HARD STOP, N/A recorded not skipped)
+Run **all three**, always, **after prod-safety and before the terminal SHIPPED write** — each is invoked-and-recorded (an N/A is an *N/A-pass*, never a skip); the config lives in the contract (`canary:` / `bake-window:` / `bake-bound:` / `watcher:`), the readings in this ship receipt.
+- **`compass.sh canary-analysis <slug>`** — promote a slice only on INDEPENDENT green (canary reconcile + route-smoke; gold-cmd ≠ slice-cmd, external). No traffic split → records `SUBSTITUTED-BAKE` (which REQUIRES a `bake-window:`). A recorded **burn-rate `BREACH` auto-fires the rehearsed rollback** (Procedure step 7 — no human wait) and REFUSES promotion. Byte-inert (N/A) if the contract declares no `canary:`.
+- **`compass.sh bake-gate <slug>`** — the required soak before SHIPPED; asserts error/latency/memory stayed within the **declared** `bake-bound:` (an absent ceiling OR reading is NEVER in-bound — esp. memory), or, for a LIBRARY bound, re-runs the observation-channel green. **When canary returned SUBSTITUTED-BAKE, bake-gate MUST return `IN-BOUND` (not N/A)** — a no-traffic-split cutover cannot ship without a real bake. Write a `bake-observed: dur=<s> err=<v> lat=<v> mem=<v>` line first.
+- **`compass.sh watcher-check <slug>`** — a NAMED watcher + window, OR (in `--auto`) a **proven-armed** rollback (`rollback-rehearsed: <cmd> → exit 0`, not a bare `armed`). Neither → HARD STOP.
+Record the results in the **cutover-box** below, then **`compass.sh ship-cutover-receipt-match <dir>`** — verifies all three lines are present AND (for a `deploy: in scope` build) that they are not ALL N/A without an explicit `cutover: waived — <reason>` — so a real deploy can never fail-OPEN by omitting cutover config. **Non-zero → STOP.**
+
+**Own-ship dispositions (Compass releasing itself — no traffic split):** `canary: none — no traffic split` → `SUBSTITUTED-BAKE`; `burn-rate` N/A; `bake-gate` is the ACTIVE gate in **LIBRARY** mode — its `bake-bound:` names the suites, so bake-gate re-runs `selftest+smoke+recon` green (a fresh-clone-of-tag soak); `watcher:` = the operator at the push gate. The **fixtures** (`fixtures/{canary,bake,watcher,cutover-receipt}/`) carry the end-to-end managed-build proof.
+
 ## Procedure
 1. **Deploy via the repo's own path** — the deploy/predeploy scripts Phase 0 found; never an ad-hoc deploy. Respect the contract's rollout order + flags.
 2. **Post-deploy reconciliation on PROD data** — run the reproducing query against prod (read-only), then `compass.sh reconcile <actual> <gold> <tol>`. **Non-zero = STOP and roll back** via the contract's exact revert path.
@@ -42,7 +51,7 @@ Record `restore-point: exit N` and `config-parity: exit N` into the ship receipt
    - **Prod route-smoke is a HARD STOP (v0.8.0, when the plan declares `## Affected routes`):** GET **each declared route on prod** (200-with-content, read-only) + a reversible **create→assert→delete** probe for write flows; record one canonical line per route in the ship receipt: `- [x] route <path>: <prod-cmd> → 200 <content-assert> (prod)`. **Prod unreachable / any route not 200 ⇒ the build CANNOT be marked SHIPPED** — it stays CLOSED, you surface the blocker. `lifecycle-audit … SHIPPED` enforces a CHECKED prod route-smoke line per declared route — missing = STOP. (The exact `pg-method-rates` failure was a named-but-never-loaded route reaching prod.)
 5. **Kill-switch proof (v0.15.0, F-FLAG)** — confirm the feature flag disables the feature **without a redeploy**: flip the declared flag OFF in prod (config / flag service — no new deploy), assert the feature is dark, flip it back; record it. (Contract `no flag — <reason>` waives this.)
 6. **Secret-scan the release patch (v0.15.0)** — once the release commit exists, `compass.sh secret-scan --commits <prev-tag>..HEAD` → 0 hits, so the actual committed patch is proven clean (review-build scans the pre-commit working tree; this covers anything the release commit itself introduces). **Any hit → STOP, scrub, re-commit before push.**
-7. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy): pre-push `git reset --hard <prev-tag> && git clean -fd`; post-push `git revert <prev-tag>..<ship-HEAD>` — then `git status --porcelain` empty + suites at floors. Record what happened.
+7. **On any failure → roll back** using the rehearsed path (review-build exercised it on a copy): pre-push `git reset --hard <prev-tag> && git clean -fd`; post-push `git revert <prev-tag>..<ship-HEAD>` — then `git status --porcelain` empty + suites at floors. Record what happened. **(v0.16.0) A burn-rate BREACH at Step 0.7 auto-fires THIS exact path with no human wait** — the cutover net's automatic halt, not a new rollback.
 
 ## Emit
 **Terminal-status guard (v0.7.0, re-ordered v0.13.0):** FIRST run `compass.sh postship-required <dir>`. **N/A / waived** → run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write SHIPPED (exactly the pre-v0.12 flow). **REQUIRED** → do NOT attempt `lifecycle-audit … SHIPPED` yet (G-O1 correctly fails with zero rounds — that is not a broken chain, it is the loop demanding to run): emit the ship receipt, set `**Status:** post-ship (round 1/cap)`, and enter §5; `lifecycle-audit … SHIPPED` runs only after `loop-converged` exits 0, and only then is SHIPPED written.
@@ -53,6 +62,11 @@ Record `restore-point: exit N` and `config-parity: exit N` into the ship receipt
 <!-- TEMPLATE: prodsafety-box -->
 - [x] restore-point: exit <N>   (`compass.sh restore-point <slug>` — pre-deploy HARD STOP / N/A-pass)
 - [x] config-parity: exit <N>   (`compass.sh config-parity <slug>` — pre-deploy HARD STOP / N/A-pass)
+<!-- TEMPLATE: cutover-box -->
+- [x] canary: exit <N> · CANARY: <PASS|SUBSTITUTED-BAKE|N/A>   (`compass.sh canary-analysis <slug>` — a burn-rate BREACH auto-fires the rehearsed rollback)
+- [x] bake: exit <N> · BAKE: <IN-BOUND|N/A>   (`compass.sh bake-gate <slug>` — when canary=SUBSTITUTED-BAKE this MUST be IN-BOUND, never N/A)
+- [x] watcher: exit <N> · WATCHER: <NAMED|AUTO-ARMED|N/A>   (`compass.sh watcher-check <slug>` — named owner, or a proven-armed rollback in --auto)
+- [x] cutover-receipt-match: `compass.sh ship-cutover-receipt-match <dir>` → 0
 - [x] kill-switch: flag OFF disables the feature WITHOUT a redeploy (or `no flag — <reason>`)
 - [x] deployed via repo path: `<cmd>` → <result>
 - [x] release-patch secret-scan: `compass.sh secret-scan --commits <prev-tag>..HEAD` → 0 hits

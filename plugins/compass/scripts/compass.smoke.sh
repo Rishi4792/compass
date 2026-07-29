@@ -178,11 +178,11 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
-chk "$(grep -c 'FLOOR_SELFTEST=349' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.14 recon.sh pins the selftest floor 349 (re-baselined)"
-chk "$(grep -c 'FLOOR_SMOKE=192' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.15 recon.sh pins the smoke floor 192 (re-baselined after review-build + post-ship asserts)"
+chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
+chk "$(grep -c 'FLOOR_SMOKE=222' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the smoke floor 222 (re-baselined for survive-cutover)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -410,6 +410,33 @@ chk "$( { csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md" | grep -q 'IRR' && cs
 # INV-NO-LEAK durable coverage (R3-m3): recon-guard a clean secret-scan of the new fixtures + the compass-visual skill
 ( bash "$SH" secret-scan "$FXP" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on the prod-safety fixtures → 0 hits (now recon-guarded, R3-m3)"
 ( bash "$SH" secret-scan "$VIS15" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on skills/compass-visual → 0 hits (now recon-guarded, R3-m3)"
+
+# ── v0.16.0 survive-the-cutover: cutover gates wired + behavioral ──
+disp16=$(grep -cE '^[[:space:]]+(abort|abort-check|abort-clear|bake-gate|canary-analysis|watcher-check|ship-cutover-receipt-match)\)' "$PLUGIN_ROOT/scripts/compass.sh")
+chk "$disp16" "7" "v0.16 all 7 cutover subcommands wired in dispatch"
+( bash "$SH" abort-check "$FXP/abort/active" >/dev/null 2>&1 ); chk "$?" "3" "v0.16 INV-ABORT: active fixture → 3"
+( bash "$SH" abort-check "$FXP/abort/clear"  >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-ABORT: clear fixture → 0"
+lh16="$(bash "$FXP/abort/loop-harness.sh" "$SH" 2>&1)"; chk "$(printf '%s' "$lh16" | grep -c 'HALTED-before-op-3 ran=2')" "1" "v0.16 INV-ABORT: loop-harness halts before the next mutating op"
+( bash "$SH" bake-gate "$FXP/bake/in-bound"        >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-BAKE: in-bound → 0"
+( bash "$SH" bake-gate "$FXP/bake/no-reading-mem"  >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-BAKE: absent mem reading is never in-bound → non-zero"
+( bash "$SH" bake-gate "$FXP/bake/no-bound"        >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-BAKE: window but no bound fail-closed → non-zero"
+( bash "$SH" canary-analysis "$FXP/canary/green"              >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-CANARY: independent green → 0"
+( bash "$SH" canary-analysis "$FXP/canary/self-computed"      >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-CANARY: self-computed green → non-zero"
+( bash "$SH" canary-analysis "$FXP/canary/substituted-no-window" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-CANARY: SUBSTITUTED-BAKE requires a bake-window → non-zero"
+( bash "$SH" canary-analysis "$FXP/canary/breach-no-rollback" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-BURNRATE: breach without rollback-fired → non-zero"
+( bash "$SH" watcher-check "$FXP/watcher/named"          >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-WATCHER: named + window → 0"
+( bash "$SH" watcher-check "$FXP/watcher/auto-bare-armed" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-WATCHER: bare 'armed' is not proof → non-zero"
+( bash "$SH" ship-cutover-receipt-match "$FXP/cutover-receipt/complete"            >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-NA-EXPLICIT: all three recorded → 0"
+( bash "$SH" ship-cutover-receipt-match "$FXP/cutover-receipt/deploy-inscope-all-na" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 INV-NA-EXPLICIT: deploy in-scope all-N/A fail-open guard → non-zero"
+( bash "$SH" bake-gate "$FXP/bake/na-not-declared" >/dev/null 2>&1 ); chk "$?" "0" "v0.16 INV-BC: byte-inert when unconfigured → 0"
+chk "$(grep -c 'Step 0.7 — cutover safety net' "$PLUGIN_ROOT/skills/ship/SKILL.md")" "1" "v0.16 ship skill carries Step 0.7 (cutover safety net)"
+chk "$(grep -c 'TEMPLATE: cutover-box' "$PLUGIN_ROOT/skills/ship/SKILL.md")" "1" "v0.16 ship skill pins the cutover-box template"
+chk "$([ "$(grep -c 'ship-cutover-receipt-match' "$PLUGIN_ROOT/skills/ship/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.16 ship skill references ship-cutover-receipt-match"
+chk "$(grep -c 'abort-check <slug>' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.16 build skill wires abort-check into the per-step loop (INV-ABORT)"
+# review-build regression (top attacks)
+( bash "$SH" bake-gate "$FXP/bake/numeric-recon-prose" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-C1: numeric bound + 'reconciled' prose stays NUMERIC → non-zero"
+( bash "$SH" canary-analysis "$FXP/canary/self-computed-ws" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-C2: gold≡slice modulo whitespace is self-computed → non-zero"
+( bash "$SH" ship-cutover-receipt-match "$FXP/cutover-receipt/deploy-prose-outofscope" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-M2: 'out-of-scope' in deploy prose does not disable the guard → non-zero"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

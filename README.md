@@ -139,6 +139,8 @@ Or, once it's listed in the Anthropic community marketplace:
 
 > **Trust made real, and shown (v0.15.0).** The review gate is no longer gameable — a calibrated Critical/Major/Minor bug-bar, a self-refutation rule (a finding only counts if it's reachable and unguarded), and dedupe with a top-blocker footer. The prod cutover gains two HARD STOPs (`restore-point`, `config-parity`) that refuse honestly rather than soft-pass. The contract now pins a kill-switch and a data-sensitivity block. And it's legible: `/compass:go` welcomes and teaches, a bundled `compass-visual` skill renders a visual **Contract Brief** you explicitly lock and a progress **Cockpit**, every stage ends with a plain-English "here's what happened and what's next," and `/compass:explain` teaches on demand.
 
+> **Survive the cutover (v0.16.0 — Phase 2).** A production cutover is where a bad ship becomes an outage, so v0.16 adds a five-gate safety net at ship: a **canary** that promotes only on *independent* green (never a number the code computes about itself), a **bake window** that fails closed if a signal — especially memory — has no ceiling or no reading, a **burn-rate auto-abort** that fires the rehearsed rollback with no human wait, a **named-watcher** check (a real on-call, or a proven-armed rollback in `--auto`), and a mid-flight **`compass.sh abort`** that halts an autonomous build *before* its next mutation. Each is a real script, fail-closed, and invisible to any build that doesn't opt in.
+
 ## State & resumability
 Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — so closing the terminal loses nothing; `/compass:resume` picks up exactly where it left off.
 
