@@ -5,7 +5,7 @@
 An autonomous **engineering team in one plugin** for [Claude Code](https://claude.com/claude-code) — Engineering Manager, coder, QA, DevOps. You finalize one super-contract; it does the rest: **plan → code → tests → ship**, following the engineering best-practices a real team would, and it doesn't stop until the work is *proven* against your spec.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.15.0-1f6feb)
+![version](https://img.shields.io/badge/version-0.15.4-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 Built on the architecture serious builders are converging on — an explicit **graph** of stages with hard gates as edges, and adversarial **loops** that make every output top-notch. *(That's the whole trick — [see below](#how-it-works-loops-and-graphs-with-real-edges).)*
@@ -143,7 +143,7 @@ Or, once it's listed in the Anthropic community marketplace:
 Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — so closing the terminal loses nothing; `/compass:resume` picks up exactly where it left off.
 
 ## Versioning & updates
-Semantic versioning; every change is in **[CHANGELOG.md](CHANGELOG.md)**. See **[RELEASING.md](RELEASING.md)** for the release process. Update via `/plugin marketplace update compass`.
+Semantic versioning; every change is in **[CHANGELOG.md](CHANGELOG.md)**. What's shipped and what's planned next is in **[ROADMAP.md](ROADMAP.md)**. See **[RELEASING.md](RELEASING.md)** for the release process. Update via `/plugin marketplace update compass`.
 
 ## Why "Compass"
 A compass keeps you pointed true no matter the terrain. Same idea: the contract is your true north, and every stage checks the bearing.
