@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.18.0] — 2026-07-31
+
+**STRIDE + role×resource RBAC-matrix + IDOR review METHOD (Phase 2, contract 3).** The contract stage already *pins* the security surface (per-field classification + a role×view matrix + STRIDE-lite, since v0.15), but the review that's supposed to check it was named-only — `[E] Security/RBAC` / `[D] Security/RBAC/data-leakage`, one line each. v0.18 gives it a real, enforced method.
+
+- **RBACSTRIDE island.** A delimited method block, **byte-identical across `review-plan` `[E]` and `review-build` `[D]`** (smoke-enforced exactly like the COMMSCAN block, so it can't silently drift). For every new view/endpoint the build adds, the reviewer: (1) builds a **role×resource matrix** and asserts each cell against the contract's role×view; (2) treats a view/endpoint added while the contract's role×view is `N/A`/absent as a **CRITICAL** — *never trust a disprovable N/A* (the under-declared-surface / cross-visibility class); (3) **STRIDE-walks** each surface; (4) runs an **IDOR probe** — as each lower role, fetch another tenant's object id → assert **403/empty**; (5) a deny cell that returns data / a non-403 / any unasserted cell → a **CRITICAL that blocks CLOSED**.
+- **Byte-inert & no hard dep.** The method is N/A (byte-inert) for a build with no new view/endpoint. The repo's `permission-matrix` skill is wired **when present** only — never a hard dependency. The `plan` stage gains a threat-model / RBAC-matrix design step that produces the matrix the reviews assert against.
+
+Built contract→review→plan→review→build→review on Compass itself in `--auto`. The reviews found + fixed **3 CRITICAL + 1 MAJOR**: review-contract caught the method silently no-op'ing on an under-declared contract (its whole target case); review-plan caught a hidden **double name-list** (recon `INV_NAMES` + selftest `NAMES12`) that would break `selftest`, and a **tautological grep** (`"N/A"+"CRITICAL"` already appear elsewhere) that would let the headline security clause ship missing on a green suite — now a unique-phrase grep, **mutation-proven** (deleting the clause from both byte-identical islands flips the fixture). Suite floors: **selftest 406 · smoke 222 → 272** (6 new pinned INVARIANT groups). Explicit non-goals (later contracts): boundary/TOCTOU, perf-budget/FMEA, data & migration safety, compliance/PII, screenshot secret hygiene, a runtime IDOR harness (app-specific), and all Phase-3 items.
+
 ## [0.17.0] — 2026-07-31
 
 **Declared-value CERTAIN shareable-Brief scrub (Phase 2, contract 2).** The `compass-visual` Contract-Brief generator used to redact the shareable copy by *guessing* which numbers in the free-form prose were the confidential reconciliation gold — a best-effort heuristic whose long tail the v0.15 post-ship loop kept finding one more format it missed. v0.17 replaces the guess with a declaration.

@@ -30,6 +30,15 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
 - **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
 - **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
 - **[E] Security/RBAC/cost** — *independent agent* (keep separate; the adversarial independence is load-bearing).
+<!-- RBACSTRIDE:START -->
+- **STRIDE + role×resource RBAC-matrix + IDOR method (F-RBACSTRIDE):** for every NEW view/endpoint the build adds, run this method — byte-inert (**N/A**) when the build adds **no new view/endpoint**:
+  1. **Role×resource matrix** — build one (every role × the view/endpoint's resources+actions) and **assert each cell against the contract's role×view allow/deny matrix**; a cell the contract doesn't cover, or a matrix-vs-contract mismatch, is a finding.
+  2. **Under-declared guard** — a new view/endpoint added while the contract's role×view is **N/A / absent** is itself a **CRITICAL** finding: build the matrix from the ACTUAL roles/resources you observe and challenge the N/A — **never trust a disprovable N/A** (the under-declared-surface / KAM-cross-visibility class).
+  3. **STRIDE-walk** each surface — one line each for Spoofing / Tampering / Repudiation / Info-disclosure / DoS / Elevation.
+  4. **IDOR probe** — as each LOWER role, fetch another tenant's / another owner's object id on the new endpoint and **assert 403 / empty** — never another tenant's data.
+  5. **Consequence** — a deny cell that returns data, a non-403 on the IDOR probe, or any unasserted cell → a **CRITICAL that blocks CLOSED**.
+  Wire the repo's **`permission-matrix`** skill as the matrix tool **when present** (optional — follow the method manually if it is not installed; never a hard dependency).
+<!-- RBACSTRIDE:END -->
 <!-- COMMSCAN:START -->
 - **Commercial-sensitivity scan (F-COMMSCAN):** every business-facing view/API is scanned for **IRR / take-rate / gross-revenue% / COF** on a non-management surface — any hit is a **CRITICAL** that blocks CLOSED. Field set canonical to the `commercial-sensitivity-guard` skill; this delimited block is byte-identical across the review skills so the set can't silently drift.
 <!-- COMMSCAN:END -->
@@ -41,6 +50,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 ## RECEIPT — review-plan · <slug> · PASS
 - [x] gate: plan receipt OK
 - [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
+- [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)
 - [x] secret-scan of planned harness: `compass.sh secret-scan .` → 0 hits

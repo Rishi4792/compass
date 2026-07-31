@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -506,6 +506,19 @@ csisl(){ awk '/COMMSCAN:START/{f=1} f{print} /COMMSCAN:END/{f=0}' "$1"; }
 chk "$( diff <(csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md") <(csisl "$PLUGIN_ROOT/skills/review-build/SKILL.md") >/dev/null 2>&1 && [ -n "$(csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md")" ] && echo 1 || echo 0)" "1" "v0.15 INV-COMMSCAN: COMMSCAN island byte-identical across review-plan + review-build"
 chk "$(grep -c 'COMMSCAN:START' "$PLUGIN_ROOT/skills/review-plan/SKILL.md")" "1" "v0.15 INV-COMMSCAN: exactly one COMMSCAN island in review-plan (no drift/dup)"
 chk "$( { csisl "$PLUGIN_ROOT/skills/review-plan/SKILL.md" | grep -q 'IRR' && csisl "$PLUGIN_ROOT/skills/review-build/SKILL.md" | grep -q 'IRR'; } && echo 1 || echo 0)" "1" "v0.15 INV-COMMSCAN: the island scans IRR / take-rate / gross-rev% / COF in both review skills"
+# ── v0.18.0: RBACSTRIDE method island — STRIDE + role×resource RBAC-matrix + IDOR, byte-identical across review-plan [E] + review-build [D] (mirrors COMMSCAN) ──
+rsisl(){ awk '/RBACSTRIDE:START/{f=1} f{print} /RBACSTRIDE:END/{f=0}' "$1"; }
+RP18="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RB18="$PLUGIN_ROOT/skills/review-build/SKILL.md"
+chk "$( diff <(rsisl "$RP18") <(rsisl "$RB18") >/dev/null 2>&1 && [ -n "$(rsisl "$RP18")" ] && echo 1 || echo 0)" "1" "v0.18 INV-RBACSTRIDE-BLOCK: RBACSTRIDE island byte-identical across review-plan + review-build"
+chk "$(grep -c 'RBACSTRIDE:START' "$RP18")" "1" "v0.18 INV-RBACSTRIDE-BLOCK: exactly one RBACSTRIDE island in review-plan (no drift/dup)"
+chk "$(grep -c 'RBACSTRIDE:START' "$RB18")" "1" "v0.18 INV-RBACSTRIDE-BLOCK: exactly one RBACSTRIDE island in review-build (no drift/dup)"
+chk "$( { rsisl "$RP18" | grep -q 'resource matrix' && rsisl "$RP18" | grep -q 'against the contract' && rsisl "$RP18" | grep -q 'STRIDE' && rsisl "$RP18" | grep -q 'IDOR' && rsisl "$RP18" | grep -q '403'; } && echo 1 || echo 0)" "1" "v0.18 INV-RBACSTRIDE-METHOD: island carries role×resource matrix (asserted against the contract) + STRIDE + IDOR/403"
+chk "$(rsisl "$RP18" | grep -c 'never trust a disprovable N/A')" "1" "v0.18 INV-RBACSTRIDE-METHOD: the UNDER-DECLARED guard is present via its UNIQUE phrase (R2-C2 — not a tautology on ambient N/A + CRITICAL tokens)"
+chk "$(rsisl "$RP18" | grep -c 'blocks CLOSED')" "1" "v0.18 INV-RBACSTRIDE-METHOD: a failed IDOR probe / unasserted cell → CRITICAL that blocks CLOSED"
+chk "$(rsisl "$RP18" | grep -c 'when present')" "1" "v0.18 INV-RBAC-NODEP: permission-matrix wired conditionally (when present) — no hard dependency"
+chk "$(rsisl "$RP18" | grep -c 'no new view/endpoint')" "1" "v0.18 INV-RBAC-BYTEINERT: the method is byte-inert (N/A) for a build with no new view/endpoint"
+chk "$( { grep -q 'RBACSTRIDE:.*asserted vs contract' "$RP18" && grep -q 'RBACSTRIDE:.*asserted vs contract' "$RB18"; } && echo 1 || echo 0)" "1" "v0.18 INV-RBACSTRIDE-RECEIPT: both review-plan + review-build receipts carry the RBACSTRIDE line (method applied / N/A)"
+chk "$( { grep -q 'resource matrix' "$PLUGIN_ROOT/skills/plan/SKILL.md" && grep -qi 'threat-model' "$PLUGIN_ROOT/skills/plan/SKILL.md"; } && echo 1 || echo 0)" "1" "v0.18 INV-PLAN-RBAC: the plan skill requires a threat-model / RBAC-matrix design step for view/endpoint builds"
 # INV-NO-LEAK durable coverage (R3-m3): recon-guard a clean secret-scan of the new fixtures + the compass-visual skill
 ( bash "$SH" secret-scan "$FXP" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on the prod-safety fixtures → 0 hits (now recon-guarded, R3-m3)"
 ( bash "$SH" secret-scan "$VIS15" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on skills/compass-visual → 0 hits (now recon-guarded, R3-m3)"
