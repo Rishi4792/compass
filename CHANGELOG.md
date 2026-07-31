@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.19.0] — 2026-07-31
+
+**Boundary/edge + concurrency/TOCTOU review METHOD (Phase 2, contract 4).** The review's `[A]` correctness stream was named-only — no numeric/temporal boundary checklist and no race analysis. Two classes of prod bug lived there unchecked: off-by-one / naive-UTC-vs-IST / month-rollover, and idle-in-transaction locks / saturated-pool races. v0.19 gives `[A]` a real, enforced method.
+
+- **EDGERACE island.** One combined delimited method block, **byte-identical across `review-plan` `[A]` and `review-build` `[A]`** (smoke-enforced like the RBACSTRIDE/COMMSCAN blocks, so it can't drift). It carries: (1) a **boundary/edge checklist** — for each numeric/temporal/index input on a reachable path, enumerate null · empty · zero · one · max · negative · **off-by-one** · unicode · **timezone+DST** · month/year rollover; each unhandled boundary on a reachable path is a finding; (2) a **concurrency/TOCTOU** analysis — for every read-modify-write, name the **losing interleaving** and **assert the guard** (row lock / unique constraint / atomic upsert), and flag long transactions holding locks across I/O; (3) a **challenge-the-N/A** clause — a boundary/RMW surface present while the review claims N/A is itself a finding (*never wave off a boundary or race you can see*).
+- **Byte-inert & self-contained.** N/A (byte-inert) for a build with no boundary or read-modify-write surface. No external skill dependency. The `plan` stage gains a concurrency/TOCTOU-analysis step for read-modify-write builds.
+
+Built contract→review→plan→review→build→review on Compass itself in `--auto`. The reviews found + fixed **2 CRITICAL-adjacent MAJOR + 5 minor**: review-contract caught the byte-inert N/A being a *disprovable escape hatch* and the method's teeth (`assert the guard`, `blocks CLOSED`) being unpinned (EDGERACE had cloned RBACSTRIDE's shape without its teeth); review-plan caught a receipt-grep tautology-risk and a non-self-caught leg of the coupled name-sync triple. The method teeth are **mutation-proven** (stripping either tooth from both byte-identical islands flips the fixture). Suite floors: **selftest 406 · smoke 222 → 285** (5 new pinned INVARIANT groups; recon now pins 45). Explicit non-goals (later contracts): perf-budget/FMEA/anti-pattern/SLO, data & migration safety, compliance/PII, screenshot secret hygiene, a runtime concurrency/race harness (app-specific), and all Phase-3 items.
+
 ## [0.18.0] — 2026-07-31
 
 **STRIDE + role×resource RBAC-matrix + IDOR review METHOD (Phase 2, contract 3).** The contract stage already *pins* the security surface (per-field classification + a role×view matrix + STRIDE-lite, since v0.15), but the review that's supposed to check it was named-only — `[E] Security/RBAC` / `[D] Security/RBAC/data-leakage`, one line each. v0.18 gives it a real, enforced method.

@@ -26,6 +26,13 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
 
 ## Streams — fan out as 6 agents (each emits ONE ledger row per check it covers; coverage = the checks, not the agent count)
 - **[A] Spec coverage:** traceability (every requirement → step) · INVARIANT-assertion coverage (each → a non-deferred exact-bound check) · test plan (deterministic tests incl. reconciliation, web tokens + a11y, idempotency).
+<!-- EDGERACE:START -->
+- **Boundary/edge + concurrency/TOCTOU method (F-EDGERACE):** run for every build that handles numeric/temporal/index input or a read-modify-write — byte-inert (**N/A**) when the build has **no boundary or read-modify-write surface**:
+  1. **Boundary/edge checklist** — for each numeric/temporal/index input on a reachable path, enumerate: null · empty · zero · one · max · negative · **off-by-one** · unicode · **timezone**+DST · month/year rollover. Each unhandled boundary on a reachable path is a finding.
+  2. **Concurrency/TOCTOU** — for every read-modify-write, name the **losing interleaving** and **assert the guard** (row lock / unique constraint / atomic upsert); flag long transactions that hold locks across I/O.
+  3. **Challenge a disprovable N/A** — a boundary/RMW surface present while the review claims N/A is itself a finding; never wave off a boundary or race you can see; build the checklist from the inputs you actually observe.
+  An unhandled boundary on a reachable path, or an unguarded read-modify-write, is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a data-loss/corruption race = CRITICAL) that **blocks CLOSED**.
+<!-- EDGERACE:END -->
 - **[B] Data & migration:** DB/migration safe, reversible, rolling-deploy-safe with a real dry-run-on-a-copy step · reconciliation feasibility — the query recomputes toward the **independent** gold (greenfield carve-out: no data yet → post-data acceptance check, don't bounce the plan).
 - **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
 - **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
@@ -51,6 +58,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 - [x] gate: plan receipt OK
 - [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
+- [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)
 - [x] secret-scan of planned harness: `compass.sh secret-scan .` → 0 hits

@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -519,6 +519,21 @@ chk "$(rsisl "$RP18" | grep -c 'when present')" "1" "v0.18 INV-RBAC-NODEP: permi
 chk "$(rsisl "$RP18" | grep -c 'no new view/endpoint')" "1" "v0.18 INV-RBAC-BYTEINERT: the method is byte-inert (N/A) for a build with no new view/endpoint"
 chk "$( { grep -q 'RBACSTRIDE:.*asserted vs contract' "$RP18" && grep -q 'RBACSTRIDE:.*asserted vs contract' "$RB18"; } && echo 1 || echo 0)" "1" "v0.18 INV-RBACSTRIDE-RECEIPT: both review-plan + review-build receipts carry the RBACSTRIDE line (method applied / N/A)"
 chk "$( { grep -q 'resource matrix' "$PLUGIN_ROOT/skills/plan/SKILL.md" && grep -qi 'threat-model' "$PLUGIN_ROOT/skills/plan/SKILL.md"; } && echo 1 || echo 0)" "1" "v0.18 INV-PLAN-RBAC: the plan skill requires a threat-model / RBAC-matrix design step for view/endpoint builds"
+# ── v0.19.0: EDGERACE method island — boundary/edge + concurrency/TOCTOU, byte-identical across review-plan [A] + review-build [A] (mirrors RBACSTRIDE) ──
+erisl(){ awk '/EDGERACE:START/{f=1} f{print} /EDGERACE:END/{f=0}' "$1"; }
+EP19="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; EB19="$PLUGIN_ROOT/skills/review-build/SKILL.md"
+chk "$( diff <(erisl "$EP19") <(erisl "$EB19") >/dev/null 2>&1 && [ -n "$(erisl "$EP19")" ] && echo 1 || echo 0)" "1" "v0.19 INV-EDGERACE-BLOCK: EDGERACE island byte-identical across review-plan + review-build"
+chk "$(grep -c 'EDGERACE:START' "$EP19")" "1" "v0.19 INV-EDGERACE-BLOCK: exactly one EDGERACE island in review-plan (no drift/dup)"
+chk "$(grep -c 'EDGERACE:START' "$EB19")" "1" "v0.19 INV-EDGERACE-BLOCK: exactly one EDGERACE island in review-build (no drift/dup)"
+chk "$( { erisl "$EP19" | grep -qF 'off-by-one' && erisl "$EP19" | grep -qF 'timezone' && erisl "$EP19" | grep -qF 'losing interleaving' && erisl "$EP19" | grep -qF 'assert the guard' && erisl "$EP19" | grep -qF 'blocks CLOSED' && erisl "$EP19" | grep -qF 'never wave off'; } && echo 1 || echo 0)" "1" "v0.19 INV-EDGERACE-METHOD: island carries both methods + teeth + challenge-N/A (off-by-one · timezone · losing interleaving · assert the guard · blocks CLOSED · never wave off)"
+chk "$( { grep -q 'EDGERACE:.*applied' "$EP19" && grep -q 'EDGERACE:.*applied' "$EB19"; } && echo 1 || echo 0)" "1" "v0.19 INV-EDGERACE-RECEIPT: both review receipts carry the EDGERACE line (receipt-only anchor 'EDGERACE:.*applied', not the island markers — R2-m2)"
+chk "$(grep -c 'losing interleaving' "$PLUGIN_ROOT/skills/plan/SKILL.md")" "1" "v0.19 INV-PLAN-CONCURRENCY: the plan skill requires a concurrency/TOCTOU analysis step (losing interleaving) for read-modify-write builds"
+chk "$(erisl "$EP19" | grep -cF 'no boundary or read-modify-write surface')" "1" "v0.19 INV-EDGERACE-BYTEINERT: the method is byte-inert (N/A) for a build with no boundary or read-modify-write surface"
+# R2-m3 guard: close the one non-self-caught name-sync leg — the smoke:181 name-loop must cover every recon.sh INV_NAMES
+_rn19="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
+_sl19="$(sed -n 's/^for nm in \(.*\); do/\1/p' "$PLUGIN_ROOT/scripts/compass.smoke.sh")"
+_miss19=""; for _n19 in $_rn19; do case " $_sl19 " in *" $_n19 "*) ;; *) _miss19="$_miss19 $_n19";; esac; done
+chk "$([ -z "$_miss19" ] && echo 1 || echo 0)" "1" "v0.19 INV-SUITES: the smoke:181 name-loop covers every recon.sh INV_NAMES (R2-m3 — the previously-unguarded name-sync leg is now guarded)"
 # INV-NO-LEAK durable coverage (R3-m3): recon-guard a clean secret-scan of the new fixtures + the compass-visual skill
 ( bash "$SH" secret-scan "$FXP" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on the prod-safety fixtures → 0 hits (now recon-guarded, R3-m3)"
 ( bash "$SH" secret-scan "$VIS15" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on skills/compass-visual → 0 hits (now recon-guarded, R3-m3)"
