@@ -764,15 +764,24 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
   esac
   # declared → require a NUMERIC literal for EACH (RB-R1-C1: a bare prose word like "cost-effective"
   # or "SLO story" must NOT pass — the whole-file substring grep was the soft-pass hole).
-  grep -qiE 'p95[^0-9]{0,8}[0-9]+(\.[0-9]+)? ?(ms|s|µs|us)\b' "$contract" \
-    || die "perf-budget: declared but no p95 latency LITERAL (a number+unit, e.g. 'p95 < 200ms' or 'p95=1.5s') (INV-PERFBUDGET)."
-  grep -qiE '(peak[ -]?mem|peak memory)[^0-9]{0,8}[0-9]+(\.[0-9]+)? ?(kb|mb|gb|tb)\b' "$contract" \
-    || die "perf-budget: declared but no peak-mem LITERAL (a number+unit, e.g. 'peak-mem 512MB') (INV-PERFBUDGET)."
-  grep -qiE 'cost[^A-Za-z0-9]{0,8}[$0-9]' "$contract" \
-    || die "perf-budget: declared but no cost LITERAL (a number/currency, not the prose word 'cost-effective') (INV-PERFBUDGET)."
-  grep -qiE '(healthy[ -]?range|slo)[^0-9]{0,12}[0-9]' "$contract" \
-    || die "perf-budget: declared but no SLO healthy-range LITERAL (a number, not a prose 'SLO' mention) (INV-PERFBUDGET)."
-  ok "perf-budget: p95 + peak-mem + cost + SLO healthy-range literals all declared."
+  # DECOUPLED (RB-R1-C1 + RB-R3): each axis must be NAMED and a literal of its KIND must exist somewhere
+  # in the contract — no fragile proximity window (which mis-parsed 'p95 (99th): 1.2s' and false-rejected
+  # 'p95 latency: 200ms'), but a bare prose 'cost-effective'/'SLO story' with no number still fails.
+  grep -qiF 'p95' "$contract" \
+    || die "perf-budget: declared but 'p95' latency is not named (INV-PERFBUDGET)."
+  grep -qiE '[0-9]+(\.[0-9]+)? ?(ms|µs|us|sec|secs|seconds?)\b|[0-9]+(\.[0-9]+)?s\b' "$contract" \
+    || die "perf-budget: declared but no latency LITERAL (a number+ms/s, e.g. 'p95 200ms') (INV-PERFBUDGET)."
+  grep -qiE 'peak[ -]?mem|peak memory' "$contract" \
+    || die "perf-budget: declared but peak memory is not named (INV-PERFBUDGET)."
+  grep -qiE '[0-9]+(\.[0-9]+)? ?(kb|mb|gb|tb)\b' "$contract" \
+    || die "perf-budget: declared but no peak-mem LITERAL (a number+MB/GB) (INV-PERFBUDGET)."
+  grep -qiF 'cost' "$contract" \
+    || die "perf-budget: declared but 'cost' is not named (INV-PERFBUDGET)."
+  grep -qiE '[$][0-9]|[0-9]+(\.[0-9]+)? ?(usd|cents?|/req|per[ -](request|call|op))' "$contract" \
+    || die "perf-budget: declared but no cost LITERAL (a currency/number, not the prose word 'cost-effective') (INV-PERFBUDGET)."
+  grep -qiE '\bslo\b|healthy[ -]?range' "$contract" \
+    || die "perf-budget: declared but no SLO / healthy-range named (its literal range is verified in review) (INV-PERFBUDGET)."
+  ok "perf-budget: p95 + peak-mem + cost named with numeric literals + SLO/healthy-range."
 }
 
 cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
@@ -796,9 +805,11 @@ cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phas
   # require prod-shaped; reject a diminutive OR a negation SCOPED to prod-shaped — but ALLOW a clean
   # "no diffs"/"without errors" (those describe a passing run, not a fake dry-run). RB-R2-M2
   { printf '%s' "$dry" | grep -qi 'prod-shaped' \
-      && ! printf '%s' "$dry" | grep -qiE '\b(tiny|toy|small|pending|todo|tbd|skip)\b' \
-      && ! printf '%s' "$dry" | grep -qiE '\b(not|non|without|isn.?t|no)\b[^.]{0,12}prod-shaped'; } \
-    || die "expand-contract: 'dry-run:' is not a real prod-shaped record (absent, diminutive, or 'NOT prod-shaped'). HARD STOP (INV-EXPAND-CONTRACT)."
+      && ! printf '%s' "$dry" | grep -qiE '\b(tiny|toy|small|pending|todo|tbd)\b' \
+      && ! printf '%s' "$dry" | grep -qiE '\b(not|no|non|never|without|isn.?t|skip(ped|s)?)\b[^.]{0,30}prod-shaped' \
+      && ! printf '%s' "$dry" | grep -qiE '\b(will|going|planned|later)\b[^.]{0,30}prod-shaped' \
+      && ! printf '%s' "$dry" | grep -qiE 'prod-shaped[^.]{0,20}\b(later|planned|tbd|todo|pending)\b'; } \
+    || die "expand-contract: 'dry-run:' is not a real prod-shaped record (absent, diminutive, future/skipped, or a 'did not … prod-shaped' negation). A clean-result 'no diffs/no errors' AFTER prod-shaped is fine. HARD STOP (INV-EXPAND-CONTRACT)."
   # a `contract` op (DROP/RENAME/type-narrow) MUST be deferred to a separate post-bake build
   if grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*contract' "$contract"; then
     grep -qiE '^[-*[:space:]]*contract-op:\**[[:space:]]*deferred' "$contract" \
@@ -852,12 +863,13 @@ cmd_green_ci_gate() { # <slug|build-dir> — a CI-declaring repo RECORDS a green
   # CI declared → require a RECORDED green-CI merge proof (presence-of-record, NOT a live gh/API query).
   # RB-R1-m3: reject a NEGATED value ("build did not pass", "not green", "failed/red").
   local gci; gci="$(sed -nE 's/^[-*[:space:]]*green-ci:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  # accept a positive-green record; reject a RED/fail token (incl. 'failure') or a NEGATED-green phrase
-  # ('not green'/'did not pass') — but NOT a bare 'no'/'not' ('no regressions'/'not flaky' ARE green). RB-R2-M1
-  { printf '%s' "$gci" | grep -qiE '(green|pass|success)' \
-      && ! printf '%s' "$gci" | grep -qiE '\b(fail(ed|ing|ure|s)?|red|broke|broken)\b' \
+  # PRESENCE gate (honor-level, re-challenged by review-build): require a positive-green token AND reject
+  # only an explicit NEGATED-green phrase ('not green' / 'did not pass' / 'isn't green'). We do NOT try to
+  # classify free-text failure prose (that whack-a-mole caused false-rejects of 'zero failures'/'no
+  # regressions'/'succeeded'); a lying-but-green-worded record is caught by the review-build re-challenge. RB-R2/R3
+  { printf '%s' "$gci" | grep -qiE '(green|pass|success|succeed)' \
       && ! printf '%s' "$gci" | grep -qiE '\b(not|no|never|isn.?t|did[ -]?not)\b[ -]+[a-z]{0,8}[ -]?(green|pass|passed|success)'; } \
-    || die "green-ci: repo declares CI (ci: yes) but the recorded 'green-ci:' line is absent or NOT green (a red/fail token or a negated-green phrase). HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
+    || die "green-ci: repo declares CI (ci: yes) but the recorded 'green-ci:' line is absent or an explicit NOT-green phrase. HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
   ok "green-ci: recorded green-CI merge proof present."
 }
 
