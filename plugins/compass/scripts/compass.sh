@@ -549,6 +549,13 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_backfill_recon_gate >/dev/null 2>&1; then
       cmd_backfill_recon_gate "$dir" >/dev/null || die "gate: backfill-recon-gate FAILED for '$dir' (see stderr)."
     fi
+    if type cmd_green_ci_gate >/dev/null 2>&1; then
+      cmd_green_ci_gate "$dir" >/dev/null || die "gate: green-ci-gate FAILED for '$dir' (see stderr)."
+    fi
+  fi
+  # v0.21 compliance/PII gate rides the PLAN seam — guard-first N/A-pass on legacy (no `pii:` header).
+  if [ "$stage" = "plan" ] && type cmd_pii_gate >/dev/null 2>&1; then
+    cmd_pii_gate "$dir" >/dev/null || die "gate: pii-gate FAILED for '$dir' (see stderr)."
   fi
   ok "prior stage '$stage' receipt present, PASS, complete, not superseded."
 }
@@ -814,6 +821,37 @@ cmd_rollback_fwdcompat_gate() { # <slug|build-dir> — a schema/data change RECO
   grep -qiE '^[-*[:space:]]*rollback data-safety:.*old-code reads new-version writes.*OK' "$contract" \
     || die "rollback-fwdcompat: a schema/data change is declared but no recorded 'rollback data-safety: old-code reads new-version writes → OK' line. HARD STOP (INV-ROLLBACK-FWDCOMPAT); review-build re-challenges this recorded line — it is never independent proof."
   ok "rollback-fwdcompat: forward-compat rollback record present."
+}
+
+cmd_green_ci_gate() { # <slug|build-dir> — a CI-declaring repo RECORDS a green-CI merge proof (item 6, INV-GREEN-CI)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh green-ci-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "green-ci: N/A — no contract.md (legacy)."; return 0; }
+  # trigger = the repo declares CI (contract header `ci: yes`); absent/no → N/A-pass (this repo's own path)
+  local ci_vals ci
+  ci_vals="$(sed -nE 's/^[-*[:space:]]*ci:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  ci=no; printf '%s\n' "$ci_vals" | grep -qx yes && ci=yes
+  [ "$ci" = "yes" ] || { ok "green-ci: N/A — no CI declared (ci:${ci_vals:-absent})."; return 0; }
+  # CI declared → require a RECORDED green-CI merge proof (presence-of-record, NOT a live gh/API query)
+  grep -qiE '^[-*[:space:]]*green-ci:.*(green|pass|success)' "$contract" \
+    || die "green-ci: repo declares CI (ci: yes) but no recorded 'green-ci: <merge run green/passing>' proof line. HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
+  ok "green-ci: recorded green-CI merge proof present."
+}
+
+cmd_pii_gate() { # <slug|build-dir> — a PII/financial build's plan states the compliance/PII gate (item 8, INV-PII-GATE)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh pii-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "pii: N/A — no contract.md (legacy)."; return 0; }
+  # trigger = machine-readable header `pii: yes` (symmetric with schema-touching/backfill); absent/no → N/A-pass
+  local pii_vals pii
+  pii_vals="$(sed -nE 's/^[-*[:space:]]*pii:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  pii=no; printf '%s\n' "$pii_vals" | grep -qx yes && pii=yes
+  [ "$pii" = "yes" ] || { ok "pii: N/A — no PII/financial surface (pii:${pii_vals:-absent})."; return 0; }
+  # pii: yes → require the plan (or contract) compliance/PII line asserting no raw PII/secret in logs
+  { grep -qiE '^[-*[:space:]]*compliance/PII:.*no raw PII/secret in logs' "$contract" 2>/dev/null \
+      || { [ -f "$dir/plan.md" ] && grep -qiE '^[-*[:space:]]*compliance/PII:.*no raw PII/secret in logs' "$dir/plan.md" 2>/dev/null; }; } \
+    || die "pii: pii:yes but no 'compliance/PII: logged(no raw PII/secret in logs)·retention·residency·no regulated field crosses out-of-scope view' plan line. HARD STOP (INV-PII-GATE)."
+  ok "pii: compliance/PII plan line present."
 }
 
 cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST record both prod-safety invocations (F-RESTORE/PARITY)
@@ -2432,6 +2470,8 @@ main() {
     expand-contract-gate)    cmd_expand_contract_gate "$@" ;;
     backfill-recon-gate)     cmd_backfill_recon_gate "$@" ;;
     rollback-fwdcompat-gate) cmd_rollback_fwdcompat_gate "$@" ;;
+    green-ci-gate)     cmd_green_ci_gate "$@" ;;
+    pii-gate)          cmd_pii_gate "$@" ;;
     ship-prodsafety-receipt-match) cmd_ship_prodsafety_receipt_match "$@" ;;
     abort)             cmd_abort "$@" ;;
     abort-check)       cmd_abort_check "$@" ;;

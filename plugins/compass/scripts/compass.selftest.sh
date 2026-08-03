@@ -922,7 +922,7 @@ RC="$HERE/compass.recon.sh"
 mkstub() { # <file> <tail-line> [names]
   { echo '#!/bin/sh'; [ -n "${3:-}" ] && printf 'echo "%s"\n' "$3"; printf 'echo "%s"\n' "$2"; } > "$1"; chmod +x "$1"
 }
-NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT"
+NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET"
 ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 406 passed, 0 failed" "$NAMES12"
 SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 222 passed, 0 failed ────────"
 COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
@@ -1464,6 +1464,33 @@ bash "$SH" rollback-fwdcompat-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-ROLLB
 # INV-BC review-build seam witness: a legacy contract passes gate <dir> review-build (sketch N/A + expand-contract + backfill-recon guard-first)
 rbw="$SB/v21-rbseam"; mkdir -p "$rbw"; printf '**Facets:** library\n' > "$rbw/contract.md"; printf '## RECEIPT — review-build · rbw · PASS\n- [x] ok\n' > "$rbw/receipts.md"
 bash "$SH" gate "$rbw" review-build >/dev/null 2>&1; chk "$?" "0" "INV-BC: review-build seam N/A-passes a legacy contract (expand-contract + backfill-recon guard-first)"
+
+echo "── v0.21.0 W4: green-ci-gate (INV-GREEN-CI) + pii-gate (INV-PII-GATE) ──"
+gcg="$SB/v21-gc"
+d="$gcg/ok"; mkdir -p "$d"; printf 'ci: yes\ngreen-ci: merge run #7 all checks green\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-GREEN-CI: ci:yes + recorded green proof → PASS"
+d="$gcg/noproof"; mkdir -p "$d"; printf 'ci: yes\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "1" "INV-GREEN-CI: ci:yes + no proof → FAIL"
+d="$gcg/cino"; mkdir -p "$d"; printf 'ci: no\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-GREEN-CI: ci:no → N/A-pass"
+d="$gcg/absent"; mkdir -p "$d"; printf '**Facets:** library\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-GREEN-CI: no CI declared (this repo's path) → N/A-pass"
+d="$gcg/nc"; mkdir -p "$d"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-GREEN-CI: no contract.md → N/A-pass (guard-first)"
+pig="$SB/v21-pii"
+d="$pig/ok"; mkdir -p "$d"; printf 'pii: yes\ncompliance/PII: logged(no raw PII/secret in logs)·retention·residency·no regulated field crosses out-of-scope view\n' > "$d/contract.md"
+bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-PII-GATE: pii:yes + compliance/PII line → PASS"
+d="$pig/noline"; mkdir -p "$d"; printf 'pii: yes\n' > "$d/contract.md"
+bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "1" "INV-PII-GATE: pii:yes + no compliance/PII line → FAIL"
+d="$pig/no"; mkdir -p "$d"; printf 'pii: no\n' > "$d/contract.md"
+bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-PII-GATE: pii:no → N/A-pass"
+d="$pig/absent"; mkdir -p "$d"; printf '**Facets:** library\n' > "$d/contract.md"
+bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-PII-GATE: absent (legacy) → N/A-pass"
+d="$pig/nc"; mkdir -p "$d"
+bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-PII-GATE: no contract.md → N/A-pass (guard-first)"
+# INV-BC plan-seam witness: a legacy contract passes gate <dir> plan (pii-gate guard-first) — a previously-unwitnessed seam
+psw="$SB/v21-planseam"; mkdir -p "$psw"; printf '**Facets:** library\n' > "$psw/contract.md"; printf '## RECEIPT — plan · psw · PASS\n- [x] ok\n' > "$psw/receipts.md"
+bash "$SH" gate "$psw" plan >/dev/null 2>&1; chk "$?" "0" "INV-BC: plan seam N/A-passes a legacy contract (pii-gate guard-first) — the previously-unwitnessed plan seam"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"
