@@ -4,7 +4,7 @@ Compass is a contract-first build lifecycle (**contract → review → plan → 
 
 This roadmap is a **three-phase program** to make every stage-agent world-class *and* make the whole tool legible to a first-time user — grounded in a multi-agent audit of all five stage-agents.
 
-**Where we are:** **Phase 1 shipped (v0.15.x).** **Phase 2 contract 1 — "survive the cutover" — shipped (v0.16.0).** The rest of Phase 2 and all of Phase 3 are planned below.
+**Where we are:** **Phase 1 shipped (v0.15.x).** **Phase 2 is underway — 5 contracts shipped, v0.16.0 → v0.20.0** ("survive the cutover" · Brief-generator rebuild · STRIDE/RBAC method · boundary + TOCTOU method · per-dependency FMEA + anti-pattern method). The remaining Phase-2 contracts (~4) and all of Phase 3 are planned below — roughly **6–8 contracts left** across the program.
 
 **How it's delivered:** each phase is a set of **focused, independently-shippable contracts run sequentially** — never one mega build. A single contract with too many invariants can't converge in review (Compass's own `review-build` has a hard cap and a "split rather than grind" rule), so the roadmap is deliberately chunked; each build's regression tests raise the floor that protects the next.
 
@@ -30,7 +30,7 @@ The "80% of the trust for 20% of the effort" slice.
 
 ---
 
-## Phase 2 — Make a production cutover survivable
+## Phase 2 — Make a production cutover survivable  🔨 In progress (5 of ~9 contracts shipped)
 
 *The infrastructure and review method that make prod cutover safe. Each group below is its own contract.*
 
@@ -41,17 +41,15 @@ The "80% of the trust for 20% of the effort" slice.
 - Named watcher / on-call — or the auto-abort armed as its substitute.
 - Abort sentinel — halt an autonomous build cleanly mid-flight, before any bulk mutation.
 
-**Turn named review checks into methods**
-- STRIDE + a role×resource RBAC matrix per view/endpoint + an IDOR probe.
-- Boundary/edge checklist (null, zero, one, max, off-by-one, unicode, timezone + DST, month/year rollover).
-- Concurrency / TOCTOU analysis — name the losing race, assert the guard.
-- Perf budget pinned as a literal INVARIANT (p95 latency, peak memory, cost).
-- Per-dependency FMEA — behavior when each external dependency is slow / down, plus mitigation.
-- Perf anti-pattern hunt (N+1, paginationless, O(n²)) + observability SLO thresholds (a healthy range per signal).
-- Compliance / PII plan gate — what's logged, retention, residency, no regulated field crossing into an out-of-scope view.
-- Screenshot secret hygiene — extend the secret scan to images.
+**Turn named review checks into methods**  *(each became its own contract; the review-method "island" pattern — one delimited block byte-identical across review-plan + review-build, smoke-enforced — is reused each time)*
+- **STRIDE + a role×resource RBAC matrix per view/endpoint + an IDOR probe.**  ✅ Shipped (v0.18.0, contract 3)
+- **Boundary/edge checklist** (null, zero, one, max, off-by-one, unicode, timezone + DST, month/year rollover) **+ concurrency / TOCTOU analysis** — name the losing race, assert the guard.  ✅ Shipped (v0.19.0, contract 4)
+- **Per-dependency FMEA** (behavior when each external dependency is slow / down, plus mitigation) **+ perf anti-pattern hunt** (N+1, paginationless, O(n²)).  ✅ Shipped (v0.20.0, contract 5)
+- Perf budget pinned as a literal INVARIANT (p95 latency, peak memory, cost) + observability SLO thresholds (a healthy range per signal).  ⬜ Planned — deferred out of v0.20; a candidate for the next contract.
+- Compliance / PII plan gate — what's logged, retention, residency, no regulated field crossing into an out-of-scope view.  ⬜ Planned
+- Screenshot secret hygiene — extend the secret scan to images.  ⬜ Planned (small — may bundle)
 
-**Data & migration safety**
+**Data & migration safety**  ⬜ Planned — the largest remaining Phase-2 contract (likely real new `compass.sh` gates, not just a review method)
 - Expand/contract migration phasing — destructive changes ship as a separate, later build after the additive one bakes.
 - Backfill reconciliation — tie backfilled values to their source by count + checksum.
 - Rollback forward-compat — prove old code can read data new code wrote before allowing a revert.
@@ -60,7 +58,7 @@ The "80% of the trust for 20% of the effort" slice.
 
 ---
 
-## Phase 3 — Make Compass self-improving
+## Phase 3 — Make Compass self-improving  ⬜ Planned (not started · ~3 contracts)
 
 *Feedback loops, test rigor, and durability. Each group is its own contract.*
 
@@ -87,4 +85,4 @@ The "80% of the trust for 20% of the effort" slice.
 
 ## Debt from shipping Phase 1
 
-- **Rebuild the `compass-visual` Brief generator.** Its free-form-markdown parsing proved fragile during Phase 1's post-ship review (multiple fidelity bugs). Rebuild it on strict/structured input, or re-scope the *shareable* Brief to explicitly best-effort. (The local Brief the user locks against is faithful; the shareable-copy scrub is the weak part.)
+- **Rebuild the `compass-visual` Brief generator.**  ✅ Shipped (v0.17.0, contract 2). The fragile free-form-markdown parsing was rebuilt on a structured `compass-brief-data` fence — declared values, and every numeric-locale reformatting of them, now scrub with certainty; absent input is labeled best-effort; malformed input fails closed. The local Brief the user locks against stays faithful and full.
