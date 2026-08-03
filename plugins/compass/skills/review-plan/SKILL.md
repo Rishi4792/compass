@@ -34,6 +34,13 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
   An unhandled boundary on a reachable path, or an unguarded read-modify-write, is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a data-loss/corruption race = CRITICAL) that **blocks CLOSED**.
 <!-- EDGERACE:END -->
 - **[B] Data & migration:** DB/migration safe, reversible, rolling-deploy-safe with a real dry-run-on-a-copy step · reconciliation feasibility — the query recomputes toward the **independent** gold (greenfield carve-out: no data yet → post-data acceptance check, don't bounce the plan).
+<!-- CROSSTAB:START -->
+- **Cross-table invariant enforcement method (F-CROSSTAB):** run for every build that touches **≥2 related tables** (parent/child, foreign key, or a versioned/generational set) — byte-inert (**N/A**) when the build has **no ≥2-related-table surface**:
+  1. **Enumerate the cross-table invariants** — name each rule that must hold ACROSS rows/tables for the tables the build touches: **child-sums-to-parent** (a child aggregate ties to the parent's stored total), **no orphan FK** (every child references a live parent), **one active generation** (exactly one row is the live version where the schema implies it).
+  2. **Assert DB-level enforcement, not app-only** — each invariant is held by a **DB-constraint** / **trigger** / unique-partial-index, NOT merely app code a second writer bypasses; and a **zero-violators** pre-flight query returns empty on real data before the change is CLOSED.
+  3. **Challenge a disprovable N/A** — you must **challenge the disprovable N/A for schema/migration/PII**: a build that plainly touches ≥2 related tables (or a visible schema/migration/PII surface) while the review claims N/A is itself a finding; **never wave off** a multi-table surface you can see; build the invariant list from the tables you actually observe.
+  An unenforced cross-table invariant (app-only, or no zero-violators pre-flight) on a reachable path is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a cross-table data-corruption break = CRITICAL) that **blocks CLOSED**.
+<!-- CROSSTAB:END -->
 - **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
 - **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
 <!-- PERFFMEA:START -->
@@ -67,6 +74,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface
 - [x] PERFFMEA: per-dependency FMEA + anti-pattern hunt applied (no call without a timeout; query count + peak mem asserted at the row count), or N/A — no external dependency or data-volume-sensitive loop
+- [x] CROSSTAB: cross-table invariants enumerated + DB-constraint/trigger enforcement + zero-violators pre-flight applied, or N/A — no ≥2-related-table surface
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)
 - [x] secret-scan of planned harness: `compass.sh secret-scan .` → 0 hits
