@@ -735,12 +735,15 @@ cmd_schema_pin_gate() { # <slug|build-dir> — schema-touching build MUST carry 
   # schema-touching: yes → an explicit `schema-pin: N/A — <reason>` opts out (honest boundary)
   local pin; pin="$(sed -nE 's/^[-*[:space:]]*schema-pin:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
   case "$pin" in [Nn]/[Aa]*) ok "schema-pin: explicit N/A — ${pin}."; return 0 ;; esac
-  # else require a FILLED field-schema block: an evolution-rules: line AND ≥1 markdown table row
-  grep -qE '^[-*[:space:]]*evolution-rules:' "$contract" \
-    || die "schema-pin: schema-touching:yes but NO filled field-schema block ('evolution-rules:' line absent) and no 'schema-pin: N/A — <reason>'. HARD STOP (INV-SCHEMA-PIN)."
-  grep -qE '^[[:space:]]*\|[^|]+\|[^|]+\|' "$contract" \
-    || die "schema-pin: schema-touching:yes but the field-schema block has no '| name | type | …' table row. HARD STOP (INV-SCHEMA-PIN)."
-  ok "schema-pin: field-schema block present (evolution-rules + table row)."
+  # else require a FILLED field-schema block: a NON-EMPTY evolution-rules value AND a real field-schema
+  # header row with the pinned name/type columns (RB-R1-C2: an empty key or an unrelated 2-pipe table
+  # — a decision/CHANGELOG table, even fenced — must NOT pass).
+  local evr; evr="$(sed -nE 's/^[-*[:space:]]*evolution-rules:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  _attest_real "$evr" \
+    || die "schema-pin: schema-touching:yes but 'evolution-rules:' is absent or empty/placeholder (need a real rule) and no 'schema-pin: N/A — <reason>'. HARD STOP (INV-SCHEMA-PIN)."
+  grep -qiE '^[[:space:]]*\|[^|]*\bname\b[^|]*\|[^|]*\btype\b' "$contract" \
+    || die "schema-pin: schema-touching:yes but no field-schema table with the pinned '| name | type | …' columns (an unrelated 2-pipe table is not a field schema). HARD STOP (INV-SCHEMA-PIN)."
+  ok "schema-pin: field-schema block present (evolution-rules filled + name/type table)."
 }
 
 cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin p95/peak-mem/cost + SLO ranges (item 7, INV-PERFBUDGET)
@@ -759,12 +762,17 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
       [ -n "$reason" ] || die "perf-budget: 'N/A' with NO reason — need 'perf-budget: N/A — <reason>' (INV-PERFBUDGET)."
       ok "perf-budget: explicit N/A — ${reason}."; return 0 ;;
   esac
-  # declared → require p95 + peak-mem + cost literals + ≥1 SLO healthy-range (presence, discipline-level)
-  grep -qiF 'p95' "$contract"                      || die "perf-budget: declared but no 'p95' latency literal (INV-PERFBUDGET)."
-  grep -qiE 'peak-mem|peak memory'  "$contract"    || die "perf-budget: declared but no peak-mem literal (INV-PERFBUDGET)."
-  grep -qiF 'cost' "$contract"                     || die "perf-budget: declared but no 'cost' literal (INV-PERFBUDGET)."
-  grep -qiE 'healthy-range|healthy range|SLO' "$contract" || die "perf-budget: declared but no SLO healthy-range (INV-PERFBUDGET)."
-  ok "perf-budget: p95 + peak-mem + cost + SLO healthy-range all declared."
+  # declared → require a NUMERIC literal for EACH (RB-R1-C1: a bare prose word like "cost-effective"
+  # or "SLO story" must NOT pass — the whole-file substring grep was the soft-pass hole).
+  grep -qiE 'p95[^0-9]{0,8}[0-9]+ ?(ms|s|µs|us)' "$contract" \
+    || die "perf-budget: declared but no p95 latency LITERAL (a number+unit, e.g. 'p95 < 200ms') (INV-PERFBUDGET)."
+  grep -qiE '(peak[ -]?mem|peak memory)[^0-9]{0,8}[0-9]+ ?(kb|mb|gb|tb)' "$contract" \
+    || die "perf-budget: declared but no peak-mem LITERAL (a number+unit, e.g. 'peak-mem 512MB') (INV-PERFBUDGET)."
+  grep -qiE 'cost[^A-Za-z0-9]{0,8}[$0-9]' "$contract" \
+    || die "perf-budget: declared but no cost LITERAL (a number/currency, not the prose word 'cost-effective') (INV-PERFBUDGET)."
+  grep -qiE '(healthy[ -]?range|slo)[^0-9]{0,12}[0-9]' "$contract" \
+    || die "perf-budget: declared but no SLO healthy-range LITERAL (a number, not a prose 'SLO' mention) (INV-PERFBUDGET)."
+  ok "perf-budget: p95 + peak-mem + cost + SLO healthy-range literals all declared."
 }
 
 cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
@@ -779,10 +787,14 @@ cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phas
   # schema-touching: yes → require the discipline RECORDS (a recipe, never a live migration — honest boundary)
   grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*(expand|contract)' "$contract" \
     || die "expand-contract: schema-touching:yes but no 'migration-phase: expand|contract' classification. HARD STOP (INV-EXPAND-CONTRACT)."
-  grep -qE '^[-*[:space:]]*old-code-probe:' "$contract" \
-    || die "expand-contract: no 'old-code-probe:' recipe (old code reads the NEW schema). HARD STOP (INV-EXPAND-CONTRACT)."
-  grep -qiE '^[-*[:space:]]*dry-run:.*prod-shaped' "$contract" \
-    || die "expand-contract: no 'dry-run: … prod-shaped' (real row volume) record. HARD STOP (INV-EXPAND-CONTRACT)."
+  # RB-R1-C3: an EMPTY old-code-probe, or a dry-run that NEGATES prod-shaped ("NOT prod-shaped",
+  # "tiny fixture"), must NOT pass — the presence-only key check + substring match were the holes.
+  local ocp; ocp="$(sed -nE 's/^[-*[:space:]]*old-code-probe:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  _attest_real "$ocp" \
+    || die "expand-contract: 'old-code-probe:' absent or empty/placeholder (need a real old-code-on-new-schema recipe). HARD STOP (INV-EXPAND-CONTRACT)."
+  local dry; dry="$(sed -nE 's/^[-*[:space:]]*dry-run:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  { printf '%s' "$dry" | grep -qi 'prod-shaped' && ! printf '%s' "$dry" | grep -qiE '\b(not|no|non|without|tiny|toy|small|pending|todo|tbd|skip)\b'; } \
+    || die "expand-contract: 'dry-run:' is not a real prod-shaped record (absent, negated, or diminutive — e.g. 'NOT prod-shaped' / 'tiny fixture'). HARD STOP (INV-EXPAND-CONTRACT)."
   # a `contract` op (DROP/RENAME/type-narrow) MUST be deferred to a separate post-bake build
   if grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*contract' "$contract"; then
     grep -qiE '^[-*[:space:]]*contract-op:\**[[:space:]]*deferred' "$contract" \
@@ -802,8 +814,9 @@ cmd_backfill_recon_gate() { # <slug|build-dir> — a declared backfill ties rows
     ok "backfill-recon: N/A — no backfill declared (backfill/destructive-backfill not yes)."; return 0
   fi
   local rec; rec="$(sed -nE 's/^[-*[:space:]]*backfill-recon:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  { [ -n "$rec" ] && printf '%s' "$rec" | grep -qi 'count' && printf '%s' "$rec" | grep -qiE 'checksum|sum'; } \
-    || die "backfill-recon: a backfill is declared but no 'backfill-recon: count+checksum tie-to-source' record. HARD STOP (INV-BACKFILL-RECON)."
+  # RB-R1-M1: word-boundary so 'account'↛count and 'summary'↛sum.
+  { [ -n "$rec" ] && printf '%s' "$rec" | grep -qiwE 'count' && printf '%s' "$rec" | grep -qiE 'checksum|\bsum\b'; } \
+    || die "backfill-recon: a backfill is declared but no 'backfill-recon: count+checksum tie-to-source' record ('account'/'summary' do not count — word-boundary). HARD STOP (INV-BACKFILL-RECON)."
   ok "backfill-recon: count+checksum tie-to-source recorded."
 }
 
@@ -832,9 +845,11 @@ cmd_green_ci_gate() { # <slug|build-dir> — a CI-declaring repo RECORDS a green
   ci_vals="$(sed -nE 's/^[-*[:space:]]*ci:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
   ci=no; printf '%s\n' "$ci_vals" | grep -qx yes && ci=yes
   [ "$ci" = "yes" ] || { ok "green-ci: N/A — no CI declared (ci:${ci_vals:-absent})."; return 0; }
-  # CI declared → require a RECORDED green-CI merge proof (presence-of-record, NOT a live gh/API query)
-  grep -qiE '^[-*[:space:]]*green-ci:.*(green|pass|success)' "$contract" \
-    || die "green-ci: repo declares CI (ci: yes) but no recorded 'green-ci: <merge run green/passing>' proof line. HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
+  # CI declared → require a RECORDED green-CI merge proof (presence-of-record, NOT a live gh/API query).
+  # RB-R1-m3: reject a NEGATED value ("build did not pass", "not green", "failed/red").
+  local gci; gci="$(sed -nE 's/^[-*[:space:]]*green-ci:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  { printf '%s' "$gci" | grep -qiE '(green|pass|success)' && ! printf '%s' "$gci" | grep -qiE '\b(fail|failed|failing|red|not|no|broke|broken)\b'; } \
+    || die "green-ci: repo declares CI (ci: yes) but the recorded 'green-ci:' line is absent or NOT green (negation/red detected). HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
   ok "green-ci: recorded green-CI merge proof present."
 }
 
@@ -861,7 +876,10 @@ cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST re
   [ -n "$blk" ] || die "ship-prodsafety-receipt-match: no ship receipt to check."
   printf '%s' "$blk" | grep -qE 'restore-point: exit' || die "ship-prodsafety-receipt-match: ship receipt is MISSING the 'restore-point: exit N' line — the pre-deploy HARD STOP was skipped (never allowed)."
   printf '%s' "$blk" | grep -qE 'config-parity: exit'  || die "ship-prodsafety-receipt-match: ship receipt is MISSING the 'config-parity: exit N' line — the pre-deploy HARD STOP was skipped (never allowed)."
-  ok "ship-prodsafety-receipt-match: restore-point + config-parity both invoked and recorded."
+  # v0.21 (RB-R1-M2): the rollback-fwdcompat Step-0.6 record is enforced the same way — a schema/data
+  # build must not reach SHIPPED with the forward-compat check never invoked (the honor-level-fake-pass target).
+  printf '%s' "$blk" | grep -qE 'rollback-fwdcompat: exit' || die "ship-prodsafety-receipt-match: ship receipt is MISSING the 'rollback-fwdcompat: exit N' line — the Step 0.6 forward-compat HARD STOP was skipped (never allowed; INV-ROLLBACK-FWDCOMPAT)."
+  ok "ship-prodsafety-receipt-match: restore-point + config-parity + rollback-fwdcompat all invoked and recorded."
 }
 
 # ── v0.16.0 survive-the-cutover: the production-cutover safety net ─────────────

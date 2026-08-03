@@ -1492,6 +1492,23 @@ bash "$SH" pii-gate "$d" >/dev/null 2>&1; chk "$?" "0" "INV-PII-GATE: no contrac
 psw="$SB/v21-planseam"; mkdir -p "$psw"; printf '**Facets:** library\n' > "$psw/contract.md"; printf '## RECEIPT — plan · psw · PASS\n- [x] ok\n' > "$psw/receipts.md"
 bash "$SH" gate "$psw" plan >/dev/null 2>&1; chk "$?" "0" "INV-BC: plan seam N/A-passes a legacy contract (pii-gate guard-first) — the previously-unwitnessed plan seam"
 
+echo "── v0.21.0 R3 soft-pass regression (review-build RB-R1: the exact evasions must now BITE) ──"
+spr="$SB/v21-softpass"
+d="$spr/pb-prose"; mkdir -p "$d"; printf 'perf-budget: yes — see the notes below\nThis service is cost-effective and we ran a p95 smoke earlier. Watch peak memory during load. Our SLO story is still being written.\n' > "$d/contract.md"
+bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-C1: perf-budget declared with ZERO numeric literals (cost-effective/p95 smoke/SLO story prose) → FAIL"
+d="$spr/sp-emptyevr"; mkdir -p "$d"; printf 'schema-touching: yes\nevolution-rules:\n\n| option | verdict |\n| a | no |\n' > "$d/contract.md"
+bash "$SH" schema-pin-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-C2: schema-touching:yes + EMPTY evolution-rules + unrelated table → FAIL"
+d="$spr/sp-unrelatedtbl"; mkdir -p "$d"; printf 'schema-touching: yes\nevolution-rules: additive only, no drops\n\n| version | date |\n| 1 | jan |\n' > "$d/contract.md"
+bash "$SH" schema-pin-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-C2: schema-touching:yes + filled evolution-rules but only an unrelated (version/date) table → FAIL"
+d="$spr/ec-emptyprobe"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phase: expand\nold-code-probe:\ndry-run: prod-shaped copy\n' > "$d/contract.md"
+bash "$SH" expand-contract-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-C3: expand-contract + EMPTY old-code-probe → FAIL"
+d="$spr/ec-notprod"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phase: expand\nold-code-probe: real recipe here\ndry-run: ran on a tiny fixture, NOT prod-shaped\n' > "$d/contract.md"
+bash "$SH" expand-contract-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-C3: expand-contract + dry-run 'tiny fixture, NOT prod-shaped' (negation) → FAIL"
+d="$spr/bf-account"; mkdir -p "$d"; printf 'backfill: yes\nbackfill-recon: account-level summary review after the run\n' > "$d/contract.md"
+bash "$SH" backfill-recon-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-M1: backfill-recon 'account-level summary' (no real count/checksum, word-boundary) → FAIL"
+d="$spr/gc-notpass"; mkdir -p "$d"; printf 'ci: yes\ngreen-ci: merge run #7 did not pass, CI is not green\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-m3: green-ci 'did not pass / not green' (negation) → FAIL"
+
 echo
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
