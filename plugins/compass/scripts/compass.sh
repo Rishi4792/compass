@@ -764,9 +764,9 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
   esac
   # declared → require a NUMERIC literal for EACH (RB-R1-C1: a bare prose word like "cost-effective"
   # or "SLO story" must NOT pass — the whole-file substring grep was the soft-pass hole).
-  grep -qiE 'p95[^0-9]{0,8}[0-9]+ ?(ms|s|µs|us)' "$contract" \
-    || die "perf-budget: declared but no p95 latency LITERAL (a number+unit, e.g. 'p95 < 200ms') (INV-PERFBUDGET)."
-  grep -qiE '(peak[ -]?mem|peak memory)[^0-9]{0,8}[0-9]+ ?(kb|mb|gb|tb)' "$contract" \
+  grep -qiE 'p95[^0-9]{0,8}[0-9]+(\.[0-9]+)? ?(ms|s|µs|us)\b' "$contract" \
+    || die "perf-budget: declared but no p95 latency LITERAL (a number+unit, e.g. 'p95 < 200ms' or 'p95=1.5s') (INV-PERFBUDGET)."
+  grep -qiE '(peak[ -]?mem|peak memory)[^0-9]{0,8}[0-9]+(\.[0-9]+)? ?(kb|mb|gb|tb)\b' "$contract" \
     || die "perf-budget: declared but no peak-mem LITERAL (a number+unit, e.g. 'peak-mem 512MB') (INV-PERFBUDGET)."
   grep -qiE 'cost[^A-Za-z0-9]{0,8}[$0-9]' "$contract" \
     || die "perf-budget: declared but no cost LITERAL (a number/currency, not the prose word 'cost-effective') (INV-PERFBUDGET)."
@@ -793,8 +793,12 @@ cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phas
   _attest_real "$ocp" \
     || die "expand-contract: 'old-code-probe:' absent or empty/placeholder (need a real old-code-on-new-schema recipe). HARD STOP (INV-EXPAND-CONTRACT)."
   local dry; dry="$(sed -nE 's/^[-*[:space:]]*dry-run:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  { printf '%s' "$dry" | grep -qi 'prod-shaped' && ! printf '%s' "$dry" | grep -qiE '\b(not|no|non|without|tiny|toy|small|pending|todo|tbd|skip)\b'; } \
-    || die "expand-contract: 'dry-run:' is not a real prod-shaped record (absent, negated, or diminutive — e.g. 'NOT prod-shaped' / 'tiny fixture'). HARD STOP (INV-EXPAND-CONTRACT)."
+  # require prod-shaped; reject a diminutive OR a negation SCOPED to prod-shaped — but ALLOW a clean
+  # "no diffs"/"without errors" (those describe a passing run, not a fake dry-run). RB-R2-M2
+  { printf '%s' "$dry" | grep -qi 'prod-shaped' \
+      && ! printf '%s' "$dry" | grep -qiE '\b(tiny|toy|small|pending|todo|tbd|skip)\b' \
+      && ! printf '%s' "$dry" | grep -qiE '\b(not|non|without|isn.?t|no)\b[^.]{0,12}prod-shaped'; } \
+    || die "expand-contract: 'dry-run:' is not a real prod-shaped record (absent, diminutive, or 'NOT prod-shaped'). HARD STOP (INV-EXPAND-CONTRACT)."
   # a `contract` op (DROP/RENAME/type-narrow) MUST be deferred to a separate post-bake build
   if grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*contract' "$contract"; then
     grep -qiE '^[-*[:space:]]*contract-op:\**[[:space:]]*deferred' "$contract" \
@@ -814,8 +818,8 @@ cmd_backfill_recon_gate() { # <slug|build-dir> — a declared backfill ties rows
     ok "backfill-recon: N/A — no backfill declared (backfill/destructive-backfill not yes)."; return 0
   fi
   local rec; rec="$(sed -nE 's/^[-*[:space:]]*backfill-recon:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  # RB-R1-M1: word-boundary so 'account'↛count and 'summary'↛sum.
-  { [ -n "$rec" ] && printf '%s' "$rec" | grep -qiwE 'count' && printf '%s' "$rec" | grep -qiE 'checksum|\bsum\b'; } \
+  # RB-R1-M1 / RB-R2-M3: word-boundary so 'account'↛count and 'summary'↛sum, but accept the plural 'counts'/'checksums'.
+  { [ -n "$rec" ] && printf '%s' "$rec" | grep -qiwE 'counts?' && printf '%s' "$rec" | grep -qiE 'checksums?|\bsums?\b'; } \
     || die "backfill-recon: a backfill is declared but no 'backfill-recon: count+checksum tie-to-source' record ('account'/'summary' do not count — word-boundary). HARD STOP (INV-BACKFILL-RECON)."
   ok "backfill-recon: count+checksum tie-to-source recorded."
 }
@@ -848,8 +852,12 @@ cmd_green_ci_gate() { # <slug|build-dir> — a CI-declaring repo RECORDS a green
   # CI declared → require a RECORDED green-CI merge proof (presence-of-record, NOT a live gh/API query).
   # RB-R1-m3: reject a NEGATED value ("build did not pass", "not green", "failed/red").
   local gci; gci="$(sed -nE 's/^[-*[:space:]]*green-ci:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  { printf '%s' "$gci" | grep -qiE '(green|pass|success)' && ! printf '%s' "$gci" | grep -qiE '\b(fail|failed|failing|red|not|no|broke|broken)\b'; } \
-    || die "green-ci: repo declares CI (ci: yes) but the recorded 'green-ci:' line is absent or NOT green (negation/red detected). HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
+  # accept a positive-green record; reject a RED/fail token (incl. 'failure') or a NEGATED-green phrase
+  # ('not green'/'did not pass') — but NOT a bare 'no'/'not' ('no regressions'/'not flaky' ARE green). RB-R2-M1
+  { printf '%s' "$gci" | grep -qiE '(green|pass|success)' \
+      && ! printf '%s' "$gci" | grep -qiE '\b(fail(ed|ing|ure|s)?|red|broke|broken)\b' \
+      && ! printf '%s' "$gci" | grep -qiE '\b(not|no|never|isn.?t|did[ -]?not)\b[ -]+[a-z]{0,8}[ -]?(green|pass|passed|success)'; } \
+    || die "green-ci: repo declares CI (ci: yes) but the recorded 'green-ci:' line is absent or NOT green (a red/fail token or a negated-green phrase). HARD STOP (INV-GREEN-CI); review-build re-challenges this recorded line — it is never independent proof."
   ok "green-ci: recorded green-CI merge proof present."
 }
 

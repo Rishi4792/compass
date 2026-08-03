@@ -1508,6 +1508,19 @@ d="$spr/bf-account"; mkdir -p "$d"; printf 'backfill: yes\nbackfill-recon: accou
 bash "$SH" backfill-recon-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-M1: backfill-recon 'account-level summary' (no real count/checksum, word-boundary) → FAIL"
 d="$spr/gc-notpass"; mkdir -p "$d"; printf 'ci: yes\ngreen-ci: merge run #7 did not pass, CI is not green\n' > "$d/contract.md"
 bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R1-m3: green-ci 'did not pass / not green' (negation) → FAIL"
+# RB-R2: the relaxation must NOT false-reject legit phrasings (must PASS) and must still bite the residual holes (must FAIL)
+d="$spr/pb-decimal"; mkdir -p "$d"; printf 'perf-budget: declared\np95=1.5s · peak-mem 2GB · cost $0.02/req · SLO 99.9%%\n' > "$d/contract.md"
+bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M4: perf-budget with DECIMAL p95 (p95=1.5s) + real literals → PASS (no false-reject)"
+d="$spr/pb-users"; mkdir -p "$d"; printf 'perf-budget: declared\np95 with 5 users · peak-mem 2GB · cost $0.02 · SLO 99.9%%\n' > "$d/contract.md"
+bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R2-S2: perf-budget 'p95 with 5 users' (no real latency literal, 'us' of users is not a unit) → FAIL"
+d="$spr/gc-noregr"; mkdir -p "$d"; printf 'ci: yes\ngreen-ci: all checks passed, no regressions\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M1: green-ci 'all checks passed, no regressions' → PASS (bare 'no' is not a negation of green)"
+d="$spr/gc-failure"; mkdir -p "$d"; printf 'ci: yes\ngreen-ci: rerun after the failure was green\n' > "$d/contract.md"
+bash "$SH" green-ci-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R2-S1: green-ci 'the failure was green' ('failure' is a red token) → FAIL"
+d="$spr/ec-nodiffs"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phase: expand\nold-code-probe: v0 read on v1 schema\ndry-run: prod-shaped snapshot (10M rows), no diffs\n' > "$d/contract.md"
+bash "$SH" expand-contract-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M2: expand-contract dry-run 'prod-shaped … no diffs' → PASS (clean-run 'no diffs' is not a fake dry-run)"
+d="$spr/bf-counts"; mkdir -p "$d"; printf 'backfill: yes\nbackfill-recon: row counts match, checksums equal\n' > "$d/contract.md"
+bash "$SH" backfill-recon-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M3: backfill-recon 'row counts match, checksums equal' (plural) → PASS"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"
