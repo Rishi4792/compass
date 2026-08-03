@@ -542,6 +542,13 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
   fi
   if [ "$stage" = "review-build" ] && type cmd_sketch_gate >/dev/null 2>&1; then
     cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate (leak re-check) FAILED for '$dir' (see stderr)."
+    # v0.21 migration-safety gates ride the review-build seam — guard-first N/A-pass on legacy.
+    if type cmd_expand_contract_gate >/dev/null 2>&1; then
+      cmd_expand_contract_gate "$dir" >/dev/null || die "gate: expand-contract-gate FAILED for '$dir' (see stderr)."
+    fi
+    if type cmd_backfill_recon_gate >/dev/null 2>&1; then
+      cmd_backfill_recon_gate "$dir" >/dev/null || die "gate: backfill-recon-gate FAILED for '$dir' (see stderr)."
+    fi
   fi
   ok "prior stage '$stage' receipt present, PASS, complete, not superseded."
 }
@@ -751,6 +758,62 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
   grep -qiF 'cost' "$contract"                     || die "perf-budget: declared but no 'cost' literal (INV-PERFBUDGET)."
   grep -qiE 'healthy-range|healthy range|SLO' "$contract" || die "perf-budget: declared but no SLO healthy-range (INV-PERFBUDGET)."
   ok "perf-budget: p95 + peak-mem + cost + SLO healthy-range all declared."
+}
+
+cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh expand-contract-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "expand-contract: N/A — no contract.md (legacy)."; return 0; }
+  local st_vals st
+  st_vals="$(sed -nE 's/^[-*[:space:]]*schema-touching:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  [ -n "$st_vals" ] || { ok "expand-contract: N/A — schema-touching absent (legacy)."; return 0; }
+  if printf '%s\n' "$st_vals" | grep -vqx no; then st=yes; else st=no; fi
+  [ "$st" = "yes" ] || { ok "expand-contract: N/A — schema-touching:$st."; return 0; }
+  # schema-touching: yes → require the discipline RECORDS (a recipe, never a live migration — honest boundary)
+  grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*(expand|contract)' "$contract" \
+    || die "expand-contract: schema-touching:yes but no 'migration-phase: expand|contract' classification. HARD STOP (INV-EXPAND-CONTRACT)."
+  grep -qE '^[-*[:space:]]*old-code-probe:' "$contract" \
+    || die "expand-contract: no 'old-code-probe:' recipe (old code reads the NEW schema). HARD STOP (INV-EXPAND-CONTRACT)."
+  grep -qiE '^[-*[:space:]]*dry-run:.*prod-shaped' "$contract" \
+    || die "expand-contract: no 'dry-run: … prod-shaped' (real row volume) record. HARD STOP (INV-EXPAND-CONTRACT)."
+  # a `contract` op (DROP/RENAME/type-narrow) MUST be deferred to a separate post-bake build
+  if grep -qE '^[-*[:space:]]*migration-phase:\**[[:space:]]*contract' "$contract"; then
+    grep -qiE '^[-*[:space:]]*contract-op:\**[[:space:]]*deferred' "$contract" \
+      || die "expand-contract: migration-phase:contract (DROP/RENAME/type-narrow) but not 'contract-op: deferred' to a separate post-bake build. HARD STOP (INV-EXPAND-CONTRACT)."
+  fi
+  ok "expand-contract: phasing + old-code probe + prod-shaped dry-run recorded."
+}
+
+cmd_backfill_recon_gate() { # <slug|build-dir> — a declared backfill ties rows to source by count+checksum (item 3, INV-BACKFILL-RECON)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh backfill-recon-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "backfill-recon: N/A — no contract.md (legacy)."; return 0; }
+  local bf df
+  bf="$(sed -nE 's/^[-*[:space:]]*backfill:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z' | grep -xc yes || true)"
+  df="$(sed -nE 's/^[-*[:space:]]*destructive-backfill:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z' | grep -xc yes || true)"
+  if [ "${bf:-0}" = "0" ] && [ "${df:-0}" = "0" ]; then
+    ok "backfill-recon: N/A — no backfill declared (backfill/destructive-backfill not yes)."; return 0
+  fi
+  local rec; rec="$(sed -nE 's/^[-*[:space:]]*backfill-recon:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  { [ -n "$rec" ] && printf '%s' "$rec" | grep -qi 'count' && printf '%s' "$rec" | grep -qiE 'checksum|sum'; } \
+    || die "backfill-recon: a backfill is declared but no 'backfill-recon: count+checksum tie-to-source' record. HARD STOP (INV-BACKFILL-RECON)."
+  ok "backfill-recon: count+checksum tie-to-source recorded."
+}
+
+cmd_rollback_fwdcompat_gate() { # <slug|build-dir> — a schema/data change RECORDS old-code-reads-new-writes safety (item 4, INV-ROLLBACK-FWDCOMPAT)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh rollback-fwdcompat-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "rollback-fwdcompat: N/A — no contract.md (legacy)."; return 0; }
+  local st bf df
+  st="$(sed -nE 's/^[-*[:space:]]*schema-touching:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z' | grep -vx no | head -1 || true)"
+  bf="$(sed -nE 's/^[-*[:space:]]*backfill:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z' | grep -x yes | head -1 || true)"
+  df="$(sed -nE 's/^[-*[:space:]]*destructive-backfill:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z' | grep -x yes | head -1 || true)"
+  if [ -z "$st" ] && [ -z "$bf" ] && [ -z "$df" ]; then
+    ok "rollback-fwdcompat: N/A — no schema/data change declared."; return 0
+  fi
+  grep -qiE '^[-*[:space:]]*rollback data-safety:.*old-code reads new-version writes.*OK' "$contract" \
+    || die "rollback-fwdcompat: a schema/data change is declared but no recorded 'rollback data-safety: old-code reads new-version writes → OK' line. HARD STOP (INV-ROLLBACK-FWDCOMPAT); review-build re-challenges this recorded line — it is never independent proof."
+  ok "rollback-fwdcompat: forward-compat rollback record present."
 }
 
 cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST record both prod-safety invocations (F-RESTORE/PARITY)
@@ -2366,6 +2429,9 @@ main() {
     config-parity)     cmd_config_parity "$@" ;;
     schema-pin-gate)   cmd_schema_pin_gate "$@" ;;
     perf-budget-gate)  cmd_perf_budget_gate "$@" ;;
+    expand-contract-gate)    cmd_expand_contract_gate "$@" ;;
+    backfill-recon-gate)     cmd_backfill_recon_gate "$@" ;;
+    rollback-fwdcompat-gate) cmd_rollback_fwdcompat_gate "$@" ;;
     ship-prodsafety-receipt-match) cmd_ship_prodsafety_receipt_match "$@" ;;
     abort)             cmd_abort "$@" ;;
     abort-check)       cmd_abort_check "$@" ;;

@@ -27,10 +27,11 @@ If other builds are/were in flight on this repo, a sibling may have merged into 
   - **Non-reconciling (library) builds (v0.9.0):** a build with no `RECON-CMD` (library/tooling, no numeric gold) has no merged-recon teeth — so on the merged tree **re-run its test suite** (`compass.sh`'s own `compass.selftest.sh` + `compass.smoke.sh`, or the repo's equivalent) and require green before shipping. The post-merge-check (base-advanced + blast-radius) above is the primary loser-re-check; the merged test-suite green is its reconciliation analogue.
 
 ## Step 0.6 — prod-safety pre-flight (v0.15.0, F-RESTORE / F-PARITY — UNCONDITIONAL HARD STOP)
-Run **both**, always, **before the first deploy action** — never operator-skippable; an N/A is *invoked and recorded as an N/A-pass*, not skipped:
+Run **all three**, always, **before the first deploy action** — never operator-skippable; an N/A is *invoked and recorded as an N/A-pass*, not skipped:
 - **`compass.sh restore-point <slug>`** — HARD STOP before any destructive migration/backfill: requires a confirmed, COMPLETE snapshot (snapshot-id + timestamp + restore command) whenever the contract declares `schema-touching: yes` or `destructive-backfill: yes`; N/A-passes (recorded) when nothing destructive is declared. **Non-zero → STOP, take the snapshot, re-run.**
 - **`compass.sh config-parity <slug>`** — HARD STOP if the change references a prod env key prod lacks (diffs the contract's `env-keys-referenced:` vs `prod-keys:`); N/A-passes when no new keys are referenced. **Non-zero → STOP, provision the key in prod, re-run.**
-Record `restore-point: exit N` and `config-parity: exit N` into the ship receipt (the `prodsafety-box`). `compass.sh ship-prodsafety-receipt-match <dir>` verifies **both** lines are present — a silent skip fails the suite, so the HARD STOPs cannot be bypassed.
+- **`compass.sh rollback-fwdcompat-gate <slug>`** (v0.21, INV-ROLLBACK-FWDCOMPAT) — a schema/data-changing ship must RECORD `rollback data-safety: old-code reads new-version writes → OK` (run the OLD read path against NEW-version writes on the deploy's OWN copy/branch DB, then record it); N/A-passes when no schema/data change is declared. **Non-zero → STOP, run + record the forward-compat check, re-run.** This is a discipline record — review-build re-challenges it, it is never independent proof.
+Record `restore-point: exit N`, `config-parity: exit N`, and `rollback-fwdcompat: exit N` into the ship receipt (the `prodsafety-box`). `compass.sh ship-prodsafety-receipt-match <dir>` verifies the restore-point + config-parity lines are present — a silent skip fails the suite, so the HARD STOPs cannot be bypassed.
 
 ## Step 0.7 — cutover safety net (v0.16.0, survive-the-cutover — HARD STOP, N/A recorded not skipped)
 Run **all three**, always, **after prod-safety and before the terminal SHIPPED write** — each is invoked-and-recorded (an N/A is an *N/A-pass*, never a skip); the config lives in the contract (`canary:` / `bake-window:` / `bake-bound:` / `watcher:`), the readings in this ship receipt.
@@ -62,6 +63,7 @@ Record the results in the **cutover-box** below, then **`compass.sh ship-cutover
 <!-- TEMPLATE: prodsafety-box -->
 - [x] restore-point: exit <N>   (`compass.sh restore-point <slug>` — pre-deploy HARD STOP / N/A-pass)
 - [x] config-parity: exit <N>   (`compass.sh config-parity <slug>` — pre-deploy HARD STOP / N/A-pass)
+- [x] rollback-fwdcompat: exit <N>   (`compass.sh rollback-fwdcompat-gate <slug>` — old-code-reads-new-writes RECORDED / N/A-pass; re-challenged by review-build)
 <!-- TEMPLATE: cutover-box -->
 - [x] canary: exit <N> · CANARY: <PASS|SUBSTITUTED-BAKE|N/A>   (`compass.sh canary-analysis <slug>` — a burn-rate BREACH auto-fires the rehearsed rollback)
 - [x] bake: exit <N> · BAKE: <IN-BOUND|N/A>   (`compass.sh bake-gate <slug>` — when canary=SUBSTITUTED-BAKE this MUST be IN-BOUND, never N/A)
