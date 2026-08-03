@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -534,6 +534,16 @@ _rn19="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon
 _sl19="$(sed -n 's/^for nm in \(.*\); do/\1/p' "$PLUGIN_ROOT/scripts/compass.smoke.sh")"
 _miss19=""; for _n19 in $_rn19; do case " $_sl19 " in *" $_n19 "*) ;; *) _miss19="$_miss19 $_n19";; esac; done
 chk "$([ -z "$_miss19" ] && echo 1 || echo 0)" "1" "v0.19 INV-SUITES: the smoke:181 name-loop covers every recon.sh INV_NAMES (R2-m3 — the previously-unguarded name-sync leg is now guarded)"
+# ── v0.20.0: PERFFMEA method island — per-dependency FMEA + anti-pattern hunt, byte-identical across review-plan + review-build (mirrors EDGERACE) ──
+pfisl(){ awk '/PERFFMEA:START/{f=1} f{print} /PERFFMEA:END/{f=0}' "$1"; }
+PP20="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; PB20="$PLUGIN_ROOT/skills/review-build/SKILL.md"
+chk "$( diff <(pfisl "$PP20") <(pfisl "$PB20") >/dev/null 2>&1 && [ -n "$(pfisl "$PP20")" ] && echo 1 || echo 0)" "1" "v0.20 INV-PERFFMEA-BLOCK: PERFFMEA island byte-identical across review-plan + review-build"
+chk "$(grep -c 'PERFFMEA:START' "$PP20")" "1" "v0.20 INV-PERFFMEA-BLOCK: exactly one PERFFMEA island in review-plan (no drift/dup)"
+chk "$(grep -c 'PERFFMEA:START' "$PB20")" "1" "v0.20 INV-PERFFMEA-BLOCK: exactly one PERFFMEA island in review-build (no drift/dup)"
+chk "$( { pfisl "$PP20" | grep -qF 'no dependency called with no timeout' && pfisl "$PP20" | grep -qF 'paginationless' && pfisl "$PP20" | grep -qF 'query count' && pfisl "$PP20" | grep -qF 'blocks CLOSED' && pfisl "$PP20" | grep -qF 'never wave off a dependency or volume-sensitive loop'; } && echo 1 || echo 0)" "1" "v0.20 INV-PERFFMEA-METHOD: island carries FMEA + anti-pattern + teeth + challenge-N/A (no dependency called with no timeout · paginationless · query count · blocks CLOSED · never wave off a dependency or volume-sensitive loop)"
+chk "$( { grep -q 'PERFFMEA:.*applied' "$PP20" && grep -q 'PERFFMEA:.*applied' "$PB20" && [ "$(pfisl "$PP20" | grep -c applied)" = "0" ]; } && echo 1 || echo 0)" "1" "v0.20 INV-PERFFMEA-RECEIPT: receipt-only anchor 'PERFFMEA:.*applied' in both AND the word 'applied' absent from the island body (R1-MIN-1 — the receipt anchor matches only the receipt line)"
+chk "$(grep -c 'no dependency called with no timeout' "$PLUGIN_ROOT/skills/plan/SKILL.md")" "1" "v0.20 INV-PLAN-FMEA: the plan skill requires an FMEA/perf-budget design step (no dependency called with no timeout) for dependency builds"
+chk "$(pfisl "$PP20" | grep -cF 'no external dependency or data-volume-sensitive loop')" "1" "v0.20 INV-PERFFMEA-BYTEINERT: the method is byte-inert (N/A) for a build with no external dependency or data-volume-sensitive loop"
 # INV-NO-LEAK durable coverage (R3-m3): recon-guard a clean secret-scan of the new fixtures + the compass-visual skill
 ( bash "$SH" secret-scan "$FXP" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on the prod-safety fixtures → 0 hits (now recon-guarded, R3-m3)"
 ( bash "$SH" secret-scan "$VIS15" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-NO-LEAK: secret-scan on skills/compass-visual → 0 hits (now recon-guarded, R3-m3)"

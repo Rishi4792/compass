@@ -36,6 +36,13 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
 - **[B] Data & migration:** DB/migration safe, reversible, rolling-deploy-safe with a real dry-run-on-a-copy step · reconciliation feasibility — the query recomputes toward the **independent** gold (greenfield carve-out: no data yet → post-data acceptance check, don't bounce the plan).
 - **[C] Interfaces & blast radius:** dependencies (installs/pins are explicit steps) · API back-compat + idempotency · blast-radius/regression — each risk has a guarding test.
 - **[D] Operability:** rollback & rollout (undo without data loss) · performance/scale at the contract's volume + concurrency.
+<!-- PERFFMEA:START -->
+- **Per-dependency FMEA + anti-pattern-hunt method (F-PERFFMEA):** run for every build with an external dependency or a data-volume-sensitive loop — byte-inert (**N/A**) when the build has **no external dependency or data-volume-sensitive loop**:
+  1. **Per-dependency FMEA** — for each external dependency (DB / API / cron / queue / third-party), state behavior when **slow and when down** + the mitigation (timeout / retry-backoff / fallback); **no dependency called with no timeout**.
+  2. **Anti-pattern hunt** — hunt **N+1** queries, **paginationless** / unbounded fetches, O(n²) loops; **assert the query count** and peak memory at the contract's row count, not a toy set.
+  3. **Challenge a disprovable N/A** — a real external dependency or a data-volume-sensitive loop present while the review claims N/A is itself a finding; **never wave off a dependency or volume-sensitive loop you can see**; build the FMEA from the dependencies you actually observe.
+  An unmitigated dependency (a call with no timeout / no fallback), or an unbounded anti-pattern at the contract's scale, is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a data-loss / OOM at the contract's volume = CRITICAL) that **blocks CLOSED**.
+<!-- PERFFMEA:END -->
 - **[E] Security/RBAC/cost** — *independent agent* (keep separate; the adversarial independence is load-bearing).
 <!-- RBACSTRIDE:START -->
 - **STRIDE + role×resource RBAC-matrix + IDOR method (F-RBACSTRIDE):** for every NEW view/endpoint the build adds, run this method — byte-inert (**N/A**) when the build adds **no new view/endpoint**:
@@ -59,6 +66,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 - [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface
+- [x] PERFFMEA: per-dependency FMEA + anti-pattern hunt applied (no call without a timeout; query count + peak mem asserted at the row count), or N/A — no external dependency or data-volume-sensitive loop
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)
 - [x] secret-scan of planned harness: `compass.sh secret-scan .` → 0 hits
