@@ -532,6 +532,13 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_sketch_gate >/dev/null 2>&1; then
       cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate FAILED for '$dir' (see stderr)."
     fi
+    # v0.21 contract-header pins (INV-SCHEMA-PIN, INV-PERFBUDGET) — guard-first N/A-pass on legacy.
+    if type cmd_schema_pin_gate >/dev/null 2>&1; then
+      cmd_schema_pin_gate "$dir" >/dev/null || die "gate: schema-pin-gate FAILED for '$dir' (see stderr)."
+    fi
+    if type cmd_perf_budget_gate >/dev/null 2>&1; then
+      cmd_perf_budget_gate "$dir" >/dev/null || die "gate: perf-budget-gate FAILED for '$dir' (see stderr)."
+    fi
   fi
   if [ "$stage" = "review-build" ] && type cmd_sketch_gate >/dev/null 2>&1; then
     cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate (leak re-check) FAILED for '$dir' (see stderr)."
@@ -690,6 +697,60 @@ cmd_config_parity() { # <slug|build-dir> — HARD STOP if new code needs a prod 
   for k in $ref_keys; do case " $prod " in *" $k "*) : ;; *) missing="$missing $k" ;; esac; done
   [ -z "$missing" ] || die "config-parity: prod is MISSING env key(s):$missing — referenced by the change, absent from prod-keys. HARD STOP before deploy."
   ok "config-parity: all referenced env keys present in prod ($ref_keys)."
+}
+
+# ── v0.21.0 data / migration / compliance safety gates (contract 6) ────────────
+# Gate-authoring rule (INV-BC, LOAD-BEARING): every gate below is GUARD-FIRST — it
+# N/A-passes (return 0) on a missing contract.md OR an absent trigger header, and
+# treats an ABSENT trigger as N/A, never as `yes`. This mirrors cmd_sketch_gate /
+# cmd_intake_gate (the byte-inert-on-legacy seam gates), NEVER cmd_restore_point
+# (which die()s on a missing file and on an absent field). The cmd_gate seam runs
+# these on every `gate <dir> <stage>` call, so a legacy build-dir (no contract.md,
+# or a contract with none of these headers) MUST pass byte-identically.
+
+cmd_schema_pin_gate() { # <slug|build-dir> — schema-touching build MUST carry a filled field-schema block (item 1, INV-SCHEMA-PIN)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh schema-pin-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "schema-pin: N/A — no contract.md (legacy)."; return 0; }
+  # trigger = schema-touching (anchored-union token parse; ABSENT ⇒ N/A, never yes)
+  local st_vals st
+  st_vals="$(sed -nE 's/^[-*[:space:]]*schema-touching:\**[[:space:]]*([A-Za-z]+).*/\1/p' "$contract" | tr 'A-Z' 'a-z')"
+  [ -n "$st_vals" ] || { ok "schema-pin: N/A — schema-touching absent (legacy)."; return 0; }
+  if printf '%s\n' "$st_vals" | grep -vqx no; then st=yes; else st=no; fi
+  [ "$st" = "yes" ] || { ok "schema-pin: N/A — schema-touching:$st (no schema surface)."; return 0; }
+  # schema-touching: yes → an explicit `schema-pin: N/A — <reason>` opts out (honest boundary)
+  local pin; pin="$(sed -nE 's/^[-*[:space:]]*schema-pin:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  case "$pin" in [Nn]/[Aa]*) ok "schema-pin: explicit N/A — ${pin}."; return 0 ;; esac
+  # else require a FILLED field-schema block: an evolution-rules: line AND ≥1 markdown table row
+  grep -qE '^[-*[:space:]]*evolution-rules:' "$contract" \
+    || die "schema-pin: schema-touching:yes but NO filled field-schema block ('evolution-rules:' line absent) and no 'schema-pin: N/A — <reason>'. HARD STOP (INV-SCHEMA-PIN)."
+  grep -qE '^[[:space:]]*\|[^|]+\|[^|]+\|' "$contract" \
+    || die "schema-pin: schema-touching:yes but the field-schema block has no '| name | type | …' table row. HARD STOP (INV-SCHEMA-PIN)."
+  ok "schema-pin: field-schema block present (evolution-rules + table row)."
+}
+
+cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin p95/peak-mem/cost + SLO ranges (item 7, INV-PERFBUDGET)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh perf-budget-gate <slug|build-dir>"
+  local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
+  [ -f "$contract" ] || { ok "perf-budget: N/A — no contract.md (legacy)."; return 0; }
+  # trigger = the perf-budget header; ABSENT ⇒ N/A (legacy / trivial scale — honest boundary)
+  local pb; pb="$(sed -nE 's/^[-*[:space:]]*perf-budget:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
+  [ -n "$pb" ] || { ok "perf-budget: N/A — header absent (legacy/trivial scale)."; return 0; }
+  # N/A branch: an explicit reason is REQUIRED — a bare `N/A` fails (INV-PERFBUDGET)
+  case "$pb" in
+    [Nn]/[Aa])
+      die "perf-budget: bare 'N/A' with NO reason — need 'perf-budget: N/A — <reason>' (INV-PERFBUDGET)." ;;
+    [Nn]/[Aa]*)
+      local reason; reason="$(printf '%s' "$pb" | sed -E 's/^[Nn]\/[Aa][[:space:]]*[—–-]*[[:space:]]*//')"
+      [ -n "$reason" ] || die "perf-budget: 'N/A' with NO reason — need 'perf-budget: N/A — <reason>' (INV-PERFBUDGET)."
+      ok "perf-budget: explicit N/A — ${reason}."; return 0 ;;
+  esac
+  # declared → require p95 + peak-mem + cost literals + ≥1 SLO healthy-range (presence, discipline-level)
+  grep -qiF 'p95' "$contract"                      || die "perf-budget: declared but no 'p95' latency literal (INV-PERFBUDGET)."
+  grep -qiE 'peak-mem|peak memory'  "$contract"    || die "perf-budget: declared but no peak-mem literal (INV-PERFBUDGET)."
+  grep -qiF 'cost' "$contract"                     || die "perf-budget: declared but no 'cost' literal (INV-PERFBUDGET)."
+  grep -qiE 'healthy-range|healthy range|SLO' "$contract" || die "perf-budget: declared but no SLO healthy-range (INV-PERFBUDGET)."
+  ok "perf-budget: p95 + peak-mem + cost + SLO healthy-range all declared."
 }
 
 cmd_ship_prodsafety_receipt_match() { # <build-dir> — the ship receipt MUST record both prod-safety invocations (F-RESTORE/PARITY)
@@ -2303,6 +2364,8 @@ main() {
     sketch-gate)       cmd_sketch_gate "$@" ;;
     restore-point)     cmd_restore_point "$@" ;;
     config-parity)     cmd_config_parity "$@" ;;
+    schema-pin-gate)   cmd_schema_pin_gate "$@" ;;
+    perf-budget-gate)  cmd_perf_budget_gate "$@" ;;
     ship-prodsafety-receipt-match) cmd_ship_prodsafety_receipt_match "$@" ;;
     abort)             cmd_abort "$@" ;;
     abort-check)       cmd_abort_check "$@" ;;
