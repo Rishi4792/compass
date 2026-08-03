@@ -22,6 +22,7 @@ The contract is the **single source of truth** — the invariant every later ste
   - `intake: co-construct-v1` when the interview below ran interactively; `intake: classic` when a headless/--auto session had to fall back (an auto session NEVER authors intake.md — F-AUTODEGRADE).
   - **`program: <program-name> · <phase-id>` (v0.22.0, optional)** — write it when this build is one phase of a multi-build **program** (e.g. `program: compass-3-phase · build 7a`). The ship stage's guarded `program-advance` and `go`/`resume`'s next-phase offer read this header; a build with no `program:` line is byte-inert (standalone). Absent = standalone, no ledger interaction.
   - **`adds-test: <yes|no>` (v0.22.0)** — `yes` when the build adds/changes a test; then the build receipt MUST carry a real `red-green:` line (the failing test + why it failed BEFORE the fix) which `compass.sh redgreen-check` requires (empty/placeholder FAILS). `no`/absent is byte-inert. Optional `mutation: <INV-id · file= · break= · red=>` recipe lines let `compass.sh mutation-check` PROVE a guard's test bites.
+  - **Durability nits (v0.23.0, template defaults — legacy contracts unaffected):** every contract carries a **`## Glossary`** (domain terms → plain meaning), an **`alternatives-considered:`** line (what else was weighed + why-not — the ADR trace), **`one-way-door:`** labels on irreversible steps (so a reader sees what can't be undone), and a **`RACI:`** owner line (Responsible / Accountable / Consulted / Informed). **Template-presence only — no rejection gate** (a contract missing them is not blocked; the interview just always seeds them so a fresh reader gets the context).
 
 ## 2. Interview — the Intake Protocol (co-construct-v1; every decision via AskUserQuestion)
 Six phases, recorded live in `<state-root>/<slug>/intake.md` (append-only, column-0 grammar: `MODE:` · `COVERAGE:` · `Q: <question> → A: <answer>` · `GEN <premortem|relax|10x|adjacent>: OPT <possibility> → NOW|LATER|NEVER` · `SCOPE NOW|LATER|NEVER: <item>` · `PHASE <n> DONE · <ts>`). `compass.sh intake-gate` enforces: ordered phases, ≥2 disposed options per generator, **≥1 LATER/NEVER (an all-NOW ledger FAILS — expansion must be real)**, the Phase-4 question budget, ladder count-sync, ≥1 recorded answer. `compass.sh intake-phase` is the resume pointer (status `intake (phase N)` at column 0).
@@ -84,6 +85,8 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
   - [x] prod-safety signals written: schema-touching / destructive-backfill / env-keys-referenced (+ prod-keys when non-none)
   <!-- TEMPLATE: program-box -->
   - [x] program: <program-name · phase-id | N/A — standalone build> · adds-test: <yes + red-green: evidence | no>
+  <!-- TEMPLATE: durability-box -->
+  - [x] durability: ## Glossary + alternatives-considered + one-way-door + RACI present (template defaults)
   ```
 - **Self-check:** run `compass.sh scan-receipt .claude/builds/<slug> contract` AND `compass.sh intake-gate .claude/builds/<slug>` AND `compass.sh sketch-gate .claude/builds/<slug>` (each must exit 0).
 

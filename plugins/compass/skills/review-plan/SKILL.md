@@ -33,6 +33,15 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
   3. **Challenge a disprovable N/A** — a boundary/RMW surface present while the review claims N/A is itself a finding; never wave off a boundary or race you can see; build the checklist from the inputs you actually observe.
   An unhandled boundary on a reachable path, or an unguarded read-modify-write, is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a data-loss/corruption race = CRITICAL) that **blocks CLOSED**.
 <!-- EDGERACE:END -->
+
+<!-- HERMETIC:START -->
+- **Hermetic-test method (F-HERMETIC, v0.23.0)** — run for every build whose tests touch TIME or the NETWORK; byte-inert (**N/A**) for a build with no time/network/web test surface:
+  1. **Clock/timezone** — the tests must **pin the clock** and timezone (inject a fixed epoch + `TZ`); asserting on a live wall-clock value flakes across the date line / DST.
+  2. **Network** — the tests must **stub the network** (no live external call; every dependency stubbed/recorded); a real-endpoint call flakes + silently leaks a dependency.
+  3. **Determinism** — **run twice** and assert byte-identical results (no order-dependence, no unseeded randomness).
+  - **Challenge the disprovable N/A:** **never wave off** a time or network dependency you can SEE in the diff (a `new Date()`, a `fetch`/`http` call, a `sleep`) — a claimed N/A over a visible clock/network read is a finding.
+  - **Consequence:** a web/time/network build whose tests are non-hermetic **blocks CLOSED** (MAJOR — a flaky-by-design suite is not a passing suite).
+<!-- HERMETIC:END -->
 - **[B] Data & migration:** DB/migration safe, reversible, rolling-deploy-safe with a real dry-run-on-a-copy step · reconciliation feasibility — the query recomputes toward the **independent** gold (greenfield carve-out: no data yet → post-data acceptance check, don't bounce the plan).
 <!-- CROSSTAB:START -->
 - **Cross-table invariant enforcement method (F-CROSSTAB):** run for every build that touches **≥2 related tables** (parent/child, foreign key, or a versioned/generational set) — byte-inert (**N/A**) when the build has **no ≥2-related-table surface**:
@@ -74,6 +83,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface
 - [x] PERFFMEA: per-dependency FMEA + anti-pattern hunt applied (no call without a timeout; query count + peak mem asserted at the row count), or N/A — no external dependency or data-volume-sensitive loop
+- [x] HERMETIC: pin-clock/stub-network/run-twice applied for a time/network test build, or N/A — no time/network/web test surface
 - [x] CROSSTAB: cross-table invariants enumerated + DB-constraint/trigger enforcement + zero-violators pre-flight applied, or N/A — no ≥2-related-table surface
 - [x] migration dry-run-on-copy present; rollback path exists; deps are explicit steps
 - [x] reconciliation feasible toward INDEPENDENT gold (or greenfield carve-out)

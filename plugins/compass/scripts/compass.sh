@@ -48,6 +48,8 @@ state_root() {
   printf '%s/.claude/builds' "$main_root"
 }
 locks_dir() { printf '%s/.locks' "$(state_root)"; }
+# portable mtime (epoch) of a path — macOS `stat -f %m`, GNU `stat -c %Y`; 0 (→ treated as ancient) if both fail.
+_lock_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 
 # ── v0.12.0 S2a: shared pinned-grammar parsers (contract v3a "Pinned gate-read grammars") ──
 # norm_line: delete every `*` (bold-tolerant), used before any header match (RD-2).
@@ -1164,11 +1166,13 @@ cmd_close() { # <build-dir> <slug> [--abandon]
   local dir="$1" slug="$2" mode="${3:-}"
   if [ "$mode" = "--abandon" ]; then
     set_index_status "$slug" ROLLED-BACK
+    ( cmd_dora_record "$dir" ROLLED-BACK ) >/dev/null 2>&1 || true   # v0.23: DORA record, additive — subshell so an internal die can't abort the close
     ok "build '$slug' ABANDONED → status ROLLED-BACK (lifecycle-audit skipped); clearing state."
   else
     # Terminal-status guard (v0.7.0): a normal close must pass the CLOSED lifecycle audit.
     cmd_lifecycle_audit "$dir" CLOSED >/dev/null 2>&1 || die "close: lifecycle-audit CLOSED failed — refusing to close an incomplete build. Inspect: compass.sh lifecycle-audit '$dir' CLOSED   (or cancel it: compass.sh close '$dir' '$slug' --abandon)."
     set_index_status "$slug" CLOSED
+    ( cmd_dora_record "$dir" CLOSED ) >/dev/null 2>&1 || true        # v0.23: DORA record, additive (subshell + >/dev/null: never fails/leaks into the close)
   fi
   # Clear the CURRENT hint in the canonical state root (worktree-safe).
   local sr; sr="$(state_root 2>/dev/null || true)"
@@ -2766,6 +2770,114 @@ EOF
   ok "redgreen-check: adds-test: yes with a real red-green: attestation present (substance re-challenged at review)."
 }
 
+# ── v0.23.0 DORA operability ledger (append-only, gitignored) ────────────────────────────────
+_dora_file() { printf '%s/DORA.md' "$(state_root)"; }
+
+# dora-record <build-dir> <outcome> — append ONE metadata row per terminal exit. ADDITIVE (never
+# changes an existing flow's exit/stdout) + never blocks a terminal exit. Guard+die OUTSIDE the lock;
+# the locked helper does the (slug,outcome,sig) dup-check INSIDE the lock and only RETURNs (BUG-3).
+cmd_dora_record() { # <build-dir> <outcome>
+  local dir="${1:-}" outcome="${2:-}"
+  [ -n "$dir" ] || die "dora-record: usage: dora-record <build-dir> <outcome>"
+  case "$outcome" in SHIPPED|CLOSED|ROLLED-BACK) : ;; *) die "dora-record: outcome must be SHIPPED|CLOSED|ROLLED-BACK (got '$outcome')." ;; esac
+  local slug; slug="$(basename "$dir")"
+  local f; f="$(_dora_file)"
+  local be="$dir/budget.env" rc="$dir/receipts.md" scl="$dir/session-chain.log"
+  local stages="NA" rounds="NA" cyc="NA" sig ts sg r first
+  [ -r "$be" ] && { sg="$(_be_get "$be" spent_stages 2>/dev/null || true)"; _is_num "$sg" && stages="$sg"; }
+  [ -r "$rc" ] && { r="$(grep -c 'review-build.*round' "$rc" 2>/dev/null || true)"; _is_num "$r" && rounds="$r"; }
+  ts="$(_now_epoch)"
+  if [ -r "$scl" ]; then first="$(sed -n '1s/^\([0-9][0-9]*\)|.*/\1/p' "$scl" 2>/dev/null || true)"; if _is_num "$first"; then first=$((10#$first)); if [ "$first" -gt 0 ] && [ "$ts" -ge "$first" ]; then cyc=$(( ts - first )); fi; fi; fi   # base-10 (m2: no octal on 08/09) + no negative cycle on clock skew (m3)
+  sig="$(git rev-parse --short=12 HEAD 2>/dev/null || printf 'nogit')"; [ -n "$sig" ] || sig="nogit"
+  local row="dora: $slug · outcome=$outcome · stages=$stages · rounds=$rounds · cycle=$cyc · sig=$sig · ts=$ts"
+  # dora-record must NEVER stall a terminal exit (review-build M1): a BOUNDED, self-reaping best-effort
+  # lock instead of the 30s-blocking with_lock. A real DORA append is instant, so a lock still held
+  # after ~2s is dead → reap it once; still contended → SKIP (additive, best-effort). Caps close at ~2s.
+  local lock; lock="$(locks_dir)/.dora.lock"; mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+  local got=0 tries=0
+  while [ "$tries" -lt 60 ]; do
+    if mkdir "$lock" 2>/dev/null; then got=1; break; fi
+    # reap ONLY a genuinely-stale lock (age ≥ 5s): a real append is instant, so a >5s-held lock is dead;
+    # a racing winner's FRESH lock is NOT reaped, so mutual exclusion holds (RB-R2 — blind rmdir raced 2 writers in).
+    if [ -d "$lock" ] && [ "$(( $(_now_epoch) - $(_lock_mtime "$lock") ))" -ge 5 ]; then rmdir "$lock" 2>/dev/null || true; fi
+    tries=$((tries+1)); sleep 0.05
+  done
+  [ "$got" = 1 ] || { ok "dora-record: skipped ($slug outcome=$outcome — ledger contended; best-effort, no terminal-exit stall)."; return 0; }
+  # shellcheck disable=SC2064
+  trap "rmdir '$lock' 2>/dev/null || true" RETURN
+  _dora_record_locked "$f" "$slug" "$outcome" "$sig" "$row" || { rmdir "$lock" 2>/dev/null || true; trap - RETURN; die "dora-record: ledger write failed."; }
+  rmdir "$lock" 2>/dev/null || true; trap - RETURN
+  ok "dora-record: $slug outcome=$outcome (cycle=$cyc sig=$sig)."
+}
+# _dora_record_locked <file> <slug> <outcome> <sig> <row> — INSIDE with_lock; dup-check per
+# (slug,outcome,sig) then append; RETURNs only, never die()s (BUG-3). A DORA append is NOT
+# idempotent-by-construction, so the dup-check MUST be under the lock (review-plan M4).
+_dora_record_locked() { # <file> <slug> <outcome> <sig> <row>
+  local f="$1" slug="$2" outcome="$3" sig="$4" row="$5"
+  [ -f "$f" ] || printf '# DORA — compass\n' > "$f" || return 1
+  if grep -F "dora: $slug · outcome=$outcome · " "$f" 2>/dev/null | grep -qF "· sig=$sig · "; then
+    return 0    # exact (slug,outcome,sig) already recorded → idempotent no-op
+  fi
+  printf '%s\n' "$row" >> "$f" || return 1
+  return 0
+}
+
+# dora-ledger — render + aggregates (count, ship-rate). Guard-first N/A (no/unreadable DORA.md →
+# exit 0, no output). A malformed row → FLAG (fail-closed). 0 rows → ship-rate NA (no div-by-zero).
+cmd_dora_ledger() {
+  local f; f="$(_dora_file)"
+  { [ -f "$f" ] && [ -r "$f" ]; } || return 0    # a regular, readable file only — a directory/unreadable DORA.md → N/A (review-build agent2 MINOR)
+  local total=0 shipped=0 malformed=0 line seen="" key
+  sed -n '1p' "$f"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "dora: "*) : ;; *) continue ;; esac
+    case "$line" in
+      *"· outcome="*" · stages="*" · rounds="*" · cycle="*" · sig="*" · ts="*) : ;;
+      *) malformed=1 ;;
+    esac
+    printf '  %s\n' "$line"
+    # DEDUP-ON-READ by (slug,outcome,sig) — a best-effort append ledger can carry a rare duplicate
+    # under a lock-reap race (RB-R2); deduping at READ keeps count/ship-rate correct regardless of
+    # duplicate appends (a single-line append is atomic, so a dup is benign — never corruption).
+    key="$(printf '%s' "$line" | sed -nE 's/^dora: ([^ ]+) · outcome=([^ ]+) .* · sig=([^ ]+) · ts=.*/\1|\2|\3/p')"
+    if [ -n "$key" ] && printf '%s\n' "$seen" | grep -qxF "$key"; then continue; fi   # duplicate → do not double-count
+    [ -n "$key" ] && seen="$seen
+$key"
+    total=$((total+1))
+    case "$line" in *"· outcome=SHIPPED · "*) shipped=$((shipped+1)) ;; esac
+  done < "$f"
+  [ "$malformed" = 0 ] || { echo "COMPASS-DORA: FLAG — malformed row(s) present (fail-closed)." >&2; return 1; }
+  local rate
+  if [ "$total" -eq 0 ]; then rate="NA"; else rate="$(( 100 * shipped / total ))%"; fi
+  ok "dora-ledger: $total records, $shipped shipped, ship-rate: $rate."
+}
+
+# drift-check <build-dir> — opt-in, on-demand (NO autonomous loop). A shipped build was GREEN by
+# construction; re-run its recorded verification command and FLAG iff it is no longer green.
+# Baseline command: ship-receipt `RECON-CMD:` (verbatim) primary; contract `observation-channel:`
+# (strip the `<facet> = ` prefix) fallback. cd main_root first (recorded cmds are repo-root-relative).
+cmd_drift_check() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] || die "drift-check: usage: drift-check <build-dir>"
+  [ -r "$dir/receipts.md" ] || return 0     # guard-first N/A (no/unreadable receipts.md → exit 0, no output)
+  local rc="$dir/receipts.md" contract="$dir/contract.md" cmd=""
+  cmd="$(grep -E '^RECON-CMD:' "$rc" 2>/dev/null | tail -1 | sed -E 's/^RECON-CMD:[[:space:]]*//' || true)"
+  if [ -z "$cmd" ]; then
+    local decl; decl="$(hdr_get "$contract" observation-channel 2>/dev/null || true)"
+    case "$decl" in *" = "*) cmd="${decl#* = }" ;; *) cmd="" ;; esac   # grammar `<facet> = <cmd>`: strip prefix; a MALFORMED decl (no ` = `) → no baseline → N/A, never a false FLAG (review-build m4)
+  fi
+  [ -n "$cmd" ] || return 0                  # no baseline (not built/shipped, no observation-channel) → N/A-pass
+  local mr; mr="$(main_root)" || die "drift-check: cannot resolve main_root."
+  local rc2
+  if ( cd "$mr" && eval "$cmd" >/dev/null 2>&1 ); then rc2=0; else rc2=$?; fi
+  if [ "$rc2" = 0 ]; then
+    ok "drift-check: '$(basename "$dir")' still green (re-ran the recorded baseline: $cmd)."
+  else
+    echo "COMPASS-DRIFT: FLAG — '$(basename "$dir")' DRIFTED — the recorded baseline command no longer passes (exit $rc2): $cmd" >&2
+    return 1
+  fi
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -2850,6 +2962,9 @@ main() {
     program-advance)   cmd_program_advance "$@" ;;
     mutation-check)    cmd_mutation_check "$@" ;;
     redgreen-check)    cmd_redgreen_check "$@" ;;
+    dora-record)       cmd_dora_record "$@" ;;
+    dora-ledger)       cmd_dora_ledger "$@" ;;
+    drift-check)       cmd_drift_check "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac
 }

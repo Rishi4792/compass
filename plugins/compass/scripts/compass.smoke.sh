@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -545,6 +545,14 @@ chk "$(grep -c 'PERFFMEA:START' "$PB20")" "1" "v0.20 INV-PERFFMEA-BLOCK: exactly
 chk "$( { pfisl "$PP20" | grep -qF 'no dependency called with no timeout' && pfisl "$PP20" | grep -qF 'paginationless' && pfisl "$PP20" | grep -qF 'query count' && pfisl "$PP20" | grep -qF 'blocks CLOSED' && pfisl "$PP20" | grep -qF 'never wave off a dependency or volume-sensitive loop'; } && echo 1 || echo 0)" "1" "v0.20 INV-PERFFMEA-METHOD: island carries FMEA + anti-pattern + teeth + challenge-N/A (no dependency called with no timeout · paginationless · query count · blocks CLOSED · never wave off a dependency or volume-sensitive loop)"
 chk "$( { grep -q 'PERFFMEA:.*applied' "$PP20" && grep -q 'PERFFMEA:.*applied' "$PB20" && [ "$(pfisl "$PP20" | grep -c applied)" = "0" ]; } && echo 1 || echo 0)" "1" "v0.20 INV-PERFFMEA-RECEIPT: receipt-only anchor 'PERFFMEA:.*applied' in both AND the word 'applied' absent from the island body (R1-MIN-1 — the receipt anchor matches only the receipt line)"
 chk "$(grep -c 'no dependency called with no timeout' "$PLUGIN_ROOT/skills/plan/SKILL.md")" "1" "v0.20 INV-PLAN-FMEA: the plan skill requires an FMEA/perf-budget design step (no dependency called with no timeout) for dependency builds"
+# ── v0.23.0: HERMETIC review-method island — byte-identical across review-plan + review-build (mirrors PERFFMEA) ──
+hisl(){ awk '/HERMETIC:START/{f=1} f{print} /HERMETIC:END/{f=0}' "$1"; }
+PP23="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; PB23="$PLUGIN_ROOT/skills/review-build/SKILL.md"
+chk "$( diff <(hisl "$PP23") <(hisl "$PB23") >/dev/null 2>&1 && [ -n "$(hisl "$PP23")" ] && echo 1 || echo 0)" "1" "v0.23 INV-HERMETIC-BLOCK: HERMETIC island byte-identical across review-plan + review-build"
+chk "$(grep -c 'HERMETIC:START' "$PP23")" "1" "v0.23 INV-HERMETIC-BLOCK: exactly one HERMETIC island in review-plan (no drift/dup)"
+chk "$(grep -c 'HERMETIC:START' "$PB23")" "1" "v0.23 INV-HERMETIC-BLOCK: exactly one HERMETIC island in review-build (no drift/dup)"
+chk "$( { hisl "$PP23" | grep -qF 'pin the clock' && hisl "$PP23" | grep -qF 'stub the network' && hisl "$PP23" | grep -qF 'run twice' && hisl "$PP23" | grep -qF 'blocks CLOSED' && hisl "$PP23" | grep -qF 'never wave off'; } && echo 1 || echo 0)" "1" "v0.23 INV-HERMETIC-METHOD: island carries pin-clock/stub-network/run-twice + challenge-N/A (never wave off) + blocks-CLOSED"
+chk "$( { grep -q 'HERMETIC:.*applied' "$PP23" && grep -q 'HERMETIC:.*applied' "$PB23" && [ "$(hisl "$PP23" | grep -c applied)" = "0" ]; } && echo 1 || echo 0)" "1" "v0.23 INV-HERMETIC-RECEIPT: receipt-anchor 'HERMETIC:.*applied' in both AND the word 'applied' absent from the island body"
 chk "$(pfisl "$PP20" | grep -cF 'no external dependency or data-volume-sensitive loop')" "1" "v0.20 INV-PERFFMEA-BYTEINERT: the method is byte-inert (N/A) for a build with no external dependency or data-volume-sensitive loop"
 # ── v0.21.0: CROSSTAB method island — cross-table invariant enforcement, byte-identical across review-plan [B] + review-build [B] (mirrors PERFFMEA) ──
 ctisl(){ awk '/CROSSTAB:START/{f=1} f{print} /CROSSTAB:END/{f=0}' "$1"; }
@@ -621,8 +629,23 @@ mkdir -p "$SPG/mc-none"; ( cd "$SPG" && bash "$SH" mutation-check mc-none ) >/de
 ( bash "$SH" redgreen-check "$FXP/redgreen/empty" ) >/dev/null 2>&1; chk "$?" "1" "v0.22 INV-REDGREEN: adds-test:yes + empty red-green → FLAG"
 ( bash "$SH" redgreen-check "$FXP/redgreen/na" )    >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-REDGREEN: adds-test:no → N/A-pass"
 # INV-SUITES: the v0.22.0 waves added EXACTLY 7 new INV names (64 baseline → 71). A count, not a 4th name copy.
+# v0.23.0 DORA — behavioral on the space+parens path (K-17 quoting coverage)
+mkdir -p "$SPG/.claude/builds/dm"
+( cd "$SPG" && bash "$SH" dora-record .claude/builds/dm SHIPPED ) >/dev/null 2>&1; chk "$?" "0" "v0.23 INV-DORA-RECORD: record on a space+parens path → exit 0"
+chk "$([ "$(grep -c '^dora: dm · outcome=SHIPPED · ' "$SPG/.claude/builds/DORA.md" 2>/dev/null || echo 0)" -ge 1 ] && echo 1 || echo 0)" "1" "v0.23 INV-DORA-RECORD: row appended on space+parens path"
+( cd "$SPG" && bash "$SH" dora-ledger ) >/dev/null 2>&1; chk "$?" "0" "v0.23 INV-DORA-LEDGER: renders on space+parens path"
+rm -f "$SPG/.claude/builds/DORA.md"; ( cd "$SPG" && bash "$SH" dora-ledger ) >/dev/null 2>&1; chk "$?" "0" "v0.23 INV-DORA-LEDGER: no DORA.md → N/A exit 0 (byte-inert)"
+# v0.23.0 W-E: dora-record wired into close (subshell, additive) + the ship-skill instruction
+printf 'abn · goal · status=plan · facets=library · touches=x\n' > "$SPG/.claude/builds/INDEX"; mkdir -p "$SPG/.claude/builds/abn"
+( cd "$SPG" && bash "$SH" close .claude/builds/abn abn --abandon ) >/dev/null 2>&1; chk "$?" "0" "v0.23 INV-BC: close --abandon exit 0 (dora-record subshell — never fails the close)"
+chk "$([ "$(grep -c '^dora: abn · outcome=ROLLED-BACK · ' "$SPG/.claude/builds/DORA.md" 2>/dev/null || echo 0)" -ge 1 ] && echo 1 || echo 0)" "1" "v0.23 INV-DORA-RECORD: close --abandon appended a ROLLED-BACK DORA row (close wiring)"
+chk "$([ "$(grep -c 'dora-record' "$PLUGIN_ROOT/skills/ship/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.23 W-E: ship skill records SHIPPED to the DORA ledger after the SHIPPED write"
+# v0.23.0 INV-DURABILITY: contract skill pins the 4 durability template anchors
+_dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
+chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
+chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "71" "v0.22 INV-SUITES: recon INV_NAMES rose to exactly 71 (64 baseline + 7 new v0.22.0 names)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "78" "v0.23 INV-SUITES: recon INV_NAMES == 78 (71 after v0.22 + the 7 v0.23 names: 2 DORA + 1 DRIFT + 3 HERMETIC + 1 DURABILITY)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -638,9 +661,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.22.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.22 W-D6: plugin.json bumped to 0.22.0"
-chk "$(grep -c '0.22.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.22 W-D6: marketplace.json bumped to 0.22.0"
-chk "$(grep -c '## \[0.22.0\]' "$RR22/CHANGELOG.md")" "1" "v0.22 W-D6: CHANGELOG carries the 0.22.0 entry"
+chk "$(grep -c '0.23.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.23 W-F: plugin.json at the current release 0.23.0"
+chk "$(grep -c '0.23.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.23 W-F: marketplace.json at the current release 0.23.0"
+chk "$(grep -c '## \[0.23.0\]' "$RR22/CHANGELOG.md")" "1" "v0.23 W-F: CHANGELOG carries the 0.23.0 entry"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

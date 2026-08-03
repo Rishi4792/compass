@@ -3,6 +3,15 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.23.0] — 2026-08-04
+
+**Phase-3 finisher: operability + test-rigor + durability (completes the compass-3-phase program).** Four features, each byte-inert or additive-only until a build opts in — legacy builds are unaffected.
+
+- **DORA operability ledger.** `dora-record` appends one metadata row (outcome · stages · review rounds · build `cycle` · sig · ts) to a gitignored `.claude/builds/DORA.md` on every terminal exit — wired into `close` + ship through a subshell so it can NEVER fail or change an existing terminal write (additive). `dora-ledger` renders the records + count + ship-rate (0 rows → NA; a malformed row → fail-closed FLAG). The dup-check is per `(slug, outcome, sig)` under a mutex.
+- **Opt-in drift monitor.** `drift-check` re-runs a shipped build's recorded verification command (the ship receipt's `RECON-CMD:`, or the contract's `observation-channel:` with its `<facet> = ` prefix stripped) from the repo root and FLAGs if it is no longer green. On-demand only — no autonomous loop.
+- **Hermetic-test review method.** A new HERMETIC review island — byte-identical across `review-plan` and `review-build` (like RBACSTRIDE/EDGERACE/PERFFMEA) — makes a web/time/network build's tests pin the clock + timezone, stub the network, and be run-twice deterministic; a non-hermetic suite blocks CLOSED. Byte-inert for builds with no time/network surface. Completes the correctness-rigor trio with v0.22's mutation-check + red-green.
+- **Durability contract nits.** Every contract now seeds a `## Glossary`, an `alternatives-considered:` (ADR) line, `one-way-door:` irreversibility labels, and a `RACI:` owner line (template-presence, no rejection gate).
+
 ## [0.22.0] — 2026-08-03
 
 **Program-continuity ledger + test-rigor gates (Phase 3, contract 7a).** A multi-build program can now track its own phases in a durable, tamper-evident ledger, and two new test-rigor gates prove that a build's tests actually bite. All five surfaces are **byte-inert (N/A-pass) until a build opts in**, so legacy builds are unaffected.

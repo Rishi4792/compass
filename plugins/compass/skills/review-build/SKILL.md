@@ -42,6 +42,15 @@ The build is done on design ONLY when it is **indistinguishable from the mockup*
   3. **Challenge a disprovable N/A** — a boundary/RMW surface present while the review claims N/A is itself a finding; never wave off a boundary or race you can see; build the checklist from the inputs you actually observe.
   An unhandled boundary on a reachable path, or an unguarded read-modify-write, is a finding under the bug-bar (a missing guard on a reachable path = MAJOR; a data-loss/corruption race = CRITICAL) that **blocks CLOSED**.
 <!-- EDGERACE:END -->
+
+<!-- HERMETIC:START -->
+- **Hermetic-test method (F-HERMETIC, v0.23.0)** — run for every build whose tests touch TIME or the NETWORK; byte-inert (**N/A**) for a build with no time/network/web test surface:
+  1. **Clock/timezone** — the tests must **pin the clock** and timezone (inject a fixed epoch + `TZ`); asserting on a live wall-clock value flakes across the date line / DST.
+  2. **Network** — the tests must **stub the network** (no live external call; every dependency stubbed/recorded); a real-endpoint call flakes + silently leaks a dependency.
+  3. **Determinism** — **run twice** and assert byte-identical results (no order-dependence, no unseeded randomness).
+  - **Challenge the disprovable N/A:** **never wave off** a time or network dependency you can SEE in the diff (a `new Date()`, a `fetch`/`http` call, a `sleep`) — a claimed N/A over a visible clock/network read is a finding.
+  - **Consequence:** a web/time/network build whose tests are non-hermetic **blocks CLOSED** (MAJOR — a flaky-by-design suite is not a passing suite).
+<!-- HERMETIC:END -->
 - **[B] Numbers, data & integrity:** reconciliation — run the query then `compass.sh reconcile <actual> <gold> <tol>` (non-zero = CRITICAL, blocks CLOSED), re-check the dup/fan-out/source-table bug-classes, gold is the contract's independent figure · **migration delivery (v0.7.0, schema builds): `compass.sh migration-gate .claude/builds/<slug>` MUST be PASS (non-zero = CRITICAL, blocks CLOSED)** — a real migration in the canonical deploy dir reproduces the schema on a fresh DB (STRICT); `db execute`/hand-apply, a stray non-canonical migration dir, or fresh-apply failure = CRITICAL · DB/migration integrity — **rollback ACTUALLY exercised on a copy** (forward+back, row-count + checksum identical) · idempotency — run twice, assert identical end-state, no double-write. · **rollback forward-compat (v0.21, INV-ROLLBACK-FWDCOMPAT): re-challenge the recorded rollback data-safety line (`old-code reads new-version writes → OK`) against the plan/diff — a fabricated line passes the ship gate, so NEVER treat it as independent proof (honor-level; blocks CLOSED if the recorded claim can't be substantiated).** · **green-CI merge gate (v0.21, INV-GREEN-CI): when the contract declares `ci: yes`, re-challenge the recorded green-ci merge-proof line against the actual CI/merge state — a fabricated proof passes the gate, so NEVER treat it as independent proof (honor-level; blocks CLOSED).**
 <!-- CROSSTAB:START -->
 - **Cross-table invariant enforcement method (F-CROSSTAB):** run for every build that touches **≥2 related tables** (parent/child, foreign key, or a versioned/generational set) — byte-inert (**N/A**) when the build has **no ≥2-related-table surface**:
@@ -82,6 +91,7 @@ Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Ro
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface
 - [x] PERFFMEA: per-dependency FMEA + anti-pattern hunt applied (no call without a timeout; query count + peak mem asserted at the row count), or N/A — no external dependency or data-volume-sensitive loop
+- [x] HERMETIC: pin-clock/stub-network/run-twice applied for a time/network test build, or N/A — no time/network/web test surface
 - [x] CROSSTAB: cross-table invariants enumerated + DB-constraint/trigger enforcement + zero-violators pre-flight applied, or N/A — no ≥2-related-table surface
 - [x] INVARIANT <id>: `<cmd>` → <actual> vs <bound> PASS   (per invariant)
 - [x] RECONCILE: `compass.sh reconcile <actual> <gold> <tol>` → PASS   (or N/A)

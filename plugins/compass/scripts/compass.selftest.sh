@@ -922,7 +922,7 @@ RC="$HERE/compass.recon.sh"
 mkstub() { # <file> <tail-line> [names]
   { echo '#!/bin/sh'; [ -n "${3:-}" ] && printf 'echo "%s"\n' "$3"; printf 'echo "%s"\n' "$2"; } > "$1"; chmod +x "$1"
 }
-NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN"
+NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY"
 ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 406 passed, 0 failed" "$NAMES12"
 SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 222 passed, 0 failed ────────"
 COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
@@ -1651,6 +1651,46 @@ RGRO="$SB/rg-unreadable"; mkdir -p "$RGRO"; printf 'adds-test: no\n' > "$RGRO/re
 RGERR="$(bash "$SH" redgreen-check "$RGRO" 2>&1)"; RGRC=$?; chmod 644 "$RGRO/receipts.md"
 chk "$RGRC" "0" "INV-REDGREEN: an unreadable receipts.md → exit 0 (guard-safe, no set-e crash — R1-F3)"
 chk "$(printf '%s' "$RGERR" | grep -c 'Permission denied')" "0" "INV-REDGREEN: no stderr leak on an unreadable receipts.md (R1-F3)"
+
+# ── INV-DORA-RECORD / INV-DORA-LEDGER (v0.23.0): operability ledger ──
+echo "── INV-DORA-RECORD / INV-DORA-LEDGER (v0.23.0): DORA operability ledger ──"
+DB="$SB/dorarepo"; mkdir -p "$DB/.claude/builds/demo"
+( cd "$DB" && git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false && echo x > a && git add -A && git commit -qm i ) >/dev/null 2>&1
+printf 'spent_stages=7\n' > "$DB/.claude/builds/demo/budget.env"
+printf '1000|s|-|spawn|0|0|0\n' > "$DB/.claude/builds/demo/session-chain.log"
+printf '## RECEIPT — review-build · demo · round 1\n' > "$DB/.claude/builds/demo/receipts.md"
+DL="$DB/.claude/builds/DORA.md"
+dora(){ ( cd "$DB" && bash "$SH" "$@" ); }
+dora dora-record .claude/builds/demo SHIPPED >/dev/null 2>&1; chk "$?" "0" "INV-DORA-RECORD: record SHIPPED → exit 0"
+chk "$(grep -c '^dora: demo · outcome=SHIPPED · ' "$DL")" "1" "INV-DORA-RECORD: exactly one SHIPPED row appended"
+DROW="$(grep '^dora: demo · outcome=SHIPPED · ' "$DL" | head -1)"
+DTS="$(printf '%s' "$DROW" | sed -nE 's/.*· ts=([0-9]+).*/\1/p')"; DCY="$(printf '%s' "$DROW" | sed -nE 's/.*· cycle=([0-9]+).*/\1/p')"
+chk "$DCY" "$(( DTS - 1000 ))" "INV-DORA-RECORD: cycle == ts − session-chain first-ts (relationship, R1-M1)"
+chk "$(printf '%s' "$DROW" | grep -c '· stages=7 ·')" "1" "INV-DORA-RECORD: stages read from budget.env"
+dora dora-record .claude/builds/demo SHIPPED >/dev/null 2>&1; chk "$(grep -c '^dora: demo · outcome=SHIPPED · ' "$DL")" "1" "INV-DORA-RECORD: re-record same (slug,outcome,sig) → no dup (idempotent, R1-M4)"
+DCK="$(cksum "$DL")"; dora dora-record .claude/builds/demo BOGUS >/dev/null 2>&1; chk "$?" "1" "INV-DORA-RECORD: bad outcome → reject"; chk "$(cksum "$DL")" "$DCK" "INV-DORA-RECORD: ledger byte-unchanged after bad outcome"
+rm -f "$DB/.claude/builds/demo/session-chain.log"; dora dora-record .claude/builds/demo CLOSED >/dev/null 2>&1; chk "$(grep '^dora: demo · outcome=CLOSED · ' "$DL" | grep -c '· cycle=NA ·')" "1" "INV-DORA-RECORD: no session-chain.log → cycle=NA (R1-M3)"
+LOUT="$(dora dora-ledger 2>&1)"; chk "$?" "0" "INV-DORA-LEDGER: renders → exit 0"
+chk "$(printf '%s' "$LOUT" | grep -c 'ship-rate: 50%')" "1" "INV-DORA-LEDGER: 1/2 SHIPPED → ship-rate 50% (independent recompute)"
+DUProw="$(grep '^dora: demo · outcome=SHIPPED' "$DL" | head -1)"; printf '%s\n' "$DUProw" >> "$DL"; chk "$(dora dora-ledger 2>&1 | grep -c '2 records')" "1" "INV-DORA-LEDGER: a duplicate (slug,outcome,sig) row is deduped ON READ → still 2 records, ship-rate unchanged (RB-R2)"
+printf 'dora: bad · outcome=SHIPPED\n' >> "$DL"; dora dora-ledger >/dev/null 2>&1; chk "$?" "1" "INV-DORA-LEDGER: malformed row → FLAG"
+rm -f "$DL"; LO2="$(dora dora-ledger 2>&1)"; chk "$?" "0" "INV-DORA-LEDGER: no DORA.md → N/A exit 0"; chk "$LO2" "" "INV-DORA-LEDGER: no DORA.md → no output"
+NGB="$SB/ngrepo"; mkdir -p "$NGB/.claude/builds/ng"; ( cd "$NGB" && git init -q ) >/dev/null 2>&1
+( cd "$NGB" && bash "$SH" dora-record .claude/builds/ng SHIPPED ) >/dev/null 2>&1; chk "$?" "0" "INV-DORA-RECORD: no-commit repo → sig=nogit, exit NOT blocked (R1-M3)"
+chk "$(grep -c '· sig=nogit ·' "$NGB/.claude/builds/DORA.md" 2>/dev/null || echo 0)" "1" "INV-DORA-RECORD: sig=nogit recorded (git-exempt)"
+mkdir -p "$DB/.claude/builds/.locks/.dora.lock"; touch -t 202001010000 "$DB/.claude/builds/.locks/.dora.lock" 2>/dev/null || true; dora dora-record .claude/builds/demo SHIPPED >/dev/null 2>&1; chk "$?" "0" "INV-DORA-RECORD: a STALE (aged) .dora.lock → age-gated reap + exit 0 (no 30s stall — RB-M1/R2)"
+mkdir -p "$DB/.claude/builds/oct"; printf '0000000010|s|-|spawn|0|0|0\n' > "$DB/.claude/builds/oct/session-chain.log"; dora dora-record .claude/builds/oct SHIPPED >/dev/null 2>&1; chk "$?" "0" "INV-DORA-RECORD: leading-zero session-chain first-ts → base-10 (no octal crash — RB-m2)"
+
+# ── INV-DRIFT (v0.23.0): opt-in drift monitor (shipped-green baseline) ──
+echo "── INV-DRIFT (v0.23.0): opt-in drift monitor ──"
+DFB="$SB/driftrepo"; ( mkdir -p "$DFB" && cd "$DFB" && git init -q && git config user.email t@t && git config user.name t ) >/dev/null 2>&1
+drift(){ ( cd "$DFB" && bash "$SH" drift-check "$1" ); }
+mkdir -p "$DFB/g"; printf 'RECON-CMD: true\n' > "$DFB/g/receipts.md"; drift g >/dev/null 2>&1; chk "$?" "0" "INV-DRIFT: recorded RECON-CMD still green → PASS"
+mkdir -p "$DFB/d"; printf 'RECON-CMD: false\n' > "$DFB/d/receipts.md"; drift d >/dev/null 2>&1; chk "$?" "1" "INV-DRIFT: recorded RECON-CMD no longer green → FLAG (drift)"
+mkdir -p "$DFB/fb"; printf '## RECEIPT — build\n' > "$DFB/fb/receipts.md"; printf 'observation-channel: library = true\n' > "$DFB/fb/contract.md"; drift fb >/dev/null 2>&1; chk "$?" "0" "INV-DRIFT: observation-channel fallback with the '<facet> = ' prefix STRIPPED → PASS (R2-MAJOR)"
+mkdir -p "$DFB/na"; printf '## RECEIPT — build\n- [x] no baseline\n' > "$DFB/na/receipts.md"; drift na >/dev/null 2>&1; chk "$?" "0" "INV-DRIFT: no RECON-CMD + no observation-channel → N/A exit 0"
+drift nodir >/dev/null 2>&1; chk "$?" "0" "INV-DRIFT: no receipts.md → N/A exit 0 (guard-first)"
+mkdir -p "$DFB/mal"; printf '## RECEIPT — build\n' > "$DFB/mal/receipts.md"; printf 'observation-channel: bogus-no-equals\n' > "$DFB/mal/contract.md"; drift mal >/dev/null 2>&1; chk "$?" "0" "INV-DRIFT: malformed observation-channel (no ' = ') → N/A, not a false FLAG (RB-m4)"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"
