@@ -750,10 +750,12 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
   local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh perf-budget-gate <slug|build-dir>"
   local dir contract; dir="$(_cv_dir "$a")"; contract="$dir/contract.md"
   [ -f "$contract" ] || { ok "perf-budget: N/A — no contract.md (legacy)."; return 0; }
-  # trigger = the perf-budget header; ABSENT ⇒ N/A (legacy / trivial scale — honest boundary)
+  # trigger = the perf-budget HEADER LINE. It must EXIST at all (RB-R4-F2: a bare `perf-budget:` with the
+  # budget in a block BELOW is DECLARED, not absent — it must not silently N/A-pass). Absent line ⇒ N/A.
+  grep -qiE '^[-*[:space:]]*perf-budget:' "$contract" \
+    || { ok "perf-budget: N/A — header absent (legacy/trivial scale)."; return 0; }
   local pb; pb="$(sed -nE 's/^[-*[:space:]]*perf-budget:\**[[:space:]]*(.+)/\1/p' "$contract" | head -1)"
-  [ -n "$pb" ] || { ok "perf-budget: N/A — header absent (legacy/trivial scale)."; return 0; }
-  # N/A branch: an explicit reason is REQUIRED — a bare `N/A` fails (INV-PERFBUDGET)
+  # inline N/A branch: an explicit reason is REQUIRED — a bare `N/A` fails (INV-PERFBUDGET)
   case "$pb" in
     [Nn]/[Aa])
       die "perf-budget: bare 'N/A' with NO reason — need 'perf-budget: N/A — <reason>' (INV-PERFBUDGET)." ;;
@@ -762,26 +764,27 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
       [ -n "$reason" ] || die "perf-budget: 'N/A' with NO reason — need 'perf-budget: N/A — <reason>' (INV-PERFBUDGET)."
       ok "perf-budget: explicit N/A — ${reason}."; return 0 ;;
   esac
-  # declared → require a NUMERIC literal for EACH (RB-R1-C1: a bare prose word like "cost-effective"
-  # or "SLO story" must NOT pass — the whole-file substring grep was the soft-pass hole).
-  # DECOUPLED (RB-R1-C1 + RB-R3): each axis must be NAMED and a literal of its KIND must exist somewhere
-  # in the contract — no fragile proximity window (which mis-parsed 'p95 (99th): 1.2s' and false-rejected
-  # 'p95 latency: 200ms'), but a bare prose 'cost-effective'/'SLO story' with no number still fails.
-  grep -qiF 'p95' "$contract" \
-    || die "perf-budget: declared but 'p95' latency is not named (INV-PERFBUDGET)."
+  # DECLARED (inline value that isn't N/A, OR an empty inline value with the budget in a block below) →
+  # DECOUPLED enforcement (RB-R1-C1 + RB-R3/R4): each axis NAMED (generous aliases) + a literal of its KIND
+  # exists anywhere — no fragile proximity window. This is a DECLARED-surface discipline gate: it proves a
+  # budget with real numbers was written; whether those numbers are the RIGHT budget is a review judgment.
+  grep -qiE '\bp95\b|\bp99\b|\bp99\.9\b|latency' "$contract" \
+    || die "perf-budget: declared but no latency axis named (p95/p99/latency) (INV-PERFBUDGET)."
   grep -qiE '[0-9]+(\.[0-9]+)? ?(ms|µs|us|sec|secs|seconds?)\b|[0-9]+(\.[0-9]+)?s\b' "$contract" \
-    || die "perf-budget: declared but no latency LITERAL (a number+ms/s, e.g. 'p95 200ms') (INV-PERFBUDGET)."
-  grep -qiE 'peak[ -]?mem|peak memory' "$contract" \
-    || die "perf-budget: declared but peak memory is not named (INV-PERFBUDGET)."
-  grep -qiE '[0-9]+(\.[0-9]+)? ?(kb|mb|gb|tb)\b' "$contract" \
-    || die "perf-budget: declared but no peak-mem LITERAL (a number+MB/GB) (INV-PERFBUDGET)."
+    || die "perf-budget: declared but no latency LITERAL (a number+ms/s) (INV-PERFBUDGET)."
+  grep -qiE 'peak[ -]?mem|peak memory|\bmemory\b|\bmem\b' "$contract" \
+    || die "perf-budget: declared but no memory axis named (peak-mem/memory) (INV-PERFBUDGET)."
+  grep -qiE '[0-9]+(\.[0-9]+)? ?([kmgt]i?b|[kmgt]i)\b' "$contract" \
+    || die "perf-budget: declared but no memory LITERAL (a number+MB/GB/GiB/Mi) (INV-PERFBUDGET)."
   grep -qiF 'cost' "$contract" \
     || die "perf-budget: declared but 'cost' is not named (INV-PERFBUDGET)."
   grep -qiE '[$][0-9]|[0-9]+(\.[0-9]+)? ?(usd|cents?|/req|per[ -](request|call|op))' "$contract" \
     || die "perf-budget: declared but no cost LITERAL (a currency/number, not the prose word 'cost-effective') (INV-PERFBUDGET)."
-  grep -qiE '\bslo\b|healthy[ -]?range' "$contract" \
+  grep -qiE '\bslo\b|healthy[ -]?range|availability|error[ -]?rate' "$contract" \
     || die "perf-budget: declared but no SLO / healthy-range named (its literal range is verified in review) (INV-PERFBUDGET)."
-  ok "perf-budget: p95 + peak-mem + cost named with numeric literals + SLO/healthy-range."
+  ! grep -qiE '\b(no|not|without|zero)\b[ -]+(slo|healthy|availability)' "$contract" \
+    || die "perf-budget: the SLO/healthy-range is explicitly negated ('no SLO') — declare a real healthy range (INV-PERFBUDGET)."
+  ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range."
 }
 
 cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
