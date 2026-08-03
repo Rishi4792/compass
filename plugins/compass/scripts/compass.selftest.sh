@@ -1533,6 +1533,11 @@ d="$spr/pb-mlbroken"; mkdir -p "$d"; printf 'perf-budget:\nfast enough, cheap en
 bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R4-F2: bare 'perf-budget:' header + a block with ZERO numbers → FAIL (no silent N/A-pass escape)"
 d="$spr/pb-noslo"; mkdir -p "$d"; printf 'perf-budget: declared\np95 200ms, peak-mem 512MB, cost $0.02, no SLO story yet\n' > "$d/contract.md"
 bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R4-F3: perf-budget with an explicitly NEGATED SLO ('no SLO story') → FAIL"
+# falsifiability isolation ([F] rule): a fixture that reaches — and fails at — the memory/cost LITERAL checks specifically
+d="$spr/pb-memname-nolit"; mkdir -p "$d"; printf 'perf-budget: declared\np95 200ms, peak memory matters here, cost $0.02, SLO 99.9%%\n' > "$d/contract.md"
+bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R5: perf-budget names memory but has NO memory LITERAL (no MB/GB number) → FAIL (isolates the memory-literal check)"
+d="$spr/pb-costname-nolit"; mkdir -p "$d"; printf 'perf-budget: declared\np95 200ms, peak-mem 512MB, cost is important, SLO 99.9%%\n' > "$d/contract.md"
+bash "$SH" perf-budget-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R5: perf-budget names cost but has NO cost LITERAL (no currency/number) → FAIL (isolates the cost-literal check)"
 d="$spr/ec-didnotrun"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phase: expand\nold-code-probe: v0 read on v1 schema\ndry-run: did not run against a prod-shaped dataset\n' > "$d/contract.md"
 bash "$SH" expand-contract-gate "$d" >/dev/null 2>&1; chk "$?" "1" "RB-R3-M3: expand-contract 'did not run against a prod-shaped dataset' (negation scoped wider) → FAIL"
 d="$spr/ec-nodiffs"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phase: expand\nold-code-probe: v0 read on v1 schema\ndry-run: prod-shaped snapshot (10M rows), no diffs\n' > "$d/contract.md"
