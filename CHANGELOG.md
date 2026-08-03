@@ -3,6 +3,16 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.22.0] — 2026-08-03
+
+**Program-continuity ledger + test-rigor gates (Phase 3, contract 7a).** A multi-build program can now track its own phases in a durable, tamper-evident ledger, and two new test-rigor gates prove that a build's tests actually bite. All five surfaces are **byte-inert (N/A-pass) until a build opts in**, so legacy builds are unaffected.
+
+- **Program ledger.** `program-init` / `program-ledger` / `program-next` / `program-advance` manage `.claude/builds/PROGRAM.md` (a gitignored, per-repo ledger of a program's phases). `program-advance` marks a phase shipped and moves the `current:` pointer, but only behind a **real-tag + tag→build-binding guard**: the phase's recorded tag must be a REAL git tag (rejects `HEAD`/a branch/a bare SHA) whose committed `plugin.json` version equals the tag with its leading `v` stripped, must not be borrowed from another shipped row, and — when the build dir is present — must also pass `lifecycle-audit SHIPPED`. The guard runs entirely OUTSIDE the ledger lock (never leaks the mutex), and the ledger is byte-unchanged unless the whole guard passes.
+- **Staleness + structural cross-check.** `program-ledger` FLAGS a `status=shipped` row whose tag is missing/forged/stale, a tag reused across shipped rows, and structural breaks (duplicate slug · `current:` ≠ first-non-shipped · >1 in-flight · declared phase total ≠ actual row count) — so a lying ledger by any vector is caught, fail-closed.
+- **Executable mutation gate.** `mutation-check` RUNS each `mutation:` recipe from a build's receipts.md in an ephemeral sandbox: red must PASS on a pristine copy (control) then FAIL after the break (mutant killed). A decorative recipe (red stays green) or a broken control red FAILS; a live-file cksum backstop DETECTS (fail-closed) any break that escapes the sandbox. The live tree is never edited.
+- **Red-green evidence.** `redgreen-check` requires a build that adds a test (`adds-test: yes`) to carry a real, non-placeholder `red-green:` attestation (the failing test + why it failed first) — accepting real vocabulary, rejecting only empty/placeholder, with the substance re-challenged at review.
+- **Dogfood.** The `compass-3-phase` program ledger is seeded (Phase-1 `v0.15.4`, Phase-2 `v0.21.0` shipped, 7a in-flight), and `go`/`resume` surface the next phase.
+
 ## [0.21.0] — 2026-08-03
 
 **Data, migration & compliance safety — the consolidated finisher (Phase 2, contract 6).** The last cluster of audit gaps closed as durable, fixture-proven Compass gates, so a schema-changing or data-touching build can no longer reach SHIPPED with these risks unchecked. Nine audit items, each **fail-closed on a declared surface** and **byte-inert (N/A-pass) off it**, shipped in four committed waves.

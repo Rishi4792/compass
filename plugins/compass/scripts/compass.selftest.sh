@@ -922,7 +922,7 @@ RC="$HERE/compass.recon.sh"
 mkstub() { # <file> <tail-line> [names]
   { echo '#!/bin/sh'; [ -n "${3:-}" ] && printf 'echo "%s"\n' "$3"; printf 'echo "%s"\n' "$2"; } > "$1"; chmod +x "$1"
 }
-NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET"
+NAMES12="INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN"
 ST_OK="$SB/st-ok.sh"; mkstub "$ST_OK" "selftest: 406 passed, 0 failed" "$NAMES12"
 SM_OK="$SB/sm-ok.sh"; mkstub "$SM_OK" "──────── 222 passed, 0 failed ────────"
 COMPASS_RECON_SELFTEST_CMD="$ST_OK" COMPASS_RECON_SMOKE_CMD="$SM_OK" bash "$RC" >/dev/null 2>&1
@@ -1544,6 +1544,113 @@ d="$spr/ec-nodiffs"; mkdir -p "$d"; printf 'schema-touching: yes\nmigration-phas
 bash "$SH" expand-contract-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M2: expand-contract dry-run 'prod-shaped … no diffs' → PASS (clean-run 'no diffs' is not a fake dry-run)"
 d="$spr/bf-counts"; mkdir -p "$d"; printf 'backfill: yes\nbackfill-recon: row counts match, checksums equal\n' > "$d/contract.md"
 bash "$SH" backfill-recon-gate "$d" >/dev/null 2>&1; chk "$?" "0" "RB-R2-M3: backfill-recon 'row counts match, checksums equal' (plural) → PASS"
+
+# ── INV-PROGRAM-LEDGER / -ADVANCE-GUARD / -NEXT / -STALE (v0.22.0 Phase-3 7a): program ledger + real-tag guard ──
+echo "── INV-PROGRAM-* (v0.22.0): program-continuity ledger + real-tag anti-staleness guard ──"
+PGDOT=$'\xc2\xb7'
+PG="$SB/pgrepo"; mkdir -p "$PG/.claude/builds"
+( cd "$PG" && git init -q && git config user.email t@t && git config user.name t \
+  && git config commit.gpgsign false && git config tag.gpgSign false \
+  && mkdir -p plugins/compass/.claude-plugin \
+  && printf '{ "version": "0.22.0" }\n' > plugins/compass/.claude-plugin/plugin.json \
+  && git add -A && git commit -qm c22 && git tag -a v0.22.0 -m r22 \
+  && printf '{ "version": "0.19.0" }\n' > plugins/compass/.claude-plugin/plugin.json \
+  && git add -A && git commit -qm c19 && git tag -a v0.19.0 -m r19 && git tag -a v0.99.0 -m rbad ) >/dev/null 2>&1
+PGL="$PG/.claude/builds/PROGRAM.md"
+pg() { ( cd "$PG" && bash "$SH" "$@" ); }
+pgseed() { { printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: selftest\n'; printf 'current: p2\n'
+    printf 'phase 1/3 %s p1 %s status=shipped %s v0.19.0\n' "$PGDOT" "$PGDOT" "$PGDOT"
+    printf 'phase 2/3 %s p2 %s status=in-flight\n' "$PGDOT" "$PGDOT"
+    printf 'phase 3/3 %s p3 %s status=planned\n' "$PGDOT" "$PGDOT"; } > "$PGL"; }
+chk "$( ( cd "$PG" && git tag -l v0.22.0 v0.19.0 v0.99.0 | tr '\n' ' ' | sed 's/ $//' ) )" "v0.19.0 v0.22.0 v0.99.0" "INV-PROGRAM-*: hermetic repo carries the real annotated release tags"
+# INV-PROGRAM-NEXT
+pgseed; chk "$(pg program-next prog 2>/dev/null)" "p2" "INV-PROGRAM-NEXT: first non-shipped slug is p2"
+{ printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: s\n'; printf 'current: \n'
+  printf 'phase 1/2 %s p1 %s status=shipped %s v0.19.0\n' "$PGDOT" "$PGDOT" "$PGDOT"
+  printf 'phase 2/2 %s p2 %s status=shipped %s v0.22.0\n' "$PGDOT" "$PGDOT" "$PGDOT"; } > "$PGL"
+chk "$(pg program-next prog 2>/dev/null)" "COMPLETE" "INV-PROGRAM-NEXT: all-shipped ledger → COMPLETE"
+rm -f "$PGL"; pg program-next prog >/dev/null 2>&1; chk "$?" "1" "INV-PROGRAM-NEXT: no ledger → exit non-zero (go/resume fall back)"
+# INV-PROGRAM-LEDGER — advance marks shipped + advances current; double-advance is idempotent
+pgseed; pg program-advance prog p2 v0.22.0 >/dev/null 2>&1; chk "$?" "0" "INV-PROGRAM-LEDGER: advance p2 with a real bound tag → exit 0"
+chk "$(grep -cE '^phase 2/3 .* status=shipped .* v0\.22\.0$' "$PGL")" "1" "INV-PROGRAM-LEDGER: p2 row rewritten status=shipped v0.22.0"
+chk "$(sed -n 's/^current: //p' "$PGL")" "p3" "INV-PROGRAM-LEDGER: current advanced to the next unshipped (p3)"
+PGCK="$(cksum "$PGL")"; pg program-advance prog p2 v0.22.0 >/dev/null 2>&1; chk "$?" "0" "INV-PROGRAM-LEDGER: re-advance an already-shipped row → idempotent exit 0"
+chk "$(cksum "$PGL")" "$PGCK" "INV-PROGRAM-LEDGER: double-advance leaves the ledger cksum unchanged (idempotent M14)"
+# INV-PROGRAM-ADVANCE-GUARD — forged/unbound/borrowed refs rejected with the ledger byte-unchanged
+guard_reject() { pgseed; local c0; c0="$(cksum "$PGL")"
+  pg program-advance prog p2 "$1" >/dev/null 2>&1; chk "$?" "1" "INV-PROGRAM-ADVANCE-GUARD: advance p2 with $2 → reject"
+  chk "$(cksum "$PGL")" "$c0" "INV-PROGRAM-ADVANCE-GUARD: ledger byte-unchanged after $2 reject"; }
+guard_reject HEAD "HEAD (resolves but is not a real tag)"
+guard_reject not-a-real-tag-zzz "a bogus literal"
+guard_reject v0.99.0 "a real tag whose committed version != \${tag#v}"
+guard_reject v0.19.0 "a real tag already on another shipped row (borrowed)"
+# R1-F2: a regex-metachar slug must be matched as a LITERAL string, never used as a sed pattern.
+pgseed; F2CK="$(cksum "$PGL")"
+pg program-advance prog '.*' v0.22.0 >/dev/null 2>&1; chk "$?" "1" "INV-PROGRAM-ADVANCE-GUARD: a regex-metachar slug '.*' matching no real row → reject (R1-F2)"
+chk "$(grep -c 'status=shipped' "$PGL")" "1" "INV-PROGRAM-ADVANCE-GUARD: '.*' did NOT mark extra rows shipped (only the pre-shipped p1) (R1-F2)"
+chk "$(cksum "$PGL")" "$F2CK" "INV-PROGRAM-ADVANCE-GUARD: ledger byte-unchanged after the '.*' slug reject (R1-F2)"
+{ printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: s\n'; printf 'current: .*\n'
+  printf 'phase 1/2 %s .* %s status=in-flight\n' "$PGDOT" "$PGDOT"
+  printf 'phase 2/2 %s beta %s status=planned\n' "$PGDOT" "$PGDOT"; } > "$PGL"
+pg program-advance prog '.*' v0.22.0 >/dev/null 2>&1; chk "$?" "0" "INV-PROGRAM-LEDGER: a row whose slug is literally '.*' advances EXACTLY that row (R1-F2)"
+chk "$(grep -c 'status=shipped' "$PGL")" "1" "INV-PROGRAM-LEDGER: exactly ONE row shipped (the literal '.*'), never all rows (R1-F2)"
+# INV-PROGRAM-STALE — program-ledger FLAGS forged tags + structural violations; a clean ledger passes
+pgseed; pg program-ledger prog >/dev/null 2>&1; chk "$?" "0" "INV-PROGRAM-STALE: a clean ledger (real bound tags + valid structure) → exit 0"
+{ printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: s\n'; printf 'current: p2\n'
+  printf 'phase 1/3 %s p1 %s status=shipped %s HEAD\n' "$PGDOT" "$PGDOT" "$PGDOT"
+  printf 'phase 2/3 %s p2 %s status=in-flight\n' "$PGDOT" "$PGDOT"
+  printf 'phase 3/3 %s p3 %s status=planned\n' "$PGDOT" "$PGDOT"; } > "$PGL"
+pg program-ledger prog >/dev/null 2>&1; chk "$?" "1" "INV-PROGRAM-STALE: a forged status=shipped HEAD row → FLAG"
+PGFX="$HERE/fixtures/program-ledger/structural"
+for fx in dup-slug bad-current gt1-inflight bad-kn shipped-no-tag shipped-bogus-tag kn-inconsistent phase-out-of-order; do
+  cp "$PGFX/$fx.md" "$PGL"; pg program-ledger prog >/dev/null 2>&1
+  chk "$?" "1" "INV-PROGRAM-STALE: structural fixture '$fx' → FLAG"
+done
+
+# ── INV-MUTATION-EXEC / -RESTORE (v0.22.0): executable mutation gate — control-green→mutant-red, sandbox-confined ──
+echo "── INV-MUTATION-EXEC / -RESTORE (v0.22.0): executable mutation gate ──"
+MDOT=$'\xc2\xb7'
+MB="$SB/mbrepo"; MREL="plugins/compass/scripts/fixtures/mutation/real-tag-guard.sh"
+mkdir -p "$MB/$(dirname "$MREL")"
+cp "$HERE/fixtures/mutation/real-tag-guard.sh" "$MB/$MREL"
+printf '#!/usr/bin/env bash\n# DECOY cosmetic line\nexit 0\n' > "$MB/plugins/compass/scripts/fixtures/mutation/deco.sh"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$MB/plugins/compass/scripts/fixtures/mutation/brok.sh"
+( cd "$MB" && git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false && git add -A && git commit -qm m ) >/dev/null 2>&1
+mb() { ( cd "$MB" && bash "$SH" mutation-check "$1" ); }
+mkrec() { mkdir -p "$MB/$1"; printf 'mutation: %s\n' "$2" > "$MB/$1/receipts.md"; }
+# INV-MUTATION-EXEC
+mkdir -p "$MB/mc-na"; MOUT="$( mb mc-na 2>&1 )"; chk "$?" "0" "INV-MUTATION-EXEC: no receipts.md → N/A exit 0 (guard-first, INV-BC)"; chk "$MOUT" "" "INV-MUTATION-EXEC: N/A produces no output"
+mkdir -p "$MB/mc-norec"; printf '# r\n- [x] x\n' > "$MB/mc-norec/receipts.md"; mb mc-norec >/dev/null 2>&1; chk "$?" "0" "INV-MUTATION-EXEC: receipts.md with no mutation: recipe → N/A exit 0"
+mkrec mc-bite "INV-MUTATION-EXEC ${MDOT} file=$MREL ${MDOT} break=sed -i.bak '/GUARD:/d' {} ${MDOT} red=bash {}"
+MLIVE="$(cksum "$MB/$MREL")"; mb mc-bite >/dev/null 2>&1; chk "$?" "0" "INV-MUTATION-EXEC: biting recipe (control-green → mutant-red) → exit 0"
+chk "$(cksum "$MB/$MREL")" "$MLIVE" "INV-MUTATION-RESTORE: by-construction — a {}-break leaves the LIVE tree file byte-identical"
+mkrec mc-deco "INV-MUTATION-EXEC ${MDOT} file=plugins/compass/scripts/fixtures/mutation/deco.sh ${MDOT} break=sed -i.bak '/DECOY/d' {} ${MDOT} red=bash {}"
+mb mc-deco >/dev/null 2>&1; chk "$?" "1" "INV-MUTATION-EXEC: decorative recipe (red stays green after break) → exit non-zero"
+mkrec mc-brok "INV-MUTATION-EXEC ${MDOT} file=plugins/compass/scripts/fixtures/mutation/brok.sh ${MDOT} break=sed -i.bak '/never/d' {} ${MDOT} red=bash {}"
+mb mc-brok >/dev/null 2>&1; chk "$?" "1" "INV-MUTATION-EXEC: red broken on the PRISTINE copy → exit non-zero (no false PASS)"
+mkrec mc-paren "INV-MUTATION-EXEC ${MDOT} file=$MREL ${MDOT} break=sed -i.bak '/GUARD:/d' {} ${MDOT} red=bash -c '( bash {} )'"
+mb mc-paren >/dev/null 2>&1; chk "$?" "0" "INV-MUTATION-EXEC: red with a literal ( in an eval → parses + bites (quoting coverage)"
+# INV-MUTATION-RESTORE fail-closed backstop
+MABS="$MB/$MREL"
+mkrec mc-esc "INV-MUTATION-RESTORE ${MDOT} file=$MREL ${MDOT} break=sh -c 'printf \"#esc\\n\" >> $MABS' ${MDOT} red=bash {}"
+MERR="$( mb mc-esc 2>&1 )"; chk "$?" "1" "INV-MUTATION-RESTORE: an absolute-path break that escapes the sandbox → fail-closed die"
+chk "$(printf '%s' "$MERR" | grep -c 'escaped the sandbox')" "1" "INV-MUTATION-RESTORE: fail-closed detection message names the escaped-sandbox breach"
+
+# ── INV-REDGREEN (v0.22.0): honor-level RED-first evidence — accept real vocab, reject empty/placeholder ──
+echo "── INV-REDGREEN (v0.22.0): red-green RED-evidence gate ──"
+RGFX="$HERE/fixtures/redgreen"
+bash "$SH" redgreen-check "$RGFX/real"               >/dev/null 2>&1; chk "$?" "0" "INV-REDGREEN: adds-test:yes + a REAL red-green attestation → PASS"
+bash "$SH" redgreen-check "$RGFX/empty"              >/dev/null 2>&1; chk "$?" "1" "INV-REDGREEN: adds-test:yes + EMPTY red-green → FLAG"
+bash "$SH" redgreen-check "$RGFX/placeholder"        >/dev/null 2>&1; chk "$?" "1" "INV-REDGREEN: adds-test:yes + placeholder (TODO) red-green → FLAG"
+bash "$SH" redgreen-check "$RGFX/na"                 >/dev/null 2>&1; chk "$?" "0" "INV-REDGREEN: adds-test:no → N/A-pass (a real N/A reason is fine)"
+bash "$SH" redgreen-check "$RGFX/absent"             >/dev/null 2>&1; chk "$?" "0" "INV-REDGREEN: no adds-test field → N/A-pass (byte-inert, INV-BC)"
+bash "$SH" redgreen-check "$RGFX/decorative-present" >/dev/null 2>&1; chk "$?" "0" "INV-REDGREEN: adds-test:yes + present real-vocab value → PASS at the honor gate (review re-challenges substance)"
+RGNA="$SB/rg-nodir"; mkdir -p "$RGNA"; bash "$SH" redgreen-check "$RGNA" >/dev/null 2>&1; chk "$?" "0" "INV-REDGREEN: no receipts.md → N/A exit 0 (guard-first, INV-BC)"
+# R1-F3: an unreadable receipts.md must not crash under set -e + pipefail (guard the read, mirror mutation-check)
+RGRO="$SB/rg-unreadable"; mkdir -p "$RGRO"; printf 'adds-test: no\n' > "$RGRO/receipts.md"; chmod 000 "$RGRO/receipts.md"
+RGERR="$(bash "$SH" redgreen-check "$RGRO" 2>&1)"; RGRC=$?; chmod 644 "$RGRO/receipts.md"
+chk "$RGRC" "0" "INV-REDGREEN: an unreadable receipts.md → exit 0 (guard-safe, no set-e crash — R1-F3)"
+chk "$(printf '%s' "$RGERR" | grep -c 'Permission denied')" "0" "INV-REDGREEN: no stderr leak on an unreadable receipts.md (R1-F3)"
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"

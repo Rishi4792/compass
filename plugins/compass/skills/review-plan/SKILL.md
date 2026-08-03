@@ -25,7 +25,7 @@ Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `
 Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped requirement = CRITICAL. **Every INVARIANT → a NON-deferred bound-asserting check** (missing/vague/deferred = CRITICAL).
 
 ## Streams — fan out as 6 agents (each emits ONE ledger row per check it covers; coverage = the checks, not the agent count)
-- **[A] Spec coverage:** traceability (every requirement → step) · INVARIANT-assertion coverage (each → a non-deferred exact-bound check) · test plan (deterministic tests incl. reconciliation, web tokens + a11y, idempotency).
+- **[A] Spec coverage:** traceability (every requirement → step) · INVARIANT-assertion coverage (each → a non-deferred exact-bound check) · test plan (deterministic tests incl. reconciliation, web tokens + a11y, idempotency). · **red-green plan (v0.22.0, INV-REDGREEN): a build that adds a test must plan a RED-first evidence step (the failing test + WHY it fails before the fix) — a plan that only asserts "tests pass" is a finding (re-challenged again at review-build).**
 <!-- EDGERACE:START -->
 - **Boundary/edge + concurrency/TOCTOU method (F-EDGERACE):** run for every build that handles numeric/temporal/index input or a read-modify-write — byte-inert (**N/A**) when the build has **no boundary or read-modify-write surface**:
   1. **Boundary/edge checklist** — for each numeric/temporal/index input on a reachable path, enumerate: null · empty · zero · one · max · negative · **off-by-one** · unicode · **timezone**+DST · month/year rollover. Each unhandled boundary on a reachable path is a finding.

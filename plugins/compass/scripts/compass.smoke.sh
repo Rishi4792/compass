@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -593,6 +593,54 @@ chk "$(grep -c 'abort-check <slug>' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "
 ( bash "$SH" bake-gate "$FXP/bake/numeric-recon-prose" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-C1: numeric bound + 'reconciled' prose stays NUMERIC → non-zero"
 ( bash "$SH" canary-analysis "$FXP/canary/self-computed-ws" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-C2: gold≡slice modulo whitespace is self-computed → non-zero"
 ( bash "$SH" ship-cutover-receipt-match "$FXP/cutover-receipt/deploy-prose-outofscope" >/dev/null 2>&1 ); chk "$?" "1" "v0.16 RB-M2: 'out-of-scope' in deploy prose does not disable the guard → non-zero"
+
+# ── v0.22.0: program ledger + real-tag guard, behavioral on a SPACE+PARENS path (K-17 quoting coverage) ──
+SPG="$SMOKE_BASE/pg repo"; mkdir -p "$SPG/.claude/builds"
+( cd "$SPG" && git init -q && git config user.email t@t && git config user.name t \
+  && git config commit.gpgsign false && git config tag.gpgSign false \
+  && mkdir -p plugins/compass/.claude-plugin \
+  && printf '{ "version": "0.22.0" }\n' > plugins/compass/.claude-plugin/plugin.json \
+  && git add -A && git commit -qm c && git tag -a v0.22.0 -m r ) >/dev/null 2>&1
+SPGL="$SPG/.claude/builds/PROGRAM.md"
+spgseed() { { printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: smoke\n'; printf 'current: p1\n'
+  printf 'phase 1/2 \xc2\xb7 p1 \xc2\xb7 status=in-flight\n'
+  printf 'phase 2/2 \xc2\xb7 p2 \xc2\xb7 status=planned\n'; } > "$SPGL"; }
+spgseed; ( cd "$SPG" && bash "$SH" program-advance prog p1 v0.22.0 ) >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-PROGRAM-LEDGER: advance on a space+parens path → exit 0"
+chk "$(grep -cE '^phase 1/2 .* status=shipped .* v0\.22\.0$' "$SPGL")" "1" "v0.22 INV-PROGRAM-LEDGER: row rewritten shipped on space+parens path"
+spgseed; ( cd "$SPG" && bash "$SH" program-advance prog p1 not-a-real-tag ) >/dev/null 2>&1; chk "$?" "1" "v0.22 INV-PROGRAM-ADVANCE-GUARD: bogus tag rejected on space+parens path"
+spgseed; ( cd "$SPG" && bash "$SH" program-ledger prog ) >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-PROGRAM-STALE: clean ledger renders on space+parens path"
+{ printf '# Program \xe2\x80\x94 prog\n'; printf 'vision: smoke\n'; printf 'current: p1\n'
+  printf 'phase 1/2 \xc2\xb7 p1 \xc2\xb7 status=shipped \xc2\xb7 HEAD\n'
+  printf 'phase 2/2 \xc2\xb7 p2 \xc2\xb7 status=planned\n'; } > "$SPGL"
+( cd "$SPG" && bash "$SH" program-ledger prog ) >/dev/null 2>&1; chk "$?" "1" "v0.22 INV-PROGRAM-STALE: forged shipped-HEAD row FLAGged on space+parens path"
+( cd "$SPG" && rm -f "$SPGL" && bash "$SH" program-next prog ) >/dev/null 2>&1; chk "$?" "1" "v0.22 INV-PROGRAM-NEXT: no ledger on space+parens path → clean non-zero (no set-e crash)"
+# INV-MUTATION-EXEC guard-first N/A on a space+parens path (git-independent, byte-inert)
+mkdir -p "$SPG/mc-none"; ( cd "$SPG" && bash "$SH" mutation-check mc-none ) >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-MUTATION-EXEC: no receipts.md on space+parens path → N/A exit 0 (guard-first)"
+# INV-REDGREEN behavioral (git-independent — reads receipts.md only)
+( bash "$SH" redgreen-check "$FXP/redgreen/real" )  >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-REDGREEN: adds-test:yes + real red-green value → PASS"
+( bash "$SH" redgreen-check "$FXP/redgreen/empty" ) >/dev/null 2>&1; chk "$?" "1" "v0.22 INV-REDGREEN: adds-test:yes + empty red-green → FLAG"
+( bash "$SH" redgreen-check "$FXP/redgreen/na" )    >/dev/null 2>&1; chk "$?" "0" "v0.22 INV-REDGREEN: adds-test:no → N/A-pass"
+# INV-SUITES: the v0.22.0 waves added EXACTLY 7 new INV names (64 baseline → 71). A count, not a 4th name copy.
+_c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "71" "v0.22 INV-SUITES: recon INV_NAMES rose to exactly 71 (64 baseline + 7 new v0.22.0 names)"
+# ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
+CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
+RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
+GO22="$PLUGIN_ROOT/commands/go.md"; RES22="$PLUGIN_ROOT/commands/resume.md"; RR22="$PLUGIN_ROOT/../.."
+chk "$(grep -c 'program: <program-name>' "$CSK22")" "1" "v0.22 W-D1: contract skill documents the program: header"
+chk "$(grep -c 'TEMPLATE: program-box' "$CSK22")" "1" "v0.22 W-D1: contract skill pins the program-box receipt template"
+chk "$([ "$(grep -c 'adds-test:' "$CSK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D1: contract skill documents the adds-test: field"
+chk "$([ "$(grep -c 'mutation-check' "$BSK22")" -ge 1 ] && [ "$(grep -c 'redgreen-check' "$BSK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D2: build skill runs mutation-check + redgreen-check before the receipt"
+chk "$([ "$(grep -c 'red-green:' "$BSK22")" -ge 1 ] && [ "$(grep -c 'mutation:' "$BSK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D2: build receipt records the red-green:/mutation: lines"
+chk "$(grep -c 'git rev-parse -q --verify' "$SSK22")" "1" "v0.22 W-D3: ship skill creates the release tag idempotently (tag before advance)"
+chk "$([ "$(grep -c 'program-advance' "$SSK22")" -ge 1 ] && [ "$(grep -c 'hdr_get .* program:' "$SSK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D3: ship guards program-advance on the program: header (INV-BC)"
+chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-next' "$GO22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: go.md surfaces program-ledger + program-next on the empty branch"
+chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
+chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
+chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
+chk "$(grep -c '0.22.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.22 W-D6: plugin.json bumped to 0.22.0"
+chk "$(grep -c '0.22.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.22 W-D6: marketplace.json bumped to 0.22.0"
+chk "$(grep -c '## \[0.22.0\]' "$RR22/CHANGELOG.md")" "1" "v0.22 W-D6: CHANGELOG carries the 0.22.0 entry"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

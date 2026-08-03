@@ -2453,6 +2453,319 @@ cmd___match() { # <helper-name>  (candidate on stdin)
   "$h"
 }
 
+# ── program-continuity ledger (v0.22.0 · contract 7a) ────────────────────────
+# PROGRAM.md (gitignored, one per repo, hand-editable local state) grammar:
+#   # Program — <name>
+#   vision: <text>
+#   current: <slug>
+#   phase <K>/<N> · <slug> · status=<planned|in-flight|shipped>[ · <tag>]
+# The "really shipped?" signal is a REAL release tag bound to the built version — NEVER the
+# hand-editable status line (review-plan RP1-C1). All reads are guard-first + set-e-safe (INV-BC).
+_program_file() { printf '%s/PROGRAM.md' "$(state_root)"; }
+_program_name() { [ -f "${1:-}" ] && sed -n '1s/^# Program — //p' "$1" 2>/dev/null | sed 's/[[:space:]]*$//' || true; }
+_program_rows() { [ -f "${1:-}" ] && grep -E '^phase [0-9]+/[0-9]+ · ' "$1" 2>/dev/null || true; }
+_row_slug()   { printf '%s' "$1" | sed -E 's/^phase [0-9]+\/[0-9]+ · ([^ ·]+) · .*/\1/'; }
+_row_status() { printf '%s' "$1" | sed -nE 's/.*· status=([a-z-]+).*/\1/p'; }
+_row_tag()    { printf '%s' "$1" | sed -nE 's/.*· status=[a-z-]+ · (.+)$/\1/p'; }
+_program_current() { [ -f "${1:-}" ] && sed -nE 's/^current:[[:space:]]*(.*)$/\1/p' "$1" 2>/dev/null | head -n1 | sed 's/[[:space:]]*$//' || true; }
+_program_first_unshipped() { # <file>  → prints first non-shipped slug (empty if all shipped)
+  local r st
+  while IFS= read -r r; do [ -n "$r" ] || continue
+    st="$(_row_status "$r")"; [ "$st" = shipped ] && continue
+    _row_slug "$r"; return 0
+  done < <(_program_rows "${1:-}"); return 0
+}
+# _tag_is_real_and_bound <tag>: exit 0 iff <tag> is a REAL tag (rejects HEAD/branch/SHA) whose
+# committed plugin.json version == ${tag#v} (the tag→build binding). FAIL-CLOSED on any git error.
+_tag_is_real_and_bound() { # <tag>
+  local tag="${1:-}"; [ -n "$tag" ] || return 1
+  git rev-parse --git-dir >/dev/null 2>&1 || return 1
+  [ -n "$(git tag -l "$tag" 2>/dev/null)" ] || return 1
+  git rev-parse --verify -q "refs/tags/${tag}^{commit}" >/dev/null 2>&1 || return 1
+  local ver
+  ver="$(git show "${tag}:plugins/compass/.claude-plugin/plugin.json" 2>/dev/null \
+        | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1)"
+  [ -n "$ver" ] && [ "$ver" = "${tag#v}" ]
+}
+
+cmd_program_init() { # <name>
+  local name="${1:-}"; [ -n "$name" ] || die "program-init: usage: program-init <name>"
+  local f; f="$(_program_file)"
+  if [ -f "$f" ]; then
+    local existing; existing="$(_program_name "$f")"
+    [ "$existing" = "$name" ] || die "program-init: PROGRAM.md already exists for program '$existing' (one per repo)."
+    ok "program-init: '$name' already initialized (idempotent no-op)."; return 0
+  fi
+  mkdir -p "$(dirname "$f")"
+  with_lock program-ledger _program_write "$f" "$(printf '# Program — %s\nvision: (set the program vision)\ncurrent: \n' "$name")"
+  ok "program-init: created $(_program_file) for program '$name'."
+}
+# _program_write <file> <content>  — the only writer; runs inside with_lock; RETURNs, never die()s (M12/BUG-3).
+_program_write() { printf '%s\n' "$2" | atomic_write "$1"; return 0; }
+
+cmd_program_next() { # <name>  → prints the first non-shipped slug (exit 0); "COMPLETE" if all shipped; die if no/mismatched ledger
+  local name="${1:-}"; [ -n "$name" ] || die "program-next: usage: program-next <name>"
+  local f; f="$(_program_file)"
+  [ -f "$f" ] || die "program-next: no program ledger (run program-init)."
+  local ename; ename="$(_program_name "$f")"
+  [ "$ename" = "$name" ] || die "program-next: ledger is for '$ename', not '$name'."
+  local nxt; nxt="$(_program_first_unshipped "$f")"
+  if [ -n "$nxt" ]; then printf '%s\n' "$nxt"; else printf 'COMPLETE\n'; fi
+  return 0
+}
+
+cmd_program_ledger() { # <name>  — render + cross-check (real-tag+binding staleness + structural invariants, M13). exit≠0 + WARN on any violation.
+  local name="${1:-}"; [ -n "$name" ] || die "program-ledger: usage: program-ledger <name>"
+  local f; f="$(_program_file)"
+  [ -f "$f" ] || die "program-ledger: no program ledger (run program-init)."
+  local ename; ename="$(_program_name "$f")"
+  [ "$ename" = "$name" ] || die "program-ledger: ledger is for '$ename', not '$name'."
+  git rev-parse --git-dir >/dev/null 2>&1 || { echo "COMPASS-LEDGER: FLAG — not in a git repo, cannot verify tags (fail-closed)." >&2; return 1; }
+  local flags=0 seen_slugs="" seen_tags="" inflight=0 rows_n=0 row slug status tag kn k expn=""
+  # render header
+  sed -n '1,3p' "$f"
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    rows_n=$((rows_n+1))
+    slug="$(_row_slug "$row")"; status="$(_row_status "$row")"; tag="$(_row_tag "$row")"
+    # R1-F1 fix: validate EVERY row's K and N, not just the last row's denominator — a hand-edited
+    # ledger whose rows disagree on the total (or skip a phase) previously rendered clean.
+    k="$(printf '%s' "$row" | sed -E 's#^phase ([0-9]+)/[0-9]+ · .*#\1#')"
+    kn="$(printf '%s' "$row" | sed -E 's#^phase [0-9]+/([0-9]+) · .*#\1#')"
+    [ "$rows_n" = 1 ] && expn="$kn"    # the FIRST row pins the program's declared total N
+    [ "$kn" != "$expn" ] && { echo "COMPASS-LEDGER: FLAG — row '$slug' declares total /$kn but the program total is /$expn (rows disagree)." >&2; flags=$((flags+1)); }
+    [ "$k" != "$rows_n" ] && { echo "COMPASS-LEDGER: FLAG — row '$slug' is phase $k but appears at position $rows_n (out of order / gap)." >&2; flags=$((flags+1)); }
+    printf '  %s\n' "$row"
+    # dup-slug (M13)
+    printf '%s\n' "$seen_slugs" | grep -qxF "$slug" && { echo "COMPASS-LEDGER: FLAG — duplicate slug '$slug'." >&2; flags=$((flags+1)); }
+    seen_slugs="$seen_slugs
+$slug"
+    case "$status" in
+      shipped)
+        if [ -z "$tag" ]; then echo "COMPASS-LEDGER: FLAG — shipped row '$slug' has no tag (fail-closed)." >&2; flags=$((flags+1));
+        elif ! _tag_is_real_and_bound "$tag"; then echo "COMPASS-LEDGER: FLAG — shipped row '$slug' tag '$tag' is not a real bound release tag (forged/stale)." >&2; flags=$((flags+1));
+        else
+          printf '%s\n' "$seen_tags" | grep -qxF "$tag" && { echo "COMPASS-LEDGER: FLAG — tag '$tag' reused across shipped rows (borrowed tag)." >&2; flags=$((flags+1)); }
+          seen_tags="$seen_tags
+$tag"
+        fi ;;
+      in-flight) inflight=$((inflight+1)) ;;
+    esac
+  done < <(_program_rows "$f")
+  # >1 in-flight (M13)
+  [ "$inflight" -gt 1 ] && { echo "COMPASS-LEDGER: FLAG — $inflight rows are in-flight (expected ≤1)." >&2; flags=$((flags+1)); }
+  # K/N total == actual row count (M13; R1-F1: uses the first-row-pinned total, and every row's N
+  # was already checked equal to it above — so an inconsistent-denominator ledger can't pass).
+  [ -n "$expn" ] && [ "$expn" != "$rows_n" ] && { echo "COMPASS-LEDGER: FLAG — declared phase total $expn ≠ actual row count $rows_n." >&2; flags=$((flags+1)); }
+  # current: == first non-shipped (M13)
+  local cur first; cur="$(_program_current "$f")"; first="$(_program_first_unshipped "$f")"
+  [ "$cur" != "$first" ] && { echo "COMPASS-LEDGER: FLAG — current '$cur' ≠ first non-shipped '$first'." >&2; flags=$((flags+1)); }
+  [ "$flags" -eq 0 ] || { echo "COMPASS-LEDGER: $flags FLAG(s) — ledger is not trustworthy." >&2; return 1; }
+  ok "program-ledger: '$name' consistent ($rows_n rows, all shipped tags real+bound, structure valid)."
+}
+
+# program-advance <name> <slug> <tag> — mark <slug> shipped <tag> + advance current: to the next
+# unshipped. GUARD + every die() run OUTSIDE with_lock (M12/BUG-3: a die inside the lock skips the
+# RETURN-trap and leaks the mutex). Guard = (1)+(2) real tag bound to THIS build · (2b) tag not
+# already on another shipped row · (3) dir-conditional lifecycle-audit. Ledger byte-unchanged unless
+# the whole guard passes (guard precedes the only write). Idempotent: an already-shipped row = no-op.
+cmd_program_advance() { # <name> <slug> <tag>
+  local name="${1:-}" slug="${2:-}" tag="${3:-}"
+  [ -n "$name" ] && [ -n "$slug" ] && [ -n "$tag" ] || die "program-advance: usage: program-advance <name> <slug> <tag>"
+  local f; f="$(_program_file)"
+  [ -f "$f" ] || die "program-advance: no program ledger (run program-init)."
+  local ename; ename="$(_program_name "$f")"
+  [ "$ename" = "$name" ] || die "program-advance: ledger is for '$ename', not '$name'."
+
+  # locate the target row + its status; the slug MUST be a real row.
+  local r cur_status="" found=0
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [ "$(_row_slug "$r")" = "$slug" ] || continue
+    found=1; cur_status="$(_row_status "$r")"; break
+  done < <(_program_rows "$f")
+  [ "$found" = 1 ] || die "program-advance: slug '$slug' is not a row in program '$name'."
+
+  # IDEMPOTENT (M14): an already-shipped row is a no-op — a second advance leaves the ledger
+  # byte-identical (cksum equal) and current: unmoved. Short-circuit BEFORE the guard.
+  if [ "$cur_status" = shipped ]; then
+    ok "program-advance: '$slug' already shipped (idempotent no-op)."; return 0
+  fi
+
+  # ── GUARD (all OUTSIDE with_lock; each failure die()s HERE, never inside the lock — M12/BUG-3) ──
+  # (1)+(2) a REAL tag (rejects HEAD/branch/SHA) bound to THIS build (committed version == ${tag#v}).
+  _tag_is_real_and_bound "$tag" \
+    || die "program-advance: '$tag' is not a real release tag bound to this build (need a tag whose committed plugin.json version == \${tag#v})."
+  # (2b) tag-uniqueness-per-shipped-row (RP2-M2): the tag must not already sit on ANOTHER shipped row.
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [ "$(_row_status "$r")" = shipped ] || continue
+    [ "$(_row_slug "$r")" = "$slug" ] && continue
+    [ "$(_row_tag "$r")" = "$tag" ] \
+      && die "program-advance: tag '$tag' is already recorded on shipped row '$(_row_slug "$r")' (borrowed/duplicate tag)."
+  done < <(_program_rows "$f")
+  # (3) dir-conditional AND: if THIS build's dir is present, its lifecycle-audit SHIPPED must pass too.
+  #     A SUBSHELL catches lifecycle-audit's internal die() as a non-zero exit (never fatal to us).
+  local dir; dir="$(state_root)/$slug"
+  if [ -d "$dir" ]; then
+    ( cmd_lifecycle_audit "$dir" SHIPPED >/dev/null 2>&1 ) \
+      || die "program-advance: build dir '$slug' present but lifecycle-audit SHIPPED failed (chain/ship not complete)."
+  fi
+
+  # ── PASS → the ONLY write, under the lock; the locked helper RETURNs, never die()s (M12/BUG-3). ──
+  with_lock program-ledger _program_advance_locked "$f" "$slug" "$tag" \
+    || die "program-advance: ledger write failed (no change applied)."
+  ok "program-advance: '$slug' → shipped $tag; current advanced to the next unshipped."
+}
+
+# _program_advance_locked <file> <slug> <tag> — pure read-modify-write, runs INSIDE with_lock;
+# RETURNs non-zero on any internal error and NEVER die()s (a die here skips with_lock's RETURN-trap
+# and leaks the mutex — BUG-3). Mirrors _budget_check_locked / _program_write.
+_program_advance_locked() { # <file> <slug> <tag>
+  local f="$1" slug="$2" tag="$3" tmp tmp2 nxt line rewrote=0 prefix
+  tmp="$(mktemp "${f}.XXXXXX")" || return 1
+  # R1-F2 fix: rewrite the target row by EXACT-slug STRING match — never a regex built from $slug
+  # (a crafted slug like '.*' previously matched EVERY row via the sed pattern). $slug/$tag are only
+  # ever compared or printed literally, never interpolated into a pattern or eval'd.
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$rewrote" = 0 ] && printf '%s' "$line" | grep -qE '^phase [0-9]+/[0-9]+ · ' && [ "$(_row_slug "$line")" = "$slug" ]; then
+      prefix="${line%% · status=*}"                         # 'phase K/N · <slug>' — literal glob strip, no regex
+      printf '%s · status=shipped · %s\n' "$prefix" "$tag" >> "$tmp"
+      rewrote=1
+    else
+      printf '%s\n' "$line" >> "$tmp"
+    fi
+  done < "$f"
+  [ "$rewrote" = 1 ] || { rm -f "$tmp"; return 1; }          # slug not a row (guard should have caught) — no write
+  # recompute current: = first non-shipped AFTER the rewrite (empty when all shipped).
+  nxt="$(_program_first_unshipped "$tmp")"
+  tmp2="$(mktemp "${f}.XXXXXX")" || { rm -f "$tmp"; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      current:*) printf 'current: %s\n' "$nxt" >> "$tmp2" ;;
+      *)         printf '%s\n' "$line"        >> "$tmp2" ;;
+    esac
+  done < "$tmp"
+  rm -f "$tmp"
+  mv -f "$tmp2" "$f" || { rm -f "$tmp2"; return 1; }
+  return 0
+}
+
+# mutation-check <build-dir> — RUN each `mutation:` recipe from the build's receipts.md and prove
+# the gate it names actually BITES: red PASSES on a pristine copy (control) then FAILS after the
+# break (mutant killed). Everything happens in an ephemeral system-temp sandbox cd'd away from the
+# live tree; a live-file cksum backstop DETECTS (fail-closed die) any break that escaped the sandbox.
+# guard-first N/A (INV-BC): no receipts.md / no `mutation:` recipes → exit 0, no output.
+cmd_mutation_check() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] || die "mutation-check: usage: mutation-check <build-dir>"
+  [ -f "$dir/receipts.md" ] || return 0            # guard-first, BEFORE any read (set -e safe)
+  local f="$dir/receipts.md" recipes
+  recipes="$(grep '^mutation:' "$f" 2>/dev/null || true)"
+  [ -n "$recipes" ] || return 0                    # no recipes → N/A-pass
+  # RP2-M4: resolve main_root to an ABSOLUTE path NOW, while still in the git repo — NEVER call a
+  # git-dependent helper after the cd into the (non-git) sandbox inside _mutation_recipe_body.
+  local mainroot; mainroot="$(main_root)" || die "mutation-check: cannot resolve main_root."
+  local rc_all=0 line code
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ( _mutation_recipe_body "$mainroot" "$line" ); then code=0; else code=$?; fi   # per-recipe SUBSHELL → its EXIT trap cleans the sandbox (if/else = set -e exempt)
+    case "$code" in
+      0) : ;;
+      2) die "mutation-check: fail-closed — malformed recipe / missing file / the LIVE tree was touched (see message above)." ;;
+      *) rc_all=1 ;;
+    esac
+  done <<EOF
+$recipes
+EOF
+  [ "$rc_all" = 0 ] || die "mutation-check: a recipe did NOT bite (broken-control or decorative red — see above)."
+  ok "mutation-check: all recipes bite (control-green → mutant-red; live tree cksum-verified untouched)."
+}
+
+# _mutation_recipe_body <mainroot> <recipe-line> — MUST be called inside a ( ) subshell (the caller
+# does), so cd + the sandbox-cleanup EXIT trap are isolated per recipe. Exit: 0=bites · 1=did-not-bite
+# (broken-control / decorative) · 2=fail-closed fatal (malformed / missing file / LIVE tree touched).
+_mutation_recipe_body() { # <mainroot> <recipe-line>
+  local mainroot="$1" line="$2"
+  local body inv="" file="" brk="" red="" fld
+  body="$(printf '%s' "$line" | sed -E 's/^mutation:[[:space:]]*//')"
+  # fields are separated by " · " (the unusual delimiter avoids collision with command text).
+  # Split in bash via ANSI-C quoting (which DOES emit the real U+00B7 bytes) — NOT a sed \xHH
+  # escape, which sed treats literally and would fail to match the middle dot.
+  local DELIM; DELIM=$' \xc2\xb7 '
+  while IFS= read -r fld; do
+    case "$fld" in
+      file=*)  file="${fld#file=}" ;;
+      break=*) brk="${fld#break=}" ;;
+      red=*)   red="${fld#red=}" ;;
+      "")      : ;;
+      *)       [ -z "$inv" ] && inv="$fld" || : ;;   # first non key=val field = the INV-id
+    esac
+  done <<< "${body//"$DELIM"/$'\n'}"
+  [ -n "$inv" ] || inv="?"
+  { [ -n "$file" ] && [ -n "$brk" ] && [ -n "$red" ]; } \
+    || { echo "mutation-check: malformed recipe (need file= break= red=): $line" >&2; exit 2; }
+  local src="$mainroot/$file"
+  [ -f "$src" ] || { echo "mutation-check: recipe file not found: $src" >&2; exit 2; }
+  local sandbox; sandbox="$(mktemp -d)" || { echo "mutation-check: mktemp failed" >&2; exit 2; }
+  trap 'rm -rf "$sandbox"' EXIT
+  local dst="$sandbox/$file"
+  mkdir -p "$(dirname "$dst")"; cp "$src" "$dst" || { echo "mutation-check: copy failed" >&2; exit 2; }
+  local live_ck; live_ck="$(cksum "$src")"
+  local qdst; qdst="$(printf '%q' "$dst")"   # shell-quote the {} substitution (sandbox is space-free system temp)
+  local brk_cmd red_cmd                       # replace every literal {} with the quoted copy path (bash expansion — no sed-delimiter clash with command text)
+  brk_cmd="${brk//\{\}/$qdst}"
+  red_cmd="${red//\{\}/$qdst}"
+  cd "$sandbox" || { echo "mutation-check: cannot cd sandbox" >&2; exit 2; }
+  local control_rc mutant_rc
+  # if/then/else captures the exit code WITHOUT tripping set -e (the mutant red is EXPECTED to fail).
+  if eval "$red_cmd" >/dev/null 2>&1; then control_rc=0; else control_rc=$?; fi   # (control) red on the PRISTINE copy
+  eval "$brk_cmd" >/dev/null 2>&1 || true                                        # apply the break to the copy
+  if eval "$red_cmd" >/dev/null 2>&1; then mutant_rc=0; else mutant_rc=$?; fi     # (mutant) red after the break
+  # (backstop) ALWAYS re-cksum the LIVE file — a break that escaped the sandbox is DETECTED and dies
+  # fail-closed, TAKING PRECEDENCE over the bite verdict (RP2-M3 / N3: detect-and-die, not restore).
+  if [ "$(cksum "$src")" != "$live_ck" ]; then
+    echo "mutation-check: [$inv] the LIVE tree file changed during the recipe ($src) — break escaped the sandbox (fail-closed detection)." >&2
+    exit 2
+  fi
+  [ "$control_rc" = 0 ] || { echo "mutation-check: [$inv] red FAILS on the PRISTINE copy (broken/decorative control) — $file" >&2; exit 1; }
+  [ "$mutant_rc" != 0 ] || { echo "mutation-check: [$inv] red still PASSES after the break (decorative — mutant not killed) — $file" >&2; exit 1; }
+  echo "mutation-check: [$inv] bites (control-green → mutant-red; live tree cksum-verified untouched) — $file"
+  exit 0
+}
+
+# redgreen-check <build-dir> — honor-level RED-first-evidence gate (INV-REDGREEN). A build that adds
+# a test (adds-test: yes) must carry a REAL red-green: attestation (the failing test + why it failed
+# before the fix). Guard-first N/A (INV-BC): no receipts.md → exit 0, no output. adds-test absent/no →
+# N/A. Per the free-text-gate lesson [[gate-freetext-softpass-lesson]]: the INV name is DECOUPLED from
+# the grepped literal, real vocabulary is ACCEPTED, only empty/placeholder is rejected (_attest_real),
+# and the SUBSTANCE is re-challenged at the review stage (W-D5) — not soft-passed here, not ground on.
+cmd_redgreen_check() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] || die "redgreen-check: usage: redgreen-check <build-dir>"
+  [ -f "$dir/receipts.md" ] || return 0            # guard-first, BEFORE any read (set -e safe)
+  local f="$dir/receipts.md"
+  # adds-test: fail-SAFE union — a new-test build is one where ANY anchored adds-test line reads yes
+  # (a stale `no` stub above a real `yes` cannot hide it). absent / all-no → N/A-pass (byte-inert).
+  local at_vals adds=no
+  # anchor tolerates an optional list marker + a receipt checkbox: matches `adds-test: yes`,
+  # `- adds-test: yes`, AND the receipt-box form `- [x] adds-test: yes`.
+  # R1-F3 fix: guard the read (an unreadable receipts.md must not crash under set -e + pipefail — mirror mutation-check).
+  at_vals="$( { sed -nE 's/^[[:space:]]*[-*]?[[:space:]]*(\[[ xX]\])?[[:space:]]*adds-test:[[:space:]]*([A-Za-z]+).*/\2/p' "$f" 2>/dev/null || true; } | tr 'A-Z' 'a-z')"
+  printf '%s\n' "$at_vals" | grep -qx yes && adds=yes
+  [ "$adds" = yes ] || return 0
+  # adds-test: yes → at least ONE red-green line must carry a REAL (non-empty, non-placeholder) value.
+  local found=0 rgline
+  while IFS= read -r rgline; do
+    [ -n "$rgline" ] || continue
+    if _attest_real "$rgline"; then found=1; break; fi
+  done <<EOF
+$( { sed -nE 's/^[[:space:]]*[-*]?[[:space:]]*(\[[ xX]\])?[[:space:]]*red-green:[[:space:]]*(.*)$/\2/p' "$f" 2>/dev/null || true; } )
+EOF
+  [ "$found" = 1 ] || die "redgreen-check: adds-test: yes but no real red-green: evidence — record the RED-first proof (the failing test + why it failed before the fix; empty / 'N/A' / 'TODO' is not evidence). HARD STOP — never a soft pass. (The review stage re-challenges the substance.)"
+  ok "redgreen-check: adds-test: yes with a real red-green: attestation present (substance re-challenged at review)."
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -2531,6 +2844,12 @@ main() {
     auto-start)        cmd_auto_start "$@" ;;
     auto-spawn)        cmd_auto_spawn "$@" ;;
     can-advance)       cmd_can_advance "$@" ;;
+    program-init)      cmd_program_init "$@" ;;
+    program-ledger)    cmd_program_ledger "$@" ;;
+    program-next)      cmd_program_next "$@" ;;
+    program-advance)   cmd_program_advance "$@" ;;
+    mutation-check)    cmd_mutation_check "$@" ;;
+    redgreen-check)    cmd_redgreen_check "$@" ;;
     *) echo "compass.sh: unknown subcommand '$sub'" >&2; exit 2 ;;
   esac
 }

@@ -32,7 +32,7 @@ That's the mental model. When you're ready, this front door reads your build's s
 3. **Route** — invoke the **Skill** for the chosen stage (`compass:contract`, `compass:plan`, `compass:review-*`, `compass:build`, `compass:ship`, or `compass:resume` / `compass:start`). That stage owns its own logic and its own transition gate; **this router adds no second gate of its own.**
 
 ## Edge states (handle explicitly)
-- **No in-flight build (empty state):** the menu leads with **New build → contract**; there is nothing to resume.
+- **No in-flight build (empty state):** if `.claude/builds/PROGRAM.md` exists, FIRST run `compass.sh program-ledger <program>` to **surface any staleness/structural FLAG before trusting the ledger** (M15 — warn, don't silently offer a later phase), then `compass.sh program-next <program>`; if it yields a next phase, lead with **Continue the program → next phase (`<next-slug>`)?** (offer only — a FLAGGED ledger warns instead). Otherwise the menu leads with **New build → contract**; there is nothing to resume.
 - **Multiple in-flight builds:** list them by `slug · status` from the INDEX so the user picks which one to resume (CURRENT is only a hint and cannot disambiguate parallel builds).
 - **A chosen downstream stage whose Step-0 gate isn't satisfied** (e.g. the user picks "build" but no plan is LOCKED): route to that stage anyway — its OWN `compass.sh gate` will surface the block and offer the prior stage. The router NEVER fakes readiness or skips a gate.
 

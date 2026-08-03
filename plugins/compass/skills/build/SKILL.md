@@ -53,6 +53,7 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 - Irrecoverable mid-build failure → leave committed work **known-good + revertible**, record the cursor, surface it.
 
 ## Final receipt (when all steps checked)
+**Test-rigor gates (v0.22.0) — run BEFORE emitting the receipt:** `compass.sh mutation-check .claude/builds/<slug>` (RUNS each declared `mutation:` recipe: red green-on-pristine → red-after-break; a decorative/broken recipe → non-zero; **N/A-pass if the build declares none**) and `compass.sh redgreen-check .claude/builds/<slug>` (a build with `adds-test: yes` MUST carry a real, non-placeholder `red-green:` line; **N/A-pass if `adds-test: no`/absent**). Both are byte-inert for a build that opts out — but if you added a test or a guard, declare them.
 **EMIT RECEIPT** with real commands/outputs (a bare `[x]` with no command = auto-FAIL via `scan-receipt`):
 ```
 ## RECEIPT — build · <slug> · PASS
@@ -62,6 +63,10 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 - [x] RECONCILE: `compass.sh reconcile <actual> <gold> <tol>` → PASS   (or N/A iff contract reconciliation is N/A)
 RECON-CMD: <the exact reproducing-query command>   (verbatim, so a parallel sibling's merged-recon can re-run it on the merged tree)
 - [x] (web) token <name>: getComputedStyle → <rgb> == <hex> PASS
+- [x] test-rigor (v0.22.0): `compass.sh mutation-check .claude/builds/<slug>` → PASS + `compass.sh redgreen-check .claude/builds/<slug>` → PASS   (N/A-pass if the build declares no `mutation:`/`adds-test:`)
+adds-test: <yes|no>
+red-green: <the failing test + WHY it failed before the fix — REQUIRED when adds-test: yes; omit/`no` otherwise>
+mutation: <INV-id · file=<relpath> · break=<cmd on {}> · red=<cmd on {}>>   (0+ lines; each proven to bite by mutation-check)
 - [x] secret-scan: `compass.sh secret-scan <build-dir>` (per-build text artifacts) + `compass.sh secret-scan --commits <base>..HEAD` (committed patches) → 0 hits
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> build`.
