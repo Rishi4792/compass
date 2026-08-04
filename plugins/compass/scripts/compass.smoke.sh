@@ -784,7 +784,12 @@ V26T="$(mktemp -d)"
 node "$GENJS" "$FXB" brief-body --out "$V26T/body.html" >/dev/null 2>&1
 # INV-GEN-PARSE — hero shows the Goal not the Non-goals sentinel (region-scoped); every card populated
 _hero="$(awk '/class="ba"/{exit} {print}' "$V26T/body.html")"
-chk "$([ "$(printf '%s' "$_hero" | grep -c 'revenue')" -ge 1 ] && [ "$(printf '%s' "$_hero" | grep -c 'NONGOAL-SENTINEL')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: hero shows the Goal, not the Non-goals sentinel (region-scoped — kills the sec() substring bug)"
+_lede="$(grep 'class="lede"' "$V26T/body.html" | head -1)"
+chk "$([ "$(printf '%s' "$_lede" | grep -c 'revenue')" -ge 1 ] && [ "$(printf '%s' "$_hero" | grep -c 'NONGOAL-SENTINEL')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: the lede shows the real Goal (an empty goal reddens it) + hero carries no Non-goals sentinel"
+# exercise sec('Goal') ITSELF (a contract with NO **Goal:** header falls through to sec) — this is what bites the anchored-sec fix
+node "$GENJS" "$PLUGIN_ROOT/scripts/fixtures/brief-contract-nohdr" brief-body --out "$V26T/nohdr.html" >/dev/null 2>&1
+_hn="$(awk '/class="ba"/{exit} {print}' "$V26T/nohdr.html")"
+chk "$([ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-REAL-PP')" -ge 1 ] && [ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-DECOY-QQ')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: with no **Goal:** header, sec('Goal') resolves to the Goal section not Non-goals (the anchored-sec fix BITES — a substring sec() renders the DECOY here)"
 chk "$([ "$(grep -c '1234567' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-RECON-TIE' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-IDEMPOTENT' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-FRESH-BY-6AM' "$V26T/body.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: reconciliation literal + all 3 fixture INV names present (every card populated, not blanked by an exact-equality over-fix)"
 # INV-BRIEF-IA — the 6 regions + flow/guardrails POPULATED + deterministic
 _r=0; for cls in 'class="ba"' 'class="done"' 'class="flow"' 'class="won"' '<details'; do grep -q "$cls" "$V26T/body.html" && _r=$((_r+1)); done
