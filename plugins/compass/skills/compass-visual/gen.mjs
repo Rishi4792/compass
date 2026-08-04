@@ -573,7 +573,8 @@ function releaseCard() {
   const nowBlock = (contract.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
   const nowItems = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, '').slice(0, 140));
-  const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('');
+  const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
+    + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nowItems.length - 6} more</li>` : '');
   const facet = hdr('facets') || 'library';
   // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo
   const body = `
