@@ -3,6 +3,16 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.27.0] — 2026-08-04
+
+**The other three milestone artifacts now read like a decision, not a spec dump — matching the Brief.** v0.26 redesigned the Contract Brief to the builder's mental model; v0.27 gives the **Plan Map**, **Release Card**, and **Program Cockpit** the same treatment. Layout-only — no change to what they read or how they're delivered.
+
+- **Plan Map** — leads with the goal + a progress hero (`k/n steps · W waves`), then the steps grouped by wave.
+- **Release Card** — a prominent `vX.Y.Z` SHIPPED hero, then what changed (**NOW-scope items only** — the v0.24 no-LATER/NEVER guard is now a biting test), then a proof + rollback row.
+- **Program Cockpit** — a two-altitude timeline (program phases + contracts-per-phase) above the current build's 7-stage strip.
+
+Built + reviewed on Compass in `--auto`. review-contract caught that the test fixture wouldn't populate the views (PROGRAM.md is read from the parent dir; contract.md is mandatory) and that the NOW-only guard was unguarded; review-plan caught a fake-green trap (the shared house `<style>` already defines `.stat`/`.flow`, so tests must grep the new `class="…"` attribute, not bare tokens). New invariants **INV-VIEW-IA / INV-VIEW-DETERMINISTIC / INV-VIEW-GATES** (each view populated · byte-identical · passes anti-drift + compose), driven by a committed fixture. Suites: **selftest 546 · smoke 455→~465 · recon 101→104 pinned INV groups**; floors held (406/222). `INV-NO-LIFECYCLE-CHANGE` holds — no `compass.sh` change at all (only `gen.mjs` + tests + manifests).
+
 ## [0.26.0] — 2026-08-04
 
 **The Contract Brief is now correct, redesigned around how a builder thinks, and actually delivered — not just written to a folder.** This release closes a real "the check passed but the outcome didn't happen" gap: the milestone invariant only checked that an HTML file existed on disk, so a Brief could be garbled, never rendered, and never shown — and the gate still went green.

@@ -180,7 +180,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -647,7 +647,7 @@ _dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
 chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
 chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "101" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 101 (96 + the 5 v0.26 visual-delivery names)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "104" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 104 (101 + the 3 v0.27 view-redesign names)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -663,9 +663,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.26.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.26.0"
-chk "$(grep -c '0.26.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.26.0"
-chk "$(grep -c '## \[0.26.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.26.0 entry"
+chk "$(grep -c '0.27.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.27.0"
+chk "$(grep -c '0.27.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.27.0"
+chk "$(grep -c '## \[0.27.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.27.0 entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
@@ -777,7 +777,7 @@ chk "$_ndr" "0" "v0.25 INV-NO-DEAD-REF: no dead /compass:<removed> ref across RE
 chk "$(grep -c 'commands/start.md' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.25 INV-NO-DEAD-REF: gate.md header has no commands/start.md file-path ref"
 chk "$(grep -c 'start.md' "$PLUGIN_ROOT/commands/resume.md")" "0" "v0.25 INV-NO-DEAD-REF: resume.md has no dangling start.md ref"
 
-# ── v0.26.0: visual Brief redesign + delivery enforcement ──
+# ── v0.27.0: visual Brief redesign + delivery enforcement ──
 FXB="$PLUGIN_ROOT/scripts/fixtures/brief-contract"
 GENJS="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 V26T="$(mktemp -d)"
@@ -823,6 +823,32 @@ chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/sh.html" 2>/dev/null)" "0" "v0.26 INV
 chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/body.html")" "1" "v0.26 INV-BRIEF-SHAREABLE: the LOCAL brief keeps the full body (sentinel present locally — proves the distinction)"
 chk "$([ "$(grep -c 'S&P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && [ "$(grep -c 'S&amp;P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: a declared never-show value with an HTML metachar (S&P_score) is scrubbed in BOTH raw + escaped form (RB-v0.26 leak fix — esc()'d prose no longer slips a raw-only regex)"
 rm -rf "$V26T"
+
+# ── v0.27.0: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
+FXV="$PLUGIN_ROOT/scripts/fixtures/view-fixture"
+GENV="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
+THEMEV="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
+ADV="$PLUGIN_ROOT/skills/rk-house-style/gates/anti-drift-grep.mjs"
+COV="$PLUGIN_ROOT/skills/rk-house-style/gates/compose-check.mjs"
+V27T="$(mktemp -d)"
+node "$GENV" "$FXV/b" plan-map --out "$V27T/pm.html" >/dev/null 2>&1
+node "$GENV" "$FXV/b" release-card --out "$V27T/rc.html" >/dev/null 2>&1
+node "$GENV" "$FXV/b" program-cockpit --out "$V27T/pc.html" >/dev/null 2>&1
+# INV-VIEW-IA — the new region classes (absent from the pre-v0.27 bodies) + populated content
+chk "$([ "$(grep -c 'card vp-hero' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="vp-prog"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'steps' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="wv"' "$V27T/pm.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: plan-map has the vp-hero + vp-prog progress + ≥1 wave (mental-model IA)"
+chk "$([ "$(grep -c 'card vr-hero' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c 'v9.9.9' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c '<li>' "$V27T/rc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card has the vr-hero + version (not ?) + ≥1 changed item"
+chk "$([ "$(grep -c 'LATER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && [ "$(grep -c 'NEVER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card shows NOW items ONLY — LATER/NEVER absent (the v0.24 R2 guard, now biting)"
+chk "$([ "$(grep -c 'card vpc-tl' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'P1|P2' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'p1-a|p2-a' "$V27T/pc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: program-cockpit has the vpc-tl timeline + ≥1 phase + ≥1 contract child-row"
+mkdir -p "$V27T/eb/b"; cp "$FXV/b"/*.md "$V27T/eb/b/" 2>/dev/null; node "$GENV" "$V27T/eb/b" program-cockpit --out "$V27T/pce.html" >/dev/null 2>&1
+chk "$([ "$(grep -c 'Standalone build' "$V27T/pce.html")" -ge 1 ] && [ "$(grep -c 'This build' "$V27T/pce.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: program-cockpit no-PROGRAM.md empty state renders + the build strip still populates"
+# INV-VIEW-DETERMINISTIC — each view byte-identical across two runs
+_det=1; for v in plan-map release-card program-cockpit; do node "$GENV" "$FXV/b" $v --out "$V27T/x-$v.html" >/dev/null 2>&1; node "$GENV" "$FXV/b" $v --out "$V27T/y-$v.html" >/dev/null 2>&1; diff -q "$V27T/x-$v.html" "$V27T/y-$v.html" >/dev/null 2>&1 || _det=0; done
+chk "$_det" "1" "v0.27 INV-VIEW-DETERMINISTIC: plan-map/release-card/program-cockpit each byte-identical across two runs"
+# INV-VIEW-GATES — each redesigned view body (+ brief-body) passes anti-drift + compose
+node "$GENV" "$FXV/b" brief-body --out "$V27T/bb.html" >/dev/null 2>&1
+_g=1; for f in pm rc pc bb; do node "$ADV" "$V27T/$f.html" "$THEMEV" 2>&1 | grep -q '0 off-theme' || _g=0; node "$COV" "$V27T/$f.html" 2>&1 | grep -q 'composed' || _g=0; done
+chk "$_g" "1" "v0.27 INV-VIEW-GATES: each redesigned view body + brief-body passes anti-drift (0 off-theme) + compose-check"
+rm -rf "$V27T"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

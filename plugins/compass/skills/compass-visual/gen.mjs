@@ -477,7 +477,10 @@ const _pillCss = `
   .cv-body .st.done,.cv-body .ph.shipped,.cv-body .ct.shipped{color:var(--greenFg);background:var(--greenBg)}
   .cv-body .st.here,.cv-body .ph.here{color:var(--accent);border-color:var(--accent)}
   .cv-body .ct{margin-left:22px;border-radius:8px}
-  .cv-body .wv{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:14px 0 2px}`;
+  .cv-body .wv{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:14px 0 2px}
+  .cv-body .vp-prog{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .cv-body .vr-hero .big{font-size:24px;font-weight:800;color:var(--accent);letter-spacing:-.02em;margin-top:6px}
+  .cv-body .vr-hero .big .badge{vertical-align:middle;margin-left:8px}`;
 
 // PLAN MAP — the locked step checklist + what it touches (from plan.md). Milestone: plan-lock.
 function planMap() {
@@ -495,14 +498,19 @@ function planMap() {
   }
   const done = (plan.match(/^\s*- \[x\]/gim) || []).length;
   const total = (plan.match(/^\s*- \[[ x]\]/gim) || []).length;
+  const nWaves = (plan.match(/^##\s+Wave/gim) || []).length;
+  const goal = hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope'));
   const touches = hdr('touches') || sec('What it touches');
+  // BEAT 1 — the plan + where it stands · BEAT 2 — the steps, in order, by wave
   const body = `
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Plan Map</div>
-  <h1>${txt(title)}</h1>
-  <p class="lede">The locked plan — <b>${done}/${total}</b> steps done.</p>
-  <div class="card"><div class="kicker">Steps</div><div class="tl vert">${rows || '<em>no steps</em>'}</div></div>
-  ${touches ? `<div class="card"><div class="kicker">What it touches</div><p>${txt(touches.slice(0, 700))}</p></div>` : ''}
+  <div class="card vp-hero"><div class="kicker">The plan</div>
+    <h1>${txt(title)}</h1>${goal ? `<p class="lede">${txt(String(goal).slice(0, 400))}</p>` : ''}
+    <div class="vp-prog"><span class="badge">${done}/${total} steps</span><span class="chip">${nWaves} waves</span></div>
+  </div>
+  <div class="card"><div class="kicker">Steps — in order</div><div class="tl vert">${rows || '<em>no steps</em>'}</div></div>
+  ${touches ? `<div class="card"><div class="kicker">What it touches</div><p>${txt(String(touches).slice(0, 700))}</p></div>` : ''}
   <div class="foot">Generated from plan.md by compass-visual · a pure function of the build's state.</div>
 </div></section>`;
   return { body, extra: _pillCss };
@@ -544,7 +552,7 @@ function programCockpit() {
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Program Cockpit</div>
   <h1>${txt(pname || title)}</h1>
-  ${pname ? `<div class="card"><div class="kicker">Program — here: ${txt(cur || 'COMPLETE')}</div><div class="tl vert">${strip}</div></div>`
+  ${pname ? `<div class="card vpc-tl"><div class="kicker">Program — here: ${txt(cur || 'COMPLETE')}</div><div class="tl vert">${strip}</div></div>`
           : `<p class="lede">Standalone build — no program.</p>`}
   <div class="card"><div class="kicker">This build — ${txt(slug)}</div><div class="tl">${build}</div></div>
   <div class="foot">Generated from PROGRAM.md / receipts.md by compass-visual · a pure function of the build's state.</div>
@@ -566,13 +574,20 @@ function releaseCard() {
   const nowItems = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, '').slice(0, 140));
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('');
+  const facet = hdr('facets') || 'library';
+  // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo
   const body = `
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Release</div>
-  <h1>${txt(title)}</h1>
-  <p class="lede"><span class="badge">v${txt(ver)}</span> — shipped.</p>
-  ${goal ? `<div class="card"><div class="kicker">What shipped</div><p>${txt(String(goal).slice(0, 500))}</p></div>` : ''}
-  ${items ? `<div class="card"><div class="kicker">In this release (NOW scope)</div><ul>${items}</ul></div>` : ''}
+  <div class="card vr-hero"><div class="kicker">Shipped</div>
+    <h1>${txt(title)}</h1>
+    <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
+    ${goal ? `<p class="lede">${txt(String(goal).slice(0, 400))}</p>` : ''}
+  </div>
+  ${items ? `<div class="card"><div class="kicker">What changed — ${nowItems.length} in this release</div><ul>${items}</ul></div>` : ''}
+  <div class="card"><div class="kicker">Proof &amp; rollback</div>
+    <div class="tl"><span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length} changes</span><span class="chip">reversible — revert the release commit + tag</span></div>
+  </div>
   <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>
 </div></section>`;
   return { body, extra: _pillCss };
