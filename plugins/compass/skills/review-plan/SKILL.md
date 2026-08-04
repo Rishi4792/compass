@@ -119,6 +119,10 @@ This stage owns its own transition gate. Present it whether the stage was run st
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 
+   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
+   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
+   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
+
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,
    or just print the artifact if the user asks):

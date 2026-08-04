@@ -82,6 +82,8 @@ Record the results in the **cutover-box** below, then **`compass.sh ship-cutover
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> ship`.
 
+**v0.24.0 milestone — Release card (INV-ARTIFACT-MILESTONES; before the terminal SHIPPED write):** generate `node skills/compass-visual/gen.mjs .claude/builds/<slug> release-card --out .claude/builds/<slug>/release-card.html` (HTML mandatory, node-only; best-effort PNG via `cinematic-hero/render.sh`), record `- [x] MILESTONE: release-card render=release-card.html bytes=<n> [png=… | png=N/A — no renderer]` in the ship receipt, then run **`compass.sh milestone-gate .claude/builds/<slug> release-card`** — **non-zero → STOP** (the HTML artifact is mandatory; ship is terminal, so this standalone gate — not the forward `cmd_gate` — enforces it). At a program **phase-boundary**, likewise produce `program-cockpit` + its `MILESTONE:` line and `milestone-gate … program-cockpit`.
+
 **Then set the terminal status — by branch (NEVER write SHIPPED unconditionally):**
 - **N/A / waived path:** run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write `progress.md` = `**Status:** SHIPPED` (or `ROLLED-BACK` on a rollback). Done — no §5. (The post-ship loop box reads `waived: <reason>` or `legacy-N/A`.)
 - **REQUIRED path:** do NOT run `lifecycle-audit … SHIPPED` yet and do NOT write SHIPPED — write `progress.md` = `**Status:** post-ship (round 1/cap)` (the receipt's post-ship box reads `open (round 1/cap — §5 in progress)`), then enter §5. SHIPPED is written only at §5.6, after `loop-converged` passes AND `lifecycle-audit … SHIPPED` re-runs clean.
@@ -140,6 +142,10 @@ This stage owns its own transition gate. Present it whether the stage was run st
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
+   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
+   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
 
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,

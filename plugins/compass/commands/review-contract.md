@@ -1,5 +1,6 @@
 ---
 description: Review-1 (LIGHT) — adversarially pressure-test the CONTRACT before it locks. Namespaced entry to the compass:review-contract stage.
+tier: advanced
 ---
 
 # /compass:review-contract

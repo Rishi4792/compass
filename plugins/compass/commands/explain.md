@@ -1,5 +1,6 @@
 ---
 description: On-demand deep teaching — explains how Compass works, or walks you (or a stakeholder) through a specific build, at whatever depth you want. The "help me understand this" surface.
+tier: advanced
 ---
 
 # /compass:explain

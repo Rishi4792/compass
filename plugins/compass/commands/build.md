@@ -1,5 +1,6 @@
 ---
 description: Build-Test-Verify — execute the locked PLAN one step at a time, proof-gated. Namespaced entry to the compass:build stage.
+tier: advanced
 ---
 
 # /compass:build

@@ -1,10 +1,20 @@
 ---
 description: The Compass front door — one command that reads where your build is and asks what to do next, then routes you into the right stage (contract, plan, review, build, ship, or resume). The simplest way to use Compass.
+tier: primary
 ---
 
 # /compass:go — the front door
 
 **This is the single entry point for Compass.** You don't need to remember the stage commands — `/compass:go` reads the current state and asks you where to go, every time.
+
+<!-- WELCOME:START -->
+**Three commands are all you need:**
+- **`/compass:go`** — begin a new piece of work, or pick up exactly where you left off (this front door).
+- **`/compass:status`** — see where your work stands, any time.
+- **`/compass:resume`** — jump back in from a fresh terminal.
+
+Everything between is driven for you. (Power users: per-stage commands still exist — see the Note at the bottom.)
+<!-- WELCOME:END -->
 
 ## Welcome — how Compass works in 20 seconds
 
@@ -24,6 +34,8 @@ That's the mental model. When you're ready, this front door reads your build's s
    - `compass.sh state-root` → the `.claude/builds` dir.
    - `.claude/builds/CURRENT` → the last-active slug hint · `.claude/builds/INDEX` → every build (`slug · goal · status · facets · touches`) · the active build's `.claude/builds/<slug>/progress.md` → the authoritative status + Stage + Next.
    - `compass.sh builds` (or `active-builds`) → the in-flight (non-terminal) builds.
+
+   - **PUSH the cockpit immediately (INV-PUSH-RESUME).** As soon as an in-flight build is identified, run `compass.sh cockpit <state-root>/<slug>` and show it FIRST — the two-altitude view (program phases + contracts, if any, above the current build's stage + step k/n + next) — so a returning user (incl. a fresh terminal) sees exactly where they are with **zero further typing**, before any menu.
 
 2. **ALWAYS ask the user what to do next** — present an **AskUserQuestion** menu of the possible next steps (this command NEVER auto-advances or auto-picks). Tailor the options to the state:
    - **In-flight build(s) exist** → lead with **Resume `<slug>`** (Stage `<stage>`, Next `<next action>` from its `progress.md`), then offer starting something new.

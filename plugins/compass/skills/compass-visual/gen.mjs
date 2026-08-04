@@ -32,8 +32,8 @@ const view = argv[1];
 const shareable = argv.includes('--shareable');
 const outIdx = argv.indexOf('--out');
 const outFile = outIdx >= 0 ? argv[outIdx + 1] : null;
-if (!dir || !['brief', 'brief-body', 'cockpit'].includes(view || '')) {
-  console.error('usage: node gen.mjs <build-dir> <brief|brief-body|cockpit> [--shareable] [--out <file>]');
+if (!dir || !['brief', 'brief-body', 'cockpit', 'plan-map', 'program-cockpit', 'release-card'].includes(view || '')) {
+  console.error('usage: node gen.mjs <build-dir> <brief|brief-body|cockpit|plan-map|program-cockpit|release-card> [--shareable] [--out <file>]');
   process.exit(2);
 }
 const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : '');
@@ -403,6 +403,116 @@ function cockpit() {
   return { body, extra };
 }
 
+// ── v0.24.0 milestone views (rk-house-style bodies; deterministic — no clock/rand) ─────────────
+const _pillCss = `
+  .cv-body .tl{display:flex;flex-wrap:wrap;gap:8px}
+  .cv-body .tl.vert{flex-direction:column;align-items:flex-start}
+  .cv-body .st,.cv-body .ph,.cv-body .ct{font-size:12px;font-weight:600;color:var(--mut);padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface)}
+  .cv-body .st .g,.cv-body .ph .g,.cv-body .ct .g{font-weight:700}
+  .cv-body .st.done,.cv-body .ph.shipped,.cv-body .ct.shipped{color:var(--greenFg);background:var(--greenBg)}
+  .cv-body .st.here,.cv-body .ph.here{color:var(--accent);border-color:var(--accent)}
+  .cv-body .ct{margin-left:22px;border-radius:8px}
+  .cv-body .wv{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:14px 0 2px}`;
+
+// PLAN MAP — the locked step checklist + what it touches (from plan.md). Milestone: plan-lock.
+function planMap() {
+  const plan = read('plan.md');
+  let rows = '';
+  for (const ln of plan.split('\n')) {
+    const w = ln.match(/^##\s+(Wave[^\n]*)$/i);
+    if (w) { rows += `<div class="wv">${txt(w[1])}</div>`; continue; }
+    const s = ln.match(/^\s*-\s*\[([ x])\]\s*(.+)$/);
+    if (s) {
+      const done = s[1] === 'x';
+      const label = s[2].replace(/\*\*/g, '').replace(/`/g, '').replace(/^([0-9]+)\.\s*/, '$1. ').slice(0, 110);
+      rows += `<div class="st ${done ? 'done' : 'left'}"><span class="g">${done ? '✓' : '○'}</span> ${txt(label)}</div>`;
+    }
+  }
+  const done = (plan.match(/^\s*- \[x\]/gim) || []).length;
+  const total = (plan.match(/^\s*- \[[ x]\]/gim) || []).length;
+  const touches = hdr('touches') || sec('What it touches');
+  const body = `
+<section class="cv-body"><div class="wrap">
+  <div class="kicker">Compass · Plan Map</div>
+  <h1>${txt(title)}</h1>
+  <p class="lede">The locked plan — <b>${done}/${total}</b> steps done.</p>
+  <div class="card"><div class="kicker">Steps</div><div class="tl vert">${rows || '<em>no steps</em>'}</div></div>
+  ${touches ? `<div class="card"><div class="kicker">What it touches</div><p>${txt(touches.slice(0, 700))}</p></div>` : ''}
+  <div class="foot">Generated from plan.md by compass-visual · a pure function of the build's state.</div>
+</div></section>`;
+  return { body, extra: _pillCss };
+}
+
+// PROGRAM COCKPIT — the two-altitude view (program phases + contracts-per-phase, above the build
+// strip). The HTML twin of `compass.sh cockpit`. Reads the ledger from <build-dir>/../PROGRAM.md.
+function programCockpit() {
+  const pf = join(dir, '..', 'PROGRAM.md');
+  const pm = existsSync(pf) ? readFileSync(pf, 'utf8') : '';
+  const pname = (pm.match(/^#\s*Program\s*[—-]\s*(.+)$/m) || [, ''])[1].trim();
+  const cur = (pm.match(/^current:\s*(.+)$/m) || [, ''])[1].trim();
+  const gl = (st) => (st === 'shipped' ? '✓' : (/in-flight|in-review/.test(st) ? '◉' : '○'));
+  let strip = '';
+  if (pname) {
+    for (const ln of pm.split('\n')) {
+      const p = ln.match(/^phase (\d+)\/(\d+) · ([^ ·]+) · status=([a-z-]+)(?: · (.+))?$/);
+      if (p) {
+        const here = p[3] === cur;
+        strip += `<div class="ph ${here ? 'here' : p[4]}"><span class="g">${gl(p[4])}</span> P${p[1]} ${txt(p[3])}${p[5] ? ' (' + txt(p[5]) + ')' : ''}${here ? ' ◀ here' : ''}</div>`;
+        continue;
+      }
+      const c = ln.match(/^\s+contract:\s*([^ ·]+) · status=([a-z-]+)/);
+      if (c) strip += `<div class="ct ${c[2]}"><span class="g">${gl(c[2])}</span> ${txt(c[1])}</div>`;
+    }
+  }
+  const receipts = read('receipts.md');
+  const stages = ['contract', 'review-contract', 'plan', 'review-plan', 'build', 'review-build', 'ship'];
+  const passed = new Set();
+  // canonical receipt header `## RECEIPT — <stage> · … · PASS` (require PASS; middot after the stage)
+  // — matches what compass.sh writes, and agrees with the bash cockpit's stage_pass (review-build R1).
+  for (const m of receipts.matchAll(/RECEIPT\s+[—-]\s+([a-z-]+)\s+·[^\n]*·\s*PASS/gi)) passed.add(m[1].toLowerCase());
+  let here = stages.find((s) => !passed.has(s)) || '';
+  const build = stages.map((s) => {
+    const st = passed.has(s) ? 'done' : (s === here ? 'here' : 'left');
+    return `<div class="st ${st}"><span class="g">${st === 'done' ? '✓' : st === 'here' ? '◉' : '·'}</span> ${s}</div>`;
+  }).join('');
+  const body = `
+<section class="cv-body"><div class="wrap">
+  <div class="kicker">Compass · Program Cockpit</div>
+  <h1>${txt(pname || title)}</h1>
+  ${pname ? `<div class="card"><div class="kicker">Program — here: ${txt(cur || 'COMPLETE')}</div><div class="tl vert">${strip}</div></div>`
+          : `<p class="lede">Standalone build — no program.</p>`}
+  <div class="card"><div class="kicker">This build — ${txt(slug)}</div><div class="tl">${build}</div></div>
+  <div class="foot">Generated from PROGRAM.md / receipts.md by compass-visual · a pure function of the build's state.</div>
+</div></section>`;
+  return { body, extra: _pillCss };
+}
+
+// RELEASE CARD — what shipped (version + NOW-scope headline). Milestone: ship. Deterministic (contract.md).
+function releaseCard() {
+  // version: prefer an explicit "Ships as vX.Y.Z" anchor over the first semver in the file
+  // (which could be an older version mentioned in prose) — review-build R2 MINOR-5.
+  const ver = (contract.match(/Ships as \*{0,2}v(\d+\.\d+\.\d+)/i)
+            || contract.match(/v(\d+\.\d+\.\d+)/) || [, hdr('version') || '?'])[1];
+  // "What shipped" = the GOAL, not the H1 title line — R2 MAJOR-4 (`sec('')` returned __pre__ = title).
+  const goal = hdr('Goal') || (contract.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1] || '';
+  // "In this release" = the NOW block's numbered items ONLY — never the LATER/NEVER `- ` bullets
+  // (R2 MAJOR-3: the old fallback advertised deferred + non-goal items as shipped).
+  const nowBlock = (contract.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
+  const nowItems = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
+    .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, '').slice(0, 140));
+  const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('');
+  const body = `
+<section class="cv-body"><div class="wrap">
+  <div class="kicker">Compass · Release</div>
+  <h1>${txt(title)}</h1>
+  <p class="lede"><span class="badge">v${txt(ver)}</span> — shipped.</p>
+  ${goal ? `<div class="card"><div class="kicker">What shipped</div><p>${txt(String(goal).slice(0, 500))}</p></div>` : ''}
+  ${items ? `<div class="card"><div class="kicker">In this release (NOW scope)</div><ul>${items}</ul></div>` : ''}
+  <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>
+</div></section>`;
+  return { body, extra: _pillCss };
+}
+
 // ── full HTML page wrapper (line 1 = <!doctype html>, NEVER a COMPASS-MOCK marker) ──
 function page(styleBlocks, bodyMarkup) {
   return `<!doctype html>
@@ -582,6 +692,15 @@ if (view === 'brief-body') {
   html = page(HOUSE_CSS, briefBody());
 } else if (view === 'brief') {
   html = page(HOUSE_CSS, cover() + briefBody());
+} else if (view === 'plan-map') {
+  const c = planMap();
+  html = page(HOUSE_CSS + c.extra, c.body);
+} else if (view === 'program-cockpit') {
+  const c = programCockpit();
+  html = page(HOUSE_CSS + c.extra, c.body);
+} else if (view === 'release-card') {
+  const c = releaseCard();
+  html = page(HOUSE_CSS + c.extra, c.body);
 } else { // cockpit
   const c = cockpit();
   html = page(HOUSE_CSS + c.extra, c.body);

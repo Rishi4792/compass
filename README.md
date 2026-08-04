@@ -5,7 +5,7 @@
 An autonomous **engineering team in one plugin** for [Claude Code](https://claude.com/claude-code) — Engineering Manager, coder, QA, DevOps. You finalize one super-contract; it does the rest: **plan → code → tests → ship**, following the engineering best-practices a real team would, and it doesn't stop until the work is *proven* against your spec.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.15.4-1f6feb)
+![version](https://img.shields.io/badge/version-0.24.0-1f6feb)
 ![license](https://img.shields.io/badge/license-MIT-3fb950)
 
 Built on the architecture serious builders are converging on — an explicit **graph** of stages with hard gates as edges, and adversarial **loops** that make every output top-notch. *(That's the whole trick — [see below](#how-it-works-loops-and-graphs-with-real-edges).)*
@@ -18,6 +18,16 @@ Built on the architecture serious builders are converging on — an explicit **g
 **▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)** — the whole story in one minute.
 
 ---
+
+## Just three commands
+
+You never have to remember a pipeline. The whole tool is three commands:
+
+- **`/compass:go`** — start a new build, or pick up exactly where you left off. This is the front door; it drives everything.
+- **`/compass:status`** — see where you are, any time.
+- **`/compass:resume`** — jump back in from a fresh terminal.
+
+Progress **pushes itself** — after every stage (and on resume) Compass prints a cockpit showing the pipeline, your step, and what's next; for a multi-phase program it shows every phase and the contracts inside it, done / current / left, at a glance. (Power users: the nine per-stage commands still exist as advanced entries.)
 
 ## Meet the team
 

@@ -1,5 +1,6 @@
 ---
 description: Review-3 (FULL) — final adversarial review of the BUILT product, ending in a human sign-off. Namespaced entry to the compass:review-build stage.
+tier: advanced
 ---
 
 # /compass:review-build

@@ -1554,8 +1554,10 @@ cmd_status() { # <build-dir>
   status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
-  total="$(grep -cE '^[[:space:]]*- \[[ x]\] \*\*S' "$dir/plan.md" 2>/dev/null || echo 0)"
-  done_="$(grep -cE '^[[:space:]]*- \[x\] \*\*S' "$dir/plan.md" 2>/dev/null || echo 0)"
+  # v0.24.0 (review-plan MAJOR-2): count ANY checkbox, not only '**S…' — numbered/**W-A1 plans
+  # (v0.22/v0.23/this build) previously read 0/0. head -1 defends the grep-c "0\n0" tail.
+  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
   lastpass="$( { grep -E '^## RECEIPT —' "$dir/receipts.md" 2>/dev/null | grep -i 'PASS' | tail -1 | sed -E 's/^## RECEIPT — //'; } || true)"
   echo "── Compass status: $slug ───────────────────────────"
   echo "Status:  ${status:-unknown}"
@@ -1574,6 +1576,110 @@ cmd_status() { # <build-dir>
   fi
   [ -f "$dir/.auto-suspended" ] && echo "auto: SUSPENDED (driver)"
   echo "────────────────────────────────────────────────────"
+}
+
+# ── v0.24.0: the pushed COCKPIT — the always-on "where it stands" clarity surface ────────────
+# Pure bash (INV-ASCII-CHEAP: no render.sh/gen.mjs/chrome/headless). Prints the BUILD strip (the
+# 7-stage pipeline with ✓/◉/○ + step k/n + next) and, when the build's contract names a `program:`
+# AND PROGRAM.md exists, a two-altitude PROGRAM strip (phase K/N + per-phase contract child-rows).
+# The program strip is sourced from the GIT-FREE readers (_program_rows/_program_contract_rows/
+# _program_first_unshipped) — NEVER cmd_program_ledger (which spawns git per row → INV-PERF-ASCII).
+# All reads guard-first + set-e-safe.
+_program_contract_rows() { # <file> <phase-K>  → the indented 'contract:' child rows under phase K (git-free)
+  [ -f "${1:-}" ] || return 0
+  awk -v k="${2:-}" '
+    /^phase [0-9]+\/[0-9]+ · /{ cur=$2; sub(/\/.*/,"",cur); inphase=(cur==k) }
+    /^[[:space:]]+contract: /{ if (inphase) print }
+  ' "$1" 2>/dev/null || true
+}
+_crow_slug()   { printf '%s' "$1" | sed -E 's/^[[:space:]]+contract:[[:space:]]*([^ ·]+).*/\1/'; }
+_crow_status() { printf '%s' "$1" | sed -nE 's/.*· status=([a-z-]+).*/\1/p'; }
+_cockpit_glyph() { case "${1:-}" in shipped) printf '✓' ;; in-flight|in-review*) printf '◉' ;; *) printf '○' ;; esac; }
+
+cmd_cockpit() { # <build-dir>  — the pushed clarity surface (INV-COCKPIT/PUSH-STAGE/PUSH-RESUME)
+  local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh cockpit <build-dir>"
+  [ -d "$dir" ] || die "no such build dir: $dir"
+  local slug; slug="$(basename "$dir")"
+  local c="$dir/contract.md" p="$dir/progress.md" r="$dir/receipts.md"
+  echo "── Compass cockpit: $slug ───────────────────────────"
+
+  # ── PROGRAM strip (two altitudes) — suppressed unless the contract names a real program ──
+  local pname=""
+  if [ -f "$c" ]; then
+    pname="$(sed -nE 's/^[-* ]*\**program:\**[[:space:]]*//Ip' "$c" 2>/dev/null | head -1 | sed -E 's/[[:space:]]*(\(.*)?$//')"
+  fi
+  case "$(printf '%s' "${pname:-}" | tr 'A-Z' 'a-z')" in ''|none|'n/a'|'n/a — '*|na) pname="" ;; esac
+  # git-free: the ledger sits at <state-root>/PROGRAM.md == the build dir's parent (never state_root,
+  # which needs git → INV-PERF-ASCII + fixture-testable off a git repo).
+  local pf; pf="$(dirname "$dir")/PROGRAM.md"
+  if [ -n "$pname" ] && [ -f "$pf" ]; then
+    local ptot="?" curslug row rk rn rslug rst rtag crow cslug cst
+    curslug="$(_program_first_unshipped "$pf" 2>/dev/null || true)"
+    [ -z "$curslug" ] && curslug="COMPLETE"
+    while IFS= read -r row; do [ -n "$row" ] || continue
+      rn="$(printf '%s' "$row" | sed -E 's#^phase [0-9]+/([0-9]+) · .*#\1#')"; ptot="$rn"; break
+    done < <(_program_rows "$pf" 2>/dev/null || true)
+    echo "PROGRAM · $pname   Phase(s)/$ptot · here: $curslug"
+    while IFS= read -r row; do [ -n "$row" ] || continue
+      rk="$(printf '%s' "$row" | sed -E 's#^phase ([0-9]+)/[0-9]+ · .*#\1#')"
+      rslug="$(_row_slug "$row")"; rst="$(_row_status "$row")"; rtag="$(_row_tag "$row")"
+      local here=""; [ "$rslug" = "$curslug" ] && here=" ◀ here"
+      printf '  P%s %s %s%s%s\n' "$rk" "$(_cockpit_glyph "$rst")" "$rslug" "${rtag:+ ($rtag)}" "$here"
+      # per-phase contract child rows (contracts-per-phase — the core pain)
+      while IFS= read -r crow; do [ -n "$crow" ] || continue
+        cslug="$(_crow_slug "$crow")"; cst="$(_crow_status "$crow")"
+        printf '        · %s %s\n' "$(_cockpit_glyph "$cst")" "$cslug"
+      done < <(_program_contract_rows "$pf" "$rk" 2>/dev/null || true)
+    done < <(_program_rows "$pf" 2>/dev/null || true)
+    echo "────────────────────────────────────────────────────"
+  fi
+
+  # ── BUILD strip (the 7-stage pipeline) ──
+  # Use the canonical `stage_pass` helper (parses `## RECEIPT — <stage> · … · PASS`, exact-stage,
+  # SUPERSEDED-aware, unchecked-box-aware) — NOT a hand-rolled receipt grep. (review-build R1
+  # CRITICAL: an ad-hoc ` <stage> —` grep never matches the real receipt format and only tripped on
+  # prose accidents, so the strip was wrong on every real build.)
+  local stage cur="" line="" done_stage
+  for stage in $LIFECYCLE; do
+    if stage_pass "$dir" "$stage"; then :; else cur="$stage"; break; fi
+  done
+  for stage in $LIFECYCLE; do
+    if stage_pass "$dir" "$stage"; then done_stage="✓";
+    elif [ "$stage" = "$cur" ]; then done_stage="◉"; else done_stage="○"; fi
+    line="$line$stage $done_stage  "
+  done
+  echo "BUILD · $slug"
+  echo "  $line"
+  # step k/n + next (git-free; fixed checkbox regex)
+  local total done_ next
+  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
+  next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
+  printf '  ▲ %s' "${cur:-done — all stages ✓}"
+  [ "${total:-0}" -gt 0 ] 2>/dev/null && printf ' · step %s/%s' "${done_:-0}" "$total"
+  [ -n "${next:-}" ] && printf ' · next: %s' "$next"
+  printf '\n'
+  echo "────────────────────────────────────────────────────"
+}
+
+# ── v0.24.0: milestone artifact gate (INV-ARTIFACT-MILESTONES) ───────────────────────────────
+# For milestones with NO forward lifecycle gate (ship = terminal; phase-boundary = not an edge):
+# a reached milestone MUST have produced its HTML body. The contract-lock + plan-lock milestones
+# are enforced for FREE by the frozen cmd_gate (it refuses to advance on any unchecked `- [ ]`
+# MILESTONE receipt line). This standalone gate is the ship/phase seam. HTML is mandatory; the PNG
+# may degrade to `png=N/A — no renderer` and still pass (never blocks a Chrome-less machine).
+cmd_milestone_gate() { # <build-dir> <milestone-name>
+  local dir="${1:-}" name="${2:-}"
+  [ -n "$dir" ] && [ -n "$name" ] || die "usage: compass.sh milestone-gate <build-dir> <milestone>"
+  local r="$dir/receipts.md"
+  [ -f "$r" ] || die "milestone-gate: no receipts.md in $dir"
+  local ln; ln="$(grep -E "MILESTONE: ${name} render=" "$r" 2>/dev/null | tail -1 || true)"
+  [ -n "$ln" ] || die "milestone-gate: milestone '$name' has no 'MILESTONE: $name render=<path>' receipt line (HTML artifact not produced)."
+  local path; path="$(printf '%s' "$ln" | sed -nE 's/.*render=([^ ]+).*/\1/p')"
+  [ -n "$path" ] || die "milestone-gate: milestone '$name' receipt has no render=<path> (HTML mandatory)."
+  case "$path" in /*) : ;; *) path="$dir/$path" ;; esac
+  { [ -f "$path" ] && [ -s "$path" ]; } || die "milestone-gate: milestone '$name' HTML artifact '$path' missing/empty (HTML mandatory; only the PNG may degrade to N/A)."
+  ok "milestone-gate: '$name' HTML artifact present ($path)."
 }
 
 # ── v0.6.0: parallel-build identification + merge-consequence gate ───────────
@@ -2887,6 +2993,8 @@ main() {
     post-merge-check)  cmd_post_merge_check "$@" ;;
     doctor)            cmd_doctor "$@" ;;
     status)            cmd_status "$@" ;;
+    cockpit)           cmd_cockpit "$@" ;;
+    milestone-gate)    cmd_milestone_gate "$@" ;;
     design-drift-gate) cmd_design_drift_gate "$@" ;;
     converge-gate)     cmd_converge_gate "$@" ;;
     design-style-diff) cmd_design_style_diff "$@" ;;

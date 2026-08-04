@@ -1,5 +1,6 @@
 ---
 description: Review-2 (FULL) — adversarially pressure-test the PLAN before build. Namespaced entry to the compass:review-plan stage.
+tier: advanced
 ---
 
 # /compass:review-plan

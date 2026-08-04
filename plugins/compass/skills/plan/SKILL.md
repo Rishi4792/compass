@@ -37,8 +37,11 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 ## Emit
 `progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
 ```
+**v0.24.0 milestone — Plan Map (INV-ARTIFACT-MILESTONES):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only; best-effort PNG via `cinematic-hero/render.sh`). Record the `MILESTONE:` line below; leaving it unchecked makes the next stage's frozen `compass.sh gate` refuse to advance (that is the plan-lock milestone gate).
+
 ## RECEIPT — plan · <slug> · PASS
 - [x] gate: review-contract receipt OK
+- [x] MILESTONE: plan-map render=plan-map.html bytes=<n> [png=plan-map.png | png=N/A — no renderer]
 - [x] Phase 0 grounded — cited paths: <…> (or greenfield); INDEX touches updated
 - [x] every contract requirement traced to a step
 - [x] every INVARIANT → NON-deferred bound-asserting check
@@ -72,6 +75,10 @@ This stage owns its own transition gate. Present it whether the stage was run st
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
+   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
+   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
 
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,

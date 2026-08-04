@@ -1,5 +1,6 @@
 ---
 description: Turn a locked CONTRACT into an industry-standard engineering plan (after scanning the live codebase). Namespaced entry to the compass:plan stage.
+tier: advanced
 ---
 
 # /compass:plan

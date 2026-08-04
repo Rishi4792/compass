@@ -1,5 +1,6 @@
 ---
 description: Start (or continue) the Compass contract-first build lifecycle — contract → review → plan → review → build → review → ship — with user-driven gates between every stage, real receipt-gated transitions, auto-pause when context runs low, and clean cross-session resume.
+tier: advanced
 ---
 
 # /compass:start — the lifecycle orchestrator
@@ -48,7 +49,7 @@ On `start` in parallel mode:
 `/compass:start --auto` runs the lifecycle WITHOUT the per-hop 4-button gate, stopping for a human at only **two** points (the rest auto-advance). It is mutually exclusive with `--unattended` (`compass.sh auto-precheck` refuses both; default = fully gated).
 
 ### Two ways to turn it on (v0.11.0)
-1. **Interactive (default, discoverable):** on a plain `/compass:start` (no flag), BEFORE writing the contract, ask the user **Gated or Autonomous?** via AskUserQuestion. If **Autonomous**, also ask for the budget (wall-seconds / max-sessions / max-stages; offer the defaults 3600 / 6 / 40), then run the one-command setup below. If **Gated**, proceed exactly as today.
+1. **Interactive (default, discoverable):** on a plain `/compass:start` (no flag), the run-mode is chosen at **exactly one point — contract lock (G1)**: the contract skill asks **Gated or Autonomous?** via AskUserQuestion at the moment you lock (never earlier — you'd be choosing blind before the contract exists). If **Autonomous**, it also asks for the budget (wall-seconds / max-sessions / max-stages; defaults 3600 / 6 / 40), then runs the one-command setup below. If **Gated**, proceed exactly as today. (v0.24.0 INV-MODE-AT-LOCK: the pre-contract mode prompt was removed so `start.md` and the contract skill agree on the single at-lock point.)
 2. **Flag / one command:** `/compass:start --auto` skips the prompt. Setup is a SINGLE command — **`compass.sh auto-start <dir> [--wall S --sessions N --stages N]`** — which runs `auto-precheck` + `budget-init` + `auto-init` and writes `.auto-mode` (refuses without a budget — **mandatory**, INV-3; refuses `--unattended`). (The old three-call setup still works but `auto-start` is the supported entry.)
 
 The orchestrator loop in `--auto`:
@@ -91,6 +92,10 @@ This stage owns its own transition gate. Present it whether the stage was run st
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
+   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
+   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
 
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,

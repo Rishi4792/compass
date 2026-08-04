@@ -77,6 +77,7 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
   - [x] sketch-gate: compass.sh sketch-gate <dir> → 0
   <!-- TEMPLATE: contract-brief-box -->
   - [x] Contract Brief produced (compass-visual → brief.html + brief.png) and shown; shareable-on-request stated
+  - [x] MILESTONE: contract-brief render=brief.html bytes=<n> [png=brief.png | png=N/A — no renderer]  <!-- v0.24.0 INV-ARTIFACT-MILESTONES: the HTML body is MANDATORY (node, no browser); the PNG is best-effort. Leaving this box unchecked makes the next stage's FROZEN `compass.sh gate` refuse to advance — that IS the milestone gate for contract-lock. -->
   <!-- TEMPLATE: mode-choice-box -->
   - [x] explicit lock recorded ("This is the contract — lock it") + mode choice (Auto | Human-gated); in --auto, G1 is the lock
   <!-- TEMPLATE: security-box -->
@@ -139,6 +140,10 @@ This stage owns its own transition gate. Present it whether the stage was run st
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
+   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
+   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
 
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,

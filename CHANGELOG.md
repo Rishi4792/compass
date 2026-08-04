@@ -3,6 +3,18 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.24.0] — 2026-08-04
+
+**Clarity + simplicity: one front door, progress that pushes itself, and a program cockpit for multi-phase / multi-contract builds.** The tool now shows you where you are without being asked — including across phases and the multiple contracts within a phase — and the surface is three commands, not twelve.
+
+- **One front door (by tier).** `/compass:go` is the single entry — it starts or resumes, drives the lifecycle, and pushes progress. A `tier:` frontmatter key marks exactly three commands **primary** (`go` · `status` · `resume`); the other nine become **advanced** — still fully functional, just off the welcome. No command was removed (deleting them would dangle the byte-locked gate footer across 8 consumers), so nothing breaks.
+- **The pushed Cockpit — a real command.** New `compass.sh cockpit <dir>` (pure bash, git-free, ~60 ms): the 7-stage pipeline with your position, step k/n, and next action. Its call is wired into the byte-locked gate block (identical across all 8 consumers), so **every stage transition prints it with zero typing — and so does resume / a fresh terminal**. Silence between stages is now a defect a test catches.
+- **Program Cockpit — two altitudes, contracts-per-phase.** A backward-compatible ledger format adds optional `contract:` child rows under a phase, so the cockpit shows Phase K/N **and each contract in the phase** (done ✓ / current ◉ / left ○) above the current build — the answer to "how many phases, how many contracts, what's done, what's left" at a glance. Suppressed when there is no program; single-contract ledgers render unchanged.
+- **Mandatory house-styled milestone artifacts.** New `compass-visual` views — `plan-map`, `program-cockpit`, `release-card` (joining `brief`) — render an rk-house-style HTML body at contract-lock / plan-lock / phase-boundary / ship. The HTML body is **mandatory** (node, no browser) and recorded as a `MILESTONE:` receipt line; the contract/plan milestones are enforced for free by the frozen receipt gate, ship/phase by a new `compass.sh milestone-gate`. The PNG is best-effort — a Chrome-less machine degrades to an `N/A` receipt, never a block.
+- **Mode-choice pinned to one point.** The Auto-vs-gated question is asked only at contract lock (G1); the two docs that disagreed are reconciled.
+
+Built + reviewed on Compass itself in `--auto`: contract (3-critic review-contract: 5C+5M reshaped the design — tier-demotion, the real cockpit command, ledger child-rows, HTML-mandatory/PNG-best-effort) → plan (2-critic review-plan) → build (spine → renderers → 12 new invariants across the coupled triple) → review-build. Suites: **selftest 546 · smoke 377→409 · recon 78→90 pinned INV groups**; floors held (406/222). INV-NO-LIFECYCLE-CHANGE proves the stage graph, gate exit-codes, and prod-safety functions are byte-identical to v0.23.0.
+
 ## [0.23.0] — 2026-08-04
 
 **Phase-3 finisher: operability + test-rigor + durability (completes the compass-3-phase program).** Four features, each byte-inert or additive-only until a build opts in — legacy builds are unaffected.

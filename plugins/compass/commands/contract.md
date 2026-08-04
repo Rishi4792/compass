@@ -1,5 +1,6 @@
 ---
 description: Define a build's CONTRACT — the locked spec that becomes the invariant for the whole build. Namespaced entry to the compass:contract stage.
+tier: advanced
 ---
 
 # /compass:contract

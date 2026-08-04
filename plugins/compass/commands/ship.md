@@ -1,5 +1,6 @@
 ---
 description: Ship — deploy the CLOSED build and prove it in prod. Namespaced entry to the compass:ship stage.
+tier: advanced
 ---
 
 # /compass:ship

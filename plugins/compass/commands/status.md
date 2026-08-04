@@ -1,5 +1,6 @@
 ---
 description: Show where a Compass build stands — current stage, step k/n, last passed receipt, and the single next action + command. The "where am I / what's next" surface.
+tier: primary
 ---
 
 # /compass:status

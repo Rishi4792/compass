@@ -1,5 +1,6 @@
 ---
 description: Resume an in-progress Compass build from file-based state — picks up exactly where the last session left off, with nothing lost.
+tier: primary
 ---
 
 # /compass:resume
@@ -17,7 +18,7 @@ Continue a Compass build that was paused or interrupted. State is on disk, so cl
    - Read `contract.md` (the invariant) and `review-ledger.md` (open issues).
    - **Intake (v0.13.0):** status `intake (phase N)` means the contract interview is mid-flight — run `compass.sh intake-phase <dir>` for the highest completed phase and re-enter the contract skill's Intake Protocol at the next phase (intake.md is append-only truth; an in-flight question is simply re-asked).
    - **Post-ship loop (v0.12.0):** status `post-ship (round k/cap)` means SHIPPED-but-not-final — the post-ship critique loop is open. Re-enter the ship skill's loop at the first round WITHOUT a `loop.log` registration (`loop.log` is the truth; a round receipt without a matching log line means that round must RE-RUN). `compass.sh loop-converged <dir> postship` tells you exactly where the loop stands.
-3. State in ONE line where things stand — e.g. "Resuming — plan-LOCKED, building step 4/11 (next: the reconciliation query)." Do not recite the files.
+3. **PUSH the cockpit first (INV-PUSH-RESUME).** Run `compass.sh cockpit <state-root>/<slug>` and show it — the two-altitude view (program phases + contracts if any, above the current build's 7-stage strip + step k/n + next) — so a fresh-terminal resume shows where things stand with zero further typing. THEN state in ONE line where things stand — e.g. "Resuming — plan-LOCKED, building step 4/11 (next: the reconciliation query)." Do not recite the files.
 4. **Re-bind ownership to THIS session before handing off:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"`. The build's Stop-hook guard now follows the live (resuming) session — an orphaned build (its old terminal closed) is silent until this re-bind restores the guard (v0.9.0).
 5. Continue from the recorded next action, handing back to the right stage skill (`compass:build`, `compass:review-build`, etc.) and back into the orchestrator's gate flow.
 

@@ -178,7 +178,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -645,7 +645,7 @@ _dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
 chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
 chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "78" "v0.23 INV-SUITES: recon INV_NAMES == 78 (71 after v0.22 + the 7 v0.23 names: 2 DORA + 1 DRIFT + 3 HERMETIC + 1 DURABILITY)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "90" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 90 (78 after v0.23 + the 12 v0.24 clarity names)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -661,9 +661,80 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.23.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.23 W-F: plugin.json at the current release 0.23.0"
-chk "$(grep -c '0.23.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.23 W-F: marketplace.json at the current release 0.23.0"
-chk "$(grep -c '## \[0.23.0\]' "$RR22/CHANGELOG.md")" "1" "v0.23 W-F: CHANGELOG carries the 0.23.0 entry"
+chk "$(grep -c '0.24.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.24 W-F: plugin.json at the current release 0.24.0"
+chk "$(grep -c '0.24.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.24 W-F: marketplace.json at the current release 0.24.0"
+chk "$(grep -c '## \[0.24.0\]' "$RR22/CHANGELOG.md")" "1" "v0.24 W-F: CHANGELOG carries the 0.24.0 entry"
+
+# ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
+CURSH="$PLUGIN_ROOT/scripts/compass.sh"
+V24="$(mktemp -d)"; mkdir -p "$V24/.claude/builds/b"
+cat > "$V24/.claude/builds/PROGRAM.md" <<'PEOF'
+# Program — demo24
+current: p2
+phase 1/2 · p1 · status=shipped · v0.1.0
+  contract: p1-a · status=shipped
+  contract: p1-b · status=shipped
+phase 2/2 · p2 · status=in-flight
+  contract: p2-a · status=shipped
+  contract: p2-b · status=in-flight
+PEOF
+printf '# Contract\n- **program:** demo24\n' > "$V24/.claude/builds/b/contract.md"
+printf '**Next:** build\n' > "$V24/.claude/builds/b/progress.md"
+printf '## RECEIPT — contract · b · PASS\n## RECEIPT — review-contract · b · PASS\n' > "$V24/.claude/builds/b/receipts.md"
+printf -- '- [x] **1. a**\n- [ ] **2. b**\n' > "$V24/.claude/builds/b/plan.md"
+COUT="$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null || true)"
+
+# INV-COCKPIT / INV-PUSH-STAGE — the pushed strip renders
+chk "$(printf '%s' "$COUT" | grep -cE 'BUILD ·')" "1" "v0.24 INV-COCKPIT: cockpit prints the BUILD strip"
+chk "$(printf '%s' "$COUT" | grep -c '▲ plan')" "1" "v0.24 INV-PUSH-STAGE: marker lands on the correct stage from CANONICAL receipts (contract+review-contract PASS → plan) — bites the R1 receipt-format bug"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit')" "1" "v0.24 INV-PUSH-STAGE: the canonical gate block invokes compass.sh cockpit"
+# INV-MULTI-CONTRACT — both contracts render, and a status flip flips the glyph (teeth)
+chk "$([ "$(printf '%s' "$COUT" | grep -c 'p2-a')" -ge 1 ] && [ "$(printf '%s' "$COUT" | grep -c 'p2-b')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-MULTI-CONTRACT: both contracts in phase 2 render"
+sed -i.bak 's/p2-a · status=shipped/p2-a · status=planned/' "$V24/.claude/builds/PROGRAM.md"
+chk "$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null | grep 'p2-a' | grep -c '○')" "1" "v0.24 INV-MULTI-CONTRACT teeth: contract shipped→planned flips its glyph ✓→○"
+# INV-PROGRAM-COCKPIT — suppressed when there is no ledger
+rm -f "$V24/.claude/builds/PROGRAM.md"
+chk "$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null | grep -c 'PROGRAM ·')" "0" "v0.24 INV-PROGRAM-COCKPIT: program strip suppressed with no ledger"
+# INV-ASCII-CHEAP / INV-PERF-ASCII — cmd_cockpit body pays no renderer or git-heavy ledger cost
+chk "$(awk '/^cmd_cockpit\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$CURSH" | grep -cE 'render\.sh|gen\.mjs|chrome|headless')" "0" "v0.24 INV-ASCII-CHEAP: cmd_cockpit invokes no renderer"
+chk "$(awk '/^cmd_cockpit\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$CURSH" | grep -cE 'cmd_program_ledger|_tag_is_real_and_bound')" "0" "v0.24 INV-PERF-ASCII: cmd_cockpit avoids the git-heavy ledger path"
+# INV-SURFACE-3 — 3 primary (go/status/resume) · 9 advanced · 12 present · WELCOME lists no advanced invocation
+chk "$(grep -l '^tier: primary' "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "3" "v0.24 INV-SURFACE-3: exactly 3 primary commands"
+chk "$(grep -q '^tier: primary' "$PLUGIN_ROOT/commands/go.md" && grep -q '^tier: primary' "$PLUGIN_ROOT/commands/status.md" && grep -q '^tier: primary' "$PLUGIN_ROOT/commands/resume.md" && echo 1 || echo 0)" "1" "v0.24 INV-SURFACE-3: the 3 primary are go/status/resume"
+chk "$(grep -l '^tier: advanced' "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "9" "v0.24 INV-SURFACE-3: exactly 9 advanced commands"
+chk "$(ls "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "12" "v0.24 INV-SURFACE-3: all 12 command files still present"
+WB="$(awk '/<!-- WELCOME:START -->/{f=1} f{print} /<!-- WELCOME:END -->/{f=0}' "$PLUGIN_ROOT/commands/go.md")"
+chk "$([ -n "$WB" ] && echo 1 || echo 0)" "1" "v0.24 INV-SURFACE-3: WELCOME block present in go.md"
+chk "$(printf '%s' "$WB" | grep -cE '/compass:(start|contract|plan|build|ship|explain|review-)')" "0" "v0.24 INV-SURFACE-3: WELCOME block lists no advanced command invocation"
+# INV-ONE-DOOR — go.md branches to both resume and new-build
+chk "$([ "$(grep -c 'esume' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && [ "$(grep -c 'ew build' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-ONE-DOOR: go.md branches to resume AND new-build"
+# INV-PUSH-RESUME — go.md + resume.md push the cockpit on re-entry
+chk "$([ "$(grep -c 'compass.sh cockpit' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && [ "$(grep -c 'compass.sh cockpit' "$PLUGIN_ROOT/commands/resume.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-PUSH-RESUME: go.md + resume.md push the cockpit"
+# INV-MODE-AT-LOCK — the pre-contract mode prompt is gone (kill test = the deletion)
+chk "$(grep -c 'BEFORE writing the contract' "$PLUGIN_ROOT/commands/start.md")" "0" "v0.24 INV-MODE-AT-LOCK: start.md pre-contract mode prompt removed"
+# INV-ARTIFACT-MILESTONES — the 3 views exist + milestone-gate bites (negative fails, positive passes)
+chk "$([ "$(grep -c "'plan-map'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'program-cockpit'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'release-card'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-ARTIFACT-MILESTONES: gen.mjs adds plan-map/program-cockpit/release-card"
+if ( "$SH" milestone-gate "$V24/.claude/builds/b" release-card ) >/dev/null 2>&1; then mn=0; else mn=1; fi
+chk "$mn" "1" "v0.24 INV-ARTIFACT-MILESTONES: milestone-gate FAILS when the artifact is absent (biting)"
+printf 'x' > "$V24/.claude/builds/b/release-card.html"
+printf -- '- [x] MILESTONE: release-card render=release-card.html bytes=1\n' >> "$V24/.claude/builds/b/receipts.md"
+if ( "$SH" milestone-gate "$V24/.claude/builds/b" release-card ) >/dev/null 2>&1; then mp=0; else mp=1; fi
+chk "$mp" "0" "v0.24 INV-ARTIFACT-MILESTONES: milestone-gate PASSES when the HTML artifact exists"
+# INV-NO-LIFECYCLE-CHANGE — frozen units byte-identical to v0.23.0 (name-anchored extract)
+_ex(){ awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{"{f=1} f{print} f&&/^}$/{exit}'; }
+V23="$(git -C "$PLUGIN_ROOT" show v0.23.0:plugins/compass/scripts/compass.sh 2>/dev/null || true)"
+frz=1
+if [ -n "$V23" ]; then
+  for fn in cmd_gate cmd_restore_point cmd_config_parity cmd_migration_gate cmd_check_db_isolation; do
+    a="$(printf '%s' "$V23" | _ex "$fn")"; b="$(_ex "$fn" < "$CURSH")"
+    { [ -n "$a" ] && [ "$a" = "$b" ]; } || frz=0
+  done
+  la="$(printf '%s' "$V23" | grep '^LIFECYCLE=')"; lb="$(grep '^LIFECYCLE=' "$CURSH")"
+  { [ -n "$la" ] && [ "$la" = "$lb" ]; } || frz=0
+else frz=1; fi   # tag unreachable (shallow/CI clone) → do not false-FAIL
+chk "$frz" "1" "v0.24 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + cmd_gate + prod-safety fns byte-identical to v0.23.0"
+rm -rf "$V24"
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null
