@@ -51,8 +51,12 @@ function sections(md) {
   return joined;
 }
 const secs = sections(contract);
+// anchored-at-start (after an optional `N.` numeric prefix), NOT a loose substring —
+// so `Goal` no longer matches `Non-goals`, and `## 4. Security …` / `## 2. Scope ladder` still resolve.
 const sec = (needle) => {
-  const k = Object.keys(secs).find((x) => x.toLowerCase().includes(needle.toLowerCase()));
+  const nd = needle.toLowerCase();
+  const norm = (x) => x.toLowerCase().replace(/^\d+\.\s*/, '');
+  const k = Object.keys(secs).find((x) => { const n = norm(x); return n === nd || n.startsWith(nd); });
   return k ? secs[k] : '';
 };
 const hdr = (key) => {
@@ -108,10 +112,22 @@ function invariants() {
 }
 // ── scope ladder NOW / LATER / NEVER ──
 function scope() {
-  const body = sec('Scope ladder') || sec('scope');
-  const pick = (kw) => bullets(body, new RegExp('^-\\s+' + kw + '\\b', 'i'))
-    .map((l) => l.replace(new RegExp('^-\\s+' + kw + '\\s*:?\\s*', 'i'), '').replace(/\*/g, '').trim());
-  return { now: pick('NOW'), later: pick('LATER'), never: pick('NEVER') };
+  // real contracts write `### NOW —` headings + numbered/bullet items; parse those first, then
+  // fall back to the old `- NOW:` inline-bullet form (item filter accepts BOTH `N.` and `-`/`*`).
+  const grab = (kw) => {
+    const m = contract.match(new RegExp('###\\s*' + kw + '[^\\n]*\\n([\\s\\S]*?)(?=\\n###|\\n##\\s|$)', 'i'));
+    if (m) {
+      const items = m[1].split('\n').map((l) => l.trim())
+        .filter((l) => /^(\d+\.|[-*])\s+/.test(l))
+        .map((l) => l.replace(/^(\d+\.|[-*])\s+/, '').replace(/\*/g, '').trim())
+        .filter(Boolean);
+      if (items.length) return items;
+    }
+    const body = sec('Scope ladder') || sec('scope');
+    return bullets(body, new RegExp('^-\\s+' + kw + '\\b', 'i'))
+      .map((l) => l.replace(new RegExp('^-\\s+' + kw + '\\s*:?\\s*', 'i'), '').replace(/\*/g, '').trim());
+  };
+  return { now: grab('NOW'), later: grab('LATER'), never: grab('NEVER') };
 }
 // ── security & data-sensitivity: present? genuine N/A? never-show values? ──
 function security() {
@@ -228,89 +244,138 @@ const HOUSE_CSS = `
   .cv-body .col .hd{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
   .cv-body .col.now .hd{color:var(--greenFg)} .cv-body .col.later .hd{color:var(--amberFg)} .cv-body .col.never .hd{color:var(--redFg)}
   .cv-body .foot{margin-top:20px;font-size:11px;color:var(--mut2);border-top:1px solid var(--line);padding-top:12px}
+  .cv-body .ba{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .cv-body .ba .panel{border:1px solid var(--line);border-radius:8px;padding:12px}
+  .cv-body .ba .panel.to{border-color:var(--accent);background:var(--chipBg)}
+  .cv-body .ba .panel .t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--kicker);margin-bottom:6px}
+  .cv-body .ba .panel p{font-size:12px;color:var(--ink);line-height:1.45}
+  .cv-body .done{background:var(--accent);color:var(--surface);border-radius:12px;padding:18px 20px;margin-top:16px}
+  .cv-body .done .k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+  .cv-body .done .big{font-size:16px;font-weight:700;margin-top:6px;line-height:1.35}
+  .cv-body .proofrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .cv-body .stat{flex:1;min-width:110px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}
+  .cv-body .stat .sk{font-size:10px;color:var(--kicker);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .cv-body .stat .sv{font-size:15px;font-weight:700;color:var(--ink);margin-top:3px}
+  .cv-body .flow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+  .cv-body .step{border:1px solid var(--line);border-radius:8px;padding:12px}
+  .cv-body .step .si{font-size:11px;font-weight:700;color:var(--accent);background:var(--chipBg);width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center}
+  .cv-body .step .st{font-size:12px;color:var(--ink);margin-top:6px;line-height:1.4}
+  .cv-body .won{border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--redBg);margin-top:16px}
+  .cv-body .won .hd{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--redFg);margin-bottom:8px}
+  .cv-body .won li::before{background:var(--redFg)}
+  .cv-body details{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .cv-body details>summary{cursor:pointer;padding:14px 18px;font-size:12px;font-weight:700;color:var(--ink)}
+  .cv-body details .db{padding:0 18px 14px}
 `;
 
 // ── house-style Brief body (returns inner markup; used standalone AND inside the full brief) ──
 function briefBody() {
-  const goal = firstPara(sec('Goal') || sec('Goal & scope'));
-  const touchesBody = sec('Data / Schema / Scale') || sec('Data');
+  // ── the builder's mental model: problem → picture-of-done → proof → moves → guardrails → details ──
+  const goal = hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope'));
+  const problem = firstPara(sec('Problem')) || 'current state';
   const inv = invariants();
   const sc = scope();
   const security_ = security();
   const facets = hdr('Facets') || 'library';
   const deploy = hdr('deploy');
-  const mode = hdr('Mode');
+  const doneSentence = (goal.split(/(?<=[.!?])\s/)[0] || goal);
+  // before → after: an explicit header, else derive (before = problem/current-state, after = goal outcome)
+  const baHdr = hdr('before→after') || hdr('before-after');
+  const before = baHdr ? baHdr.split('||')[0].trim() : problem;
+  const after = baHdr ? (baHdr.split('||')[1] || '').trim() || doneSentence : doneSentence;
 
-  // reconciliation gold: full literal (local) vs redacted badge (shareable)
+  // reconciliation gold — full literal (LOCAL) vs redacted badge (SHAREABLE). (shareable branch preserved)
   const goldCard = shareable
     ? `<span class="badge">gold pinned ✓</span>
        <p style="margin-top:8px">The reconciliation gold is pinned in this build's <b>local</b> Brief and enforced by the suites; its literal is withheld from the shareable copy.</p>`
-    : bodyHtml(goldBody);   // LOCAL: the FULL gold literal (figure + tolerance in any paragraph) — SKILL.md:34 (post-ship PS-1r4-B)
-
-  // security card: honest about present / genuine-N/A / absent
+    : bodyHtml(goldBody);
+  // security — honest present / genuine-N/A / absent; SHAREABLE uses firstPara + never-show redaction (branch preserved)
   let secCard;
   if (!security_.present) {
     secCard = `<span class="chip">no Security &amp; data-sensitivity block in this contract</span>
-      <p style="margin-top:8px">This contract carries no security block — treat the sensitive surface as <b>unclassified</b>, not as a cleared "N/A". (F-SECPIN makes this block required going forward.)</p>`;
+      <p style="margin-top:8px">Treat the sensitive surface as <b>unclassified</b>, not a cleared "N/A".</p>`;
   } else if (security_.na) {
     secCard = `<span class="badge">N/A — no sensitive surface</span>
       <p style="margin-top:8px">${txt(security_.naReason || 'declared N/A with reason')}</p>`;
   } else if (shareable) {
-    // SHAREABLE: classification LABEL (first para) + never-show VALUES redacted (accepted best-effort leak gate; Phase-2).
     const nsList = (security_.neverShow || []).map(() =>
       `<li><b>never-show:</b> <span class="chip">⟨redacted ✓⟩</span></li>`).join('');
     secCard = `<p>${txt(firstPara(security_.body))}</p>${nsList ? `<ul style="margin-top:8px">${nsList}</ul>` : ''}`;
   } else {
-    // LOCAL: the FULL security block — classification + never-show + role×view matrix + STRIDE-lite (post-ship PS-1r4-B).
-    secCard = bodyHtml(security_.body);
+    secCard = bodyHtml(security_.body);   // LOCAL: the FULL security block (post-ship PS-1r4-B)
   }
 
-  const invRows = inv.map((r, i) =>
+  const invRows = inv.map((r) =>
     `<tr><td><span class="n">${txt(r.name)}</span></td><td>${txt(r.summary)}</td></tr>`).join('');
-  const scopeCol = (cls, label, items) =>
-    `<div class="col ${cls}"><div class="hd">${label}</div><ul>${items.length ? items.map((x) => `<li>${txt(x)}</li>`).join('') : '<li>—</li>'}</ul></div>`;
+  const li = (items) => items.length ? items.map((x) => `<li>${txt(x)}</li>`).join('') : '<li>—</li>';
+  const rollback = firstPara(sec('Kill-switch') || sec('Kill') || sec('Rollback')) || '';
 
   return `
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Contract Brief${shareable ? ' · shareable' : ''}</div>
-  <h1>${txt(title)}</h1>
-  <p class="lede">${txt(goal)}</p>
-  <div class="row" style="margin-top:12px">
-    <span class="chip">facet: ${txt(facets)}</span>
-    ${deploy ? `<span class="chip">deploy: ${txt(deploy.split('—')[0])}</span>` : ''}
-    ${mode ? `<span class="chip">mode: ${txt(mode.split('—')[0])}</span>` : ''}
+
+  <!-- BEAT 1+2 — the itch + the picture of done, shown -->
+  <div class="card"><div class="kicker">The problem → what we want</div>
+    <h1>${txt(title)}</h1>
+    <p class="lede">${txt(goal)}</p>
+    <div class="ba">
+      <div class="panel"><div class="t">Before</div><p>${txt(before)}</p></div>
+      <div class="panel to"><div class="t">After</div><p>${txt(after)}</p></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="chip">facet: ${txt(facets)}</span>
+      ${deploy ? `<span class="chip">deploy: ${txt(deploy.split('—')[0])}</span>` : ''}
+    </div>
   </div>${shareable ? `
   <div class="card" style="border-color:var(--amberBorder);background:var(--amberBg)">
     <span class="badge warn">Best-effort redaction — review before sending</span>
-    <p style="margin-top:8px">Declared values (the reconciliation gold + never-show fields pinned in the brief-data fence) of 3+ significant digits are scrubbed with certainty across every numeric locale form. <b>Undeclared</b> restatements in free prose — unit words, spelled-out numbers, exotic formats — and very short (≤2-digit) or unit-suffixed values are best-effort. Read this copy before you send it.</p>
+    <p style="margin-top:8px">Declared values (the reconciliation gold + never-show fields) of 3+ significant digits are scrubbed with certainty. <b>Undeclared</b> restatements in free prose are best-effort. Read this copy before you send it.</p>
   </div>` : ''}
 
-  <div class="grid2">
-    <div class="card"><div class="kicker">What it touches</div><p>${txt(firstPara(touchesBody) || 'see plan')}</p></div>
-    <div class="card"><div class="kicker">Reconciliation gold</div>${goldCard}</div>
+  <!-- BEAT 3 — the one proof -->
+  <div class="done">
+    <div class="k">Done means</div>
+    <div class="big">${txt(doneSentence)}</div>
+  </div>
+  <div class="proofrow">
+    <div class="stat"><div class="sk">facet</div><div class="sv">${txt(facets)}</div></div>
+    <div class="stat"><div class="sk">invariants</div><div class="sv">${inv.length} pinned</div></div>
+    <div class="stat"><div class="sk">reconciliation</div><div class="sv">${goldBody ? 'exact' : 'N/A'}</div></div>
+    <div class="stat"><div class="sk">deploy</div><div class="sv">${deploy ? txt(deploy.split('—')[0]) : 'N/A'}</div></div>
   </div>
 
-  <div class="card"><div class="kicker">Invariants — every "done" proves one of these</div>
+  <!-- BEAT 4 — the moves -->
+  <div class="card"><div class="kicker">What changes — in order</div>
+    <div class="flow">${sc.now.length ? sc.now.map((x, i) =>
+      `<div class="step"><span class="si">${i + 1}</span><div class="st">${txt(x)}</div></div>`).join('') : '<div class="step"><div class="st">—</div></div>'}</div>
+  </div>
+
+  <!-- BEAT 3 detail — the promises -->
+  <div class="card"><div class="kicker">The promises that can't break</div>
     <table><thead><tr><th>Invariant</th><th>What it asserts</th></tr></thead><tbody>${invRows || '<tr><td>—</td><td>none declared</td></tr>'}</tbody></table>
   </div>
 
-  <div class="card"><div class="kicker">Scope — now / later / never</div>
-    <div class="cols">
-      ${scopeCol('now', 'Now', sc.now)}
-      ${scopeCol('later', 'Later', sc.later)}
-      ${scopeCol('never', 'Never', sc.never)}
-    </div>
+  <!-- BEAT 5 — guardrails: what we won't + the undo -->
+  <div class="grid2">
+    <div class="won"><div class="hd">✕ We will not</div><ul>${li(sc.never)}</ul></div>
+    <div class="card"><div class="kicker">↩ If it's wrong — the undo</div><p>${txt(rollback || 'reversible edits; roll back the release commit + tag.')}</p></div>
   </div>
 
-  <div class="card"><div class="kicker">Security &amp; data-sensitivity</div>${secCard}</div>
+  <!-- BEAT 6 — the exact assertions & provenance, folded away -->
+  <details><summary>The exact assertions &amp; provenance (for the reviewer)</summary>
+    <div class="db">
+      <div class="kicker">Reconciliation gold</div>${goldCard}
+      <div class="kicker" style="margin-top:12px">Security &amp; data-sensitivity</div>${secCard}
+    </div>
+  </details>
 
-  <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state · lock the contract before anything proceeds.</div>
+  <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's locked state · problem → done → proof → moves → guardrails.</div>
 </div></section>`;
 }
 
 // ── cinematic-hero cover (full brief only) — its OWN accent + grade, excluded from the house gate ──
 function cover() {
-  const goal = firstPara(sec('Goal') || sec('Goal & scope'));
+  const goal = hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope'));
   const oneLine = goal.split(/(?<=[.!?])\s/)[0] || goal;
   return `
 <style>

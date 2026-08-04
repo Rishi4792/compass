@@ -1668,6 +1668,37 @@ cmd_cockpit() { # <build-dir>  — the pushed clarity surface (INV-COCKPIT/PUSH-
 # are enforced for FREE by the frozen cmd_gate (it refuses to advance on any unchecked `- [ ]`
 # MILESTONE receipt line). This standalone gate is the ship/phase seam. HTML is mandatory; the PNG
 # may degrade to `png=N/A — no renderer` and still pass (never blocks a Chrome-less machine).
+# ── v0.26.0: real render command — headless-Chrome screenshot of an HTML file to a PNG,
+# watchdog-bounded, FAIL-CLOSED. So a `png=N/A` can only be written AFTER a genuine failed attempt.
+# exit 0 = a non-empty PNG produced · exit 1 = a browser ran but produced no PNG · exit 3 = no browser / opted out.
+cmd_render() { # <html> <png>
+  local html="${1:-}" png="${2:-}"
+  [ -n "$html" ] && [ -n "$png" ] || die "usage: compass.sh render <html> <png>"
+  [ -f "$html" ] || die "render: html '$html' not found"
+  if [ "${COMPASS_NO_BROWSER:-0}" = "1" ]; then echo "render: N/A — COMPASS_NO_BROWSER=1 (opted out)" >&2; return 3; fi
+  local chrome=""
+  for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" google-chrome-stable google-chrome chromium chromium-browser; do
+    if [ -x "$c" ]; then chrome="$c"; break; fi
+    command -v "$c" >/dev/null 2>&1 && { chrome="$(command -v "$c")"; break; }
+  done
+  [ -n "$chrome" ] || { echo "render: N/A — no headless browser found (install Chrome/Chromium)" >&2; return 3; }
+  case "$html" in /*) : ;; *) html="$PWD/$html" ;; esac
+  rm -f "$png" 2>/dev/null || true
+  ( "$chrome" --headless=new --disable-gpu --no-sandbox --hide-scrollbars --force-device-scale-factor=2 \
+      --window-size=980,1500 --screenshot="$png" "file://$html" >/dev/null 2>&1 ) &
+  local cpid=$!
+  ( sleep 30 && kill -9 "$cpid" 2>/dev/null ) & local wpid=$!
+  wait "$cpid" 2>/dev/null || true; kill -9 "$wpid" 2>/dev/null || true
+  { [ -f "$png" ] && [ -s "$png" ]; } || { echo "render: FAILED — no non-empty PNG produced" >&2; return 1; }
+  ok "render: $png produced."
+}
+
+# ── v0.24.0 milestone gate + v0.26.0 delivery enforcement (INV-MILESTONE-DELIVERY) ─────────────
+# HTML is mandatory. GUARD-FIRST: a receipt line with NO `artifact=` token is LEGACY (pre-v0.26) →
+# HTML-only pass, REGARDLESS of any `png=` (legacy receipts carry `png=N/A — no renderer`; png= must
+# NOT trigger strict). A line WITH `artifact=` is held to the strict grammar: png=<exists|N/A — reason>,
+# artifact=<https URL|N/A — reason>; a bare `N/A` (no reason) fails closed. render= stays space-delimited.
+_reasoned_na() { [[ "$1" =~ ^N/A[[:space:]]+[—-][[:space:]]+.*[^[:space:]] ]]; }
 cmd_milestone_gate() { # <build-dir> <milestone-name>
   local dir="${1:-}" name="${2:-}"
   [ -n "$dir" ] && [ -n "$name" ] || die "usage: compass.sh milestone-gate <build-dir> <milestone>"
@@ -1675,11 +1706,32 @@ cmd_milestone_gate() { # <build-dir> <milestone-name>
   [ -f "$r" ] || die "milestone-gate: no receipts.md in $dir"
   local ln; ln="$(grep -E "MILESTONE: ${name} render=" "$r" 2>/dev/null | tail -1 || true)"
   [ -n "$ln" ] || die "milestone-gate: milestone '$name' has no 'MILESTONE: $name render=<path>' receipt line (HTML artifact not produced)."
-  local path; path="$(printf '%s' "$ln" | sed -nE 's/.*render=([^ ]+).*/\1/p')"
+  local path; path="$(printf '%s' "$ln" | sed -nE 's/.*render=([^ ]+).*/\1/p')"   # render= is a path (no spaces)
   [ -n "$path" ] || die "milestone-gate: milestone '$name' receipt has no render=<path> (HTML mandatory)."
-  case "$path" in /*) : ;; *) path="$dir/$path" ;; esac
-  { [ -f "$path" ] && [ -s "$path" ]; } || die "milestone-gate: milestone '$name' HTML artifact '$path' missing/empty (HTML mandatory; only the PNG may degrade to N/A)."
-  ok "milestone-gate: '$name' HTML artifact present ($path)."
+  local abs="$path"; case "$abs" in /*) : ;; *) abs="$dir/$abs" ;; esac
+  { [ -f "$abs" ] && [ -s "$abs" ]; } || die "milestone-gate: milestone '$name' HTML artifact '$abs' missing/empty (HTML mandatory)."
+  # guard-first: no artifact= token → LEGACY → HTML-only pass
+  case "$ln" in
+    *' artifact='*) : ;;
+    *) ok "milestone-gate: '$name' HTML artifact present ($abs) [legacy receipt — no delivery tokens]."; return 0 ;;
+  esac
+  # strict: capture png= / artifact= FULL values (to the next key or EOL) — em-dash reason preserved
+  local pngv artv
+  pngv="$(printf '%s' "$ln" | sed -nE 's/.*[[:space:]]png=(.*)$/\1/p' | sed -E 's/[[:space:]]+(artifact|bytes)=.*//')"
+  artv="$(printf '%s' "$ln" | sed -nE 's/.*[[:space:]]artifact=(.*)$/\1/p' | sed -E 's/[[:space:]]+(png|bytes)=.*//')"
+  # png: a path that exists, OR a reasoned N/A
+  if _reasoned_na "$pngv"; then :
+  elif [ -n "$pngv" ] && [[ "$pngv" != N/A* ]]; then
+    local pabs="$pngv"; case "$pabs" in /*) : ;; *) pabs="$dir/$pabs" ;; esac
+    { [ -f "$pabs" ] && [ -s "$pabs" ]; } || die "milestone-gate: '$name' png '$pabs' missing/empty."
+  else die "milestone-gate: '$name' png=N/A needs a reason ('N/A — <reason>'); a bare N/A fails closed."
+  fi
+  # artifact: an https URL, OR a reasoned N/A
+  if [[ "$artv" =~ ^https:// ]]; then :
+  elif _reasoned_na "$artv"; then :
+  else die "milestone-gate: '$name' artifact must be an https URL or 'N/A — <reason>' (got '${artv:-<empty>}'); a bare N/A fails closed."
+  fi
+  ok "milestone-gate: '$name' delivered — render=$path, png ok, artifact ok."
 }
 
 # ── v0.6.0: parallel-build identification + merge-consequence gate ───────────
@@ -2995,6 +3047,7 @@ main() {
     status)            cmd_status "$@" ;;
     cockpit)           cmd_cockpit "$@" ;;
     milestone-gate)    cmd_milestone_gate "$@" ;;
+    render)            cmd_render "$@" ;;
     design-drift-gate) cmd_design_drift_gate "$@" ;;
     converge-gate)     cmd_converge_gate "$@" ;;
     design-style-diff) cmd_design_style_diff "$@" ;;

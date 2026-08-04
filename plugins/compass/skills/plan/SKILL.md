@@ -38,11 +38,11 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 ## Emit
 `progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
 ```
-**v0.24.0 milestone — Plan Map (INV-ARTIFACT-MILESTONES):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only; best-effort PNG via `cinematic-hero/render.sh`). Record the `MILESTONE:` line below; leaving it unchecked makes the next stage's frozen `compass.sh gate` refuse to advance (that is the plan-lock milestone gate).
+**v0.24.0/v0.26.0 milestone — Plan Map (INV-MILESTONE-DELIVERY):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/plan-map.html <dir>/plan-map.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record the `MILESTONE:` line below, then run **`compass.sh milestone-gate <dir> plan-map`** (non-zero → STOP). Leaving the box unchecked also makes the frozen `compass.sh gate` refuse to advance.
 
 ## RECEIPT — plan · <slug> · PASS
 - [x] gate: review-contract receipt OK
-- [x] MILESTONE: plan-map render=plan-map.html bytes=<n> [png=plan-map.png | png=N/A — no renderer]
+- [x] MILESTONE: plan-map render=plan-map.html png=<plan-map.png OR `N/A — <reason>`> artifact=<claude.ai URL OR `N/A — <reason>`>  <!-- v0.26 INV-MILESTONE-DELIVERY: one concrete value per key; bare N/A fails the gate. -->
 - [x] Phase 0 grounded — cited paths: <…> (or greenfield); INDEX touches updated
 - [x] every contract requirement traced to a step
 - [x] every INVARIANT → NON-deferred bound-asserting check

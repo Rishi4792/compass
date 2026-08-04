@@ -25,6 +25,13 @@ node skills/compass-visual/gen.mjs <build-dir> <view> [--shareable] [--out <file
   - `cockpit` — the progress view.
 - `--out <file>` writes to a file; without it, HTML goes to stdout (so `diff <(gen …) <(gen …)` proves idempotency exactly).
 
+## Deliver (v0.26 — a milestone is DELIVERED, not just written to disk)
+Generating the HTML is step one, not done. **Delivery protocol** for every milestone (Brief / plan-map / release-card):
+1. **Render** — `compass.sh render <dir>/<view>.html <dir>/<view>.png` (a real headless-Chrome screenshot, watchdog-bounded, fail-closed). Only write `png=N/A — <reason>` in the receipt **after this genuinely fails** (no browser / opted out) — never preemptively.
+2. **Show it inline** — Read the PNG so the user actually SEES the artifact (a local file path is invisible on the Claude Code phone app).
+3. **Publish it** — publish the HTML via the Artifact tool; a `claude.ai` URL opens on the user's laptop AND phone. Put the URL in the receipt's `artifact=`; when the Artifact tool is unavailable (headless), write `artifact=N/A — headless (no Artifact tool)`.
+4. **Record** the `MILESTONE: <name> render=<html> png=<png|N/A — reason> artifact=<url|N/A — reason>` line (one concrete value per key) and run `compass.sh milestone-gate <dir> <name>` — a bare `N/A` (no reason) or a missing render **fails** the gate. The Brief redesign (v0.26) renders the builder's mental model: **problem → picture-of-done (before→after) → the one proof → the moves → guardrails → a details fold.**
+
 **Render to PNG** (headless Chrome):
 ```
 bash skills/cinematic-hero/render.sh <build-dir>/brief.html still 0 <build-dir>/brief.png

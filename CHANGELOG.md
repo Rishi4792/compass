@@ -3,6 +3,17 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.26.0] — 2026-08-04
+
+**The Contract Brief is now correct, redesigned around how a builder thinks, and actually delivered — not just written to a folder.** This release closes a real "the check passed but the outcome didn't happen" gap: the milestone invariant only checked that an HTML file existed on disk, so a Brief could be garbled, never rendered, and never shown — and the gate still went green.
+
+- **Fixed the generator's section-parsing bug.** `gen.mjs`'s `sec()` did a loose substring match, so `"Non-goals".includes("goal")` made it render the Non-goals as the goal; and it read the goal from a `## Goal` heading that real contracts don't have. Now `sec()` is **anchored-at-start** (after an optional `N.` prefix — so `## 4. Security` / `## 2. Scope ladder` still resolve, `Non-goals` doesn't), the goal reads the `**Goal:**` inline, and `scope()` parses the real `### NOW/LATER/NEVER` format (it was returning empty).
+- **Redesigned the Brief to the builder's mental model.** Problem → picture-of-done (a **before→after**) → the one proof → the moves (a flow) → guardrails → a details fold — instead of a flat spec dump. It generalizes to any contract (a data-pipeline fixture proves it), stays leak-safe on `--shareable`, and passes the house anti-drift + compose gates.
+- **A real `compass.sh render`** — headless-Chrome screenshot, watchdog-bounded, fail-closed. So `png=N/A` can only be written **after a genuine failed attempt**, never faked.
+- **Milestone = delivery.** `compass.sh milestone-gate` now requires a delivered milestone's receipt to carry `render=<html>` + `png=<png|N/A — reason>` + `artifact=<url|N/A — reason>` — a bare `N/A` fails closed — and the contract/plan/ship skills **render → show inline → publish via the Artifact tool → then gate**. Guard-first, so legacy receipts (no `artifact=` token) still pass. A Brief on disk that was never shown or published is no longer "done."
+
+Built + reviewed on Compass in `--auto`. review-contract (2 critics) caught that milestone-gate never ran on the Brief + the receipt-grammar/leak-gate risks; review-plan (2 critics) caught that `scope()` returned empty on real contracts (blank Brief) + several vacuous tests. Suites: **selftest 546 · smoke 429→~445 · recon 96→101 pinned INV groups**; floors held (406/222). `INV-NO-LIFECYCLE-CHANGE` holds — the engine (`cmd_gate`/`LIFECYCLE`/prod-safety) is byte-identical to v0.23.0; the changes are `gen.mjs`, a new `cmd_render`, and the standalone `cmd_milestone_gate`.
+
 ## [0.25.0] — 2026-08-04
 
 **Trim the `/` menu to three — for real.** v0.24 marked nine commands `tier: advanced`, but Claude Code's `/` autocomplete ignores `tier:` and still listed all twelve. v0.25 makes the menu actually show three doors — `/compass:go`, `/compass:status`, `/compass:resume` — via the documented mechanism, with nothing losing the ability to run.
