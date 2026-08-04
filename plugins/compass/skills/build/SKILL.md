@@ -1,5 +1,6 @@
 ---
 name: build
+user-invocable: false
 description: Build-Test-Verify — execute the locked PLAN one step at a time, verify adversarial and proof-based (never "looks right"). Reads contract.md as the invariant before each step; deviation STOPS. Reconciliation is a deterministic PASS/FAIL gate vs the independent gold; a step's box is checked only after its verify passes. Trigger after the plan locks, or on "build it", "compass build", or the Compass orchestrator.
 ---
 
@@ -25,7 +26,7 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 
 ## Per-step loop (each unchecked step, in order)
 0. **Abort sentinel (INV-ABORT, v0.16.0):** at the TOP of each step **and before every mutating op** (a file write, a migration, a bulk data op), run `compass.sh abort-check <slug>` — **non-zero (exit 3) → HALT cleanly**: stop *before* the mutation, leave committed + working state known-good and revertible, record the cursor in `progress.md`, and exit. **Bulk mutations run in bounded batches with a checkpoint after each batch**, re-checking `abort-check` between batches so a mid-flight `compass.sh abort <slug>` bounds blast radius (never a half-applied bulk op). This is the clean mid-flight stop for an autonomous/`--auto` build.
-1. **Build** exactly as specified — no scope creep. **(web, v0.14.0) Apply the design-standard:** before building any UI surface, load the contract's `design-standard` bundled skill — invoke `/compass:rk-house-style` (product surfaces: dashboards/tables/forms/charts) and/or `/compass:cinematic-hero` (hero/launch/motion) — and compose from ITS pinned tokens + component recipes; never invent off-system styles. The contract's `## Design Spec` (extracted from that same bundled skill) is the binding target, and its gates (`rk-house-style` anti-drift + compose-check against the active theme) are the per-surface craft check.
+1. **Build** exactly as specified — no scope creep. **(web, v0.14.0) Apply the design-standard:** before building any UI surface, load the contract's `design-standard` bundled skill — invoke the `rk-house-style` skill (product surfaces: dashboards/tables/forms/charts) and/or the `cinematic-hero` skill (hero/launch/motion) — and compose from ITS pinned tokens + component recipes; never invent off-system styles. The contract's `## Design Spec` (extracted from that same bundled skill) is the binding target, and its gates (`rk-house-style` anti-drift + compose-check against the active theme) are the per-surface craft check.
    - **(v0.15.0) Kill-switch spine (F-FLAG):** any **user-visible** change is built behind the contract's declared feature flag, **flag defaulted OFF** (dark). The step's verify must exercise **both states**: flag OFF = the old behavior is intact (no user-visible change), flag ON = the new behavior. A user-visible change with only one state proven is not done. (`no flag — <reason>` in the contract waives this for that build.)
 2. **Test** — run/add the deterministic test the plan named.
 3. **Verify (adversarial)** — lowest project-facet rung that genuinely proves it; record the exact command + fresh output:
@@ -88,13 +89,13 @@ Progress — ⑤ build complete (each step proof-gated) · next: ⑥ review-buil
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

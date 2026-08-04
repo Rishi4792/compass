@@ -2,9 +2,9 @@
 
 This is the **single source of truth** for the stage-transition gate. The block between the
 `GATE:START` / `GATE:END` markers below is inlined **verbatim** into every stage skill
-(`skills/*/SKILL.md`) and into `commands/start.md`. A smoke assertion (`compass.smoke.sh`)
+(`skills/*/SKILL.md`). A smoke assertion (`compass.smoke.sh`)
 fails the build if any copy drifts from this one — so the gate can never silently diverge
-across entry paths (standalone skill, namespaced `/compass:<stage>` command, or `/compass:start`).
+across entry paths (invoked as a stage skill, or sequenced by the `compass:start` orchestrator).
 
 Editing the gate? Edit the block here, then re-run `bash plugins/compass/scripts/compass.smoke.sh`
 and propagate the identical block to every consumer until the assertion passes.
@@ -12,13 +12,13 @@ and propagate the identical block to every consumer until the assertion passes.
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

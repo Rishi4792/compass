@@ -26,7 +26,7 @@ The "80% of the trust for 20% of the effort" slice.
 - **`/compass:go`** — a welcome that teaches the mental model (contract-first → an assembly line with gates).
 - **Visual Contract Brief** the user explicitly locks, plus a progress **Cockpit**.
 - A plain-English **clarity + confidence block** at every stage.
-- **Auto-vs-human-gated mode choice** and **`/compass:explain`** for on-demand teaching.
+- **Auto-vs-human-gated mode choice** and an on-demand **explain** skill for teaching.
 
 ---
 

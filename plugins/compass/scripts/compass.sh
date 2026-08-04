@@ -1996,7 +1996,7 @@ cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattende
   # shellcheck disable=SC2086
   cmd_budget_init "$dir"$args >/dev/null || die "auto-start: budget-init failed."
   cmd_auto_init "$dir" >/dev/null || die "auto-start: auto-init failed."
-  ok "auto-start: '$(basename "$dir")' is now AUTONOMOUS (--auto). Budget set, .auto-mode written. Run /compass:start (it will auto-advance, stopping only at G1/G2)."
+  ok "auto-start: '$(basename "$dir")' is now AUTONOMOUS (--auto). Budget set, .auto-mode written. Run /compass:go (it will auto-advance, stopping only at G1/G2)."
 }
 
 # S5 helper: attempt an autonomous cross-session spawn. Emits ZERO stdout (RP-04). Returns 0 if it

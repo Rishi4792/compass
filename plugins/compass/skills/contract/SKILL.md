@@ -1,5 +1,6 @@
 ---
 name: contract
+user-invocable: false
 description: Define a build's CONTRACT — the locked spec that becomes the invariant for the whole build. An AskUserQuestion interview that won't finish until every required section for the chosen facets is filled, incl. reconciliation to an independent gold figure and measurable INVARIANTs. Trigger when starting a non-trivial build, or on "define the contract", "compass contract", "spec this out", or the Compass orchestrator.
 ---
 
@@ -51,7 +52,7 @@ Six phases, recorded live in `<state-root>/<slug>/intake.md` (append-only, colum
 - **Known bug-class checklist** the reproducing query must pass: no duplicate-stage double-count · no join fan-out multiplication · correct source table.
 
 **`web` also:** Auth model (who logs in, session mechanism, how a test harness authenticates) · UI/UX: exact tokens (colors/type/spacing); flow; empty/loading/error; a11y target (contrast/focus/keyboard); **DESIGN INTENT — required and BINDING.**
-- **Design aesthetic — ASK, then bind (v0.14.0).** Every web/dashboard build gets a **high-craft prototype by default.** Ask the user (AskUserQuestion) which aesthetic the UI should take, routing to Compass's **bundled** design skills: **`rk-house-style`** — the enforced product-UI system (dashboards, tables, forms, charts; pinned tokens + 14 component recipes + a neutral default theme + a self-critique gate, with generated visual gold in its `gallery/`) — for the app surfaces; and **`cinematic-hero`** — the cinematic motion + stills system (hero/launch covers, animated wordmarks, social/launch visuals) — for any hero/launch/marketing surface. A dashboard's product surfaces default to **`rk-house-style`**; **`cinematic-hero`** is added when the build also has a hero/launch asset. Record the choice as a **`design-standard: <rk-house-style|cinematic-hero|both>`** header line, then **invoke the chosen bundled skill** (e.g. `/compass:rk-house-style`) to load its tokens + recipes and produce the mockup + the itemized `## Design Spec` (the binding ground truth). The bundled skills ship WITH the plugin, so every installer gets this — no external dependency.
+- **Design aesthetic — ASK, then bind (v0.14.0).** Every web/dashboard build gets a **high-craft prototype by default.** Ask the user (AskUserQuestion) which aesthetic the UI should take, routing to Compass's **bundled** design skills: **`rk-house-style`** — the enforced product-UI system (dashboards, tables, forms, charts; pinned tokens + 14 component recipes + a neutral default theme + a self-critique gate, with generated visual gold in its `gallery/`) — for the app surfaces; and **`cinematic-hero`** — the cinematic motion + stills system (hero/launch covers, animated wordmarks, social/launch visuals) — for any hero/launch/marketing surface. A dashboard's product surfaces default to **`rk-house-style`**; **`cinematic-hero`** is added when the build also has a hero/launch asset. Record the choice as a **`design-standard: <rk-house-style|cinematic-hero|both>`** header line, then **invoke the chosen bundled skill** (e.g. the `rk-house-style` skill) to load its tokens + recipes and produce the mockup + the itemized `## Design Spec` (the binding ground truth). The bundled skills ship WITH the plugin, so every installer gets this — no external dependency.
 - **A mockup is the SPEC, not inspiration.** When a mockup exists (HTML file, screenshot, or image), extract an **itemized Design Spec** into the contract — the **binding** ground truth the build is graded against: exact tokens (colors/type/spacing/radius/shadow), layout structure, every control/affordance, and **every state** (empty/loading/error/overflow/hover/focus). Name the mockup path. review-build holds the live UI to this, brutally, until zero drift.
 - **No mockup → name the design standard that serves as the spec** — the bundled **`rk-house-style`** (product UI) or **`cinematic-hero`** (motion/hero), whichever the design-aesthetic step selected; that skill's pinned tokens + recipes ARE the checkable visual ground truth. "Use your judgment" is **rejected** — there must be a checkable visual ground truth, or "no design drift" is unverifiable.
 **`pipeline` also:** Input-data contract · Determinism (same input → identical output) · Output schema · Reproducibility.
@@ -131,13 +132,13 @@ Progress — ① contract drafted + Brief shown · next: ② review-contract.
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

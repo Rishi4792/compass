@@ -13,7 +13,7 @@ tier: primary
 - **`/compass:status`** — see where your work stands, any time.
 - **`/compass:resume`** — jump back in from a fresh terminal.
 
-Everything between is driven for you. (Power users: per-stage commands still exist — see the Note at the bottom.)
+Everything between is driven for you — Compass runs each stage (contract, review, plan, build, ship) for you, so the `/` menu stays these three doors. (More on how in the Note at the bottom.)
 <!-- WELCOME:END -->
 
 ## Welcome — how Compass works in 20 seconds
@@ -39,9 +39,9 @@ That's the mental model. When you're ready, this front door reads your build's s
 
 2. **ALWAYS ask the user what to do next** — present an **AskUserQuestion** menu of the possible next steps (this command NEVER auto-advances or auto-picks). Tailor the options to the state:
    - **In-flight build(s) exist** → lead with **Resume `<slug>`** (Stage `<stage>`, Next `<next action>` from its `progress.md`), then offer starting something new.
-   - **Options to present** (choose the 2–4 that fit): **Resume** the in-flight build · **New build → contract** (`/compass:start` or `/compass:contract`) · **I have a spec → plan** (`/compass:plan`) · **Adversarial review** (`/compass:review-contract` · `/compass:review-plan` · `/compass:review-build` — pick by the current stage) · **Ship** (`/compass:ship`) · **Show status** (`/compass:status`). The auto-provided **Other** covers anything else.
+   - **Options to present** (choose the 2–4 that fit): **Resume** the in-flight build · **New build → contract** · **I have a spec → plan** · **Adversarial review** (pick review-contract / review-plan / review-build by the current stage) · **Ship** · **Show status**. The auto-provided **Other** covers anything else.
 
-3. **Route** — invoke the **Skill** for the chosen stage (`compass:contract`, `compass:plan`, `compass:review-*`, `compass:build`, `compass:ship`, or `compass:resume` / `compass:start`). That stage owns its own logic and its own transition gate; **this router adds no second gate of its own.**
+3. **Route** — invoke the **Skill** for the chosen stage (`compass:contract`, `compass:plan`, `compass:review-contract` / `compass:review-plan` / `compass:review-build`, `compass:build`, `compass:ship`, or the `compass:start` orchestrator for a full new-build run). For **Resume** or **Show status**, run the `/compass:resume` / `/compass:status` command. That stage owns its own logic and its own transition gate; **this router adds no second gate of its own.**
 
 ## Edge states (handle explicitly)
 - **No in-flight build (empty state):** if `.claude/builds/PROGRAM.md` exists, FIRST run `compass.sh program-ledger <program>` to **surface any staleness/structural FLAG before trusting the ledger** (M15 — warn, don't silently offer a later phase), then `compass.sh program-next <program>`; if it yields a next phase, lead with **Continue the program → next phase (`<next-slug>`)?** (offer only — a FLAGGED ledger warns instead). Otherwise the menu leads with **New build → contract**; there is nothing to resume.
@@ -49,4 +49,4 @@ That's the mental model. When you're ready, this front door reads your build's s
 - **A chosen downstream stage whose Step-0 gate isn't satisfied** (e.g. the user picks "build" but no plan is LOCKED): route to that stage anyway — its OWN `compass.sh gate` will surface the block and offer the prior stage. The router NEVER fakes readiness or skips a gate.
 
 ## Note
-Everything `/compass:go` does is also reachable directly by the namespaced stage commands (`/compass:start`, `/compass:contract`, `/compass:plan`, …) and `/compass:resume` — `/compass:go` is just the friendly way in that means you never have to remember which one.
+The `/` menu shows just three doors — `/compass:go`, `/compass:status`, `/compass:resume`. All the stage logic lives in skills that Compass invokes **for** you (`compass:contract`, `compass:plan`, `compass:build`, `compass:ship`, the reviews, and the `compass:start` orchestrator); they're hidden from the menu (`user-invocable: false`) so you never have to remember which one — `/compass:go` reads your state and routes into the right one.

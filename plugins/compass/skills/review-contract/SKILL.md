@@ -1,5 +1,6 @@
 ---
 name: review-contract
+user-invocable: false
 description: Review-1 (LIGHT) — adversarially pressure-test a CONTRACT before it locks — completeness, ambiguity, testability, reconciliation pinned/independent/exact, consistency, edge states, feasibility. One clean pass; cap 2. Trigger after compass:contract, or on "review the contract", "pressure-test this spec", or the Compass orchestrator.
 ---
 
@@ -59,13 +60,13 @@ Progress — ② contract pressure-tested · next: ③ plan.
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

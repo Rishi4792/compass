@@ -120,9 +120,11 @@ PLUGIN_ROOT="$(cd "$(dirname "$SH")/.." && pwd)"
 xblk(){ awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$1"; }
 GATE="$PLUGIN_ROOT/shared/gate.md"
 STAGES="contract review-contract plan review-plan build review-build ship"
-# INV-1: all 10 command files exist (3 commands + 7 stage wrappers), each with a non-empty description
-c1=0; for c in start resume status $STAGES; do [ -f "$PLUGIN_ROOT/commands/$c.md" ] && c1=$((c1+1)); done
-chk "$c1" "10" "INV-1 all 10 command files exist (3 commands + 7 stage wrappers)"
+# INV-1: exactly 3 command files (go/status/resume — the only / menu doors), each with a non-empty description
+c1=$(ls "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')
+chk "$c1" "3" "INV-1 exactly 3 command files remain (the / menu doors)"
+cset=$(for c in "$PLUGIN_ROOT"/commands/*.md; do basename "$c" .md; done | sort | xargs)
+chk "$cset" "go resume status" "INV-1 the 3 command files are exactly go/resume/status"
 bd=0; for c in "$PLUGIN_ROOT"/commands/*.md; do grep -qE '^description: .+' "$c" || bd=$((bd+1)); done
 chk "$bd" "0" "INV-1 every command has a non-empty description"
 # INV-3: canonical gate defines 4 option labels + uses AskUserQuestion
@@ -133,19 +135,19 @@ chk "$gl" "4" "INV-3 canonical gate.md defines all 4 option labels"
 g2=0; for s in $STAGES; do grep -q AskUserQuestion "$PLUGIN_ROOT/skills/$s/SKILL.md" && g2=$((g2+1)); done
 chk "$g2" "7" "INV-2 all 7 stage skills present the gate (AskUserQuestion)"
 ( grep -rq "; don't invoke it" "$PLUGIN_ROOT"/skills/*/SKILL.md ); chk "$?" "1" "INV-2 old text-only standalone-stop tail removed (R2-01)"
-# INV-4: each wrapper delegates to its skill and adds no second gate
-g4=0; for s in $STAGES; do w="$PLUGIN_ROOT/commands/$s.md"; if grep -q "compass:$s" "$w" && ! grep -q AskUserQuestion "$w"; then g4=$((g4+1)); fi; done
-chk "$g4" "7" "INV-4 all 7 wrappers delegate to their skill with no double-gate"
-# INV-7: canonical gate block byte-identical across 7 skills + start.md (8 consumers)
+# INV-4: the 2 migrated skills (start, explain) exist, are hidden from the / menu, with a description
+g4=0; for s in start explain; do sk="$PLUGIN_ROOT/skills/$s/SKILL.md"; if [ -f "$sk" ] && grep -q '^user-invocable: false' "$sk" && grep -qE '^description: .+' "$sk"; then g4=$((g4+1)); fi; done
+chk "$g4" "2" "INV-4 migrated skills start+explain exist, hidden (user-invocable:false), with a description"
+# INV-7: canonical gate block byte-identical across the 7 stage skills (gate.md = canonical source, not a consumer)
 canon="$(xblk "$GATE")"
 chk "$([ -n "$canon" ] && echo 1 || echo 0)" "1" "INV-7 canonical gate block is non-empty (no vacuous match)"
-g7=0; for t in skills/contract/SKILL.md skills/review-contract/SKILL.md skills/plan/SKILL.md skills/review-plan/SKILL.md skills/build/SKILL.md skills/review-build/SKILL.md skills/ship/SKILL.md commands/start.md; do
+g7=0; for t in skills/contract/SKILL.md skills/review-contract/SKILL.md skills/plan/SKILL.md skills/review-plan/SKILL.md skills/build/SKILL.md skills/review-build/SKILL.md skills/ship/SKILL.md; do
   [ "$(xblk "$PLUGIN_ROOT/$t")" = "$canon" ] && g7=$((g7+1))
 done
-chk "$g7" "8" "INV-7 canonical gate block byte-identical across 7 skills + start.md"
-# RECONCILE: stage wrappers == 7 AND gated stage-skills == 7 (gold=7, exact)
-rw=0; for s in $STAGES; do [ -f "$PLUGIN_ROOT/commands/$s.md" ] && rw=$((rw+1)); done
-chk "$rw" "7" "RECONCILE stage-wrapper count == 7 (gold)"
+chk "$g7" "7" "INV-7 canonical gate block byte-identical across the 7 stage skills"
+# RECONCILE: gated stage-skills == 7 (gold=7, exact)
+rw=0; for s in $STAGES; do [ -f "$PLUGIN_ROOT/skills/$s/SKILL.md" ] && rw=$((rw+1)); done
+chk "$rw" "7" "RECONCILE stage-skill count == 7 (gold)"
 chk "$g2" "7" "RECONCILE gated stage-skill count == 7 (gold)"
 
 # ── v0.10.0 --auto autonomous loop wiring ──
@@ -154,7 +156,7 @@ disp=0; for c in auto-precheck auto-init budget-init budget-check check-session-
 chk "$disp" "8" "v0.10 all 8 --auto subcommands wired in dispatch"
 chk "$([ -f "$PLUGIN_ROOT/scripts/spawn-smoke.sh" ] && echo 1 || echo 0)" "1" "v0.10 spawn-smoke.sh present (S0 feasibility gate)"
 chk "$(grep -q 'auto-closed:' "$SH" && echo 1 || echo 0)" "1" "v0.10 lifecycle-audit G-L2 accepts the auto-closed marker"
-chk "$(grep -lq 'Autonomous mode' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.10 start.md documents --auto autonomous mode"
+chk "$(grep -lq 'Autonomous mode' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.10 start skill documents --auto autonomous mode"
 chk "$(grep -lq 'budget.env\|NO JSON\|line-oriented' "$PLUGIN_ROOT/scripts/compass.sh" && echo 1 || echo 0)" "1" "v0.10 state is line-oriented (budget.env, no JSON)"
 
 # ── v0.11.0 autonomous self-spawn wiring ──
@@ -163,8 +165,8 @@ chk "$d11" "4" "v0.11 all 4 new subcommands wired in dispatch (fire-g1/gate-clea
 # the reorder: the .auto-mode branch must appear BEFORE the gated `is_mid_build || continue` in stop-guard
 am=$(grep -n 'sr/\$slug/.auto-mode' "$SH" | head -1 | cut -d: -f1); im=$(grep -n 'is_mid_build "\$sr/\$slug" || continue' "$SH" | head -1 | cut -d: -f1)
 chk "$([ -n "$am" ] && [ -n "$im" ] && [ "$am" -lt "$im" ] && echo 1 || echo 0)" "1" "v0.11 stop-guard: .auto-mode branch is BEFORE is_mid_build (fires at all stages — the fix)"
-chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md adds the interactive Gated/Autonomous prompt"
-chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/commands/start.md" && echo 1 || echo 0)" "1" "v0.11 start.md documents the auto-start one-command trigger"
+chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the Gated/Autonomous at-lock choice"
+chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the auto-start one-command trigger"
 
 # ── v0.12.0 S6 (F-STATUS, contract: "asserted in smoke"): behavioral status-line asserts ──
 FSD="$(mktemp -d)/fstat"; mkdir -p "$FSD"
@@ -178,7 +180,7 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
@@ -264,10 +266,10 @@ chk "$(grep -cE 'INDEX|CURRENT|progress' "$RTR" | awk '{print ($1>=1)?1:0}')" "1
 chk "$(grep -c 'Edge states' "$RTR")" "1" "v0.14 router documents the edge states"
 # INV-README
 chk "$(grep -c 'simplest way in is .*compass:go' "$REPO/README.md")" "1" "v0.14.1 README leads with /compass:go"
-chk "$(grep -c 'Every stage is still its own command' "$REPO/README.md")" "1" "v0.14 README keeps namespaced commands as advanced/optional"
+chk "$(grep -c 'Three doors, everything else driven for you' "$REPO/README.md")" "1" "v0.25 README: the / menu is three doors (namespaced stage commands removed)"
 
 # ── v0.15.0 slice ①: clarity/UX — welcome · compass-visual Brief · explicit lock · mode · explain · Feynman ──
-GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/commands/explain.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
+GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/skills/explain/SKILL.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
 # INV-WELCOME
 chk "$(grep -c 'Welcome — how Compass works' "$GO15")" "1" "v0.15 INV-WELCOME: go.md carries the confidence welcome"
 chk "$( { grep -q 'Contract-first' "$GO15" && grep -q 'assembly line' "$GO15"; } && echo 1 || echo 0)" "1" "v0.15 INV-WELCOME: go.md teaches the mental model (contract-first → assembly line)"
@@ -423,7 +425,7 @@ chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produ
 # INV-MODE
 chk "$( { grep -q '\*\*Auto\*\*' "$CSK15" && grep -q 'Human-gated' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-MODE: contract skill offers Auto vs Human-gated (each explained)"
 # INV-EXPLAIN
-chk "$([ -f "$EXP15" ] && grep -q '^description: .\+' "$EXP15" && grep -q 'feynman-walkthrough' "$EXP15" && echo 1 || echo 0)" "1" "v0.15 INV-EXPLAIN: commands/explain.md exists with description + teaching invocation"
+chk "$([ -f "$EXP15" ] && grep -q '^description: .\+' "$EXP15" && grep -q 'feynman-walkthrough' "$EXP15" && echo 1 || echo 0)" "1" "v0.15 INV-EXPLAIN: explain skill exists with description + teaching invocation"
 # INV-FEYNMAN — unique markers, ordered feynman<confidence<GATE:START, non-blank window 1..28
 feyn_ok() { local f="$1" fc cc fl cl gl nb
   fc=$(grep -c '<!-- FEYNMAN -->' "$f"); cc=$(grep -c '<!-- CONFIDENCE -->' "$f")
@@ -645,7 +647,7 @@ _dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
 chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
 chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "90" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 90 (78 after v0.23 + the 12 v0.24 clarity names)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "96" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 96 (90 + the 6 v0.25 command-surface names)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -661,9 +663,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.24.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.24 W-F: plugin.json at the current release 0.24.0"
-chk "$(grep -c '0.24.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.24 W-F: marketplace.json at the current release 0.24.0"
-chk "$(grep -c '## \[0.24.0\]' "$RR22/CHANGELOG.md")" "1" "v0.24 W-F: CHANGELOG carries the 0.24.0 entry"
+chk "$(grep -c '0.25.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.25 W-F: plugin.json at the current release 0.25.0"
+chk "$(grep -c '0.25.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.25 W-F: marketplace.json at the current release 0.25.0"
+chk "$(grep -c '## \[0.25.0\]' "$RR22/CHANGELOG.md")" "1" "v0.25 W-F: CHANGELOG carries the 0.25.0 entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
@@ -701,8 +703,8 @@ chk "$(awk '/^cmd_cockpit\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$CURSH" | grep 
 # INV-SURFACE-3 — 3 primary (go/status/resume) · 9 advanced · 12 present · WELCOME lists no advanced invocation
 chk "$(grep -l '^tier: primary' "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "3" "v0.24 INV-SURFACE-3: exactly 3 primary commands"
 chk "$(grep -q '^tier: primary' "$PLUGIN_ROOT/commands/go.md" && grep -q '^tier: primary' "$PLUGIN_ROOT/commands/status.md" && grep -q '^tier: primary' "$PLUGIN_ROOT/commands/resume.md" && echo 1 || echo 0)" "1" "v0.24 INV-SURFACE-3: the 3 primary are go/status/resume"
-chk "$(grep -l '^tier: advanced' "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "9" "v0.24 INV-SURFACE-3: exactly 9 advanced commands"
-chk "$(ls "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "12" "v0.24 INV-SURFACE-3: all 12 command files still present"
+chk "$(grep -l '^tier: advanced' "$PLUGIN_ROOT"/commands/*.md 2>/dev/null | wc -l | tr -d ' ')" "0" "v0.25 INV-SURFACE-3: 0 advanced command files remain (the 9 were removed)"
+chk "$(ls "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')" "3" "v0.25 INV-SURFACE-3: exactly 3 command files present (go/status/resume)"
 WB="$(awk '/<!-- WELCOME:START -->/{f=1} f{print} /<!-- WELCOME:END -->/{f=0}' "$PLUGIN_ROOT/commands/go.md")"
 chk "$([ -n "$WB" ] && echo 1 || echo 0)" "1" "v0.24 INV-SURFACE-3: WELCOME block present in go.md"
 chk "$(printf '%s' "$WB" | grep -cE '/compass:(start|contract|plan|build|ship|explain|review-)')" "0" "v0.24 INV-SURFACE-3: WELCOME block lists no advanced command invocation"
@@ -711,7 +713,7 @@ chk "$([ "$(grep -c 'esume' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && [ "$(grep
 # INV-PUSH-RESUME — go.md + resume.md push the cockpit on re-entry
 chk "$([ "$(grep -c 'compass.sh cockpit' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && [ "$(grep -c 'compass.sh cockpit' "$PLUGIN_ROOT/commands/resume.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-PUSH-RESUME: go.md + resume.md push the cockpit"
 # INV-MODE-AT-LOCK — the pre-contract mode prompt is gone (kill test = the deletion)
-chk "$(grep -c 'BEFORE writing the contract' "$PLUGIN_ROOT/commands/start.md")" "0" "v0.24 INV-MODE-AT-LOCK: start.md pre-contract mode prompt removed"
+chk "$(grep -c 'BEFORE writing the contract' "$PLUGIN_ROOT/skills/start/SKILL.md")" "0" "v0.24 INV-MODE-AT-LOCK: start skill has no pre-contract mode prompt"
 # INV-ARTIFACT-MILESTONES — the 3 views exist + milestone-gate bites (negative fails, positive passes)
 chk "$([ "$(grep -c "'plan-map'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'program-cockpit'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'release-card'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-ARTIFACT-MILESTONES: gen.mjs adds plan-map/program-cockpit/release-card"
 if ( "$SH" milestone-gate "$V24/.claude/builds/b" release-card ) >/dev/null 2>&1; then mn=0; else mn=1; fi
@@ -735,6 +737,45 @@ else frz=1; fi   # tag unreachable (shallow/CI clone) → do not false-FAIL
 chk "$frz" "1" "v0.24 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + cmd_gate + prod-safety fns byte-identical to v0.23.0"
 rm -rf "$V24"
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+# ── v0.25.0: trim the / menu to 3 (user-invocable:false mechanism + dead-ref scrub) ──
+DEADPAT='/compass:(start|contract|plan|build|ship|explain|review-[a-z-]+|rk-house-style|cinematic-hero|compass-visual)'
+# INV-MENU-3: the / menu = exactly 3 command files {go,status,resume} AND every skill hidden (user-invocable:false)
+_m3c=$(ls "$PLUGIN_ROOT"/commands/*.md | wc -l | tr -d ' ')
+_m3set=$(for c in "$PLUGIN_ROOT"/commands/*.md; do basename "$c" .md; done | sort | xargs)
+_m3false=$(grep -l '^user-invocable: false' "$PLUGIN_ROOT"/skills/*/SKILL.md | wc -l | tr -d ' ')
+_m3true=$(grep -l '^user-invocable: true' "$PLUGIN_ROOT"/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+_m3total=$(ls -d "$PLUGIN_ROOT"/skills/*/SKILL.md | wc -l | tr -d ' ')
+chk "$([ "$_m3c" = "3" ] && [ "$_m3set" = "go resume status" ] && echo 1 || echo 0)" "1" "v0.25 INV-MENU-3: exactly 3 command files, the set == {go,resume,status}"
+chk "$([ "$_m3false" = "$_m3total" ] && [ "$_m3true" = "0" ] && echo 1 || echo 0)" "1" "v0.25 INV-MENU-3: every skill hidden (user-invocable:false, none :true) — nothing extra shows in /"
+# INV-START-SKILL: start.md migrated to skills/start (orchestrator intact, hidden, 0 dead slashes)
+_ss="$PLUGIN_ROOT/skills/start/SKILL.md"; _ssok=1
+{ [ -f "$_ss" ] && grep -q '^user-invocable: false' "$_ss" && grep -qE '^description: .+' "$_ss"; } || _ssok=0
+for g in 'Autonomous mode' 'Gated or Autonomous' 'auto-start' 'pipeline'; do grep -qF "$g" "$_ss" || _ssok=0; done
+[ "$(grep -roE "$DEADPAT" "$_ss" | wc -l | tr -d ' ')" = "0" ] || _ssok=0
+chk "$_ssok" "1" "v0.25 INV-START-SKILL: skills/start migrated (orchestrator intact, hidden, no dead slashes)"
+# INV-EXPLAIN-SKILL: explain.md migrated to skills/explain (feynman, hidden, 0 dead slashes)
+_es="$PLUGIN_ROOT/skills/explain/SKILL.md"; _esok=1
+{ [ -f "$_es" ] && grep -q '^user-invocable: false' "$_es" && grep -qE '^description: .+' "$_es" && grep -q 'feynman-walkthrough' "$_es"; } || _esok=0
+[ "$(grep -roE "$DEADPAT" "$_es" | wc -l | tr -d ' ')" = "0" ] || _esok=0
+chk "$_esok" "1" "v0.25 INV-EXPLAIN-SKILL: skills/explain migrated (feynman-walkthrough, hidden, no dead slashes)"
+# INV-GATE-FOOTER-GO: the canonical gate block points at /compass:go, not the old per-stage command
+_gblk="$(xblk "$GATE")"
+chk "$(printf '%s' "$_gblk" | grep -c '/compass:go')" "1" "v0.25 INV-GATE-FOOTER-GO: gate footer runs /compass:go"
+chk "$(printf '%s' "$_gblk" | grep -c '/compass:<next stage>')" "0" "v0.25 INV-GATE-FOOTER-GO: old /compass:<next stage> footer literal is gone"
+chk "$(printf '%s' "$_gblk" | grep -cE '/compass:(start|contract|plan|build|ship|review-[a-z-]+)')" "0" "v0.25 INV-GATE-FOOTER-GO: gate block names no dead /compass:<stage> command"
+# INV-GO-ROUTES: go.md has no dead slash + still names the compass:start/compass:contract skill routes
+chk "$(grep -roE "$DEADPAT" "$PLUGIN_ROOT/commands/go.md" | wc -l | tr -d ' ')" "0" "v0.25 INV-GO-ROUTES: go.md has no dead /compass:<removed> slash"
+chk "$([ "$(grep -c 'compass:start' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && [ "$(grep -c 'compass:contract' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.25 INV-GO-ROUTES: go.md still routes into the compass:start/compass:contract skills"
+# INV-NO-DEAD-REF: no shippable surface points at a removed /compass:<x> (CHANGELOG exempt)
+_ndr=0
+for f in "$REPO/README.md" "$REPO/ROADMAP.md" "$PLUGIN_ROOT/scripts/compass.sh" "$PLUGIN_ROOT/shared/gate.md" "$PLUGIN_ROOT/commands/go.md"; do
+  _ndr=$((_ndr + $(grep -roE "$DEADPAT" "$f" | wc -l | tr -d ' ')))
+done
+_ndr=$((_ndr + $(grep -roE "$DEADPAT" "$PLUGIN_ROOT"/skills/*/SKILL.md | wc -l | tr -d ' ')))
+chk "$_ndr" "0" "v0.25 INV-NO-DEAD-REF: no dead /compass:<removed> ref across README/ROADMAP/compass.sh/gate.md/go.md/skills"
+chk "$(grep -c 'commands/start.md' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.25 INV-NO-DEAD-REF: gate.md header has no commands/start.md file-path ref"
+chk "$(grep -c 'start.md' "$PLUGIN_ROOT/commands/resume.md")" "0" "v0.25 INV-NO-DEAD-REF: resume.md has no dangling start.md ref"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

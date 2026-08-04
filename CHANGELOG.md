@@ -3,6 +3,17 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.25.0] — 2026-08-04
+
+**Trim the `/` menu to three — for real.** v0.24 marked nine commands `tier: advanced`, but Claude Code's `/` autocomplete ignores `tier:` and still listed all twelve. v0.25 makes the menu actually show three doors — `/compass:go`, `/compass:status`, `/compass:resume` — via the documented mechanism, with nothing losing the ability to run.
+
+- **The real lever: `user-invocable: false`.** The `/` menu is populated by BOTH command files AND skills, so demotion-by-`tier:` could never shrink it. Every Compass skill (the 7 stages + the 2 migrated helpers + the 3 bundled design skills = 12) now carries `user-invocable: false` — hidden from the menu, still fully invocable by Claude. Only `go`/`status`/`resume` remain as command files, so `/compass:` shows exactly three.
+- **`start` and `explain` migrated to skills.** The 15 KB `start.md` orchestrator (the graph, file-based state, parallel-build/worktree keystone, the `--auto` two-gate loop + self-spawn, the pipeline) and `explain.md` are now real skills (`skills/start`, `skills/explain`) so `/compass:go` still drives the whole lifecycle. The nine redundant command files (7 stage wrappers + `start` + `explain`) were removed.
+- **The byte-locked gate footer points at `/compass:go`.** The one-line transition footer now sends you to the front door (which reads state and routes on), and the gate block body no longer names any per-stage command. The block stays byte-identical across the 7 stage skills (`g7==7`; `shared/gate.md` is the canonical source).
+- **Every dead `/compass:<stage>` reference scrubbed.** A new `INV-NO-DEAD-REF` invariant proves no shippable surface — the README stage table, ROADMAP, `compass.sh`'s auto-start banner, the gate block, `go.md`, and every skill — points at a command that no longer exists (CHANGELOG history exempt).
+
+Built + reviewed on Compass itself in `--auto`. review-contract (3 critics) caught the premise error — deleting command files alone can't shrink the menu, because skills surface in `/` too (verified against the Claude Code docs) — and the fresh dead-`/compass:*` surface the hide mechanism creates inside `skills/*/SKILL.md`; review-plan (2 critics) hardened the tests (value-aware `user-invocable` check; re-authored the pinned README phrase). Suites: **selftest 546 · smoke 410→~430 · recon 90→96 pinned INV groups**; floors held (406/222). `INV-NO-LIFECYCLE-CHANGE` proves the stage graph, gate exit-codes, and prod-safety functions are byte-identical to v0.23.0 (the one `compass.sh` edit is a user-facing banner string, outside every frozen range).
+
 ## [0.24.0] — 2026-08-04
 
 **Clarity + simplicity: one front door, progress that pushes itself, and a program cockpit for multi-phase / multi-contract builds.** The tool now shows you where you are without being asked — including across phases and the multiple contracts within a phase — and the surface is three commands, not twelve.

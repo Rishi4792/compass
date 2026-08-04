@@ -1,5 +1,6 @@
 ---
 name: compass-visual
+user-invocable: false
 description: Render a build's Contract Brief and progress Cockpit as self-contained HTML + a PNG — the visual "what we're building" and "where it stands" surfaces of a Compass build. The Brief is a cinematic-hero cover + rk-house-style body, read as a PURE FUNCTION of contract.md; the Cockpit is the stage timeline + step k/n + blocker + what's next + what the reviews caught, from progress.md/plan.md/receipts.md/review-ledger.md. Trigger at contract closure (produce the Brief before the explicit lock), at any point someone asks "show me where this build stands", or when the Compass contract/build stages need the visual. A shareable Artifact is produced ONLY on request — and the user is told that option exists.
 ---
 

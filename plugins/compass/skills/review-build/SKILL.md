@@ -1,5 +1,6 @@
 ---
 name: review-build
+user-invocable: false
 description: Review-3 (FULL) — final adversarial review of the BUILT product via a multi-agent fan-out assuming every feature is broken until a re-run check proves it (reconciliation, design+a11y, exercised rollback, observability, idempotency, secrets). Ends with a human sign-off. Two clean rounds; cap 5. Trigger after compass:build, or on "review the build", "final review", "ready to ship".
 ---
 
@@ -122,13 +123,13 @@ Progress — ⑥ build proven + human sign-off · next: ⑦ ship.
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

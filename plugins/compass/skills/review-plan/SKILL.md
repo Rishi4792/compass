@@ -1,5 +1,6 @@
 ---
 name: review-plan
+user-invocable: false
 description: Review-2 (FULL) — adversarially pressure-test the PLAN before build via a multi-agent fan-out (traceability, invariants, migration, deps, blast-radius, rollback, tests, reconciliation, perf, security, secrets). Two clean rounds; cap 3; un-converged escalates to the contract. Trigger after compass:plan, or on "review the plan", or the Compass orchestrator.
 ---
 
@@ -109,13 +110,13 @@ Progress — ④ plan pressure-tested · next: ⑤ build.
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 

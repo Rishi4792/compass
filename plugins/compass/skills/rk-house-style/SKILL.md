@@ -1,5 +1,6 @@
 ---
 name: rk-house-style
+user-invocable: false
 description: The ENFORCED house design system — one premium look for every frontend, with gates that stop drift (not just advice). Triggers on building or editing a page, component, view, dashboard, screen, form, table, chart, or any UI surface ("build a page", "create a component", "design a dashboard", "make a form", "add a table", "redesign the UI", "build the frontend"). Does NOT trigger on backend/API/route logic, data/SQL/pipeline, schema/migration, CLI/scripts, test-only, or docs. Applies the active theme's pinned tokens + component recipes, and a self-critique gate that scores the work BEFORE the user sees it. The single design skill at user level (the generic novelty-biased ones were removed).
 version: 1.0.0
 ---

@@ -1,5 +1,6 @@
 ---
 name: cinematic-hero
+user-invocable: false
 description: The house style for CINEMATIC MOTION + STILLS — best-in-the-world animated hero GIFs/MP4s and cinematic stills (deck covers, social cards, launch visuals), in one signature look. Triggers on requests for a "hero GIF/video", "cinematic" anything, "animated logo/wordmark", "launch/hero/demo asset", "motion graphic", "title card", "twitter/social video or card", "deck cover slide", or "make it cinematic / buzz.xyz / SpaceX / Nolan vibe". Give it a ONE-LINE BRIEF (product + a few beats) and it storyboards, builds a frame-deterministic HTML, renders GIF+MP4 (or a still), does a light self-review, and delivers. Does NOT trigger on functional UI pages/components/dashboards/forms — that is `rk-house-style`. This is the MOTION + cinematic-visual skill; rk-house-style is the product-UI skill.
 version: 1.0.0
 ---

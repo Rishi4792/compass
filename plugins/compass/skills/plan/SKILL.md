@@ -1,5 +1,6 @@
 ---
 name: plan
+user-invocable: false
 description: Turn a locked CONTRACT into an industry-standard engineering plan. STRICT PREREQUISITE — first scan and deeply understand the existing live codebase (or, greenfield, the chosen stack) before planning. Each step gets a verify command; every INVARIANT a non-deferred bound-asserting check; migrations dry-run on a copy. Trigger after the contract locks, or on "make the plan", "compass plan", or the Compass orchestrator.
 ---
 
@@ -66,13 +67,13 @@ Progress — ③ plan drafted (grounded in the real codebase) · next: ④ revie
 <!-- GATE:START -->
 ## Stage transition — the gate (fires on EVERY entry path)
 
-This stage owns its own transition gate. Present it whether the stage was run standalone
-(bare skill, e.g. `/build`), via the namespaced command (`/compass:build`), or sequenced by
-`/compass:start`. The orchestrator does **not** present a second gate — the stage owns it.
+This stage owns its own transition gate. Present it whether this stage was invoked on its own
+(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
+does **not** present a second gate — the stage owns it.
 
 1. First print the one-line **transition footer**, in exactly this shape:
 
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:<next stage>\`.`
+   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 
