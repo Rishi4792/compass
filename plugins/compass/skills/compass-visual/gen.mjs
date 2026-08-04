@@ -709,8 +709,12 @@ function shareableScrub(html, declared = {}) {
   for (const g of (declared.gold || [])) {
     for (const form of genForms(g)) {
       if (!form) continue;
-      const re = new RegExp(esc_re(form), 'g');
-      if (re.test(out)) { hits.push('declared gold residue'); out = out.replace(re, R); }
+      // scrub the RAW form AND its HTML-escaped form: injected prose is esc()'d (& → &amp;, < → &lt; …),
+      // so a declared value containing an HTML metachar would render escaped and slip a raw-only regex (RB-v0.26).
+      for (const target of new Set([form, esc(form)])) {
+        const re = new RegExp(esc_re(target), 'g');
+        if (re.test(out)) { hits.push('declared gold residue'); out = out.replace(re, R); }
+      }
     }
   }
   // normalized-numeric residue (R3-R4-D4-1): the exact-string scrub above misses the SAME figure restated
@@ -745,8 +749,10 @@ function shareableScrub(html, declared = {}) {
   // Union of the security-block never-show tokens AND any declared via the brief-data fence (v0.17.0).
   for (const v of [...(security().neverShow || []), ...(declared.neverShow || [])]) {
     if (!v) continue;
-    const re = new RegExp(esc_re(v), 'gi');
-    if (re.test(out)) { hits.push('never-show residue'); out = out.replace(re, R); }
+    for (const target of new Set([v, esc(v)])) {   // raw AND HTML-escaped (a never-show value with & < > " renders escaped) — RB-v0.26
+      const re = new RegExp(esc_re(target), 'gi');
+      if (re.test(out)) { hits.push('never-show residue'); out = out.replace(re, R); }
+    }
   }
   return { out, hits };
 }

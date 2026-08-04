@@ -9,7 +9,7 @@
 - **before→after:** finance hand-totals orders in a spreadsheet each morning || a `revenue_daily` table is ready before 6am, tied to the audited figure
 
 ## 1. Problem / context
-Finance currently exports the orders table and hand-totals revenue in a spreadsheet every morning — slow, error-prone, and impossible to audit. The audited month-end revenue figure is 1234567 rupees, and nothing today reconciles the daily numbers back to it.
+Finance currently exports the orders table and hand-totals revenue in a spreadsheet every morning — slow, error-prone, and impossible to audit. The audited month-end revenue figure is 1234567 rupees, and nothing today reconciles the daily numbers back to it. The internal S&P_score field must never appear in a shareable copy (a declared never-show value with an HTML metachar — the RB-v0.26 leak-regression case).
 
 ## 2. Scope ladder
 
@@ -48,5 +48,5 @@ FOLD-LEAK-SENTINEL — role×view: only the finance-admin role may read `revenue
 
 ```compass-brief-data
 gold: 1234567
-never-show: gross_revenue_pct
+never-show: gross_revenue_pct, S&P_score
 ```

@@ -816,6 +816,7 @@ node "$GENJS" "$FXB" brief-body --shareable --out "$V26T/sh.html" >/dev/null 2>&
 chk "$([ "$_shrc" -eq 3 ] && [ "$(grep -c '1234567' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: declared numeric gold in a rendered region → exit 3 AND literal absent"
 chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/sh.html" 2>/dev/null)" "0" "v0.26 INV-BRIEF-SHAREABLE: the fold uses firstPara not raw bodyHtml (undeclared para-2 sentinel absent on shareable — the leak gate can't catch it, so this bites)"
 chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/body.html")" "1" "v0.26 INV-BRIEF-SHAREABLE: the LOCAL brief keeps the full body (sentinel present locally — proves the distinction)"
+chk "$([ "$(grep -c 'S&P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && [ "$(grep -c 'S&amp;P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: a declared never-show value with an HTML metachar (S&P_score) is scrubbed in BOTH raw + escaped form (RB-v0.26 leak fix — esc()'d prose no longer slips a raw-only regex)"
 rm -rf "$V26T"
 
 echo "──────── $pass passed, $fail failed ────────"
