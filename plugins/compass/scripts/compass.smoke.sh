@@ -271,7 +271,7 @@ chk "$(grep -c 'Three doors, everything else driven for you' "$REPO/README.md")"
 # ── v0.15.0 slice ①: clarity/UX — welcome · compass-visual Brief · explicit lock · mode · explain · Feynman ──
 GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/skills/explain/SKILL.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
 # INV-ORIENT
-# v0.29.0 — the two asserts that USED to live here were:
+# v0.29.1 — the two asserts that USED to live here were:
 #   grep -c 'Welcome — how Compass works' go.md   == 1
 #   grep -q 'Contract-first' && grep -q 'assembly line' go.md
 # They passed for twelve versions while the welcome printed 0 times in 30 real
@@ -672,9 +672,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.29.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.29.0"
-chk "$(grep -c '0.29.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.0"
-chk "$(grep -c '## \[0.29.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.0 entry"
+chk "$(grep -c '0.29.1' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.29.1"
+chk "$(grep -c '0.29.1' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.1"
+chk "$(grep -c '## \[0.29.1\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.1 entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
@@ -736,7 +736,7 @@ _ex(){ awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{"{f=1} f{print} f&&/^}$/{exit}'; }
 V23="$(git -C "$PLUGIN_ROOT" show v0.23.0:plugins/compass/scripts/compass.sh 2>/dev/null || true)"
 frz=1
 if [ -n "$V23" ]; then
-  # v0.29.0 — the freeze is NARROWED, deliberately and with user sign-off (G2).
+  # v0.29.1 — the freeze is NARROWED, deliberately and with user sign-off (G2).
   # v0.24 froze cmd_gate byte-for-byte. But the codebase itself contradicts the
   # strict reading: schema-pin, perf-budget, expand-contract, backfill-recon and
   # green-ci are ALL additive guard-first arms added to these very seams. The
@@ -813,7 +813,7 @@ chk "$_ndr" "0" "v0.25 INV-NO-DEAD-REF: no dead /compass:<removed> ref across RE
 chk "$(grep -c 'commands/start.md' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.25 INV-NO-DEAD-REF: gate.md header has no commands/start.md file-path ref"
 chk "$(grep -c 'start.md' "$PLUGIN_ROOT/commands/resume.md")" "0" "v0.25 INV-NO-DEAD-REF: resume.md has no dangling start.md ref"
 
-# ── v0.29.0: visual Brief redesign + delivery enforcement ──
+# ── v0.29.1: visual Brief redesign + delivery enforcement ──
 FXB="$PLUGIN_ROOT/scripts/fixtures/brief-contract"
 GENJS="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 V26T="$(mktemp -d)"
@@ -828,7 +828,7 @@ _hn="$(awk '/class="ba"/{exit} {print}' "$V26T/nohdr.html")"
 chk "$([ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-REAL-PP')" -ge 1 ] && [ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-DECOY-QQ')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: with no **Goal:** header, sec('Goal') resolves to the Goal section not Non-goals (the anchored-sec fix BITES — a substring sec() renders the DECOY here)"
 chk "$([ "$(grep -c '1234567' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-RECON-TIE' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-IDEMPOTENT' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-FRESH-BY-6AM' "$V26T/body.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: reconciliation literal + all 3 fixture INV names present (every card populated, not blanked by an exact-equality over-fix)"
 # INV-BRIEF-IA — the 6 regions + flow/guardrails POPULATED + deterministic
-# v0.29.0 REWRITTEN (not retired) — the v0.26 regions (before→after · done · flow · guardrails
+# v0.29.1 REWRITTEN (not retired) — the v0.26 regions (before→after · done · flow · guardrails
 # · fold) encoded the OLD layout, and the v0.29 contract explicitly removes Before/After as
 # empty scaffolding. The INTENT — "the mental-model regions are all present" — is preserved
 # verbatim against the NEW four-band skeleton, which is the same assertion about a different
@@ -867,7 +867,7 @@ chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/body.html")" "1" "v0.26 INV-BRIEF-SHA
 chk "$([ "$(grep -c 'S&P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && [ "$(grep -c 'S&amp;P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: a declared never-show value with an HTML metachar (S&P_score) is scrubbed in BOTH raw + escaped form (RB-v0.26 leak fix — esc()'d prose no longer slips a raw-only regex)"
 rm -rf "$V26T"
 
-# ── v0.29.0: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
+# ── v0.29.1: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
 FXV="$PLUGIN_ROOT/scripts/fixtures/view-fixture"
 GENV="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 THEMEV="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
@@ -878,7 +878,7 @@ node "$GENV" "$FXV/b" plan-map --out "$V27T/pm.html" >/dev/null 2>&1
 node "$GENV" "$FXV/b" release-card --out "$V27T/rc.html" >/dev/null 2>&1
 node "$GENV" "$FXV/b" program-cockpit --out "$V27T/pc.html" >/dev/null 2>&1
 # INV-VIEW-IA — the new region classes (absent from the pre-v0.27 bodies) + populated content
-# v0.29.0 REWRITTEN (not retired). The old assert required `vp-hero`, `vp-prog` and **≥1 wave**
+# v0.29.1 REWRITTEN (not retired). The old assert required `vp-hero`, `vp-prog` and **≥1 wave**
 # — but the v0.29 contract explicitly REMOVES the wave chip (a plan that uses no waves must not
 # render "0 waves"). Asserting ≥1 wave would have forced the exact defect this release fixes.
 # The intent — "the plan map carries its mental-model IA, populated" — is preserved against the
@@ -899,7 +899,7 @@ chk "$_g" "1" "v0.27 INV-VIEW-GATES: each redesigned view body + brief-body pass
 rm -rf "$V27T"
 
 
-# ══ v0.29.0 "always clarity" — BEHAVIOUR asserts. Every one of these fails when
+# ══ v0.29.1 "always clarity" — BEHAVIOUR asserts. Every one of these fails when
 # the behaviour breaks, not merely when bytes go missing from a file. That
 # distinction is the entire point of this release (see the deleted INV-WELCOME
 # asserts above). ══
@@ -936,7 +936,7 @@ chk "$(bash "$SH" progress-card "$V28/progress-card/hostile" | od -c | grep -c '
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-quiet" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-CARD-GATE: quiet-mode still records, so COMPASS_QUIET cannot deadlock the build loop"
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-later-block" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-GATE: a card in a LATER receipt block does NOT satisfy the step's own gate (review-3 bypass, now fixed)"
 
-# INV-ORIENT zero-builds path (post-ship regression, v0.29.0): cmd_active_builds
+# INV-ORIENT zero-builds path (post-ship regression, v0.29.1): cmd_active_builds
 # prints a human "0 active builds." status line when nothing is in flight. A naive
 # ^[a-zA-Z0-9] match counted THAT line as a build, so with nothing in flight the
 # renderer emitted NOTHING — breaking the single most important case, a new user
@@ -979,7 +979,7 @@ chk "$(grep -c 'compass.sh progress-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")"
 chk "$(grep -c 'progress-card' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.28 INV-NO-LIFECYCLE-CHANGE: the byte-locked gate footer is untouched"
 
 
-# ══ v0.29.0 "visual artefacts" — the four views, rebuilt. Every assert below fails when
+# ══ v0.29.1 "visual artefacts" — the four views, rebuilt. Every assert below fails when
 # the BEHAVIOUR breaks, and each one traces to a defect measured in the shipped output. ══
 V29FX="$PLUGIN_ROOT/scripts/fixtures/artefacts"; V29G="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 V29AG="$PLUGIN_ROOT/scripts/artefact-gate.mjs"; V29TH="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"

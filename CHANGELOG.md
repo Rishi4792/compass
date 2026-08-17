@@ -3,6 +3,14 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.29.1] — 2026-08-17
+
+**Patch, found by v0.29.0's own post-ship loop — the "fourth redesign" failure it was seeded to catch.**
+
+v0.29.0 routed the fields it knew about through the fence-blind parser and left **five others reading raw markdown**: the security sub-section reader, and the Release Card's version, goal and NOW-scope extraction. A `### never-show` or a version string inside a fenced example would have been read as data — the same bug in a different field, which is precisely the regression the critique target names. All are now fence-blind. The only remaining raw read is the document title, a top-level `# ` heading that cannot sit inside a fence without breaking the fence.
+
+smoke 556, selftest 561, recon 130 pinned groups. All green.
+
 ## [0.29.0] — 2026-08-17
 
 **The artefacts are rebuilt around the reader.** The Contract Brief and Plan Map were the most visible thing Compass produces and the least usable — so this release rebuilds all four generated views on one decision-first skeleton, and turns "it looks messy" into a set of commands that can fail.

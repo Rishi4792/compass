@@ -141,7 +141,7 @@ function scope() {
   // real contracts write `### NOW —` headings + numbered/bullet items; parse those first, then
   // fall back to the old `- NOW:` inline-bullet form (item filter accepts BOTH `N.` and `-`/`*`).
   const grab = (kw) => {
-    const m = contract.match(new RegExp('###\\s*' + kw + '[^\\n]*\\n([\\s\\S]*?)(?=\\n###|\\n##\\s|$)', 'i'));
+    const m = contractFields.match(new RegExp('###\\s*' + kw + '[^\\n]*\\n([\\s\\S]*?)(?=\\n###|\\n##\\s|$)', 'i'));
     if (m) {
       const items = m[1].split('\n').map((l) => l.trim())
         .filter((l) => /^(\d+\.|[-*])\s+/.test(l))
@@ -855,13 +855,13 @@ function programCockpit() {
 function releaseCard() {
   // version: prefer an explicit "Ships as vX.Y.Z" anchor over the first semver in the file
   // (which could be an older version mentioned in prose) — review-build R2 MINOR-5.
-  const ver = (contract.match(/Ships as \*{0,2}v(\d+\.\d+\.\d+)/i)
-            || contract.match(/v(\d+\.\d+\.\d+)/) || [, hdr('version') || '?'])[1];
+  const ver = (contractFields.match(/Ships as \*{0,2}v(\d+\.\d+\.\d+)/i)
+            || contractFields.match(/v(\d+\.\d+\.\d+)/) || [, hdr('version') || '?'])[1];
   // "What shipped" = the GOAL, not the H1 title line — R2 MAJOR-4 (`sec('')` returned __pre__ = title).
-  const goal = hdr('Goal') || (contract.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1] || '';
+  const goal = hdr('Goal') || (contractFields.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1] || '';
   // "In this release" = the NOW block's numbered items ONLY — never the LATER/NEVER `- ` bullets
   // (R2 MAJOR-3: the old fallback advertised deferred + non-goal items as shipped).
-  const nowBlock = (contract.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
+  const nowBlock = (contractFields.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
   const nowItems = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, '').slice(0, 140));
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
