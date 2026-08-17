@@ -144,7 +144,18 @@ build_status() { # <slug>
 }
 
 is_terminal() { # <status>
-  case " $TERMINAL_STATUSES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+  # v0.28.0: case-INSENSITIVE. `ship` writes `status=shipped` (lowercase) into
+  # the INDEX while TERMINAL_STATUSES lists `SHIPPED`, so every finished build
+  # was classified ACTIVE forever: `active-builds` reported 12 shipped builds as
+  # in flight, `/compass:go` offered to resume long-finished work, and parallel
+  # detection thought 13 builds were running. Found while rendering the v0.28
+  # orientation block, which was wrong for exactly this reason.
+  local s t
+  s="$(printf '%s' "${1:-}" | tr 'a-z' 'A-Z')"
+  for t in $TERMINAL_STATUSES; do
+    [ "$s" = "$(printf '%s' "$t" | tr 'a-z' 'A-Z')" ] && return 0
+  done
+  return 1
 }
 
 # ── v0.9.0: session ownership (window/session-scoped Stop hook) ──────────────
@@ -485,7 +496,13 @@ cmd_gc() {
 # ── existing teeth (unchanged behavior) ────────────────────────────────────
 last_block() { # <file> <stage>
   awk -v s="$2" '
-    $0 ~ ("^## RECEIPT[ ]*[—-][ ]*" s "[ ]*[·|]") { buf=$0 "\n"; cap=1; next }
+    # v0.28.0: alternation, NOT bracket expressions. `[—-]` and `[·|]` contain
+    # multibyte characters; under LC_ALL=C awk reads them byte-wise, turning
+    # `[—-]` into an invalid/reversed byte range that never matches — so EVERY
+    # receipt lookup returned empty and EVERY gate reported "no receipt" under a
+    # C locale (CI, cron, minimal containers). Found by the v0.28 determinism
+    # check rendering the same fixture under LC_ALL=C vs a UTF-8 locale.
+    $0 ~ ("^## RECEIPT[ ]*(—|-)[ ]*" s "[ ]*(·|\\|)") { buf=$0 "\n"; cap=1; next }
     cap && /^## / { last=buf; cap=0 }
     cap { buf=buf $0 "\n" }
     END { if (cap) last=buf; printf "%s", last }
@@ -540,6 +557,10 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     fi
     if type cmd_perf_budget_gate >/dev/null 2>&1; then
       cmd_perf_budget_gate "$dir" >/dev/null || die "gate: perf-budget-gate FAILED for '$dir' (see stderr)."
+    fi
+    # v0.28 INV-MODE-ASKED — contract-header driven, guard-first N/A-pass on legacy.
+    if type cmd_mode_gate >/dev/null 2>&1; then
+      cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
     fi
   fi
   if [ "$stage" = "review-build" ] && type cmd_sketch_gate >/dev/null 2>&1; then
@@ -3036,6 +3057,357 @@ cmd_drift_check() { # <build-dir>
   fi
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# v0.28.0 "always clarity" — orientation block + progress card.
+# The user must ALWAYS know what is planned and how far along it is. These are
+# SCRIPT-rendered and RECEIPT-recorded, never prose instructions: the v0.15
+# welcome sat in go.md for 12 versions and printed 0 times in 30 real
+# /compass:go runs, because its only tests grepped the file for the words.
+# Determinism is load-bearing — no timestamp, no absolute path, no locale-
+# dependent formatting inside a rendered block, so fixtures can be byte-compared.
+# ══════════════════════════════════════════════════════════════════════════════
+
+COMPASS_ORIENT_LOG_CAP="${COMPASS_ORIENT_LOG_CAP:-500}"
+
+# Strip terminal control characters — a plan.md step title is untrusted input
+# (contract STRIDE-lite: Tampering). Keeps \t and \n, drops the escape family.
+_orient_strip() { tr -d '\000-\010\013\014\016-\037'; }
+
+# Append one observability line, then cap the file. Never fails the caller.
+_orient_log() { # <logfile> <command> <mode> <bytes-out>
+  local lf="${1:-}" cmd="${2:-}" mode="${3:-}" bytes="${4:-0}"
+  [ -n "$lf" ] || return 0
+  mkdir -p "$(dirname "$lf")" 2>/dev/null || return 0
+  printf '%s · %s · %s · %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$cmd" "$mode" "$bytes" >> "$lf" 2>/dev/null || return 0
+  local n; n="$(wc -l < "$lf" 2>/dev/null | tr -d ' ')"; n="${n:-0}"
+  if [ "$n" -gt "$COMPASS_ORIENT_LOG_CAP" ] 2>/dev/null; then
+    tail -n "$COMPASS_ORIENT_LOG_CAP" "$lf" > "$lf.tmp" 2>/dev/null && mv "$lf.tmp" "$lf" 2>/dev/null
+  fi
+  return 0
+}
+
+# The NEW-BUILD block — shown when nothing is in flight. Deliberately short:
+# it teaches the model, it does not recite the manual.
+_orient_new_block() {
+  cat <<'COMPASS_ORIENT_NEW'
+── Compass ─────────────────────────────────────────────
+  Build true to a spec you lock first — zero drift.
+
+  1  Contract   we write what "done" means. You lock it.
+  2  Gates      contract→review→plan→review→build→review→ship.
+                Between each, a real script check refuses to
+                advance until the work still matches the contract.
+  3  Never lost Stop any time. /compass:go picks you up here.
+
+  Three doors:  /compass:go  ·  /compass:status  ·  /compass:resume
+────────────────────────────────────────────────────────
+COMPASS_ORIENT_NEW
+}
+
+# Read the declared run-mode. INV-MODE-VISIBLE: the user must always be able to
+# see whether Compass will stop for them, not just have it recorded on disk.
+_orient_mode() { # <build-dir>
+  local m; m="$(sed -nE 's/^mode:[[:space:]]*([A-Za-z-]+).*/\1/p' "${1:-}/progress.md" 2>/dev/null | head -1)"
+  case "$(printf '%s' "${m:-}" | tr 'A-Z' 'a-z')" in
+    autonomous|auto) printf 'Autonomous' ;;
+    human-gated|gated|human) printf 'Human-gated' ;;
+    *) printf 'not set' ;;
+  esac
+}
+
+# The MID-BUILD block — shown when something IS in flight. Never contains the
+# NEW-BUILD intro (INV-ORIENT-NOREPEAT): six /compass:go calls in one session is
+# normal, and six full intros would be rage-inducing.
+_orient_where_block() { # <build-dir>
+  local dir="$1" slug; slug="$(basename "$dir")"
+  local stage cur="" strip="" label
+  for stage in $LIFECYCLE; do
+    if stage_pass "$dir" "$stage"; then :; else cur="$stage"; break; fi
+  done
+  for stage in $LIFECYCLE; do
+    case "$stage" in review-*) label="review" ;; *) label="$stage" ;; esac
+    if stage_pass "$dir" "$stage"; then strip="$strip$label ✓  "
+    elif [ "$stage" = "$cur" ]; then strip="$strip$label ◉  "
+    else strip="$strip$label ○  "; fi
+  done
+  local total done_ next goal
+  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
+  next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | head -1)"
+  goal="$(LC_ALL=C grep -F "$slug · " "$(dirname "$dir")/INDEX" 2>/dev/null | head -1 | LC_ALL=C sed -E 's/^[^·]+· ([^·]+) ·.*/\1/')"
+  # Trim trailing spaces with bash expansion, NOT sed: `[[:space:]]` is
+  # locale-dependent, and these strings carry multibyte glyphs (✓ ◉ ○), so a
+  # sed trim renders differently under LC_ALL=C vs a UTF-8 locale — which the
+  # determinism clause forbids and the TZ/locale fixture check catches.
+  goal="${goal%"${goal##*[! ]}"}"
+  strip="${strip%"${strip##*[! ]}"}"
+  printf '── Compass · %s ────────────────────────────────────\n' "$slug"
+  printf '  %s\n' "$strip"
+  printf '  ▲ %s' "${cur:-done — all stages ✓}"
+  [ "${total:-0}" -gt 0 ] 2>/dev/null && printf ' · step %s/%s' "${done_:-0}" "$total"
+  [ -n "${next:-}" ] && printf ' · next: %s' "$next"
+  printf '\n'
+  [ -n "${goal:-}" ] && printf '  Goal: %s\n' "$goal"
+  printf '  mode: %s\n' "$(_orient_mode "$dir")"
+  printf '────────────────────────────────────────────────────────\n'
+}
+
+# N>1 in flight. CURRENT cannot disambiguate parallel builds, so it is shown as
+# a hint, never as the answer.
+_orient_multi_block() { # <state-root>
+  local sr="$1" slug cur line
+  cur="$(cat "$sr/CURRENT" 2>/dev/null | tr -d '[:space:]')"
+  printf '── Compass · %s builds in flight ───────────────────\n' "$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' | tr -d ' ')"
+  while IFS= read -r line; do
+    slug="$(printf '%s' "$line" | awk '{print $1}')"
+    [ -n "$slug" ] || continue
+    local st tot dn; st=""
+    for s in $LIFECYCLE; do if stage_pass "$sr/$slug" "$s"; then :; else st="$s"; break; fi; done
+    tot="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; tot="${tot:-0}"
+    dn="$(grep -cE '^[[:space:]]*- \[x\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; dn="${dn:-0}"
+    printf '  · %s — %s · step %s/%s\n' "$slug" "${st:-done}" "$dn" "$tot"
+  done < <(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]')
+  printf '────────────────────────────────────────────────────────\n'
+  if [ -n "$cur" ] && [ -d "$sr/$cur" ]; then
+    _orient_where_block "$sr/$cur"
+    printf '  ◀ hint — CURRENT is a hint only and cannot disambiguate parallel builds.\n'
+  fi
+}
+
+# The itemised planned-vs-done card, rendered at EVERY build step.
+# Honesty rule (INV-CARD-HONEST): a step counts as verified only when its
+# IN-PROGRESS receipt exists. A ticked box with no receipt renders "box-only" —
+# a progress bar you cannot trust is worse than none.
+cmd_progress_card() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh progress-card <build-dir>"
+  [ -n "${COMPASS_QUIET:-}" ] && return 0
+  local slug; slug="$(basename "$dir")"
+  local plan="$dir/plan.md" rcp="$dir/receipts.md"
+  [ -f "$plan" ] || { printf '── Plan · %s ───────────────────────────────────\n  (no plan.md yet — nothing planned to show)\n────────────────────────────────────────────────────────\n' "$slug"; return 0; }
+  local -a titles=() states=()
+  local n=0 line box title cur=0 donec=0
+  while IFS= read -r line; do
+    case "$line" in
+      *'- [x] '*) box=x ;;
+      *'- [ ] '*) box=' ' ;;
+      *) continue ;;
+    esac
+    n=$((n+1))
+    title="${line#*] }"
+    # Strip markdown emphasis, the redundant "N · " prefix (the number already
+    # has its own column), and any terminal control characters (untrusted input).
+    title="$(printf '%s' "$title" | _orient_strip | LC_ALL=C sed -E 's/\*\*//g; s/`//g; s/^[0-9]+ · //')"
+    title="$(printf '%s' "$title" | cut -c1-44)"
+    titles[$n]="$title"
+    # Verified ONLY if this step number has an IN-PROGRESS receipt.
+    if [ "$box" = "x" ]; then
+      if LC_ALL=C grep -qE "IN-PROGRESS · step $n/" "$rcp" 2>/dev/null; then states[$n]="verified"; donec=$((donec+1))
+      else states[$n]="box-only"; fi
+    else
+      if [ "$cur" = "0" ]; then states[$n]="running"; cur=$n; else states[$n]="pending"; fi
+    fi
+  done < <(LC_ALL=C grep -E '^[[:space:]]*- \[[ x]\] ' "$plan" 2>/dev/null)
+  [ "$n" -gt 0 ] || { printf '── Plan · %s ───────────────────────────────────\n  (plan.md has no steps yet)\n────────────────────────────────────────────────────────\n' "$slug"; return 0; }
+  local shown_cur="${cur:-$n}"; [ "$shown_cur" = "0" ] && shown_cur="$n"
+  printf '── Plan · %s · step %s of %s ─────────────────────\n' "$slug" "$shown_cur" "$n"
+  # INV-CARD-CAP: a long plan must not become a wall. Over 12 steps, collapse
+  # the finished ones to a count and window 3 before / 3 after the current step.
+  local lo=1 hi="$n" collapsed=0
+  if [ "$n" -gt 12 ]; then
+    lo=$((shown_cur-3)); [ "$lo" -lt 1 ] && lo=1
+    hi=$((shown_cur+3)); [ "$hi" -gt "$n" ] && hi="$n"
+    collapsed=$((lo-1))
+    [ "$collapsed" -gt 0 ] && printf '  … %s earlier step(s) done\n' "$collapsed"
+  fi
+  local i g suffix
+  for i in $(seq "$lo" "$hi"); do
+    case "${states[$i]}" in
+      verified) g='✓'; suffix='verified' ;;
+      'box-only') g='!'; suffix='box-only — no verify recorded' ;;
+      running)  g='▶'; suffix='← now' ;;
+      *)        g='·'; suffix='' ;;
+    esac
+    if [ -n "$suffix" ]; then printf '  %s %-2s %-46s %s\n' "$g" "$i" "${titles[$i]}" "$suffix"
+    else printf '  %s %-2s %s\n' "$g" "$i" "${titles[$i]}"; fi
+  done
+  [ "$hi" -lt "$n" ] && printf '  … %s later step(s) to go\n' "$((n-hi))"
+  printf '  ──────────────────────────────────────────────────────\n'
+  printf '  %s done · %s running · %s to go\n' "$donec" "$([ "$cur" != "0" ] && echo 1 || echo 0)" "$((n-donec-$([ "$cur" != "0" ] && echo 1 || echo 0)))"
+  printf '────────────────────────────────────────────────────────\n'
+  _orient_log "$dir/orient.log" "progress-card" "step $shown_cur/$n" "$n"
+  return 0
+}
+
+# Install the Claude Code status line — EXPLICIT, OPT-IN, NEVER automatic.
+# The public release must not touch any installer's global settings; a plugin
+# silently rewriting a stranger's ~/.claude/settings.json is out of bounds. This
+# runs only when a human types it, and only after a timestamped backup.
+cmd_statusline_install() { # [--dry-run]
+  local dry="${1:-}" cfg="$HOME/.claude/settings.json"
+  local cmdline; cmdline="bash \"$(main_root)/plugins/compass/scripts/compass.sh\" statusline"
+  [ -f "$cfg" ] || die "statusline-install: no $cfg to edit."
+  if [ "$dry" = "--dry-run" ]; then
+    echo "would back up: $cfg"; echo "would set statusLine.command: $cmdline"; return 0
+  fi
+  local bak; bak="$cfg.compass-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  cp "$cfg" "$bak" || die "statusline-install: backup failed."
+  python3 - "$cfg" "$cmdline" <<'PY' || die "statusline-install: edit failed (backup kept)."
+import json,sys
+cfg,cmd=sys.argv[1],sys.argv[2]
+d=json.load(open(cfg))
+d["statusLine"]={"type":"command","command":cmd}
+json.dump(d,open(cfg,"w"),indent=2)
+PY
+  python3 -c 'import json,sys;json.load(open(sys.argv[1]))' "$cfg" || die "statusline-install: result is not valid JSON (restore from $bak)."
+  ok "statusline-install: installed. Backup: $bak  ·  undo: cp \"$bak\" \"$cfg\""
+}
+
+# INV-MODE-ASKED — the run-mode must be ASKED, never inferred.
+# Born from a real failure in this build's own session: the mode question that
+# INV-MODE-AT-LOCK requires was never asked, and `Human-gated` was inferred from
+# an unrelated earlier answer, then written to the receipt as if the user had
+# chosen it. `fixtures/mode/inferred` holds that exact string, so the regression
+# is the test.
+#
+# GUARD-FIRST N/A-PASS: a contract receipt with no `mode choice:` line at all is
+# LEGACY and passes byte-identically. Every build predating this format — all of
+# them, in every installed repo — keeps working. Only a mode line that is
+# PRESENT but not marked `asked=yes` fails. New builds are forced instead by the
+# receipt template's checkbox, which scan-receipt already enforces.
+cmd_mode_gate() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] || die "usage: compass.sh mode-gate <build-dir>"
+  # Contract-header-driven, exactly like schema-pin-gate / perf-budget-gate /
+  # pii-gate. A legacy contract has no `mode-asked:` header, so the gate is
+  # inert for it — which is the ONLY way to tell "written before this format
+  # existed" from "inferred just now". Both look identical in the receipt, so
+  # keying off the receipt alone failed 25 of 26 existing builds, and after that
+  # was fixed it still failed 3 real builds that had recorded a genuine explicit
+  # choice in the old wording.
+  local c="$dir/contract.md"
+  [ -f "$c" ] || return 0
+  local hdr; hdr="$(LC_ALL=C sed -nE 's/^mode-asked:[[:space:]]*([A-Za-z-]+).*/\1/p' "$c" 2>/dev/null | head -1 || true)"
+  case "$(printf '%s' "${hdr:-}" | tr 'A-Z' 'a-z')" in
+    required) : ;;
+    *) return 0 ;;                              # legacy / not declared → N/A-pass
+  esac
+  local f="$dir/receipts.md"
+  [ -f "$f" ] || return 0
+  local blk; blk="$(last_block "$f" contract 2>/dev/null)"
+  [ -n "$blk" ] || return 0
+  # `|| true` is load-bearing: compass.sh runs `set -euo pipefail`, so a grep
+  # with NO match returns 1, pipefail propagates it, and set -e kills the
+  # function *silently* — which killed the legacy N/A-pass below and failed 25
+  # of 26 existing builds on the first run of this gate. Guard-first only works
+  # if the guard is allowed to run.
+  local line; line="$(printf '%s' "$blk" | LC_ALL=C grep -E 'mode choice:' | head -1 || true)"
+  # The contract DECLARED that the mode must be asked, so omitting the line is
+  # not an escape hatch — silence is exactly how the original failure happened.
+  [ -n "$line" ] || die "mode-gate: contract declares 'mode-asked: required' but the contract receipt records no mode choice at all.
+  Ask the user Human-gated or Autonomous, then record:
+  mode choice: asked=yes · answer=<Human-gated|Autonomous> · source=<question|typed-flag>"
+  printf '%s' "$line" | LC_ALL=C grep -q 'asked=yes' \
+    || die "mode-gate: the run-mode was recorded but not marked as ASKED.
+  found: $(printf '%s' "$line" | LC_ALL=C sed -E 's/^[[:space:]]*-?[[:space:]]*\[.\][[:space:]]*//')
+  The user must be ASKED whether the lifecycle runs Human-gated or Autonomous —
+  it may never be inferred from another answer or assumed from a default.
+  Record it as: mode choice: asked=yes · answer=<Human-gated|Autonomous> · source=<question|typed-flag>"
+  printf '%s' "$line" | LC_ALL=C grep -qE 'answer=(Human-gated|Autonomous)' \
+    || die "mode-gate: mode line carries asked=yes but no valid answer= (want Human-gated or Autonomous)."
+  ok "mode-gate: run-mode was explicitly asked and recorded."
+}
+
+# One line for the Claude Code status line: always on screen, zero output cost.
+# Prints NOTHING when no build is in flight — a permanent empty line would be
+# worse than no status line at all.
+cmd_statusline() { # [<build-dir>]
+  local dir="${1:-}"
+  if [ -z "$dir" ]; then
+    local sr n first; sr="$(state_root 2>/dev/null)" || return 0
+    n="$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' || true)"; n="${n:-0}"
+    [ "$n" = "0" ] && return 0
+    first="$(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]' | head -1 | awk '{print $1}')"
+    dir="$sr/$first"
+  fi
+  [ -d "$dir" ] || return 0
+  local slug cur="" total done_ next
+  slug="$(basename "$dir")"
+  for s in $LIFECYCLE; do if stage_pass "$dir" "$s"; then :; else cur="$s"; break; fi; done
+  total="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  done_="$(LC_ALL=C grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
+  next="$(LC_ALL=C sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | head -1 | cut -c1-40)"
+  printf '%s · %s · step %s/%s · %s · %s\n' "$slug" "${cur:-done}" "$done_" "$total" "$(_orient_mode "$dir")" "${next:-—}"
+}
+
+# The teeth. A step cannot be marked done unless its card is ON the receipt.
+# COMPASS_QUIET suppresses PRINTING, never RECORDING — so quiet mode does not
+# deadlock the build loop.
+cmd_progress_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh progress-gate <build-dir>"
+  local f="$dir/receipts.md"
+  [ -f "$f" ] || return 0                       # guard-first: no receipts yet → N/A-pass (legacy/pre-build)
+  # Bound the block at the NEXT '## ' header, not at EOF. Capturing to EOF meant
+  # a card appearing in ANY later block — the final PASS receipt, say — satisfied
+  # the gate for a step receipt that carried none. Found by the review-3
+  # adversarial pass, which fed it exactly that shape.
+  local blk; blk="$(LC_ALL=C awk '
+    /^## RECEIPT .*IN-PROGRESS/ { buf=$0 "\n"; cap=1; next }
+    cap && /^## / { last=buf; cap=0 }
+    cap { buf=buf $0 "\n" }
+    END { if (cap) last=buf; printf "%s", last }' "$f")"
+  [ -n "$blk" ] || return 0                     # no IN-PROGRESS step receipt yet → N/A-pass
+  printf '%s' "$blk" | LC_ALL=C grep -q '<!-- progress-card -->' \
+    || die "progress-gate: the latest build step receipt carries no progress card. The user must always see what is planned and how far along it is — render it with 'compass.sh progress-card $dir' and fence it into the step receipt."
+  # An empty fence is the byte-inert trap in miniature: the marker present, the
+  # content absent. Require a real card body between the fences.
+  local body; body="$(printf '%s' "$blk" | LC_ALL=C awk '/<!-- progress-card -->/{f=1;next} /<!-- \/progress-card -->/{f=0} f{print}' | LC_ALL=C grep -cE '[^[:space:]]' || true)"
+  [ "${body:-0}" -ge 3 ] 2>/dev/null \
+    || die "progress-gate: the progress-card fence is present but empty (or near-empty). A marker with no card is exactly the byte-inert failure this build exists to end."
+  ok "progress-gate: latest step receipt carries a rendered progress card."
+}
+
+cmd_orient() { # [--new | --where <build-dir>]
+  # Kill-switch: suppress USER-FACING output only. Recording is a separate
+  # concern (see progress-gate) — a quiet mode that also stopped recording
+  # would make INV-CARD-GATE hard-stop every build step.
+  [ -n "${COMPASS_QUIET:-}" ] && return 0
+  local mode="${1:-}" dir="${2:-}" out=""
+  # No argument = auto-detect, so callers never have to decide which block is
+  # right (INV-ONE-RENDERER: one renderer, three front doors).
+  if [ -z "$mode" ]; then
+    local sr n first; sr="$(state_root 2>/dev/null)"
+    n="$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' || true)"; n="${n:-0}"
+    if [ "$n" = "0" ]; then mode="--new"
+    else
+      first="$(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]' | head -1 | awk '{print $1}')"
+      if [ "$n" = "1" ]; then mode="--where"; dir="$sr/$first"
+      else
+        # N>1: parallel builds are a keystone feature, and CURRENT is explicitly
+        # a non-authoritative hint — so list them all, then show the hinted one
+        # marked as a hint rather than pretending it is authoritative.
+        out="$(_orient_multi_block "$sr")"
+        printf '%s\n' "$out"
+        _orient_log "$sr/orient.log" "orient" "multi" "${#out}"
+        return 0
+      fi
+    fi
+  fi
+  case "$mode" in
+    --new)
+      out="$(_orient_new_block)"
+      printf '%s\n' "$out"
+      _orient_log "$(state_root 2>/dev/null)/orient.log" "orient" "new" "${#out}"
+      return 0 ;;
+    --where)
+      [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh orient --where <build-dir>"
+      out="$(_orient_where_block "$dir")"
+      printf '%s\n' "$out"
+      _orient_log "$dir/orient.log" "orient" "where" "${#out}"
+      return 0 ;;
+    *) die "usage: compass.sh orient [--new | --where <build-dir>]" ;;
+  esac
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -3046,6 +3418,13 @@ main() {
     doctor)            cmd_doctor "$@" ;;
     status)            cmd_status "$@" ;;
     cockpit)           cmd_cockpit "$@" ;;
+    orient)            cmd_orient "$@" ;;
+    progress-card)     cmd_progress_card "$@" ;;
+    progress-gate)     cmd_progress_gate "$@" ;;
+    statusline)        cmd_statusline "$@" ;;
+    statusline-install) cmd_statusline_install "$@" ;;
+    mode-gate)         cmd_mode_gate "$@" ;;
+    orient-audit)      python3 "$(dirname "$0")/orient-audit.py" "$@" ;;
     milestone-gate)    cmd_milestone_gate "$@" ;;
     render)            cmd_render "$@" ;;
     design-drift-gate) cmd_design_drift_gate "$@" ;;

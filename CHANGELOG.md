@@ -3,6 +3,24 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.28.0] — 2026-08-17
+
+**Compass now always tells you where you are — and this release starts by admitting it didn't.** The welcome block had sat in `commands/go.md` since v0.15.0 with tests that only checked the words existed in the file. Measured across real session transcripts, it printed **0 times in 30 `/compass:go` invocations** over twelve versions. A guard that reports coverage it doesn't have is worse than no guard, so this release replaces byte-presence tests with behaviour tests, everywhere it mattered.
+
+- **Orientation, always.** `compass.sh orient` renders the block from your actual state — the mental model when nothing is in flight, a where-you-are block when a build is running (never the long intro twice). A tightly-scoped `UserPromptSubmit` hook delivers it via `systemMessage`, the one channel Claude Code actually shows the user; plain hook stdout is context-only and would have reproduced the original failure exactly. The hook is silent in projects with no `.claude/builds`, exits 0 on every path including malformed input (exit 2 would erase your prompt), and costs **6.3 ms** on the no-match path that >99% of prompts take.
+- **Progress, always.** `compass.sh progress-card` prints an itemised planned-vs-done card at **every build step**, and the step's own gate refuses to advance until that card is on the receipt. It cannot flatter: a box ticked without a recorded verify renders `box-only`, never `verified`. Plans over 12 steps collapse the finished ones and window around the current step, so a long plan never becomes a wall.
+- **Run-mode is always asked and always shown.** Compass may no longer infer whether you want Human-gated or Autonomous — it must ask, and record `asked=yes · answer=… · source=…`. `mode-gate` rides the contract seam, driven by a `mode-asked: required` contract header so every pre-existing build stays unaffected. This exists because it went wrong *during this build's own session*: the mode was inferred from an unrelated answer and written as if chosen. That exact string is now a failing test fixture.
+- **One renderer, three doors.** `/compass:go`, `/compass:status` and `/compass:resume` all call the same renderer; the hand-written welcome prose is deleted, so a second copy can't drift.
+- **Opt-in status line.** `compass.sh statusline-install` (with `--dry-run`) adds a permanent `slug · stage · step k/n · mode · next` line, after backing up your settings. **The release never edits an installer's global config by itself.**
+
+**Two pre-existing bugs found while building this, both user-visible:**
+- `last_block` matched receipt headers with bracket expressions holding multibyte characters (`[—-]`, `[·|]`). Under `LC_ALL=C` those are invalid byte ranges, so **every receipt lookup returned empty and every gate reported "no receipt"** — Compass was quietly broken in CI, cron, and minimal containers. Now explicit alternation, with a locale-varying test that would have caught it.
+- `is_terminal` was case-sensitive while `ship` writes `status=shipped` in lowercase, so **every finished build was reported as still in flight, forever**: `active-builds` listed 12 shipped builds as active and `/compass:go` kept offering to resume long-finished work.
+
+**Guard quality, not just guard count.** All 15 new invariants ship with mutation recipes proving each test goes red when its behaviour is broken (`mutation-check` → 15/15 bite). The anti-self-edit floors were pinned at 222/406 against actual counts of 465/546 — loose enough that half the smoke suite could be deleted unnoticed; they're now pinned at actual−5 and proven to bite. `INV-NO-LIFECYCLE-CHANGE` was narrowed with explicit sign-off: `cmd_gate`'s core decision logic stays byte-identical to v0.23.0, and every seam call must now be `type`-guarded — a stronger pin than the blanket freeze it replaces.
+
+Suites: **smoke 465 → 514**, **selftest 546 → 561**, recon 119 pinned invariant groups. All green.
+
 ## [0.27.0] — 2026-08-04
 
 **The other three milestone artifacts now read like a decision, not a spec dump — matching the Brief.** v0.26 redesigned the Contract Brief to the builder's mental model; v0.27 gives the **Plan Map**, **Release Card**, and **Program Cockpit** the same treatment. Layout-only — no change to what they read or how they're delivered.

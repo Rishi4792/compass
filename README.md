@@ -19,6 +19,25 @@ Built on the architecture serious builders are converging on — an explicit **g
 
 ---
 
+### Always know where you are (v0.28.0)
+
+Compass prints an orientation block the moment you type a front door — the mental model when nothing is running, a where-you-are block when a build is in flight — and an itemised planned-vs-done card at **every** build step. Both are rendered by a script and recorded on the receipt, and a gate refuses the next step if the card is missing.
+
+Optional, **opt-in** status line (Compass never edits your settings by itself). Run:
+
+```
+compass.sh statusline-install          # backs up ~/.claude/settings.json first
+compass.sh statusline-install --dry-run  # see exactly what it would change
+```
+
+Or add it yourself to `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "bash /path/to/compass/plugins/compass/scripts/compass.sh statusline" } }
+```
+
+It shows `slug · stage · step k/n · mode · next` and prints nothing when no build is running.
+
 ## Just three commands
 
 You never have to remember a pipeline. The whole tool is three commands:

@@ -7,6 +7,9 @@ tier: primary
 
 Print, at a glance, where the current Compass build is and what to do next — so a long build never leaves you wondering.
 
+## Orientation first (v0.28.0, INV-ORIENT)
+Run **`compass.sh orient`** and show its output before anything else — the same renderer the other two front doors use, so all three show an identical, consistent picture instead of three hand-written variants that drift apart (INV-ONE-RENDERER). The `UserPromptSubmit` hook usually paints it before this command starts; run it explicitly if it did not.
+
 ## Procedure
 1. Resolve the build (same identity rule as `/compass:resume`): inside a build's worktree → that slug; else `compass.sh active-builds` (1 → it; >1 → list and ask which; 0 → "no active build"). Resolve state via `compass.sh state-root`.
 2. Run `compass.sh status "<state-root>/<slug>"` — it reads `progress.md` + `plan.md` + `receipts.md` and prints: **Status · Stage · Steps k/n · Last ✓ (last PASS receipt) · Next** (the single next action + its exact command).

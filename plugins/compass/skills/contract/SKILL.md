@@ -20,6 +20,7 @@ The contract is the **single source of truth** — the invariant every later ste
 - **v0.12/v0.13 headers the interview ALWAYS writes (authoring-time defaults — legacy contracts without them stay byte-identical):**
   - `post-ship-loop: on (clean 2 / cap 5)` for every shipping build (opting out requires `post-ship-loop: off — <reason>`); with 0+ `post-ship-check: <cmd>` lines pinning domain checks as commands, and one `observation-channel: <facet> = <capture command / viewport spec / digest cmd>` line naming HOW the live system gets observed (declare blindness HERE — OAuth-gated/air-gapped — not at ship time). Optional `observation: strict-design` makes design drift material without a contract cite.
   - `cold-critic: on` for every web-facet build (2×cold-GO gate at build/review-build; waive only via `cold-critic: off — <reason>`; optional `cold-critic-fallback: human-eyeball` for un-screenshotable apps).
+  - **`mode-asked: required` (v0.28.0) — ALWAYS write this header.** It arms `compass.sh mode-gate` on the contract gate seam, which then refuses a receipt whose mode line is missing or not marked `asked=yes`. Legacy contracts have no such header and stay byte-identical (guard-first N/A-pass).
   - `intake: co-construct-v1` when the interview below ran interactively; `intake: classic` when a headless/--auto session had to fall back (an auto session NEVER authors intake.md — F-AUTODEGRADE).
   - **`program: <program-name> · <phase-id>` (v0.22.0, optional)** — write it when this build is one phase of a multi-build **program** (e.g. `program: compass-3-phase · build 7a`). The ship stage's guarded `program-advance` and `go`/`resume`'s next-phase offer read this header; a build with no `program:` line is byte-inert (standalone). Absent = standalone, no ledger interaction.
   - **`adds-test: <yes|no>` (v0.22.0)** — `yes` when the build adds/changes a test; then the build receipt MUST carry a real `red-green:` line (the failing test + why it failed BEFORE the fix) which `compass.sh redgreen-check` requires (empty/placeholder FAILS). `no`/absent is byte-inert. Optional `mutation: <INV-id · file= · break= · red=>` recipe lines let `compass.sh mutation-check` PROVE a guard's test bites.
@@ -80,7 +81,8 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
   - [x] Contract Brief produced (compass-visual → brief.html + brief.png) and shown; shareable-on-request stated
   - [x] MILESTONE: contract-brief render=brief.html png=<brief.png OR `N/A — <reason>`> artifact=<claude.ai URL OR `N/A — <reason>`>  <!-- v0.26.0 INV-MILESTONE-DELIVERY: HTML body MANDATORY (node, no browser). Write ONE concrete value per key. PNG via `compass.sh render` — a `png=N/A — <reason>` is allowed ONLY after a real failed render attempt. artifact via the Artifact tool — `artifact=N/A — headless (no Artifact tool)` when unavailable. A bare `N/A` (no reason) fails the gate. Then run `compass.sh milestone-gate <dir> contract-brief` (non-zero → STOP). This is delivery, not a file on disk. -->
   <!-- TEMPLATE: mode-choice-box -->
-  - [x] explicit lock recorded ("This is the contract — lock it") + mode choice (Auto | Human-gated); in --auto, G1 is the lock
+  - [x] explicit lock recorded ("This is the contract — lock it")
+  - [x] mode choice: asked=yes · answer=<Human-gated|Autonomous> · source=<question|typed-flag>
   <!-- TEMPLATE: security-box -->
   - [x] security block (per-field classification + role×view + STRIDE-lite) filled or explicit N/A — <reason>
   <!-- TEMPLATE: prodsafety-box -->
@@ -90,7 +92,7 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
   <!-- TEMPLATE: durability-box -->
   - [x] durability: ## Glossary + alternatives-considered + one-way-door + RACI present (template defaults)
   ```
-- **Self-check:** run `compass.sh scan-receipt .claude/builds/<slug> contract` AND `compass.sh intake-gate .claude/builds/<slug>` AND `compass.sh sketch-gate .claude/builds/<slug>` (each must exit 0).
+- **Self-check:** run `compass.sh scan-receipt .claude/builds/<slug> contract` AND `compass.sh intake-gate .claude/builds/<slug>` AND `compass.sh sketch-gate .claude/builds/<slug>` AND `compass.sh mode-gate .claude/builds/<slug>` (each must exit 0).
 
 ## 5. STOP
 The receipt boxes ARE the done-criteria — if any can't be honestly checked, set status FAIL and fix it first.
@@ -108,7 +110,9 @@ Once the receipt passes, do NOT slide silently into planning. Close the contract
      ```
      With the fence present, a `--shareable` Brief scrubs each declared value and **every numeric locale reformatting** of it with certainty (undeclared unit/word-spelled forms stay best-effort, honestly labelled). When gold **and** never-show are both **N/A**, emit **no fence** (or `none`) — an N/A build must not hard-error its own Brief.
 2. **Require an explicit LOCK.** Nothing downstream runs until the user explicitly locks: they must say **"This is the contract — lock it"** (or clearly equivalent). Until then the contract is `draft` — no plan, no build. This is the one human checkpoint that guarantees a user never locks something they didn't understand. On lock, set `progress.md` status to `contract-LOCKED`.
-3. **Then the mode choice (AskUserQuestion).** After the lock, ask how they want the rest of the lifecycle to run, each option explained:
+3. **Then the mode choice — ALWAYS ASK, NEVER INFER (AskUserQuestion; v0.28.0 INV-MODE-ASKED).** After the lock, ask how they want the rest of the lifecycle to run. This question is **mandatory and may NOT be satisfied by any earlier answer** — not by how the build was started, not by a menu choice about something else, not by a default. Record it as `mode choice: asked=yes · answer=<…> · source=question`; a user who explicitly typed `--auto` records `source=typed-flag`. `compass.sh mode-gate` refuses anything else, so an inferred mode cannot leave the contract stage.
+   > This exists because it actually happened: in the v0.28.0 build's own session the question was skipped and `Human-gated` was inferred from an unrelated earlier answer, then written to the receipt as if the user had chosen it. That exact string is now a failing test fixture.
+   Each option explained:
    - **Auto** — Compass runs the whole assembly line itself and stops for you only at the two real decision points (the contract you just locked, and any gate it can't clear). Fastest; best when you trust the contract.
    - **Human-gated** — Compass pauses at every stage transition for your Approve/Revise/Amend/Pause. Most control; best for high-stakes or exploratory work.
    Record the choice; **Human-gated** proceeds via the per-stage 4-button gate below, **Auto** runs the `--auto` orchestrator loop (two human gates only).

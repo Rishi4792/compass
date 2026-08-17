@@ -180,11 +180,11 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-WELCOME INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-ORIENT INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES INV-ORIENT-DELIVERED INV-ORIENT-INERT INV-ORIENT-NOREPEAT INV-CARD INV-CARD-HONEST INV-CARD-CAP INV-CARD-GATE INV-CARD-RECEIPT INV-ONE-RENDERER INV-STATUSLINE INV-MODE-ASKED INV-MODE-VISIBLE INV-NOT-BYTEINERT INV-LOCALE-SAFE INV-TERMINAL-STATUS; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
-chk "$(grep -c 'FLOOR_SELFTEST=406' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the selftest floor 406 (re-baselined for survive-cutover)"
-chk "$(grep -c 'FLOOR_SMOKE=222' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.16 recon.sh pins the smoke floor 222 (re-baselined for survive-cutover)"
+chk "$(grep -c 'FLOOR_SELFTEST=556' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the selftest floor 556 (actual-5 margin rule)"
+chk "$(grep -c 'FLOOR_SMOKE=509' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the smoke floor 509 (actual-5 margin rule)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -270,9 +270,18 @@ chk "$(grep -c 'Three doors, everything else driven for you' "$REPO/README.md")"
 
 # ── v0.15.0 slice ①: clarity/UX — welcome · compass-visual Brief · explicit lock · mode · explain · Feynman ──
 GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/skills/explain/SKILL.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
-# INV-WELCOME
-chk "$(grep -c 'Welcome — how Compass works' "$GO15")" "1" "v0.15 INV-WELCOME: go.md carries the confidence welcome"
-chk "$( { grep -q 'Contract-first' "$GO15" && grep -q 'assembly line' "$GO15"; } && echo 1 || echo 0)" "1" "v0.15 INV-WELCOME: go.md teaches the mental model (contract-first → assembly line)"
+# INV-ORIENT
+# v0.28.0 — the two asserts that USED to live here were:
+#   grep -c 'Welcome — how Compass works' go.md   == 1
+#   grep -q 'Contract-first' && grep -q 'assembly line' go.md
+# They passed for twelve versions while the welcome printed 0 times in 30 real
+# /compass:go invocations, because they tested that BYTES EXIST IN A FILE, not
+# that anything ever reached a user. They are DELETED, not supplemented — a
+# byte-presence assert next to a behaviour assert still reports false coverage.
+# What replaces them asserts the BEHAVIOUR: the renderer produces the block, and
+# the shipped hook actually delivers it on a real payload.
+chk "$(bash "$SH" orient --new | grep -c 'Three doors:')" "1" "v0.28 INV-ORIENT: orient --new renders the NEW-BUILD block"
+chk "$(bash "$SH" orient --new | diff -q - "$PLUGIN_ROOT/scripts/fixtures/orient/empty/expected.txt" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.28 INV-ORIENT: NEW block is byte-identical to its pinned fixture"
 # INV-BRIEF (presence/structure + the pure-node house gates run below on the generated body; the PNG>5KB render stays build-time — Chrome not guaranteed on user machines)
 chk "$([ -f "$VIS15/SKILL.md" ] && [ -f "$VIS15/gen.mjs" ] && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: compass-visual skill + gen.mjs bundled"
 chk "$(grep -c '^name: compass-visual' "$VIS15/SKILL.md")" "1" "v0.15 INV-BRIEF: compass-visual frontmatter name"
@@ -647,7 +656,7 @@ _dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
 chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
 chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "104" "v0.24 INV-SUITES-GREEN: recon INV_NAMES == 104 (101 + the 3 v0.27 view-redesign names)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "119" "v0.28 INV-SUITES-GREEN: recon INV_NAMES == 119 (104 + the 15 v0.28 always-clarity names)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -663,9 +672,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.27.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.27.0"
-chk "$(grep -c '0.27.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.27.0"
-chk "$(grep -c '## \[0.27.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.27.0 entry"
+chk "$(grep -c '0.28.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.28.0"
+chk "$(grep -c '0.28.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.28.0"
+chk "$(grep -c '## \[0.28.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.28.0 entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
@@ -727,14 +736,41 @@ _ex(){ awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{"{f=1} f{print} f&&/^}$/{exit}'; }
 V23="$(git -C "$PLUGIN_ROOT" show v0.23.0:plugins/compass/scripts/compass.sh 2>/dev/null || true)"
 frz=1
 if [ -n "$V23" ]; then
-  for fn in cmd_gate cmd_restore_point cmd_config_parity cmd_migration_gate cmd_check_db_isolation; do
+  # v0.28.0 — the freeze is NARROWED, deliberately and with user sign-off (G2).
+  # v0.24 froze cmd_gate byte-for-byte. But the codebase itself contradicts the
+  # strict reading: schema-pin, perf-budget, expand-contract, backfill-recon and
+  # green-ci are ALL additive guard-first arms added to these very seams. The
+  # invariant's intent is "gate SEMANTICS must not drift", not "cmd_gate may
+  # never gain another no-op-on-legacy check". So cmd_gate is now pinned on two
+  # narrower, stronger properties instead (asserted just below):
+  #   1. its CORE decision logic is byte-identical to v0.23.0, and
+  #   2. every seam call it makes is guard-first (`if type ... >/dev/null`),
+  #      so a legacy build passes exactly as before.
+  for fn in cmd_restore_point cmd_config_parity cmd_migration_gate cmd_check_db_isolation; do
     a="$(printf '%s' "$V23" | _ex "$fn")"; b="$(_ex "$fn" < "$CURSH")"
     { [ -n "$a" ] && [ "$a" = "$b" ]; } || frz=0
   done
   la="$(printf '%s' "$V23" | grep '^LIFECYCLE=')"; lb="$(grep '^LIFECYCLE=' "$CURSH")"
   { [ -n "$la" ] && [ "$la" = "$lb" ]; } || frz=0
 else frz=1; fi   # tag unreachable (shallow/CI clone) → do not false-FAIL
-chk "$frz" "1" "v0.24 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + cmd_gate + prod-safety fns byte-identical to v0.23.0"
+chk "$frz" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + prod-safety fns byte-identical to v0.23.0"
+# cmd_gate core: everything from the function head down to the first seam block.
+# This is the part that decides PASS / SUPERSEDED / unchecked-box — the actual
+# gate semantics. It must never drift.
+_core() { awk '/^cmd_gate\(\) \{/{f=1} f&&/v0\.13\.0 seams/{exit} f{print}'; }
+_ca="$(printf '%s' "$V23" | _core)"; _cb="$(_core < "$CURSH")"
+chk "$([ -n "$_ca" ] && [ "$_ca" = "$_cb" ] && echo 1 || echo 0)" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE: cmd_gate CORE decision logic byte-identical to v0.23.0 (PASS/SUPERSEDED/unchecked-box semantics frozen)"
+# Every seam function cmd_gate invokes must be `type`-guarded, so a build whose
+# Compass predates that gate passes byte-identically. cmd_intake_gate is the one
+# grandfathered exception: it was already unguarded before the v0.24 freeze.
+_gbody="$(_ex cmd_gate < "$CURSH")"
+_unguarded=0
+for _fn in $(printf '%s' "$_gbody" | grep -oE 'cmd_[a-z_]+_gate' | sort -u); do
+  [ "$_fn" = "cmd_intake_gate" ] && continue
+  printf '%s' "$_gbody" | grep -q "type $_fn >/dev/null 2>&1" || _unguarded=1
+done
+chk "$_unguarded" "0" "v0.28 INV-NO-LIFECYCLE-CHANGE: every cmd_gate seam call is type-guarded (a legacy build passes byte-identically)"
+chk "$(printf '%s' "$_gbody" | grep -c 'type cmd_mode_gate >/dev/null 2>&1')" "1" "v0.28 INV-MODE-ASKED: mode-gate rides the contract seam, guard-first"
 rm -rf "$V24"
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -777,7 +813,7 @@ chk "$_ndr" "0" "v0.25 INV-NO-DEAD-REF: no dead /compass:<removed> ref across RE
 chk "$(grep -c 'commands/start.md' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.25 INV-NO-DEAD-REF: gate.md header has no commands/start.md file-path ref"
 chk "$(grep -c 'start.md' "$PLUGIN_ROOT/commands/resume.md")" "0" "v0.25 INV-NO-DEAD-REF: resume.md has no dangling start.md ref"
 
-# ── v0.27.0: visual Brief redesign + delivery enforcement ──
+# ── v0.28.0: visual Brief redesign + delivery enforcement ──
 FXB="$PLUGIN_ROOT/scripts/fixtures/brief-contract"
 GENJS="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 V26T="$(mktemp -d)"
@@ -824,7 +860,7 @@ chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/body.html")" "1" "v0.26 INV-BRIEF-SHA
 chk "$([ "$(grep -c 'S&P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && [ "$(grep -c 'S&amp;P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: a declared never-show value with an HTML metachar (S&P_score) is scrubbed in BOTH raw + escaped form (RB-v0.26 leak fix — esc()'d prose no longer slips a raw-only regex)"
 rm -rf "$V26T"
 
-# ── v0.27.0: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
+# ── v0.28.0: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
 FXV="$PLUGIN_ROOT/scripts/fixtures/view-fixture"
 GENV="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 THEMEV="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
@@ -849,6 +885,78 @@ node "$GENV" "$FXV/b" brief-body --out "$V27T/bb.html" >/dev/null 2>&1
 _g=1; for f in pm rc pc bb; do node "$ADV" "$V27T/$f.html" "$THEMEV" 2>&1 | grep -q '0 off-theme' || _g=0; node "$COV" "$V27T/$f.html" 2>&1 | grep -q 'composed' || _g=0; done
 chk "$_g" "1" "v0.27 INV-VIEW-GATES: each redesigned view body + brief-body passes anti-drift (0 off-theme) + compose-check"
 rm -rf "$V27T"
+
+
+# ══ v0.28.0 "always clarity" — BEHAVIOUR asserts. Every one of these fails when
+# the behaviour breaks, not merely when bytes go missing from a file. That
+# distinction is the entire point of this release (see the deleted INV-WELCOME
+# asserts above). ══
+V28="$PLUGIN_ROOT/scripts/fixtures"; HOOK="$PLUGIN_ROOT/hooks/orient-hook.sh"
+
+# INV-ORIENT-NOREPEAT — the MID block never carries the NEW-BUILD intro
+chk "$(bash "$SH" orient --where "$V28/orient/state/inflight" | grep -c 'Build true to a spec you lock first')" "0" "v0.28 INV-ORIENT-NOREPEAT: MID block does not repeat the intro"
+chk "$(bash "$SH" orient --where "$V28/orient/state/inflight" | diff -q - "$V28/orient/state/inflight/expected.txt" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.28 INV-ORIENT: MID block byte-identical to its pinned fixture"
+
+# INV-LOCALE-SAFE — determinism across locale AND timezone. This is the assert
+# that caught last_block's multibyte bracket-expression bug, under which EVERY
+# receipt lookup returned empty and EVERY gate reported "no receipt" in a C locale.
+_a="$(TZ=UTC LC_ALL=C bash "$SH" orient --where "$V28/orient/state/inflight")"
+_b="$(TZ=Asia/Kolkata LC_ALL=en_US.UTF-8 bash "$SH" orient --where "$V28/orient/state/inflight" 2>/dev/null)"
+chk "$([ "$_a" = "$_b" ] && echo 1 || echo 0)" "1" "v0.28 INV-LOCALE-SAFE: orient identical across TZ+locale (guards the last_block multibyte-range bug)"
+chk "$(LC_ALL=C bash -c 'source "'"$SH"'" 2>/dev/null; stage_pass "'"$V28"'/orient/state/inflight" contract && echo 1 || echo 0')" "1" "v0.28 INV-LOCALE-SAFE: stage_pass works under LC_ALL=C (receipt parser is locale-independent)"
+
+# INV-TERMINAL-STATUS — a shipped build must not be reported as in-flight forever
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; is_terminal shipped && echo 1 || echo 0')" "1" "v0.28 INV-TERMINAL-STATUS: lowercase 'shipped' is terminal (ship writes lowercase; the check was uppercase-only)"
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; is_terminal CLOSED && echo 1 || echo 0')" "1" "v0.28 INV-TERMINAL-STATUS: uppercase CLOSED still terminal (no regression)"
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; is_terminal draft && echo 0 || echo 1')" "1" "v0.28 INV-TERMINAL-STATUS: a draft build is NOT terminal"
+
+# INV-CARD / INV-CARD-HONEST / INV-CARD-CAP
+chk "$(bash "$SH" progress-card "$V28/progress-card/nine" | grep -cE '^  [✓▶!·] [0-9]+ ')" "9" "v0.28 INV-CARD: one rendered line per plan step"
+chk "$(bash "$SH" progress-card "$V28/progress-card/liar" | grep -c 'box-only')" "1" "v0.28 INV-CARD-HONEST: a ticked box with no receipt renders box-only"
+chk "$(bash "$SH" progress-card "$V28/progress-card/liar" | grep -cE '^  ✓ 2 ')" "0" "v0.28 INV-CARD-HONEST: that step is NEVER rendered as verified"
+chk "$([ "$(bash "$SH" progress-card "$V28/progress-card/long" | wc -l | tr -d ' ')" -le 18 ] && echo 1 || echo 0)" "1" "v0.28 INV-CARD-CAP: a 30-step plan renders <= 18 lines"
+chk "$(bash "$SH" progress-card "$V28/progress-card/hostile" | od -c | grep -c '033')" "0" "v0.28 INV-CARD: terminal escape sequences in a step title are stripped (STRIDE tampering)"
+
+# INV-CARD-GATE / INV-CARD-RECEIPT — all four directions incl. the empty-fence trap
+( bash "$SH" progress-gate "$V28/progress-card/receipt-ok" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-CARD-GATE: a receipt carrying a card PASSES"
+( bash "$SH" progress-gate "$V28/progress-card/receipt-missing" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-GATE: a receipt with no card BLOCKS"
+( bash "$SH" progress-gate "$V28/progress-card/receipt-empty-fence" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-RECEIPT: an EMPTY fence blocks (marker present, card absent = byte-inert in miniature)"
+( bash "$SH" progress-gate "$V28/progress-card/receipt-quiet" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-CARD-GATE: quiet-mode still records, so COMPASS_QUIET cannot deadlock the build loop"
+( bash "$SH" progress-gate "$V28/progress-card/receipt-later-block" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-GATE: a card in a LATER receipt block does NOT satisfy the step's own gate (review-3 bypass, now fixed)"
+
+# INV-STATUSLINE
+chk "$(bash "$SH" statusline "$V28/orient/state/inflight" | wc -l | tr -d ' ')" "1" "v0.28 INV-STATUSLINE: exactly one line for an in-flight build"
+chk "$(bash "$SH" statusline "$SMOKE_TMP/definitely-not-a-build" 2>/dev/null | wc -c | tr -d ' ')" "0" "v0.28 INV-STATUSLINE: zero bytes when there is no build"
+
+# INV-MODE-VISIBLE
+chk "$(bash "$SH" orient --where "$V28/orient/state/auto" | grep -c 'mode: Autonomous')" "1" "v0.28 INV-MODE-VISIBLE: the MID block shows Autonomous"
+chk "$(bash "$SH" orient --where "$V28/orient/state/inflight" | grep -c 'mode: Human-gated')" "1" "v0.28 INV-MODE-VISIBLE: the MID block shows Human-gated"
+chk "$(bash "$SH" statusline "$V28/orient/state/auto" | grep -c 'Autonomous')" "1" "v0.28 INV-MODE-VISIBLE: the status line carries the run-mode"
+
+# INV-ORIENT-DELIVERED — the shipped hook, fed a real payload, on the ONE
+# documented user-visible channel. A renderer that works while the hook never
+# fires MUST fail here; that combination is what passed for twelve versions.
+chk "$(bash "$HOOK" < "$V28/orient/hook-payload/go.json" | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin); print(1 if "Compass" in d.get("systemMessage","") else 0)
+except Exception: print(0)')" "1" "v0.28 INV-ORIENT-DELIVERED: the hook emits the block on systemMessage (the user-visible channel), not plain stdout"
+chk "$(bash "$HOOK" < "$V28/orient/hook-payload/unrelated.json" | wc -c | tr -d ' ')" "0" "v0.28 INV-ORIENT-DELIVERED: an unrelated prompt produces zero output"
+( bash "$HOOK" < "$V28/orient/hook-payload/unrelated.json" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-ORIENT-DELIVERED: the hook NEVER exits 2 (exit 2 erases the user's prompt)"
+chk "$(bash "$HOOK" < "$V28/orient/hook-payload/nostate.json" | wc -c | tr -d ' ')" "0" "v0.28 INV-ORIENT-INERT: no .claude/builds anywhere above cwd -> zero bytes"
+chk "$(printf 'not json' | bash "$HOOK" 2>/dev/null | wc -c | tr -d ' ')" "0" "v0.28 INV-ORIENT-INERT: malformed stdin is fail-open and silent"
+
+# INV-ONE-RENDERER — three doors, one source, and no second copy of the block
+_or=1; for _f in go status resume; do
+  [ "$(grep -c 'compass.sh orient' "$PLUGIN_ROOT/commands/$_f.md")" -ge 1 ] || _or=0
+  [ "$(grep -c 'Build true to a spec you lock first' "$PLUGIN_ROOT/commands/$_f.md")" = "0" ] || _or=0
+done
+chk "$_or" "1" "v0.28 INV-ONE-RENDERER: go/status/resume all call the renderer and none carries a duplicate of the block"
+chk "$(grep -c 'Welcome — how Compass works' "$PLUGIN_ROOT/commands/go.md")" "0" "v0.28 INV-ONE-RENDERER: the old hand-written welcome prose is GONE from go.md"
+
+# The build loop is wired, and the byte-locked gate footer was not touched
+chk "$(grep -c 'compass.sh progress-card' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.28 INV-CARD: the build skill renders the card every step"
+chk "$(grep -c 'compass.sh progress-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.28 INV-CARD-GATE: the build skill gates the next step on it"
+chk "$(grep -c 'progress-card' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.28 INV-NO-LIFECYCLE-CHANGE: the byte-locked gate footer is untouched"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

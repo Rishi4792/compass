@@ -1,0 +1,30 @@
+- [x] **1 · long step 1.**
+- [x] **2 · long step 2.**
+- [x] **3 · long step 3.**
+- [x] **4 · long step 4.**
+- [x] **5 · long step 5.**
+- [x] **6 · long step 6.**
+- [x] **7 · long step 7.**
+- [x] **8 · long step 8.**
+- [x] **9 · long step 9.**
+- [x] **10 · long step 10.**
+- [ ] **11 · long step 11.**
+- [ ] **12 · long step 12.**
+- [ ] **13 · long step 13.**
+- [ ] **14 · long step 14.**
+- [ ] **15 · long step 15.**
+- [ ] **16 · long step 16.**
+- [ ] **17 · long step 17.**
+- [ ] **18 · long step 18.**
+- [ ] **19 · long step 19.**
+- [ ] **20 · long step 20.**
+- [ ] **21 · long step 21.**
+- [ ] **22 · long step 22.**
+- [ ] **23 · long step 23.**
+- [ ] **24 · long step 24.**
+- [ ] **25 · long step 25.**
+- [ ] **26 · long step 26.**
+- [ ] **27 · long step 27.**
+- [ ] **28 · long step 28.**
+- [ ] **29 · long step 29.**
+- [ ] **30 · long step 30.**

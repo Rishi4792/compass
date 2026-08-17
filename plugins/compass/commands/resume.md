@@ -7,6 +7,9 @@ tier: primary
 
 Continue a Compass build that was paused or interrupted. State is on disk, so closing the terminal loses nothing.
 
+## Orientation first (v0.28.0, INV-ORIENT)
+Run **`compass.sh orient`** and show its output before anything else — the same renderer the other two front doors use, so all three show an identical, consistent picture instead of three hand-written variants that drift apart (INV-ONE-RENDERER). The `UserPromptSubmit` hook usually paints it before this command starts; run it explicitly if it did not.
+
 ## Procedure
 1. **Identify the build WITHOUT trusting the global `CURRENT`** (a stale/ambiguous `CURRENT` is what resumed the wrong build before — so it is only a last-resort hint, never the disambiguator):
    - **In a build's worktree?** If `git rev-parse --show-toplevel` ends in `*.compass/<slug>` (or the branch is `compass/<slug>`), THAT is the build. The cwd identifies it unambiguously — use it.

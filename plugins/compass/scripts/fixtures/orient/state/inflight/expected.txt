@@ -1,0 +1,6 @@
+── Compass · inflight ────────────────────────────────────
+  contract ✓  review ✓  plan ◉  review ○  build ○  review ○  ship ○
+  ▲ plan · step 0/3 · next: write the plan
+  Goal: a fixture build used to pin the MID orientation block
+  mode: Human-gated
+────────────────────────────────────────────────────────

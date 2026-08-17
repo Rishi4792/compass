@@ -1,0 +1,3 @@
+inflight · a fixture build used to pin the MID orientation block · status=in-flight · facets=library · touches=none
+auto · a fixture build in autonomous mode · status=in-flight · facets=library · touches=none
+second · a second in-flight fixture build for the parallel case · status=in-flight · facets=library · touches=none

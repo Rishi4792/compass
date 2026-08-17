@@ -1,0 +1,11 @@
+── Compass ─────────────────────────────────────────────
+  Build true to a spec you lock first — zero drift.
+
+  1  Contract   we write what "done" means. You lock it.
+  2  Gates      contract→review→plan→review→build→review→ship.
+                Between each, a real script check refuses to
+                advance until the work still matches the contract.
+  3  Never lost Stop any time. /compass:go picks you up here.
+
+  Three doors:  /compass:go  ·  /compass:status  ·  /compass:resume
+────────────────────────────────────────────────────────

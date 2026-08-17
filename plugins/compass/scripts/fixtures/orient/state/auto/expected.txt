@@ -1,0 +1,6 @@
+── Compass · auto ────────────────────────────────────
+  contract ✓  review ✓  plan ◉  review ○  build ○  review ○  ship ○
+  ▲ plan · step 0/3 · next: write the plan
+  Goal: a fixture build in autonomous mode
+  mode: Autonomous
+────────────────────────────────────────────────────────
