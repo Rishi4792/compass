@@ -3,6 +3,14 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.29.2] — 2026-08-17
+
+**The Release Card said "0 changes" for every standard contract.** It read shipped items only from a `### NOW` section of numbered items, but the ladder the contract skill actually writes is `## Scope ladder` with `- NOW:` bullets — so a release card advertised that nothing had shipped. Now read from the canonical ladder (which already separates NOW from LATER/NEVER, so the v0.24 guard against advertising deferred items as shipped is preserved), with the numbered form kept as a fallback. The hero also names the release rather than repeating the contract's document title.
+
+Found by generating a sample artefact and looking at it — not by a test. A regression assert now covers it, and was proven to bite.
+
+smoke 556 → 557. All green.
+
 ## [0.29.1] — 2026-08-17
 
 **Patch, found by v0.29.0's own post-ship loop — the "fourth redesign" failure it was seeded to catch.**

@@ -861,9 +861,17 @@ function releaseCard() {
   const goal = hdr('Goal') || (contractFields.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1] || '';
   // "In this release" = the NOW block's numbered items ONLY — never the LATER/NEVER `- ` bullets
   // (R2 MAJOR-3: the old fallback advertised deferred + non-goal items as shipped).
+  // v0.29.1: the canonical ladder the contract skill actually writes is `## Scope ladder`
+  // with `- NOW:` bullets — NOT a `### NOW` section of numbered items. Reading only the
+  // latter meant every standard contract rendered "0 changes": a release card advertising
+  // that nothing shipped. Use scope() (which already separates NOW from LATER/NEVER, so the
+  // v0.24 R2 guard against advertising deferred items as shipped is preserved), and keep the
+  // numbered `### NOW` form as a fallback for contracts written that way.
+  const ladderNow = scope().now || [];
   const nowBlock = (contractFields.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
-  const nowItems = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
-    .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, '').slice(0, 140));
+  const numbered = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
+    .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
+  const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => splitLead(String(t), 140).lead);
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
     + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nowItems.length - 6} more</li>` : '');
   const facet = hdr('facets') || 'library';
@@ -873,7 +881,7 @@ function releaseCard() {
   <div class="kicker">Compass · Release</div>
   ${band3Flow(logicBlockFor('release'), 'How this build reached production \u2014 every box a real gate it had to pass.', ['Solid = the happy path', 'Dashed = refuses and stops'])}
   <div class="card vr-hero"><div class="kicker">Shipped</div>
-    <h1>${txt(title)}</h1>
+    <h1>${txt(slug)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
     ${goal ? `<p class="lede">${txt(String(goal).slice(0, 400))}</p>` : ''}
   </div>
