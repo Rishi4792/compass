@@ -3086,6 +3086,16 @@ _orient_log() { # <logfile> <command> <mode> <bytes-out>
   return 0
 }
 
+# List ONLY real in-flight build rows from cmd_active_builds. That command prints
+# a human "COMPASS-GATE: PASS — 0 active builds." line when there are none, and a
+# naive ^[a-zA-Z0-9] match counted THAT as a build — so with nothing in flight the
+# renderer tried `--where <state-root>/COMPASS-GATE:` and emitted nothing at all.
+# The new-user path (no builds yet) is the single most important case for the
+# NEW-BUILD block, and it was the one that broke. Found by the post-ship loop.
+_orient_active_rows() { # <state-root>
+  cmd_active_builds "${1:-}" 2>/dev/null | grep -E '^[A-Za-z0-9][A-Za-z0-9_.-]* \(' || true
+}
+
 # The NEW-BUILD block — shown when nothing is in flight. Deliberately short:
 # it teaches the model, it does not recite the manual.
 _orient_new_block() {
@@ -3157,7 +3167,7 @@ _orient_where_block() { # <build-dir>
 _orient_multi_block() { # <state-root>
   local sr="$1" slug cur line
   cur="$(cat "$sr/CURRENT" 2>/dev/null | tr -d '[:space:]')"
-  printf '── Compass · %s builds in flight ───────────────────\n' "$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' | tr -d ' ')"
+  printf '── Compass · %s builds in flight ───────────────────\n' "$(_orient_active_rows "$sr" | grep -c . | tr -d ' ')"
   while IFS= read -r line; do
     slug="$(printf '%s' "$line" | awk '{print $1}')"
     [ -n "$slug" ] || continue
@@ -3166,7 +3176,7 @@ _orient_multi_block() { # <state-root>
     tot="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; tot="${tot:-0}"
     dn="$(grep -cE '^[[:space:]]*- \[x\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; dn="${dn:-0}"
     printf '  · %s — %s · step %s/%s\n' "$slug" "${st:-done}" "$dn" "$tot"
-  done < <(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]')
+  done < <(_orient_active_rows "$sr")
   printf '────────────────────────────────────────────────────────\n'
   if [ -n "$cur" ] && [ -d "$sr/$cur" ]; then
     _orient_where_block "$sr/$cur"
@@ -3324,9 +3334,9 @@ cmd_statusline() { # [<build-dir>]
   local dir="${1:-}"
   if [ -z "$dir" ]; then
     local sr n first; sr="$(state_root 2>/dev/null)" || return 0
-    n="$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' || true)"; n="${n:-0}"
+    n="$(_orient_active_rows "$sr" | grep -c . || true)"; n="${n:-0}"
     [ "$n" = "0" ] && return 0
-    first="$(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]' | head -1 | awk '{print $1}')"
+    first="$(_orient_active_rows "$sr" | head -1 | awk '{print $1}')"
     dir="$sr/$first"
   fi
   [ -d "$dir" ] || return 0
@@ -3376,10 +3386,10 @@ cmd_orient() { # [--new | --where <build-dir>]
   # right (INV-ONE-RENDERER: one renderer, three front doors).
   if [ -z "$mode" ]; then
     local sr n first; sr="$(state_root 2>/dev/null)"
-    n="$(cmd_active_builds "$sr" 2>/dev/null | grep -cE '^[a-zA-Z0-9]' || true)"; n="${n:-0}"
+    n="$(_orient_active_rows "$sr" | grep -c . || true)"; n="${n:-0}"
     if [ "$n" = "0" ]; then mode="--new"
     else
-      first="$(cmd_active_builds "$sr" 2>/dev/null | grep -E '^[a-zA-Z0-9]' | head -1 | awk '{print $1}')"
+      first="$(_orient_active_rows "$sr" | head -1 | awk '{print $1}')"
       if [ "$n" = "1" ]; then mode="--where"; dir="$sr/$first"
       else
         # N>1: parallel builds are a keystone feature, and CURRENT is explicitly

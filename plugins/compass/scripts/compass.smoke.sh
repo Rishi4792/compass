@@ -924,6 +924,14 @@ chk "$(bash "$SH" progress-card "$V28/progress-card/hostile" | od -c | grep -c '
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-quiet" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-CARD-GATE: quiet-mode still records, so COMPASS_QUIET cannot deadlock the build loop"
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-later-block" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-GATE: a card in a LATER receipt block does NOT satisfy the step's own gate (review-3 bypass, now fixed)"
 
+# INV-ORIENT zero-builds path (post-ship regression, v0.28.0): cmd_active_builds
+# prints a human "0 active builds." status line when nothing is in flight. A naive
+# ^[a-zA-Z0-9] match counted THAT line as a build, so with nothing in flight the
+# renderer emitted NOTHING — breaking the single most important case, a new user
+# with no builds yet. Assert the row filter ignores the status line.
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; cmd_active_builds() { echo "COMPASS-GATE: PASS — 0 active builds."; }; _orient_active_rows /tmp | grep -c . || true')" "0" "v0.28 INV-ORIENT: the active-builds row filter ignores the '0 active builds' status line (zero-build path renders the NEW block)"
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; cmd_active_builds() { echo "my-build (build)"; echo "COMPASS-GATE: PASS — 1 active build."; }; _orient_active_rows /tmp | grep -c . || true')" "1" "v0.28 INV-ORIENT: the row filter keeps real build rows and drops the trailing status line"
+
 # INV-STATUSLINE
 chk "$(bash "$SH" statusline "$V28/orient/state/inflight" | wc -l | tr -d ' ')" "1" "v0.28 INV-STATUSLINE: exactly one line for an in-flight build"
 chk "$(bash "$SH" statusline "$SMOKE_TMP/definitely-not-a-build" 2>/dev/null | wc -c | tr -d ' ')" "0" "v0.28 INV-STATUSLINE: zero bytes when there is no build"
