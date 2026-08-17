@@ -3,6 +3,25 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.29.0] — 2026-08-17
+
+**The artefacts are rebuilt around the reader.** The Contract Brief and Plan Map were the most visible thing Compass produces and the least usable — so this release rebuilds all four generated views on one decision-first skeleton, and turns "it looks messy" into a set of commands that can fail.
+
+**The headline defect, and its actual cause.** The shipped Brief printed the literal token `<goal from INDEX>` **four times**, including in "Done means". The field parser scanned raw markdown for `Key:` lines and never skipped fenced code blocks — so it read `Goal: <goal from INDEX>` out of an **ASCII mockup inside the Design Spec** and used a drawing as data. The same blindness inflated plan step counts, because `- [x]` lines inside fenced receipt templates were counted as real steps.
+
+- **Four bands, same order, every decision artefact** — the decision you're being asked to make, the 4 facts needed to make it, the logic block, then detail. Asserted positionally, so the order is a test rather than a preference.
+- **A real diagram on every view** — inline SVG generated from the contract's own logic map (or the build's structure), laid out in reading order. No runtime, no network, and counted structurally (≥3 rect, ≥2 path, ≥3 text) so a decorative icon cannot pass.
+- **Every plan step now shows the command that proves it.** The `VERIFY:` line was previously parsed and discarded.
+- **The plan artefact is a plan** — approach and rejected alternatives, what could break, how we know it works, going live. Anything absent renders `N/A — reason` rather than vanishing.
+- **It refuses rather than lying.** An unresolved required field exits non-zero and writes nothing, naming the field. A blank where the headline should be is quieter than a placeholder, and worse.
+- **Local delivery** — the artefact is written, gated, copied to `~/Downloads`, opened on the machine Compass is running on, and Taildropped to your other Mac. `COMPASS_NO_OPEN=1` reduces it to writing the file and printing the path.
+- **A structural gate with no browser** (`compass.sh artefact-gate`) — tokens, band order, diagram shape, self-containment, counts-vs-source, and freshness. A page older than its source now fails.
+- **The palette is read from the theme file**, not hand-copied, so a theme edit can no longer drift the artefacts while the anti-drift gate keeps passing against stale values. One deliberate addition: a `fontMono` token.
+
+**Honest note on the two previous attempts.** v0.26.0 and v0.27.0 both claimed to redesign these views to a "builder mental model", and both regressed — because neither pinned a binding mockup or a testable definition of "good". This time the accepted wireframe *is* the spec, and 11 mutation recipes prove each new test goes red when its behaviour breaks.
+
+Suites: **smoke 517 → 556**, selftest 561, recon 130 pinned invariant groups. All green.
+
 ## [0.28.1] — 2026-08-17
 
 **Patch: v0.28.0 shipped with a bug in its own headline feature, and shipped it in a way users could not have received the fix.**

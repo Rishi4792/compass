@@ -1,0 +1,2 @@
+- [ ] **1 · a step whose title is deliberately far longer than any plausible truncation boundary so that a character slice would be immediately visible in the rendered output and provably wrong a step whose title is deliberately far longer than any plausible truncation boundary so that a character slice would be immediately visible in the rendered output and provably wrong **
+      **VERIFY:** `cmd`

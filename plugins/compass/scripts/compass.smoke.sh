@@ -180,11 +180,11 @@ chk "$(printf '%s' "$FSO" | grep -c 'auto: SUSPENDED (driver)')" "1" "v0.12 F-ST
 rm -rf "$(dirname "$FSD")"
 
 # ── v0.12.0 S8b: recon guard pinned-list content (the list is asserted, not just its mechanism) ──
-for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-ORIENT INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES INV-ORIENT-DELIVERED INV-ORIENT-INERT INV-ORIENT-NOREPEAT INV-CARD INV-CARD-HONEST INV-CARD-CAP INV-CARD-GATE INV-CARD-RECEIPT INV-ONE-RENDERER INV-STATUSLINE INV-MODE-ASKED INV-MODE-VISIBLE INV-NOT-BYTEINERT INV-LOCALE-SAFE INV-TERMINAL-STATUS; do
+for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-ORIENT INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES INV-ORIENT-DELIVERED INV-ORIENT-INERT INV-ORIENT-NOREPEAT INV-CARD INV-CARD-HONEST INV-CARD-CAP INV-CARD-GATE INV-CARD-RECEIPT INV-ONE-RENDERER INV-STATUSLINE INV-MODE-ASKED INV-MODE-VISIBLE INV-NOT-BYTEINERT INV-LOCALE-SAFE INV-TERMINAL-STATUS INV-FENCE-BLIND INV-BANDS INV-LOGIC-BLOCK INV-VERIFY-SHOWN INV-COUNTS-MATCH INV-NO-TRUNCATION INV-COMPLETE-PLAN INV-STRUCTURE INV-FRESH INV-DELIVERED INV-HOUSE; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
 chk "$(grep -c 'FLOOR_SELFTEST=556' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the selftest floor 556 (actual-5 margin rule)"
-chk "$(grep -c 'FLOOR_SMOKE=509' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the smoke floor 509 (actual-5 margin rule)"
+chk "$(grep -c 'FLOOR_SMOKE=551' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the smoke floor 551 (actual-5 margin rule)"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -271,7 +271,7 @@ chk "$(grep -c 'Three doors, everything else driven for you' "$REPO/README.md")"
 # ── v0.15.0 slice ①: clarity/UX — welcome · compass-visual Brief · explicit lock · mode · explain · Feynman ──
 GO15="$PLUGIN_ROOT/commands/go.md"; EXP15="$PLUGIN_ROOT/skills/explain/SKILL.md"; VIS15="$PLUGIN_ROOT/skills/compass-visual"; CSK15="$PLUGIN_ROOT/skills/contract/SKILL.md"
 # INV-ORIENT
-# v0.28.1 — the two asserts that USED to live here were:
+# v0.29.0 — the two asserts that USED to live here were:
 #   grep -c 'Welcome — how Compass works' go.md   == 1
 #   grep -q 'Contract-first' && grep -q 'assembly line' go.md
 # They passed for twelve versions while the welcome printed 0 times in 30 real
@@ -656,7 +656,7 @@ _dcsk="$PLUGIN_ROOT/skills/contract/SKILL.md"
 chk "$( { grep -qF '## Glossary' "$_dcsk" && grep -qF 'alternatives-considered:' "$_dcsk" && grep -qF 'one-way-door:' "$_dcsk" && grep -qF 'RACI:' "$_dcsk"; } && echo 1 || echo 0)" "1" "v0.23 INV-DURABILITY: contract skill pins the 4 durability anchors (## Glossary · alternatives-considered: · one-way-door: · RACI:)"
 chk "$(grep -c 'TEMPLATE: durability-box' "$_dcsk")" "1" "v0.23 INV-DURABILITY: contract skill pins the durability-box receipt template"
 _c22n="$(sed -n 's/^INV_NAMES="\(.*\)"/\1/p' "$PLUGIN_ROOT/scripts/compass.recon.sh")"
-chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "119" "v0.28 INV-SUITES-GREEN: recon INV_NAMES == 119 (104 + the 15 v0.28 always-clarity names)"
+chk "$(printf '%s' "$_c22n" | wc -w | tr -d ' ')" "130" "v0.29 INV-SUITES-GREEN: recon INV_NAMES == 130 (119 + the 11 v0.29 visual-artefact names)"
 # ── v0.22.0 Wave D: skills/commands/release wiring present (grep-enforced — can't silently drift) ──
 CSK22="$PLUGIN_ROOT/skills/contract/SKILL.md"; BSK22="$PLUGIN_ROOT/skills/build/SKILL.md"; SSK22="$PLUGIN_ROOT/skills/ship/SKILL.md"
 RPK22="$PLUGIN_ROOT/skills/review-plan/SKILL.md"; RBK22="$PLUGIN_ROOT/skills/review-build/SKILL.md"
@@ -672,9 +672,9 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.28.1' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.28.1"
-chk "$(grep -c '0.28.1' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.28.1"
-chk "$(grep -c '## \[0.28.1\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.28.1 entry"
+chk "$(grep -c '0.29.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.29.0"
+chk "$(grep -c '0.29.0' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.0"
+chk "$(grep -c '## \[0.29.0\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.0 entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
@@ -736,7 +736,7 @@ _ex(){ awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{"{f=1} f{print} f&&/^}$/{exit}'; }
 V23="$(git -C "$PLUGIN_ROOT" show v0.23.0:plugins/compass/scripts/compass.sh 2>/dev/null || true)"
 frz=1
 if [ -n "$V23" ]; then
-  # v0.28.1 — the freeze is NARROWED, deliberately and with user sign-off (G2).
+  # v0.29.0 — the freeze is NARROWED, deliberately and with user sign-off (G2).
   # v0.24 froze cmd_gate byte-for-byte. But the codebase itself contradicts the
   # strict reading: schema-pin, perf-budget, expand-contract, backfill-recon and
   # green-ci are ALL additive guard-first arms added to these very seams. The
@@ -813,7 +813,7 @@ chk "$_ndr" "0" "v0.25 INV-NO-DEAD-REF: no dead /compass:<removed> ref across RE
 chk "$(grep -c 'commands/start.md' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.25 INV-NO-DEAD-REF: gate.md header has no commands/start.md file-path ref"
 chk "$(grep -c 'start.md' "$PLUGIN_ROOT/commands/resume.md")" "0" "v0.25 INV-NO-DEAD-REF: resume.md has no dangling start.md ref"
 
-# ── v0.28.1: visual Brief redesign + delivery enforcement ──
+# ── v0.29.0: visual Brief redesign + delivery enforcement ──
 FXB="$PLUGIN_ROOT/scripts/fixtures/brief-contract"
 GENJS="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 V26T="$(mktemp -d)"
@@ -828,9 +828,16 @@ _hn="$(awk '/class="ba"/{exit} {print}' "$V26T/nohdr.html")"
 chk "$([ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-REAL-PP')" -ge 1 ] && [ "$(printf '%s' "$_hn" | grep -c 'GOALSEC-DECOY-QQ')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: with no **Goal:** header, sec('Goal') resolves to the Goal section not Non-goals (the anchored-sec fix BITES — a substring sec() renders the DECOY here)"
 chk "$([ "$(grep -c '1234567' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-RECON-TIE' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-IDEMPOTENT' "$V26T/body.html")" -ge 1 ] && [ "$(grep -c 'INV-FRESH-BY-6AM' "$V26T/body.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: reconciliation literal + all 3 fixture INV names present (every card populated, not blanked by an exact-equality over-fix)"
 # INV-BRIEF-IA — the 6 regions + flow/guardrails POPULATED + deterministic
-_r=0; for cls in 'class="ba"' 'class="done"' 'class="flow"' 'class="won"' '<details'; do grep -q "$cls" "$V26T/body.html" && _r=$((_r+1)); done
-chk "$_r" "5" "v0.26 INV-BRIEF-IA: the mental-model regions present (before→after · done · flow · guardrails · fold)"
-chk "$([ "$(grep -o 'class="si"' "$V26T/body.html" | wc -l | tr -d ' ')" -ge 3 ] && [ "$(awk '/class="won"/{f=1} f&&/<li>/{n++} /<\/ul>/{if(f)exit} END{print n+0}' "$V26T/body.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-IA: flow + guardrails POPULATED (real scope items, not empty shells)"
+# v0.29.0 REWRITTEN (not retired) — the v0.26 regions (before→after · done · flow · guardrails
+# · fold) encoded the OLD layout, and the v0.29 contract explicitly removes Before/After as
+# empty scaffolding. The INTENT — "the mental-model regions are all present" — is preserved
+# verbatim against the NEW four-band skeleton, which is the same assertion about a different
+# structure. Retiring it would have meant the redesign was never checked.
+_r=0; for cls in 'class="b-decide"' 'class="b-facts"' 'class="b-flow"' 'class="b-sec"' '<svg'; do grep -q "$cls" "$V26T/body.html" && _r=$((_r+1)); done
+chk "$_r" "5" "v0.29 INV-BRIEF-IA: the four bands + the logic block are all present (decision · facts · flow · detail · diagram)"
+# The "not empty shells" half is BEHAVIOURAL and is preserved exactly: the facts row and the
+# scope list must carry real content, not styled emptiness.
+chk "$([ "$(grep -o 'class="b-fact"' "$V26T/body.html" | wc -l | tr -d ' ')" -ge 4 ] && [ "$(awk '/class="pl"/{f=1} f&&/<li>/{n++} /<\/ul>/{if(f)exit} END{print n+0}' "$V26T/body.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-BRIEF-IA: facts row + scope list POPULATED (real content, not empty shells)"
 node "$GENJS" "$FXB" brief-body --out "$V26T/body2.html" >/dev/null 2>&1
 chk "$(diff -q "$V26T/body.html" "$V26T/body2.html" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-IA: deterministic (two runs byte-identical)"
 # INV-RENDER-REAL — the no-browser fail leg is mandatory + reasoned; the browser leg is probe-guarded/skipped
@@ -860,7 +867,7 @@ chk "$(grep -c 'FOLD-LEAK-SENTINEL' "$V26T/body.html")" "1" "v0.26 INV-BRIEF-SHA
 chk "$([ "$(grep -c 'S&P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && [ "$(grep -c 'S&amp;P_score' "$V26T/sh.html" 2>/dev/null)" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-BRIEF-SHAREABLE: a declared never-show value with an HTML metachar (S&P_score) is scrubbed in BOTH raw + escaped form (RB-v0.26 leak fix — esc()'d prose no longer slips a raw-only regex)"
 rm -rf "$V26T"
 
-# ── v0.28.1: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
+# ── v0.29.0: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
 FXV="$PLUGIN_ROOT/scripts/fixtures/view-fixture"
 GENV="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
 THEMEV="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
@@ -871,7 +878,12 @@ node "$GENV" "$FXV/b" plan-map --out "$V27T/pm.html" >/dev/null 2>&1
 node "$GENV" "$FXV/b" release-card --out "$V27T/rc.html" >/dev/null 2>&1
 node "$GENV" "$FXV/b" program-cockpit --out "$V27T/pc.html" >/dev/null 2>&1
 # INV-VIEW-IA — the new region classes (absent from the pre-v0.27 bodies) + populated content
-chk "$([ "$(grep -c 'card vp-hero' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="vp-prog"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'steps' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="wv"' "$V27T/pm.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: plan-map has the vp-hero + vp-prog progress + ≥1 wave (mental-model IA)"
+# v0.29.0 REWRITTEN (not retired). The old assert required `vp-hero`, `vp-prog` and **≥1 wave**
+# — but the v0.29 contract explicitly REMOVES the wave chip (a plan that uses no waves must not
+# render "0 waves"). Asserting ≥1 wave would have forced the exact defect this release fixes.
+# The intent — "the plan map carries its mental-model IA, populated" — is preserved against the
+# new bands, and strengthened: every step must now also carry its VERIFY block.
+chk "$([ "$(grep -c 'class="b-decide"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="b-facts"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -o 'class="b-step"' "$V27T/pm.html" | wc -l | tr -d ' ')" -ge 1 ] && [ "$(grep -o 'class="verify"' "$V27T/pm.html" | wc -l | tr -d ' ')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-VIEW-IA: plan-map has the decision + facts bands, ≥1 step, and every step carries its VERIFY"
 chk "$([ "$(grep -c 'card vr-hero' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c 'v9.9.9' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c '<li>' "$V27T/rc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card has the vr-hero + version (not ?) + ≥1 changed item"
 chk "$([ "$(grep -c 'LATER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && [ "$(grep -c 'NEVER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card shows NOW items ONLY — LATER/NEVER absent (the v0.24 R2 guard, now biting)"
 chk "$([ "$(grep -c 'card vpc-tl' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'P1|P2' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'p1-a|p2-a' "$V27T/pc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: program-cockpit has the vpc-tl timeline + ≥1 phase + ≥1 contract child-row"
@@ -887,7 +899,7 @@ chk "$_g" "1" "v0.27 INV-VIEW-GATES: each redesigned view body + brief-body pass
 rm -rf "$V27T"
 
 
-# ══ v0.28.1 "always clarity" — BEHAVIOUR asserts. Every one of these fails when
+# ══ v0.29.0 "always clarity" — BEHAVIOUR asserts. Every one of these fails when
 # the behaviour breaks, not merely when bytes go missing from a file. That
 # distinction is the entire point of this release (see the deleted INV-WELCOME
 # asserts above). ══
@@ -924,7 +936,7 @@ chk "$(bash "$SH" progress-card "$V28/progress-card/hostile" | od -c | grep -c '
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-quiet" >/dev/null 2>&1 ); chk "$?" "0" "v0.28 INV-CARD-GATE: quiet-mode still records, so COMPASS_QUIET cannot deadlock the build loop"
 ( bash "$SH" progress-gate "$V28/progress-card/receipt-later-block" >/dev/null 2>&1 ); chk "$?" "1" "v0.28 INV-CARD-GATE: a card in a LATER receipt block does NOT satisfy the step's own gate (review-3 bypass, now fixed)"
 
-# INV-ORIENT zero-builds path (post-ship regression, v0.28.1): cmd_active_builds
+# INV-ORIENT zero-builds path (post-ship regression, v0.29.0): cmd_active_builds
 # prints a human "0 active builds." status line when nothing is in flight. A naive
 # ^[a-zA-Z0-9] match counted THAT line as a build, so with nothing in flight the
 # renderer emitted NOTHING — breaking the single most important case, a new user
@@ -965,6 +977,96 @@ chk "$(grep -c 'Welcome — how Compass works' "$PLUGIN_ROOT/commands/go.md")" "
 chk "$(grep -c 'compass.sh progress-card' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.28 INV-CARD: the build skill renders the card every step"
 chk "$(grep -c 'compass.sh progress-gate' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.28 INV-CARD-GATE: the build skill gates the next step on it"
 chk "$(grep -c 'progress-card' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.28 INV-NO-LIFECYCLE-CHANGE: the byte-locked gate footer is untouched"
+
+
+# ══ v0.29.0 "visual artefacts" — the four views, rebuilt. Every assert below fails when
+# the BEHAVIOUR breaks, and each one traces to a defect measured in the shipped output. ══
+V29FX="$PLUGIN_ROOT/scripts/fixtures/artefacts"; V29G="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
+V29AG="$PLUGIN_ROOT/scripts/artefact-gate.mjs"; V29TH="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
+V29T="$(mktemp -d)"
+
+# INV-FENCE-BLIND — a drawing is not data. The shipped brief printed `<goal from INDEX>`
+# four times because the parser read an ASCII mockup inside a ``` fence as a contract field.
+node "$V29G" "$V29FX/fenced" brief --out "$V29T/f.html" >/dev/null 2>&1
+chk "$(grep -c 'goal from INDEX' "$V29T/f.html")" "0" "v0.29 INV-FENCE-BLIND: a Goal: inside a code fence is NOT read as the contract's goal"
+chk "$([ "$(grep -c 'lives in a proper section' "$V29T/f.html")" -ge 2 ] && echo 1 || echo 0)" "1" "v0.29 INV-FENCE-BLIND: the REAL section goal is used instead"
+node "$V29G" "$V29FX/fenced" plan-map --out "$V29T/fp.html" >/dev/null 2>&1
+chk "$(grep -o 'class="b-step"' "$V29T/fp.html" | wc -l | tr -d ' ')" "1" "v0.29 INV-FENCE-BLIND: checkboxes inside a fenced receipt template are NOT plan steps"
+
+# INV-NO-TOKEN — refuse rather than ship a blank where the headline should be.
+( node "$V29G" "$V29FX/no-goal" brief --out "$V29T/ng.html" >/dev/null 2>&1 ); chk "$?" "4" "v0.29 INV-NO-TOKEN: an unresolved REQUIRED field refuses (exit 4)"
+chk "$([ -f "$V29T/ng.html" ] && echo 1 || echo 0)" "0" "v0.29 INV-NO-TOKEN: and writes NOTHING (a wrong page is worse than no page)"
+( node "$V29G" "$V29FX/fenced" brief --out "$V29T/ok.html" >/dev/null 2>&1 ); chk "$?" "0" "v0.29 INV-NO-TOKEN: no false positive on a contract that merely QUOTES a token"
+
+# INV-HOUSE — every body's palette comes from the theme file.
+_h=1; for _v in brief-body plan-map release-card program-cockpit; do
+  node "$V29G" "$V29FX/five-verify" "$_v" --out "$V29T/h-$_v.html" >/dev/null 2>&1
+  node "$PLUGIN_ROOT/skills/rk-house-style/gates/anti-drift-grep.mjs" "$V29T/h-$_v.html" "$V29TH" 2>&1 | grep -q '0 off-theme' || _h=0
+done
+chk "$_h" "1" "v0.29 INV-HOUSE: all four view bodies score 0 off-theme against the theme"
+
+# INV-LOGIC-BLOCK — a diagram, not an icon. Counted structurally so "decorative" is a number.
+_l=1; for _v in brief-body plan-map release-card program-cockpit; do
+  _r=$(grep -o '<rect' "$V29T/h-$_v.html" | wc -l | tr -d ' '); _p=$(grep -o '<path' "$V29T/h-$_v.html" | wc -l | tr -d ' '); _x=$(grep -o '<text' "$V29T/h-$_v.html" | wc -l | tr -d ' ')
+  { [ "$_r" -ge 3 ] && [ "$_p" -ge 2 ] && [ "$_x" -ge 3 ]; } || _l=0
+done
+chk "$_l" "1" "v0.29 INV-LOGIC-BLOCK: every view carries >=3 rect, >=2 path, >=3 text (an icon cannot pass)"
+chk "$(grep -c '<script' "$V29T/h-plan-map.html")" "0" "v0.29 INV-LOGIC-BLOCK: no script tag — the page runs nothing"
+
+# INV-VERIFY-SHOWN — the proof that closes a step was absent from every shipped Plan Map.
+node "$V29G" "$V29FX/five-verify" plan-map --out "$V29T/fv.html" >/dev/null 2>&1
+chk "$(grep -o 'class="verify"' "$V29T/fv.html" | wc -l | tr -d ' ')" "5" "v0.29 INV-VERIFY-SHOWN: every step renders its VERIFY command"
+
+# INV-COUNTS-MATCH — the shipped Plan Map said 0/18 for a 20-step plan.
+node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/ts.html" >/dev/null 2>&1
+chk "$(grep -c '<b>20</b> steps' "$V29T/ts.html")" "1" "v0.29 INV-COUNTS-MATCH: the header count equals the source"
+chk "$(grep -o 'class="b-step"' "$V29T/ts.html" | wc -l | tr -d ' ')" "20" "v0.29 INV-COUNTS-MATCH: the body renders exactly that many steps"
+chk "$(grep -c '7 done' "$V29T/ts.html")" "1" "v0.29 INV-COUNTS-MATCH: done/remaining reflect the real checkbox state"
+node "$V29G" "$V29FX/no-waves" plan-map --out "$V29T/nw.html" >/dev/null 2>&1
+chk "$(grep -ciE '[0-9]+ waves?' "$V29T/nw.html")" "0" "v0.29 INV-COUNTS-MATCH: no chip for a concept the plan never used (the '0 waves' defect)"
+
+# INV-NO-TRUNCATION — the shipped Plan Map cut step text mid-word at .slice(0,110).
+node "$V29G" "$V29FX/long-titles" plan-map --out "$V29T/lt.html" >/dev/null 2>&1
+chk "$(python3 - "$V29FX/long-titles/plan.md" "$V29T/lt.html" <<'PYEOF'
+import re,html,sys
+t=' '.join(re.search(r'\*\*1 · (.+?)\*\*', open(sys.argv[1]).read(), re.S).group(1).split())
+out=' '.join(html.unescape(re.sub(r'<[^>]+>',' ',open(sys.argv[2]).read())).split())
+print(1 if t in out else 0)
+PYEOF
+)" "1" "v0.29 INV-NO-TRUNCATION: a 363-character step title survives WHOLE (no character slice anywhere)"
+
+# INV-COMPLETE-PLAN — a section a reader cannot see is indistinguishable from one never required.
+node "$V29G" "$V29FX/minimal-plan" plan-map --out "$V29T/mp.html" >/dev/null 2>&1
+chk "$([ "$(grep -o 'class="b-na"' "$V29T/mp.html" | wc -l | tr -d ' ')" -ge 5 ] && echo 1 || echo 0)" "1" "v0.29 INV-COMPLETE-PLAN: every missing plan section renders an explicit N/A card"
+
+# INV-STRUCTURE — the whole gate runs with no browser, and BITES on each seeded defect.
+( node "$V29AG" "$V29T/ts.html" --bands --steps 20 >/dev/null 2>&1 ); chk "$?" "0" "v0.29 INV-STRUCTURE: the gate PASSES good output"
+( node "$V29AG" "$V29T/ts.html" --bands --steps 99 >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES on a count that disagrees with the source"
+python3 -c "import re,sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(re.sub(r'<svg[\s\S]*?</svg>','',s))" "$V29T/ts.html" "$V29T/nosvg.html"
+( node "$V29AG" "$V29T/nosvg.html" >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when the logic block is missing"
+python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace('</body>','<script>x</script></body>'))" "$V29T/ts.html" "$V29T/scr.html"
+( node "$V29AG" "$V29T/scr.html" >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when a script tag appears"
+python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace('<div class=\"b-decide\"','<div class=\"b-x\"',1))" "$V29T/ts.html" "$V29T/nob.html"
+( node "$V29AG" "$V29T/nob.html" --bands >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when the decision band is gone"
+
+# INV-FRESH — an artefact older than its source is a wrong number waiting to be read.
+sleep 1; touch "$V29FX/twenty-steps/plan.md"
+( node "$V29AG" "$V29T/ts.html" --source "$V29FX/twenty-steps/plan.md" >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-FRESH: an artefact older than its source FAILS the gate"
+
+# INV-BANDS — the order is the product decision, asserted positionally.
+chk "$(node "$V29AG" "$V29T/h-brief-body.html" --bands >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.29 INV-BANDS: the Brief emits decision -> facts -> flow -> detail, in that order"
+chk "$(node "$V29AG" "$V29T/h-release-card.html" --bands >/dev/null 2>&1 && echo 0 || echo 1)" "1" "v0.29 INV-BANDS: --bands still BITES on a view without a facts row (the flag cannot wave a check away)"
+
+# INV-DELIVERED — the wiring exists at the seams, and the kill-switch is honoured.
+chk "$([ "$(grep -c 'artefact-gate' "$PLUGIN_ROOT/skills/contract/SKILL.md")" -ge 1 ] && [ "$(grep -c 'artefact-gate' "$PLUGIN_ROOT/skills/plan/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: contract + plan skills gate the artefact before showing it"
+chk "$([ "$(grep -c 'artefact-deliver' "$PLUGIN_ROOT/skills/contract/SKILL.md")" -ge 1 ] && [ "$(grep -c 'artefact-deliver' "$PLUGIN_ROOT/skills/plan/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: both seams deliver locally rather than relying on an Artifact"
+chk "$([ "$(grep -c 'COMPASS_NO_OPEN' "$CURSH")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: the kill-switch is honoured in the delivery path"
+
+# determinism — the same source renders byte-identically (no clock, no locale leakage).
+node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/d1.html" >/dev/null 2>&1
+TZ=Asia/Kolkata LC_ALL=en_US.UTF-8 node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/d2.html" >/dev/null 2>&1
+chk "$(diff -q "$V29T/d1.html" "$V29T/d2.html" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.29 views are deterministic across TZ and locale"
+rm -rf "$V29T"
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

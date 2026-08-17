@@ -38,6 +38,8 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 ## Emit
 `progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
 ```
+**v0.29.0 — regenerate, gate, deliver.** `node skills/compass-visual/gen.mjs <dir> plan-map --out <dir>/plan-map.html` → `compass.sh artefact-gate <dir>/plan-map.html --bands --steps <N> --source <dir>/plan.md` (non-zero → STOP) → `compass.sh artefact-deliver <dir>/plan-map.html`. The gate proves the header count matches the plan and that every step carries its VERIFY, so a stale or wrong Plan Map cannot reach the user.
+
 **v0.24.0/v0.26.0 milestone — Plan Map (INV-MILESTONE-DELIVERY):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/plan-map.html <dir>/plan-map.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record the `MILESTONE:` line below, then run **`compass.sh milestone-gate <dir> plan-map`** (non-zero → STOP). Leaving the box unchecked also makes the frozen `compass.sh gate` refuse to advance.
 
 ## RECEIPT — plan · <slug> · PASS

@@ -1,6 +1,6 @@
 {
   "_name": "neutral-indigo",
-  "_note": "The DEFAULT bundled house theme — a brand-neutral slate/indigo, generated deterministically by seeds-to-tokens.mjs from neutral-indigo.seeds.json. Belongs to no product; a product gets its own identity via the 4-seed opt-in.",
+  "_note": "The DEFAULT bundled house theme \u2014 a brand-neutral slate/indigo, generated deterministically by seeds-to-tokens.mjs from neutral-indigo.seeds.json. Belongs to no product; a product gets its own identity via the 4-seed opt-in.",
   "ink": "#0A2540",
   "mut": "#5A6472",
   "mut2": "#657081",
@@ -23,6 +23,7 @@
   "line": "#F2F4F5",
   "grid": "#F0F1F3",
   "fontSans": "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+  "fontMono": "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace",
   "spacing": {
     "cardPad": "20px 22px",
     "grid": 4

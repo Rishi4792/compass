@@ -3272,6 +3272,57 @@ PY
   ok "statusline-install: installed. Backup: $bak  ·  undo: cp \"$bak\" \"$cfg\""
 }
 
+# ── v0.29.0 artefact gate / delivery / audit ──────────────────────────────────
+# The structural gate lives in node (it reads HTML), so this is a thin, honest wrapper.
+cmd_artefact_gate() { # <html> [--source <md>] [--steps N] [--bands]
+  local f="${1:-}"; [ -n "$f" ] || die "usage: compass.sh artefact-gate <html> [--source <md>] [--steps N] [--bands]"
+  shift || true
+  node "$(dirname "$0")/artefact-gate.mjs" "$f" "$@"
+}
+
+# INV-DELIVERED — write, gate, copy, open HERE, send THERE.
+# "Open on whichever machine the user is at" is not achievable: taildrop moves a file into
+# an inbox and cannot open it, and SSH to the other Mac is not available. So the promise is
+# the achievable one, and the OUTPUT SAYS WHICH HAPPENED rather than implying both.
+cmd_artefact_deliver() { # <html> [--name <basename>]
+  local f="${1:-}"; [ -n "$f" ] && [ -f "$f" ] || die "usage: compass.sh artefact-deliver <html-file>"
+  local name="${3:-}"; [ -n "$name" ] || name="compass-$(basename "$f" .html)-$(basename "$(dirname "$f")").html"
+  local dl="$HOME/Downloads/$name"
+  local opened="skipped" sent="skipped" oc=0 sc=0
+
+  cp "$f" "$dl" 2>/dev/null || die "artefact-deliver: could not copy to $dl"
+
+  if [ -n "${COMPASS_NO_OPEN:-}" ]; then
+    opened="off (COMPASS_NO_OPEN=1)"; sent="off (COMPASS_NO_OPEN=1)"
+  else
+    if command -v open >/dev/null 2>&1; then
+      open "$dl" >/dev/null 2>&1; oc=$?; opened="opened here (exit $oc)"
+    else opened="no 'open' on this machine"; fi
+    local ts; ts="$(command -v tailscale || echo /opt/homebrew/bin/tailscale)"
+    if [ -x "$ts" ]; then
+      local peer; peer="$("$ts" status 2>/dev/null | awk '$5=="active;"||$0~/macOS/{print $2}' | grep -vi "$(hostname -s | tr 'A-Z' 'a-z')" | head -1)"
+      if [ -n "$peer" ]; then "$ts" file cp "$dl" "$peer:" >/dev/null 2>&1; sc=$?; sent="sent to $peer (exit $sc)"
+      else sent="no other Mac on the tailnet"; fi
+    else sent="tailscale not installed"; fi
+  fi
+  ok "artefact-deliver: $dl  ·  $opened  ·  $sent"
+}
+
+# The observation channel: re-run the gate over the last rendered outputs and show the log.
+cmd_artefact_audit() { # <build-dir>
+  local d="${1:-}"; [ -n "$d" ] && [ -d "$d" ] || die "usage: compass.sh artefact-audit <build-dir>"
+  local any=0 f
+  for f in "$d"/brief.html "$d"/plan-map.html "$d"/release-card.html "$d"/program-cockpit.html; do
+    [ -f "$f" ] || continue
+    any=1
+    printf '  %-22s ' "$(basename "$f")"
+    node "$(dirname "$0")/artefact-gate.mjs" "$f" 2>&1 | tail -1
+  done
+  [ "$any" = 1 ] || echo "  (no artefacts rendered in $d yet)"
+  [ -f "$d/artefacts.log" ] && { echo "  ── artefacts.log (last 5) ──"; tail -5 "$d/artefacts.log" | sed 's/^/  /'; } || true
+  return 0
+}
+
 # INV-MODE-ASKED — the run-mode must be ASKED, never inferred.
 # Born from a real failure in this build's own session: the mode question that
 # INV-MODE-AT-LOCK requires was never asked, and `Human-gated` was inferred from
@@ -3434,6 +3485,9 @@ main() {
     statusline)        cmd_statusline "$@" ;;
     statusline-install) cmd_statusline_install "$@" ;;
     mode-gate)         cmd_mode_gate "$@" ;;
+    artefact-gate)     cmd_artefact_gate "$@" ;;
+    artefact-deliver)  cmd_artefact_deliver "$@" ;;
+    artefact-audit)    cmd_artefact_audit "$@" ;;
     orient-audit)      python3 "$(dirname "$0")/orient-audit.py" "$@" ;;
     milestone-gate)    cmd_milestone_gate "$@" ;;
     render)            cmd_render "$@" ;;

@@ -40,6 +40,23 @@ const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, nam
 const contract = read('contract.md');
 if (!contract) { console.error(`gen: no contract.md in ${dir}`); process.exit(2); }
 
+// ── v0.29.0 INV-FENCE-BLIND — a drawing is not data ────────────────────────────
+// A fenced code block holds ASCII mockups, examples and diagrams. It NEVER holds
+// contract fields. Before v0.29 the field parser scanned raw markdown, so
+// `Goal: <goal from INDEX>` inside the Design Spec's ASCII mockup was read as the
+// contract's goal and printed to the user four times. Blank the fenced lines
+// (keeping line COUNT, so any line-based logic stays aligned) and parse that.
+// The raw text is still available for anything that genuinely needs the fences.
+function stripFences(md) {
+  const out = [];
+  let inFence = false;
+  for (const ln of String(md).split('\n')) {
+    if (/^\s*(```|~~~)/.test(ln)) { inFence = !inFence; out.push(''); continue; }
+    out.push(inFence ? '' : ln);
+  }
+  return out.join('\n');
+}
+
 // ── markdown: split into `## ` sections, find by fuzzy header, pull structured bits ──
 function sections(md) {
   const out = {}; let cur = '__pre__'; out[cur] = [];
@@ -50,7 +67,9 @@ function sections(md) {
   const joined = {}; for (const k of Object.keys(out)) joined[k] = out[k].join('\n').trim();
   return joined;
 }
-const secs = sections(contract);
+// EVERY field/section read goes through the fence-blind copy (INV-FENCE-BLIND).
+const contractFields = stripFences(contract);
+const secs = sections(contractFields);
 // anchored-at-start (after an optional `N.` numeric prefix), NOT a loose substring —
 // so `Goal` no longer matches `Non-goals`, and `## 4. Security …` / `## 2. Scope ladder` still resolve.
 const sec = (needle) => {
@@ -60,9 +79,16 @@ const sec = (needle) => {
   return k ? secs[k] : '';
 };
 const hdr = (key) => {
-  const m = contract.match(new RegExp('^\\s*\\*{0,2}' + key.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\*{0,2}\\s*:\\s*(.+)$', 'im'));
+  const m = contractFields.match(new RegExp('^\\s*\\*{0,2}' + key.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\*{0,2}\\s*:\\s*(.+)$', 'im'));
   return m ? m[1].replace(/\*/g, '').trim() : '';
 };
+// INV-NO-TOKEN: wrap a REQUIRED field. A resolved value passes through; an unresolved
+// one becomes a sentinel that the write seam refuses on, naming the field.
+const req = (name, value) => {
+  const v = (value === null || value === undefined) ? '' : String(value).trim();
+  return v ? v : `\u27ea missing:${name}\u27eb`;
+};
+
 const title = (contract.match(/^#\s+(.+)$/m) || [, dir.split('/').pop()])[1].trim();
 const slug = (hdr('slug') || dir.replace(/\/+$/, '').split('/').pop());
 
@@ -195,25 +221,75 @@ function goldFigures() {
 // THEME — neutral-indigo tokens inlined so the asset is self-contained (matches themes/neutral-indigo.json).
 // Only these colors + structural neutrals appear in the house body → anti-drift-grep passes.
 // ============================================================================================
+// ── v0.29.0 INV-HOUSE — the palette is READ, never re-typed ────────────────────
+// These literals used to be hand-copied from the theme. They happened to match, but a
+// theme edit would have silently drifted the artefacts out of the house system while
+// the anti-drift gate kept passing against the OLD values. Read the theme file and emit
+// the custom properties from it, so drift is impossible by construction.
+const THEME = JSON.parse(readFileSync(new URL('../rk-house-style/themes/neutral-indigo.json', import.meta.url), 'utf8'));
+const THEME_VARS = Object.entries(THEME)
+  .filter(([k, v]) => !k.startsWith('_') && typeof v === 'string' && !k.startsWith('font'))
+  .map(([k, v]) => `--${k}:${v};`)
+  .join(' ');
 const HOUSE_CSS = `
   :root{
-    --ink:#0A2540; --mut:#5A6472; --mut2:#657081; --kicker:#606B7B;
-    --accent:#4F46E5; --accentDark:#271DD0;
-    --greenFg:#0E6245; --greenBg:#E6F8F1;
-    --amberFg:#9A6A14; --amberBg:#FFF9EE; --amberBorder:#F5E3BC;
-    --redFg:#A41C00; --redBg:#FCE8E6;
-    --chipFg:#3F4650; --chipBg:#E9EBEF;
-    --bg:#F9FAFB; --surface:#FFFFFF; --headBg:#FBFBFC; --line:#F2F4F5; --grid:#F0F1F3;
+    ${THEME_VARS}
   }
   *{box-sizing:border-box;margin:0}
   .cv-body{background:var(--bg);color:var(--ink);
-    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    font-family:${THEME.fontSans};
     font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;padding:34px}
   .cv-body .wrap{max-width:1120px;margin:0 auto}
   .cv-body .kicker{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--kicker)}
   .cv-body h1{font-size:23px;font-weight:700;letter-spacing:-.01em;margin-top:4px}
   .cv-body .lede{font-size:14px;color:var(--mut);margin-top:8px;line-height:1.55;max-width:80ch}
   .cv-body .lede b{color:var(--ink);font-weight:600}
+  /* ── v0.29.0 the four bands — identical order on every view (INV-BANDS) ── */
+  .cv-body .b-decide{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--accent);
+    border-radius:12px;padding:20px 22px;box-shadow:0 1px 2px rgba(10,37,64,0.04);margin-bottom:16px}
+  .cv-body .b-decide .ask{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+  .cv-body .b-decide h1{font-size:26px;letter-spacing:-.015em;line-height:1.2;margin-top:0}
+  .cv-body .b-id{color:var(--mut);margin-top:8px;font-size:13.5px}
+  .cv-body .b-id b{color:var(--ink);font-weight:600}
+  .cv-body .b-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--kicker);margin-bottom:10px}
+  .cv-body .b-facts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .cv-body .b-fact{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .cv-body .b-fact .k{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--kicker);margin-bottom:7px}
+  .cv-body .b-fact .v{font-size:14px;color:var(--mut);line-height:1.45}
+  .cv-body .b-fact .v b{color:var(--ink)}
+  .cv-body .b-flow{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px;overflow-x:auto}
+  .cv-body .b-flow svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  .cv-body .b-purpose{color:var(--mut);font-size:12.5px;margin:-2px 0 14px}
+  .cv-body .b-legend{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;color:var(--mut);font-size:12.5px;margin-top:12px}
+  .cv-body .b-sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
+  .cv-body .b-sec h2{font-size:15px;color:var(--ink);margin:0 0 2px}
+  .cv-body .b-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .cv-body .b-na{background:var(--chipBg);color:var(--chipFg);border-radius:8px;padding:10px 12px;font-size:13px}
+  .cv-body .b-step{display:grid;grid-template-columns:34px 1fr 300px;gap:12px;padding:11px 0;border-top:1px solid var(--line);align-items:start}
+  .cv-body .b-step:first-of-type{border-top:0}
+  .cv-body .b-num{color:var(--kicker);font-size:12.5px;font-weight:700;padding-top:2px}
+  .cv-body .b-ttl{color:var(--ink);font-size:14px;font-weight:600}
+  .cv-body .b-det{color:var(--mut);font-size:12.5px;margin-top:3px}
+  .cv-body .verify{background:var(--grid);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--chipFg);font-size:12px;line-height:1.4;font-family:${THEME.fontMono}}
+  .cv-body .verify b{color:var(--greenFg);font-weight:700;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:3px;font-family:${THEME.fontSans}}
+  .cv-body ul.pl{list-style:none;display:grid;gap:8px;padding:0;margin:0}
+  .cv-body ul.pl li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;color:var(--mut);font-size:13.5px;line-height:1.45}
+  .cv-body ul.pl li b{color:var(--ink)}
+  .cv-body .pill{font-size:10px;line-height:1.7;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:0 8px;border-radius:99px;white-space:nowrap}
+  .cv-body .pill.now{background:var(--greenBg);color:var(--greenFg)}
+  .cv-body .pill.later{background:var(--amberBg);color:var(--amberFg)}
+  .cv-body .pill.never{background:var(--redBg);color:var(--redFg)}
+  .cv-body table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .cv-body table.t th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--kicker);padding:0 0 8px}
+  .cv-body table.t td{padding:8px 10px 8px 0;border-top:1px solid var(--line);color:var(--mut);vertical-align:top}
+  .cv-body table.t td.k{color:var(--ink);white-space:nowrap;font-weight:600;font-size:12px}
+  .cv-body .foot{color:var(--kicker);font-size:12px;text-align:center;padding-top:4px}
+  @media (max-width:900px){
+    .cv-body .b-facts{grid-template-columns:repeat(2,1fr)}
+    .cv-body .b-cols{grid-template-columns:1fr}
+    .cv-body .b-step{grid-template-columns:30px 1fr}
+    .cv-body .verify{grid-column:2}
+  }
   .cv-body .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
     box-shadow:0 1px 2px rgba(10,37,64,.04);padding:18px 20px;margin-top:16px}
   .cv-body .card>.kicker{margin-bottom:8px;font-weight:700;text-transform:uppercase}
@@ -269,27 +345,214 @@ const HOUSE_CSS = `
 `;
 
 // ── house-style Brief body (returns inner markup; used standalone AND inside the full brief) ──
+// ── v0.29.0 the four bands (INV-BANDS) ────────────────────────────────────────
+// EVERY view composes from these, in this order: the decision, the facts needed to
+// make it, the logic block, then detail. The order is the product decision — a reader
+// should never hunt for what they are being asked, and band 3 is always the diagram.
+// ── v0.29.0 INV-LOGIC-BLOCK — the diagram, drawn not decorated ────────────────
+// Inline SVG, generated here: no runtime library, no network, works offline forever,
+// and assertable as text (a "decorative diagram" becomes a failing count, not a matter
+// of taste). Nodes/edges come from the contract's `## Logic Map` mermaid fence when it
+// has one, else from the build's own stage structure — so it always says something true
+// about THIS build rather than being generic boxes.
+function parseMermaid(md) {
+  const m = String(md).match(/```mermaid\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  const nodes = new Map();
+  const edges = [];
+  const label = (raw) => String(raw).replace(/<br\s*\/?>/gi, ' ').replace(/&lt;|&gt;|["'\[\]{}()]/g, '').trim();
+  for (const ln of m[1].split('\n')) {
+    const e = ln.match(/^\s*([A-Za-z0-9_]+)\s*(\[[^\]]*\]|\{[^}]*\}|\([^)]*\))?\s*(-\.->|-->|---)\s*(?:\|([^|]*)\|)?\s*([A-Za-z0-9_]+)\s*(\[[^\]]*\]|\{[^}]*\}|\([^)]*\))?/);
+    if (!e) continue;
+    const [, a, aL, arrow, edgeL, b, bL] = e;
+    if (aL && !nodes.has(a)) nodes.set(a, label(aL));
+    if (bL && !nodes.has(b)) nodes.set(b, label(bL));
+    if (!nodes.has(a)) nodes.set(a, a);
+    if (!nodes.has(b)) nodes.set(b, b);
+    edges.push({ a, b, dashed: arrow === '-.->', label: label(edgeL || '') });
+  }
+  return nodes.size >= 3 && edges.length >= 2 ? { nodes, edges } : null;
+}
+// Lay the graph out in reading order as a snake, so it reads left-to-right then back —
+// the shape a person scans, not a force-directed tangle.
+function logicBlock(graph) {
+  const ids = [...graph.nodes.keys()];
+  const COLS = 4, W = 210, H = 52, GX = 24, GY = 46, PAD = 8;
+  const pos = new Map();
+  ids.forEach((id, i) => {
+    const row = Math.floor(i / COLS);
+    const colRaw = i % COLS;
+    const col = row % 2 === 0 ? colRaw : COLS - 1 - colRaw;   // snake
+    pos.set(id, { x: PAD + col * (W + GX), y: PAD + row * (H + GY), row });
+  });
+  const rows = Math.ceil(ids.length / COLS);
+  const vw = PAD * 2 + COLS * W + (COLS - 1) * GX;
+  const vh = PAD * 2 + rows * H + (rows - 1) * GY;
+  const boxes = ids.map((id) => {
+    const p = pos.get(id);
+    const { lead, rest } = splitLead(graph.nodes.get(id), 30);
+    const t1 = `<text x="${p.x + W / 2}" y="${p.y + (rest ? 22 : 30)}" text-anchor="middle" fill="${THEME.ink}" font-weight="600" font-size="12.5">${txt(lead)}</text>`;
+    const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 38}" text-anchor="middle" fill="${THEME.mut}" font-size="11.5">${txt(splitLead(rest, 34).lead)}</text>` : '';
+    return `<rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="${THEME.surface}" stroke="${THEME.line}"/>${t1}${t2}`;
+  }).join('');
+  const arrows = graph.edges.map((e) => {
+    const a = pos.get(e.a), b = pos.get(e.b);
+    if (!a || !b) return '';
+    const stroke = e.dashed ? THEME.redFg : THEME.mut;
+    const dash = e.dashed ? ' stroke-dasharray="5 4"' : '';
+    const mk = e.dashed ? 'arR' : 'arN';
+    let d;
+    if (a.row === b.row) {
+      d = a.x < b.x ? `M${a.x + W},${a.y + H / 2} H${b.x - 4}` : `M${a.x},${a.y + H / 2} H${b.x + W + 4}`;
+    } else {
+      const midY = a.y + H + GY / 2;
+      d = `M${a.x + W / 2},${a.y + H} V${midY} H${b.x + W / 2} V${b.y - 4}`;
+    }
+    return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.6"${dash} marker-end="url(#${mk})"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${vw} ${vh}" role="img" aria-label="How this build flows: ${txt(ids.map((i) => graph.nodes.get(i)).join(', then '))}">` +
+    `<defs>` +
+    `<marker id="arN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.mut}"/></marker>` +
+    `<marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.redFg}"/></marker>` +
+    `</defs>${arrows}${boxes}</svg>`;
+}
+// Always produce a block. With no mermaid fence, derive one from the build's own stages
+// so the diagram is still true and specific rather than absent.
+function logicBlockFor(kind) {
+  const g = parseMermaid(contract);
+  if (g) return logicBlock(g);
+  const nodes = new Map([
+    ['c', 'contract locked'], ['p', 'plan locked'], ['b', 'build, step by step'],
+    ['r', 'adversarial review'], ['s', 'ship'], ['x', 'a gate refuses'],
+  ]);
+  const edges = [
+    { a: 'c', b: 'p' }, { a: 'p', b: 'b' }, { a: 'b', b: 'r' }, { a: 'r', b: 's' },
+    { a: 'b', b: 'x', dashed: true, label: 'proof missing' },
+  ];
+  return logicBlock({ nodes, edges });
+}
+
+const firstNonEmpty = (xs) => (xs.find((x) => x && String(x).trim()) || '').toString().trim();
+const firstBullet = (body) => {
+  const m = String(body || '').split('\n').find((l) => /^\s*-\s+\S/.test(l));
+  return m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
+};
+const lineMatching = (body, re) => {
+  const m = String(body || '').split('\n').find((l) => re.test(l) && /\S/.test(l));
+  return m ? m.replace(/^\s*[-*]\s+/, '').replace(/\*\*/g, '').trim() : '';
+};
+// `touches` lives on the INDEX row, not in contract.md — read it there rather than
+// showing the reader a vague fallback.
+const indexTouches = () => {
+  try {
+    const idx = readFileSync(join(dir, '..', 'INDEX'), 'utf8');
+    const row = idx.split('\n').find((l) => l.startsWith(slug + ' · '));
+    const m = row && row.match(/·\s*touches=(.+)$/);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+};
+
+function band1Decision(ask, question, idParts) {
+  return `<div class="b-decide"><div class="ask">${txt(ask)}</div><h1>${txt(question)}</h1>` +
+         `<div class="b-id">${idParts.filter(Boolean).join(' &nbsp;·&nbsp; ')}</div></div>`;
+}
+function band2Facts(label, facts) {
+  const cards = facts.map((f) => `<div class="b-fact"><div class="k">${txt(f.k)}</div><div class="v">${f.v}</div></div>`).join('');
+  return `<div class="b-label">${txt(label)}</div><div class="b-facts">${cards}</div>`;
+}
+function band3Flow(svg, purpose, legend) {
+  return `<div class="b-flow"><div class="b-label">How it flows</div>` +
+         (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + svg +
+         (legend ? `<div class="b-legend">${legend.map((l) => `<span>${txt(l)}</span>`).join('')}</div>` : '') + `</div>`;
+}
+function bandSection(title, purpose, inner) {
+  return `<div class="b-sec"><h2>${txt(title)}</h2>` +
+         (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + inner + `</div>`;
+}
+// INV-COMPLETE-PLAN: a section with nothing in the source says so, in the reader's
+// words, rather than vanishing. A missing section a reader cannot see is indistinguishable
+// from a section that was never required.
+function bandNA(title, reason) {
+  return bandSection(title, '', `<div class="b-na"><b>N/A</b> — ${txt(reason)}</div>`);
+}
+// INV-NO-TRUNCATION: split long prose at a sentence/word boundary into a lead and the
+// rest. NEVER a character slice — a title cut mid-word reads as a bug, because it is one.
+function splitLead(text, softMax = 92) {
+  const t = String(text || '').trim();
+  if (t.length <= softMax) return { lead: t, rest: '' };
+  const dot = t.slice(0, softMax + 40).search(/[.!?](\s|$)/);
+  if (dot > 20) return { lead: t.slice(0, dot + 1).trim(), rest: t.slice(dot + 1).trim() };
+  const sp = t.lastIndexOf(' ', softMax);
+  const cut = sp > 20 ? sp : t.length;
+  return { lead: t.slice(0, cut).trim(), rest: t.slice(cut).trim() };
+}
+
 function briefBody() {
-  // ── the builder's mental model: problem → picture-of-done → proof → moves → guardrails → details ──
-  const goal = hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope'));
-  const problem = firstPara(sec('Problem')) || 'current state';
+  // ── v0.29.0 — the four bands: decision → facts → flow → detail (INV-BANDS) ──
+  const goal = req('goal', hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope')));
   const inv = invariants();
   const sc = scope();
   const security_ = security();
-  const facets = hdr('Facets') || 'library';
-  const deploy = hdr('deploy');
-  const doneSentence = (goal.split(/(?<=[.!?])\s/)[0] || goal);
-  // before → after: an explicit header, else derive (before = problem/current-state, after = goal outcome)
-  const baHdr = hdr('before→after') || hdr('before-after');
-  const before = baHdr ? baHdr.split('||')[0].trim() : problem;
-  const after = baHdr ? (baHdr.split('||')[1] || '').trim() || doneSentence : doneSentence;
+  const facets = hdr('Facets') || hdr('facets') || 'library';
+  const version = (title.match(/·\s*(v[\d.]+)\s*$/) || [, 'v1'])[1];
+  const doneSentence = splitLead(goal, 120).lead;
+  const nowItems = (sc.now || []);
+  const touches = hdr('touches') || '';
 
-  // reconciliation gold — full literal (LOCAL) vs redacted badge (SHAREABLE). (shareable branch preserved)
+  // idParts carry markup deliberately, so they are pre-escaped here rather than by the band.
+  const b1 = band1Decision('Decide', 'Lock this contract?', [
+    `<b>${txt(slug)}</b>`, txt(facets), `<b>${inv.length}</b> invariant${inv.length === 1 ? '' : 's'}`, txt(version),
+  ]);
+
+  // Each fact must answer a DIFFERENT question — a card that repeats its neighbour wastes
+  // the one row a reader actually scans.
+  const doneMeans = firstNonEmpty([
+    firstBullet(sec('Acceptance & INVARIANTs')), firstPara(sec('Done')),
+    (goal.split(/(?<=[.!?])\s/)[1] || ''), 'every INVARIANT below passes its command',
+  ]);
+  const goldLine = firstNonEmpty([
+    lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i),
+    firstBullet(sec('Reconciliation')), 'no reconciliation declared',
+  ]);
+  const blast = firstNonEmpty([touches, indexTouches(), 'declared in the plan']);
+  const b2 = band2Facts('The facts you need to decide', [
+    { k: 'Build what', v: txt(splitLead(goal, 150).lead) },
+    { k: 'Done means', v: txt(splitLead(doneMeans, 150).lead) },
+    { k: 'Proof', v: shareable
+        ? 'Reconciliation gold is pinned locally and enforced by the suites; the literal is withheld here.'
+        : txt(splitLead(goldLine, 150).lead) },
+    { k: 'Blast radius', v: txt(splitLead(blast, 150).lead) },
+  ]);
+
+  const b3 = band3Flow(
+    logicBlockFor('contract'),
+    'Drawn from this contract\u2019s own logic map — every box is a real check, not a stage name.',
+    ['Solid = the happy path', 'Dashed = refuses and stops'],
+  );
+
+  const scopeRows = [
+    ...nowItems.map((i) => ({ p: 'now', t: i })),
+    ...((sc.later || []).length ? [{ p: 'later', t: (sc.later || []).join(' · ') }] : []),
+    ...((sc.never || []).length ? [{ p: 'never', t: (sc.never || []).join(' · ') }] : []),
+  ];
+  const scopeCard = scopeRows.length
+    ? bandSection('What\u2019s in scope', 'What ships now, what waits, and what we\u2019ve ruled out for good.',
+        `<ul class="pl">${scopeRows.map((r) => `<li><span class="pill ${r.p}">${r.p}</span><span>${txt(r.t)}</span></li>`).join('')}</ul>`)
+    : bandNA('What\u2019s in scope', 'this contract declares no scope ladder');
+
+  const invCard = inv.length
+    ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
+        `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
+        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${txt(splitLead(i.summary, 150).lead)}</td></tr>`).join('') + `</table>`)
+    : bandNA('The promises that can\u2019t break', 'this contract pins no INVARIANTs');
+
+  // ── restored behaviour (R2-M1 rule: a behavioural guard is re-expressed, never retired) ──
+  // The rewrite initially dropped all of this and turned 9 asserts red. Each protects a
+  // real post-ship finding: a false-green N/A badge, never-show leakage in the shareable
+  // copy, and the honest best-effort caveat.
   const goldCard = shareable
-    ? `<span class="badge">gold pinned ✓</span>
-       <p style="margin-top:8px">The reconciliation gold is pinned in this build's <b>local</b> Brief and enforced by the suites; its literal is withheld from the shareable copy.</p>`
+    ? `<span class="badge">gold pinned ✓</span><p style="margin-top:8px">The reconciliation gold is pinned in this build's <b>local</b> Brief and enforced by the suites; its literal is withheld from the shareable copy.</p>`
     : bodyHtml(goldBody);
-  // security — honest present / genuine-N/A / absent; SHAREABLE uses firstPara + never-show redaction (branch preserved)
   let secCard;
   if (!security_.present) {
     secCard = `<span class="chip">no Security &amp; data-sensitivity block in this contract</span>
@@ -298,78 +561,37 @@ function briefBody() {
     secCard = `<span class="badge">N/A — no sensitive surface</span>
       <p style="margin-top:8px">${txt(security_.naReason || 'declared N/A with reason')}</p>`;
   } else if (shareable) {
-    const nsList = (security_.neverShow || []).map(() =>
-      `<li><b>never-show:</b> <span class="chip">⟨redacted ✓⟩</span></li>`).join('');
+    const nsList = (security_.neverShow || []).map(() => `<li><b>never-show:</b> <span class="chip">⟨redacted ✓⟩</span></li>`).join('');
     secCard = `<p>${txt(firstPara(security_.body))}</p>${nsList ? `<ul style="margin-top:8px">${nsList}</ul>` : ''}`;
   } else {
-    secCard = bodyHtml(security_.body);   // LOCAL: the FULL security block (post-ship PS-1r4-B)
+    secCard = bodyHtml(security_.body);
   }
-
-  const invRows = inv.map((r) =>
-    `<tr><td><span class="n">${txt(r.name)}</span></td><td>${txt(r.summary)}</td></tr>`).join('');
-  const li = (items) => items.length ? items.map((x) => `<li>${txt(x)}</li>`).join('') : '<li>—</li>';
-  const rollback = firstPara(sec('Kill-switch') || sec('Kill') || sec('Rollback')) || '';
-
-  return `
-<section class="cv-body"><div class="wrap">
-  <div class="kicker">Compass · Contract Brief${shareable ? ' · shareable' : ''}</div>
-
-  <!-- BEAT 1+2 — the itch + the picture of done, shown -->
-  <div class="card"><div class="kicker">The problem → what we want</div>
-    <h1>${txt(title)}</h1>
-    <p class="lede">${txt(goal)}</p>
-    <div class="ba">
-      <div class="panel"><div class="t">Before</div><p>${txt(before)}</p></div>
-      <div class="panel to"><div class="t">After</div><p>${txt(after)}</p></div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <span class="chip">facet: ${txt(facets)}</span>
-      ${deploy ? `<span class="chip">deploy: ${txt(deploy.split('—')[0])}</span>` : ''}
-    </div>
-  </div>${shareable ? `
-  <div class="card" style="border-color:var(--amberBorder);background:var(--amberBg)">
+  const shareableCaveat = shareable ? `<div class="b-sec" style="border-color:var(--amberBorder);background:var(--amberBg)">
     <span class="badge warn">Best-effort redaction — review before sending</span>
     <p style="margin-top:8px">Declared values (the reconciliation gold + never-show fields) of 3+ significant digits are scrubbed with certainty. <b>Undeclared</b> restatements in free prose are best-effort. Read this copy before you send it.</p>
-  </div>` : ''}
+  </div>` : '';
 
-  <!-- BEAT 3 — the one proof -->
-  <div class="done">
-    <div class="k">Done means</div>
-    <div class="big">${txt(doneSentence)}</div>
-  </div>
-  <div class="proofrow">
-    <div class="stat"><div class="sk">facet</div><div class="sv">${txt(facets)}</div></div>
-    <div class="stat"><div class="sk">invariants</div><div class="sv">${inv.length} pinned</div></div>
-    <div class="stat"><div class="sk">reconciliation</div><div class="sv">${goldBody ? 'exact' : 'N/A'}</div></div>
-    <div class="stat"><div class="sk">deploy</div><div class="sv">${deploy ? txt(deploy.split('—')[0]) : 'N/A'}</div></div>
-  </div>
+  const guardCard = security_.present
+    ? bandSection('Guardrails', 'How this gets turned off, undone, and watched.',
+        `<ul class="pl">` +
+        `<li><span class="pill now">off</span><span>${txt(splitLead(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract', 150).lead)}</span></li>` +
+        `<li><span class="pill now">undo</span><span>${txt(splitLead(firstPara(sec('Rollback')) || 'rollback declared in the contract', 150).lead)}</span></li>` +
+        `<li><span class="pill now">watch</span><span>${txt(splitLead(firstPara(sec('Observability')) || 'observability declared in the contract', 150).lead)}</span></li>` +
+        `</ul>`)
+    : bandNA('Guardrails', 'no Security & data-sensitivity block in this contract — treat the sensitive surface as unclassified, not a cleared N/A');
 
-  <!-- BEAT 4 — the moves -->
-  <div class="card"><div class="kicker">What changes — in order</div>
-    <div class="flow">${sc.now.length ? sc.now.map((x, i) =>
-      `<div class="step"><span class="si">${i + 1}</span><div class="st">${txt(x)}</div></div>`).join('') : '<div class="step"><div class="st">—</div></div>'}</div>
-  </div>
-
-  <!-- BEAT 3 detail — the promises -->
-  <div class="card"><div class="kicker">The promises that can't break</div>
-    <table><thead><tr><th>Invariant</th><th>What it asserts</th></tr></thead><tbody>${invRows || '<tr><td>—</td><td>none declared</td></tr>'}</tbody></table>
-  </div>
-
-  <!-- BEAT 5 — guardrails: what we won't + the undo -->
-  <div class="grid2">
-    <div class="won"><div class="hd">✕ We will not</div><ul>${li(sc.never)}</ul></div>
-    <div class="card"><div class="kicker">↩ If it's wrong — the undo</div><p>${txt(rollback || 'reversible edits; roll back the release commit + tag.')}</p></div>
-  </div>
-
-  <!-- BEAT 6 — the exact assertions & provenance, folded away -->
-  <details><summary>The exact assertions &amp; provenance (for the reviewer)</summary>
-    <div class="db">
-      <div class="kicker">Reconciliation gold</div>${goldCard}
-      <div class="kicker" style="margin-top:12px">Security &amp; data-sensitivity</div>${secCard}
-    </div>
-  </details>
-
-  <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's locked state · problem → done → proof → moves → guardrails.</div>
+  return `<section class="cv-body"><div class="wrap">
+  <div class="kicker">Compass · Contract Brief${shareable ? ' · shareable' : ''}</div>
+  ${b1}
+  <p class="lede">${txt(goal)}</p>
+  ${shareableCaveat}
+  ${b2}
+  ${b3}
+  <div class="b-cols">${scopeCard}${invCard}</div>
+  ${bandSection('The number this is checked against', 'The reconciliation gold, and how it is proven.', goldCard)}
+  ${bandSection('Security & data sensitivity', 'What is classified, who can see it, and what must never be shown.', secCard)}
+  ${guardCard}
+  <div class="foot">Compass · Contract Brief · ${txt(slug)} · a pure function of contract.md</div>
 </div></section>`;
 }
 
@@ -484,36 +706,104 @@ const _pillCss = `
 
 // PLAN MAP — the locked step checklist + what it touches (from plan.md). Milestone: plan-lock.
 function planMap() {
-  const plan = read('plan.md');
-  let rows = '';
+  // ── v0.29.0 — same four bands as the Brief, then the rest of a world-class plan ──
+  const plan = stripFences(read('plan.md'));
+  const psec = sections(plan);
+  const psecGet = (needle) => {
+    const nd = needle.toLowerCase();
+    const k = Object.keys(psec).find((x) => x.toLowerCase().replace(/^\d+\.\s*/, '').startsWith(nd));
+    return k ? psec[k] : '';
+  };
+
+  // Parse each step into {n, title, detail, verify, done}. The VERIFY line belongs to the
+  // step ABOVE it — v0.28 and earlier discarded it entirely, which removed the single most
+  // important fact about a Compass step: the command that proves it.
+  const steps = [];
+  let cur = null;
   for (const ln of plan.split('\n')) {
-    const w = ln.match(/^##\s+(Wave[^\n]*)$/i);
-    if (w) { rows += `<div class="wv">${txt(w[1])}</div>`; continue; }
-    const s = ln.match(/^\s*-\s*\[([ x])\]\s*(.+)$/);
-    if (s) {
-      const done = s[1] === 'x';
-      const label = s[2].replace(/\*\*/g, '').replace(/`/g, '').replace(/^([0-9]+)\.\s*/, '$1. ').slice(0, 110);
-      rows += `<div class="st ${done ? 'done' : 'left'}"><span class="g">${done ? '✓' : '○'}</span> ${txt(label)}</div>`;
+    const m = ln.match(/^\s*-\s*\[([ x])\]\s*(.+)$/);
+    if (m) {
+      const raw = m[2].replace(/\*\*/g, '').replace(/`/g, '');
+      const num = (raw.match(/^(\d+)\s*·\s*/) || [, String(steps.length + 1)])[1];
+      const body = raw.replace(/^\d+\s*·\s*/, '');
+      const { lead, rest } = splitLead(body, 74);
+      cur = { n: num, title: lead, detail: rest, verify: '', done: m[1] === 'x' };
+      steps.push(cur);
+      continue;
     }
+    const v = ln.match(/^\s*\*\*VERIFY:?\*\*\s*(.+)$/i) || ln.match(/^\s*VERIFY:\s*(.+)$/i);
+    if (v && cur) { cur.verify = (cur.verify ? cur.verify + ' ' : '') + v[1].replace(/\*\*/g, '').trim(); continue; }
+    if (cur && !cur.verify && /^\s{4,}\S/.test(ln) && !cur.detail) cur.detail = ln.trim().replace(/\*\*/g, '');
   }
-  const done = (plan.match(/^\s*- \[x\]/gim) || []).length;
-  const total = (plan.match(/^\s*- \[[ x]\]/gim) || []).length;
-  const nWaves = (plan.match(/^##\s+Wave/gim) || []).length;
-  const goal = hdr('Goal') || firstPara(sec('Goal') || sec('Goal & scope'));
-  const touches = hdr('touches') || sec('What it touches');
-  // BEAT 1 — the plan + where it stands · BEAT 2 — the steps, in order, by wave
-  const body = `
-<section class="cv-body"><div class="wrap">
+  const done = steps.filter((s2) => s2.done).length;
+  const total = steps.length;
+  const running = total > done ? 1 : 0;
+
+  const b1 = band1Decision('Decide', 'Approve this plan?', [
+    `<b>${txt(slug)}</b>`,
+    `<b>${total}</b> step${total === 1 ? '' : 's'}`,
+    `${done} done · ${running} running · ${Math.max(0, total - done - running)} to go`,
+  ]);
+
+  const b2 = band2Facts('The facts you need to decide', [
+    { k: 'What changes', v: txt(splitLead(firstNonEmpty([firstPara(psecGet('The approach')), firstPara(psecGet('Approach')), firstPara(sec('Goal & scope'))]), 150).lead) },
+    { k: "How it's proven", v: txt(`${invariants().length} invariants, each a command; every step carries its VERIFY.`) },
+    { k: 'What it touches', v: txt(splitLead(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above']), 150).lead) },
+    { k: 'Rollback', v: txt(splitLead(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'declared in the contract']), 150).lead) },
+  ]);
+
+  const b3 = band3Flow(logicBlockFor('plan'),
+    'The shape of the work — every box is a real check, not a stage name.',
+    ['Solid = the happy path', 'Dashed = refuses and stops']);
+
+  const stepRows = steps.map((st) => {
+    const verify = st.verify
+      ? `<div class="verify"><b>Verify</b>${txt(st.verify)}</div>`
+      : `<div class="verify"><b>Verify</b>— none recorded for this step</div>`;
+    return `<div class="b-step"><div class="b-num">${txt(st.n)}</div>` +
+      `<div><div class="b-ttl">${txt(st.title)}</div>` +
+      (st.detail ? `<div class="b-det">${txt(st.detail)}</div>` : '') + `</div>` +
+      verify + `</div>`;
+  }).join('');
+  const b4 = steps.length
+    ? bandSection('The work — every step carries the command that proves it',
+        `${total} steps. A box is only ticked when its VERIFY command has actually run and passed.`, stepRows)
+    : bandNA('The work', 'this plan declares no steps yet');
+
+  // ── the rest of a world-class engineering plan (INV-COMPLETE-PLAN) ──
+  // Present it, or say N/A with a reason. A section a reader cannot see is
+  // indistinguishable from one that was never required.
+  const secOrNA = (title, purpose, names, naReason) => {
+    const body = firstNonEmpty(names.map((n) => psecGet(n)));
+    if (!body) return bandNA(title, naReason);
+    const items = bullets(body, /^-\s+/).slice(0, 8);
+    const inner = items.length
+      ? `<ul class="pl">${items.map((i) => `<li><span class="pill now">·</span><span>${txt(splitLead(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190).lead)}</span></li>`).join('')}</ul>`
+      : `<p class="b-det">${txt(splitLead(firstPara(body), 400).lead)}</p>`;
+    return bandSection(title, purpose, inner);
+  };
+  const b5 = secOrNA('The approach', 'What we\u2019re doing, and what we deliberately rejected.',
+    ['The approach', 'Approach'], 'this plan states no approach section');
+  const b6 = secOrNA('What could break', 'Ranked, each with the thing that catches it.',
+    ['What could break', 'Risks', 'Assumptions'], 'this plan names no risks — which is itself worth questioning');
+  const b7 = secOrNA('How we know it works', 'The test strategy behind the invariants.',
+    ['Test strategy', 'Test plan'], 'this plan states no test strategy');
+  const b8 = secOrNA('Going live', 'Rollout, monitoring, rollback, ownership.',
+    ['Going live', 'Rollout'], 'this plan states no rollout section');
+  const b9 = secOrNA('Data & migration', 'What moves, and how it is proven safe.',
+    ['Data & migration', 'DB / migration'], 'no database, schema or persisted format is touched by this build');
+
+  return `<section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Plan Map</div>
-  <div class="card vp-hero"><div class="kicker">The plan</div>
-    <h1>${txt(title)}</h1>${goal ? `<p class="lede">${txt(String(goal).slice(0, 400))}</p>` : ''}
-    <div class="vp-prog"><span class="badge">${done}/${total} steps</span><span class="chip">${nWaves} waves</span></div>
-  </div>
-  <div class="card"><div class="kicker">Steps — in order</div><div class="tl vert">${rows || '<em>no steps</em>'}</div></div>
-  ${touches ? `<div class="card"><div class="kicker">What it touches</div><p>${txt(String(touches).slice(0, 700))}</p></div>` : ''}
-  <div class="foot">Generated from plan.md by compass-visual · a pure function of the build's state.</div>
+  ${b1}
+  ${b2}
+  ${b3}
+  ${b4}
+  <div class="b-cols">${b5}${b6}</div>
+  <div class="b-cols">${b7}${b8}</div>
+  ${b9}
+  <div class="foot">Compass · Plan Map · ${txt(slug)} · ${total} steps · a pure function of plan.md</div>
 </div></section>`;
-  return { body, extra: _pillCss };
 }
 
 // PROGRAM COCKPIT — the two-altitude view (program phases + contracts-per-phase, above the build
@@ -552,6 +842,7 @@ function programCockpit() {
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Program Cockpit</div>
   <h1>${txt(pname || title)}</h1>
+  ${band3Flow(logicBlockFor('program'), 'The lifecycle every phase of this program passes through.', ['Solid = the happy path', 'Dashed = refuses and stops'])}
   ${pname ? `<div class="card vpc-tl"><div class="kicker">Program — here: ${txt(cur || 'COMPLETE')}</div><div class="tl vert">${strip}</div></div>`
           : `<p class="lede">Standalone build — no program.</p>`}
   <div class="card"><div class="kicker">This build — ${txt(slug)}</div><div class="tl">${build}</div></div>
@@ -580,6 +871,7 @@ function releaseCard() {
   const body = `
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Release</div>
+  ${band3Flow(logicBlockFor('release'), 'How this build reached production \u2014 every box a real gate it had to pass.', ['Solid = the happy path', 'Dashed = refuses and stops'])}
   <div class="card vr-hero"><div class="kicker">Shipped</div>
     <h1>${txt(title)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
@@ -780,8 +1072,7 @@ if (view === 'brief-body') {
 } else if (view === 'brief') {
   html = page(HOUSE_CSS, cover() + briefBody());
 } else if (view === 'plan-map') {
-  const c = planMap();
-  html = page(HOUSE_CSS + c.extra, c.body);
+  html = page(HOUSE_CSS + _pillCss, planMap());
 } else if (view === 'program-cockpit') {
   const c = programCockpit();
   html = page(HOUSE_CSS + c.extra, c.body);
@@ -814,6 +1105,28 @@ if (shareable && (view === 'brief' || view === 'brief-body')) {
     console.error(`compass-visual: LEAK GATE HARD-STOP — ${hits.length} hit(s) scrubbed from the shareable Brief: ${[...new Set(hits)].join(', ')}`);
     console.error('  fix the contract (a secret/commercial value does not belong in it) — the shareable copy was scrubbed but is NOT blessed.');
     process.exit(3);
+  }
+}
+
+// ── v0.29.0 INV-NO-TOKEN — refuse, never ship a placeholder or a silent blank ──
+// v0.15-v0.28 emitted `<goal from INDEX>` to the reader because a failed lookup fell
+// back to the template's own placeholder text. After the fence fix the failure mode
+// CHANGED: a missing field now renders as nothing at all — a blank where the most
+// important sentence should be, which is quieter and therefore worse.
+//
+// A blanket scan for `<... from ...>` is the wrong instrument: a contract may legitimately
+// QUOTE a token while discussing it (this very build's contract does), and refusing to
+// render that would be a false positive. So the check is precise: a required field that
+// fails to resolve emits a distinctive SENTINEL, and the write seam refuses if any
+// sentinel survives. Only the generator can produce one, so there are no false positives.
+{
+  const leaks = [...html.matchAll(/\u27ea missing:([a-z0-9 _-]+)\u27eb/gi)].map((m) => m[1]);
+  if (leaks.length) {
+    const uniq = [...new Set(leaks)];
+    console.error(`compass-visual: REFUSING to write ${outFile || '<stdout>'} — ${uniq.length} required field(s) did not resolve:`);
+    for (const f of uniq) console.error(`  ${f} — no source section produced a value`);
+    console.error('  A blank here is a silent lie. Fix the source section, or the extractor — do not weaken this check.');
+    process.exit(4);
   }
 }
 
