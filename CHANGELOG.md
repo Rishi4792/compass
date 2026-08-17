@@ -3,6 +3,16 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.28.1] — 2026-08-17
+
+**Patch: v0.28.0 shipped with a bug in its own headline feature, and shipped it in a way users could not have received the fix.**
+
+- **Fix (from the v0.28.0 post-ship loop):** with **no build in flight**, `orient` emitted nothing at all. `cmd_active_builds` prints a human `0 active builds.` status line, which the row parser counted as a build; the renderer then tried `--where <state-root>/COMPASS-GATE:` and died. That is the single most important case in the release — a new user with no builds is exactly who the NEW-BUILD block exists for. All four parse sites now route through one guarded helper, with two hermetic regression asserts.
+- **Why this is a version bump and not just a commit:** plugin version drives update detection — if the resolved version matches what a user already has, `/plugin update` and auto-update **skip the plugin**. The fix landed on `main` without a version bump, so anyone who installed `0.28.0` in the window between the release and the fix would have been pinned to the broken build forever. Bumping to 0.28.1 is what actually delivers it.
+- The `v0.28.0` tag is left where it is (published tags don't move); `v0.28.1` is the tag that contains the fix.
+
+smoke 517 · selftest 561 · recon PASS.
+
 ## [0.28.0] — 2026-08-17
 
 **Compass now always tells you where you are — and this release starts by admitting it didn't.** The welcome block had sat in `commands/go.md` since v0.15.0 with tests that only checked the words existed in the file. Measured across real session transcripts, it printed **0 times in 30 `/compass:go` invocations** over twelve versions. A guard that reports coverage it doesn't have is worse than no guard, so this release replaces byte-presence tests with behaviour tests, everywhere it mattered.
