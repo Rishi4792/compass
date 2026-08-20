@@ -35,6 +35,28 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 8. **Test plan** — unit/integration/migration/API/UI-or-golden-file/permission/regression/perf + reconciliation + (web) design-token + a11y + an **idempotency test** (run twice → identical end-state).
 9. **Rollout & rollback** (exact revert path) · **Assumptions/open risks** (each with how it's validated).
 
+
+### Write the artefact-data block (v0.31, INV-DECLARED)
+
+Before emitting the receipt, append a `compass-artefact-data` fence to `progress.md` carrying the
+fields THIS STAGE owns. The generator states these verbatim and marks them `declared`; the gate holds
+the page to them. A field you do not write is counted by reading and disclosed to the reader as such,
+which is a worse but honest outcome — so write what you actually know, and nothing you do not.
+
+**Only declare a field with an EXACT, mechanically checkable source.** A plan checkbox and a bolded
+`INV-` id are syntax Compass itself writes, so counting them is not a heuristic. Do NOT declare
+`findings.*`: those come from classifying free text in a ledger, which is precisely the guessing this
+build removed. `compass.sh gold-numbers-gate` cross-checks every declared field against its source
+file and fails on a disagreement, so a wrong number here is caught, not shipped.
+
+```compass-artefact-data
+{
+  "steps.total": <count of `- [ ]` + `- [x]` lines in plan.md, outside code fences>,
+  "steps.done":  <count of `- [x]` lines in plan.md, outside code fences>,
+  "invariants.total": <count of distinct **INV-* ids in contract.md>
+}
+```
+
 ## Emit
 `progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
 ```

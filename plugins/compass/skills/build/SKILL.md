@@ -57,6 +57,28 @@ Re-read the relevant `contract.md` part. **A step that would deviate — even sl
 
 ## Final receipt (when all steps checked)
 **Test-rigor gates (v0.22.0) — run BEFORE emitting the receipt:** `compass.sh mutation-check .claude/builds/<slug>` (RUNS each declared `mutation:` recipe: red green-on-pristine → red-after-break; a decorative/broken recipe → non-zero; **N/A-pass if the build declares none**) and `compass.sh redgreen-check .claude/builds/<slug>` (a build with `adds-test: yes` MUST carry a real, non-placeholder `red-green:` line; **N/A-pass if `adds-test: no`/absent**). Both are byte-inert for a build that opts out — but if you added a test or a guard, declare them.
+
+### Write the artefact-data block (v0.31, INV-DECLARED)
+
+Before emitting the receipt, append a `compass-artefact-data` fence to `progress.md` carrying the
+fields THIS STAGE owns. The generator states these verbatim and marks them `declared`; the gate holds
+the page to them. A field you do not write is counted by reading and disclosed to the reader as such,
+which is a worse but honest outcome — so write what you actually know, and nothing you do not.
+
+**Only declare a field with an EXACT, mechanically checkable source.** A plan checkbox and a bolded
+`INV-` id are syntax Compass itself writes, so counting them is not a heuristic. Do NOT declare
+`findings.*`: those come from classifying free text in a ledger, which is precisely the guessing this
+build removed. `compass.sh gold-numbers-gate` cross-checks every declared field against its source
+file and fails on a disagreement, so a wrong number here is caught, not shipped.
+
+```compass-artefact-data
+{
+  "steps.total": <count of `- [ ]` + `- [x]` lines in plan.md, outside code fences>,
+  "steps.done":  <count of `- [x]` lines in plan.md, outside code fences>,
+  "invariants.total": <count of distinct **INV-* ids in contract.md>
+}
+```
+
 **EMIT RECEIPT** with real commands/outputs (a bare `[x]` with no command = auto-FAIL via `scan-receipt`):
 ```
 ## RECEIPT — build · <slug> · PASS

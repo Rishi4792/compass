@@ -56,8 +56,15 @@ rows=()
 _emit_header() {
   [ "${_HDR_DONE:-0}" = 1 ] && return 0
   _HDR_DONE=1
-  local sha; sha="$(cd "$ROOT" 2>/dev/null && git rev-parse HEAD 2>/dev/null || true)"
-  printf 'ASSERT-INVARIANTS-RUN root=%s tree=%s\n' "$ROOT" "${sha:-no-git}"
+  local sha dirty; sha="$(cd "$ROOT" 2>/dev/null && git rev-parse HEAD 2>/dev/null || true)"
+  # Say when the working tree is NOT the commit. Stamping a bare sha over uncommitted changes names
+  # a tree that was not the one measured, and `redfirst-check` reads this header as provenance.
+  dirty="$(cd "$ROOT" 2>/dev/null && git status --porcelain 2>/dev/null | grep -c . | tr -d ' ' || echo 0)"
+  if [ -n "$sha" ] && [ "${dirty:-0}" != "0" ]; then
+    printf 'ASSERT-INVARIANTS-RUN root=%s tree=%s+dirty(%s uncommitted)\n' "$ROOT" "$sha" "$dirty"
+  else
+    printf 'ASSERT-INVARIANTS-RUN root=%s tree=%s\n' "$ROOT" "${sha:-no-git}"
+  fi
 }
 emit() { # <inv> <value> <target>
   _emit_header
@@ -409,6 +416,50 @@ if [ -n "${SELFTEST:-}" ]; then
   rm -rf "$t"
   [ "$fail" = 0 ] && echo "self-test: all guards fire" || echo "self-test: FAILED"
   exit "$fail"
+fi
+
+# ── v0.31 (R4-C7): the gold checks existed for three review rounds and NOTHING CALLED THEM. Every
+# baseline in that build was a number a human ran by hand, which is the same defect class as a gate
+# that is never invoked. They run here now, so their exit codes gate like every other invariant.
+#
+# They cost ~24s (140 pages rendered twice), so they are behind --with-gold rather than in the 0.9s
+# default path. `--assert-red` / `--assert-pass` still see them when the flag is on, and CI/ship use
+# the flag. A skipped check is NEVER reported as a pass: without the flag they are not emitted at
+# all, so nothing can read their absence as green.
+if [ -n "${WITH_GOLD:-}" ]; then
+  _gout="$(bash "$P/scripts/proven-numbers.sh" "$ROOT" 2>&1)"; _grc=$?
+  _g="$(printf '%s\n' "$_gout" | grep '^dirs=' | tail -1)"
+  # The gold's EXIT CODE carries every structural guard the counters do not: checksum drift, the
+  # page/dir/distinct/token pins, the split, and every diagnostic line. Reading only the counters
+  # meant a tampered build dir reported all-PASS.
+  emit "INV-GOLD-EXIT" "$_grc" 0
+  printf '%s\n' "$_gout" | grep -E '^gold: (ERR|[a-z-]+ )' | sed 's/^/    /' || true
+  _val() { printf '%s' "$_g" | tr ' |' '\n\n' | sed -n "s/^$1=//p" | head -1; }
+  # Row names ARE the contract's invariant ids, so `redfirst-check` can tie evidence to an
+  # invariant. `GOLD-*` was a private naming no gate could read, and bare `INV-1`/`INV-2` collided
+  # with ids this runner already uses.
+  for _k in unmarked mismatch bogus noblock unsaid nested mislabelled badprov fabricated; do
+    _v="$(_val "$_k")"
+    case "$_k" in
+      unmarked|nested|mislabelled) _n=INV-MARKED ;;
+      unsaid)                      _n=INV-DISCLOSED ;;
+      mismatch|bogus|noblock|badprov|fabricated) _n=INV-DECLARED ;;
+      *)                           _n=INV-MARKED ;;
+    esac
+    emit "$_n" "${_v:-ERR-no-value}" 0
+  done
+  # The DECLARED half, on real rendered pages. R6-C8/R7 both found `mismatch`/`bogus` had never
+  # scored one — their only witness was a unit test of the auditor by itself.
+  _dc=0; bash "$P/scripts/declared-check.sh" "$ROOT" >/dev/null 2>&1 || _dc=1
+  emit "INV-DECLARED" "$_dc" 0
+  _d="$(bash "$P/scripts/defeat-corpus-check.sh" "$ROOT" 2>&1 | sed -n 's/.*), \([0-9][0-9]*\) failing.*/\1/p' | tail -1)"
+  emit "INV-REFUSE" "${_d:-ERR-no-value}" 0
+  emit "INV-CORPUS" "${_d:-ERR-no-value}" 0
+  # The auditors' own controls: a checker whose controls are not all firing is not a checker.
+  _ac=0; node "$P/scripts/page-audit.mjs" --controls >/dev/null 2>&1 || _ac=1
+  _rc=0; node "$P/scripts/page-number.mjs" --controls >/dev/null 2>&1 || _rc=1
+  emit "INV-CONTROLS" "$_ac" 0
+  emit "INV-CONTROLS" "$_rc" 0
 fi
 
 if [ -n "${WANT_JSON:-}" ]; then

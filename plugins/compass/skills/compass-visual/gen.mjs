@@ -22,7 +22,7 @@
 // The first line of every generated asset is `<!doctype html>` — NEVER a `<!-- COMPASS-MOCK` marker.
 // ============================================================================================
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractReaderCopy, parseReaderCopy } from '../../scripts/reader-copy.mjs';
 
@@ -97,6 +97,98 @@ const contractFields = stripFences(contract);
 // artefact is where a person decides, and the two are now different texts.
 // Guard-first: a contract with no block keeps the pre-v0.30 scraping behaviour byte-identically,
 // so all 27 existing builds still render.
+// ── v0.31: the DECLARED data block ────────────────────────────────────────────────────────────
+//
+// The whole point of this build. When a state file carries a `compass-artefact-data` fence, the
+// MODEL has written the numbers down and the generator's job is to lay them out — not to work them
+// out and hope. A field present here is stated verbatim and marked `declared`, and the gate holds
+// the page to it. A field absent falls back to counting, which is marked `counted` and disclosed.
+//
+// Guard-first: a build with no block behaves exactly as before, so all 27 legacy builds are
+// byte-identical through this path.
+// The canonical file list. `proven-numbers.sh` globs the same set; keeping the order written down in
+// one place is what stops the two readers drifting apart again.
+const ARTEFACT_DATA_FILES = (() => {
+  try {
+    return readdirSync(dir).filter((f) => f.endsWith('.md')).sort();
+  } catch { return ['contract.md', 'plan.md', 'progress.md', 'receipts.md', 'review-ledger.md']; }
+})();
+
+const ARTEFACT_DATA = (() => {
+  const FENCE = /^ {0,3}`{3,}compass-artefact-data[ \t]*\r?$/;
+  // ONE search order, shared with the gold by being written down in both: every `*.md` in the dir,
+  // alphabetically. Two readers with different orders meant a block in a file one of them never
+  // opened satisfied the gate while the page declared nothing.
+  for (const f of ARTEFACT_DATA_FILES) {
+    let body = '';
+    try { body = readFileSync(join(dir, f), 'utf8'); } catch { continue; }
+    const lines = body.split('\n');
+    const open = lines.findIndex((l) => FENCE.test(l));
+    if (open === -1) continue;
+    const close = lines.findIndex((l, i) => i > open && /^ {0,3}`{3,}[ \t]*\r?$/.test(l));
+    if (close === -1) {
+      console.error(`gen: ${f} opens a compass-artefact-data fence that is never closed`);
+      process.exit(4);
+    }
+    const raw = lines.slice(open + 1, close).join('\n');
+    // A duplicate key silently took the last value: `{"steps.total":3,"steps.total":999}` rendered
+    // 999 while the author read the first line and believed 3.
+    const _dupes = (() => {
+      const seen = new Set(), dup = [];
+      for (const m of raw.matchAll(/"([^"]+)"\s*:/g)) { if (seen.has(m[1])) dup.push(m[1]); seen.add(m[1]); }
+      return dup;
+    })();
+    if (_dupes.length) {
+      console.error(`gen: ${f} declares ${_dupes.map((d) => JSON.stringify(d)).join(', ')} more than once. JSON keeps the LAST value silently; say it once.`);
+      process.exit(4);
+    }
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) {
+      // Never fall back to counting. A block the author WROTE and this cannot read is a defect to
+      // surface, not a licence to guess — the same rule the reader-copy block already follows.
+      console.error(`gen: ${f} has a compass-artefact-data block that is not valid JSON — ${e.message}`);
+      process.exit(4);
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.keys(parsed).length) {
+      console.error(`gen: ${f} declares a compass-artefact-data block with no fields`);
+      process.exit(4);
+    }
+    // The block is FLAT dotted keys. A nested object is the natural thing to write, and silently
+    // falling back to counting would be the exact "never guess" failure this block exists to stop.
+    for (const [k, v] of Object.entries(parsed)) {
+      // A key with no dot is not a field name — `{"steps": 3}` was silently ignored while the author
+      // believed they had declared `steps.total`, and the page counted instead. Silence there is the
+      // "never guess" failure this block exists to prevent.
+      if (!k.includes('.')) {
+        console.error(`gen: ${f} declares "${k}", which is not a field name. Fields are dotted — did you mean "${k}.total"?`);
+        process.exit(4);
+      }
+      if (v !== null && typeof v === 'object') {
+        console.error(`gen: ${f} declares "${k}" as a nested object. The block is flat dotted keys — write "${k}.total", not {"${k}": {"total": …}}.`);
+        process.exit(4);
+      }
+      if (typeof v === 'number' && (!Number.isInteger(v) || v < 0 || v >= 1e6)) {
+        console.error(`gen: ${f} declares "${k}" as ${v}. A count is a non-negative whole number under a million — a page reading "-3 steps" or "2.5 invariants" is not a page anyone can act on.`);
+        process.exit(4);
+      }
+    }
+    return parsed;
+  }
+  return null;
+})();
+
+// State a field: the block's value marked `declared` when the model wrote it, otherwise the counted
+// fallback. One call site per number, so "declared or counted" is never decided by hand.
+function nF(field, fallback) {
+  if (ARTEFACT_DATA && Object.prototype.hasOwnProperty.call(ARTEFACT_DATA, field)) {
+    const v = ARTEFACT_DATA[field];
+    if (typeof v === 'number' && Number.isFinite(v)) return nD(v, field);
+    console.error(`gen: compass-artefact-data field ${field} is not a finite number`);
+    process.exit(4);
+  }
+  return nC(fallback);
+}
+
 const READER_COPY = (() => {
   // ONE extractor, shared with `compass.sh copy-gate` (scripts/reader-copy.mjs). This used to be a
   // second, subtly different regex living here: it required the fence line to end immediately in a
@@ -168,7 +260,106 @@ const mdInline = (s) => {
   out = out.split(/(<code>[\s\S]*?<\/code>)/).map((seg, i) => (i % 2 ? seg : seg.replace(/\*/g, ''))).join('');
   return out;
 };
-const txt = (s) => mdInline(esc(breakColors(String(s))));
+// `txtAttr` is the attribute-safe form: escaped, but with no markup added. Used where the result
+// lands inside a quoted attribute value (an aria-label), where a <span> would corrupt the HTML.
+// v0.31 round 3, findings 1+2. A number the GENERATOR computes — the `and N more` of a truncated
+// field, a step number invented because the plan line had none — used to flow through this path and
+// come out `data-prov="quoted"`, i.e. "copied from what someone wrote in the build's files". Nobody
+// wrote them. 248 invented step numbers across 21 of 28 builds, plus every truncation count, and one
+// real page carried the sentence "No number on this page was worked out by this page" over four
+// numbers the page had worked out itself. The sentence was false, on unmodified pages, with the gold
+// at exit 0.
+//
+// A string cannot carry a marker through `esc()`, so the generator marks the RUN with a sentinel at
+// the moment it computes it, and `markQuoted` honours that declaration instead of guessing. The
+// sentinel is private-use, never appears in source prose, and is stripped from attribute text (an
+// aria-label carries no markup, so it carries no marker either).
+const CNT_A = '\uE000', CNT_B = '\uE001';
+const nCt = (v) => CNT_A + String(v) + CNT_B;   // "this run is COUNTED", inside a text string
+const stripCnt = (s) => String(s).replace(/[\uE000\uE001]/g, '');
+const CNT_A_RE = /[\uE000\uE001]/;
+const txtAttrRaw = (s) => mdInline(esc(breakColors(String(s))));
+const txtAttr = (s) => stripCnt(txtAttrRaw(s));
+
+// `txt` is the HTML form, and it marks every number it passes through as QUOTED.
+//
+// This is where the bulk of a page's numbers come from: text quoted out of contract.md, plan.md and
+// review-ledger.md — a step title, a finding's wording, a version string. The generator does not
+// COMPUTE any of them; it is passing along what the model wrote. `literal` says exactly that: this
+// number makes no claim about this build's data, from me.
+//
+// Marking them here rather than at 59 call sites is deliberate. The alternative is remembering to
+// wrap each one, and "did I remember everywhere?" is the question this whole build exists to stop
+// asking — a containment rule is only worth having if the thing it checks is structural.
+//
+// If one of these numbers turns out to move when the build's data moves, it was not a literal, and
+// the gate's `mislabelled` cross-check says so by name. That is the intended feedback loop: quoted
+// text that is secretly derived gets found, rather than assumed either way.
+// Matches ANY Unicode numeric character, not just ASCII `\d`. Compass's own docs use circled digits
+// (\u2460 \u2461 \u2462 for the lifecycle stages) and superscripts, and the auditor NFKC-normalises
+// before it counts — so an ASCII-only pattern here marked nothing while the gate saw plain digits.
+// That accounted for every one of the last 25 unmarked numbers: the generator and the checker were
+// reading different alphabets. Close the shape, not the instance.
+//
+// The class includes `,` so a thousands separator stays INSIDE one marker. Without it `1,051` became
+// two spans with a comma between them, which broke 34 smoke assertions that grep the formatted gold
+// figure out of a rendered Brief — the marker must not change the string a reader (or a test) sees.
+const QUOTE_RUN = /[\w.,\-\/\p{Nd}\p{No}]*[\p{Nd}\p{No}][\w.,\-\/\p{Nd}\p{No}]*/gu;
+const markQuoted = (h) => String(h)
+  .split(/(<[^>]+>)/g)
+  .map((part, i) => {
+    if (i % 2 === 1) return part;
+    // A sentinel-wrapped run was computed by this file, so it is `counted`, not `quoted`. Everything
+    // between the sentinels is emitted as ONE marker — never re-scanned, so no marker nests.
+    return part.split(/(\uE000[\s\S]*?\uE001)/g).map((seg) => {
+      if (seg.startsWith(CNT_A) && seg.endsWith(CNT_B)) {
+        return `<span data-prov="counted">${seg.slice(1, -1)}</span>`;
+      }
+      return stripCnt(seg).replace(QUOTE_RUN, (t) => `<span data-prov="quoted">${t}</span>`);
+    }).join('');
+  })
+  .join('');
+const txt = (s) => markQuoted(txtAttrRaw(s));
+
+// ── v0.31: ONE function every number on a page goes through ─────────────────────────────────────
+//
+// Five review rounds were spent trying to work out, from outside this file, which numbers on a
+// rendered page are claims about the build's data. Two rules were built and measured and thrown
+// away: a number sitting next to a counting noun (12.5% recall, 6.8% false demands — it wanted a
+// "counted by reading" label on `v0.28.0`), and a number that moves when a mutated twin is rendered
+// (35.6% recall, 19% false demands from an environment artefact). A heuristic at the sink cannot be
+// made exact.
+//
+// This file already knows. `num()` makes it say so, once, at the point of emission:
+//
+//   num(207, 'counted')                  worked out by reading; may be wrong, and the page says so
+//   num(207, 'declared', 'findings.total') came from the build's data block; must equal that field
+//   num('v0.28.0', 'literal')            a version, a date, an id — a number that claims nothing
+//
+// The gate then performs a containment test — every digit run a reader sees sits inside a marker —
+// which needs no vocabulary, no second render and no alignment. `literal` is what makes that honest
+// rather than merely convenient: without it a version string would have to be mislabelled a count
+// just to satisfy the rule.
+const NUM_KINDS = new Set(['counted', 'declared', 'literal', 'quoted']);
+function num(value, kind, field) {
+  if (!NUM_KINDS.has(kind)) throw new Error(`num(): unknown kind ${JSON.stringify(kind)}`);
+  const shown = esc(String(value));
+  if (kind === 'declared') {
+    if (!field) throw new Error('num(): a declared number must name its block field');
+    return `<span data-count="${esc(field)}" data-prov="declared">${shown}</span>`;
+  }
+  return `<span data-prov="${kind}">${shown}</span>`;
+}
+// Shorthands, so a call site stays readable at the point it already was.
+const nC = (v) => num(v, 'counted');           // counted by reading this build's files
+const nL = (v) => num(v, 'literal');           // claims nothing about this build's data
+const nQ = (v) => num(v, 'quoted');            // the model's own words, reproduced verbatim
+const nD = (v, f) => num(v, 'declared', f);    // from the data block, and must equal it
+
+// The words a page carrying `counted` numbers owes its reader. Pinned by the contract; the gate
+// matches it apostrophe- and whitespace-insensitively, so this may be typeset normally.
+const COUNTED_NOTE = "counted by reading this build's files";
+
 
 // ── first paragraph of a section (skips leading blank/bold-label lines) ──
 function firstPara(body) {
@@ -591,7 +782,7 @@ function logicBlock(graph, ariaLead) {
     return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.6"${dash} marker-end="url(#${mk})"/>${label}`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${vw} ${vh}" role="img" aria-label="${txt(ariaLead || 'How this build flows')}: ${txt(ids.map((i) => graph.nodes.get(i)).join(', then '))}">` +
+  return `<svg viewBox="0 0 ${vw} ${vh}" role="img" aria-label="${txtAttr(ariaLead || 'How this build flows')}: ${txtAttr(ids.map((i) => graph.nodes.get(i)).join(', then '))}">` +
     `<defs>` +
     `<marker id="arN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.mut}"/></marker>` +
     `<marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.redFg}"/></marker>` +
@@ -698,9 +889,13 @@ function band3Flow(svg, purpose, legend) {
          (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + svg +
          (legend ? `<div class="b-legend">${legend.map((l) => `<span>${txt(l)}</span>`).join('')}</div>` : '') + `</div>`;
 }
-function bandSection(title, purpose, inner) {
-  return `<div class="b-sec"><h2>${txt(title)}</h2>` +
-         (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + inner + `</div>`;
+function bandSection(title, purpose, inner, raw = false) {
+  // `raw` = the caller has already rendered its own HTML (because it contains provenance markers).
+  // Escaping it here printed the markup to the reader on every plan map.
+  const T = raw ? title : txt(title);
+  const P = raw ? purpose : txt(purpose);
+  return `<div class="b-sec"><h2>${T}</h2>` +
+         (purpose ? `<div class="b-purpose">${P}</div>` : '') + inner + `</div>`;
 }
 // INV-COMPLETE-PLAN: a section with nothing in the source says so, in the reader's
 // words, rather than vanishing. A missing section a reader cannot see is indistinguishable
@@ -745,7 +940,7 @@ function fieldText(v, max = 150) {
       kept.push(part); n += part.length + 2;
     }
     const hidden = parts.length - kept.length;
-    return kept.join('; ') + (hidden > 0 ? ` — and ${hidden} more` : '');
+    return kept.join('; ') + (hidden > 0 ? ` — and ${nCt(hidden)} more` : '');
   }
   // Prefer a sentence boundary, so a shortened field ends where a thought ends. A bare ellipsis
   // is still a cut — the artefact gate is right to flag it — so when there is no clean boundary,
@@ -802,7 +997,7 @@ function briefBody() {
 
   // idParts carry markup deliberately, so they are pre-escaped here rather than by the band.
   const b1 = band1Decision('Decide', 'Lock this contract?', [
-    `<b>${txt(slug)}</b>`, txt(facets), `<b>${inv.length}</b> invariant${inv.length === 1 ? '' : 's'}`, txt(version),
+    `<b>${txt(slug)}</b>`, txt(facets), `<b>${nF('invariants.total', inv.length)}</b> invariant${inv.length === 1 ? '' : 's'}`, txt(version),
   ]);
 
   // Each fact must answer a DIFFERENT question — a card that repeats its neighbour wastes
@@ -980,7 +1175,7 @@ function cockpit() {
   </div>
   <div class="grid2">
     <div class="card"><div class="kicker">Progress</div>
-      <p><span class="badge">${done}/${total} steps</span></p>
+      <p><span class="badge">${nF('steps.done', done)}/${nF('steps.total', total)} steps</span></p>
       <p style="margin-top:10px"><b>Next:</b> ${txt(next)}</p>
     </div>
     <div class="card"><div class="kicker">What the reviews caught</div>
@@ -1040,7 +1235,10 @@ function planMap() {
       // BOTH separators. Round 3 taught this `4a` for the `·` form only; two builds write `1b. `,
       // so 16 of 17 rows on one plan-map showed a number contradicting the number in their own
       // title. Same sibling class as the fence and severity readers.
-      const num = (raw.match(/^(\d+[a-z]?)\s*[·.)]\s+/) || [, String(steps.length + 1)])[1];
+      // Only the FALLBACK is marked: a number read off the plan line was written by a person and
+      // is genuinely quoted; a number invented here because the line had none is this file counting.
+      const _nm = raw.match(/^(\d+[a-z]?)\s*[·.)]\s+/);
+      const num = _nm ? _nm[1] : nCt(steps.length + 1);
       let body = raw.replace(/^\d+[a-z]?\s*[·.)]\s+/, '');
       // The VERIFY usually sits ON the checkbox line, at the end: "… VERIFY: <command>". This
       // branch used to `continue` before the VERIFY matcher below ever ran, so the matcher was
@@ -1066,7 +1264,8 @@ function planMap() {
               // `*V.*` with nothing after it is a shorthand the plan defines once, not an absent
               // proof. Saying "none recorded" about it is false on all 17 of that build's steps.
               || (/\s\*{1,2}V\.\*{1,2}\s*$/.test(body) ? [body, 'V. — the shared verify recipe this plan defines once'] : null);
-      if (iv) { inlineVerify = iv[1].trim(); body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
+      if (iv && /[A-Za-z0-9`]/.test(iv[1])) { inlineVerify = iv[1].trim(); body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
+      else if (iv) { body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
       const { lead, rest } = splitLead(body, 74);
       cur = { n: num, title: lead, detail: rest, verify: inlineVerify, done: m[1] === 'x' };
       steps.push(cur);
@@ -1081,7 +1280,26 @@ function planMap() {
     const v = ln.match(new RegExp(`^\\s*\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'))
            || ln.match(new RegExp(`^\\s*[-*]\\s*\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'))
            || ln.match(new RegExp(`(?:^|(?<=[.;·\u2014])\\s+)\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'));
-    if (v && cur) { cur.verify = (cur.verify ? cur.verify + ' ' : '') + v[1].replace(/\*\*/g, '').trim(); continue; }
+    if (v && cur) {
+      const cand = v[1].replace(/\*\*/g, '').trim();
+      // A capture that is only punctuation is not a command. With the separator optional, a line
+      // ending `— VERIFY:` captured `":"` and rendered a bare-colon proof box.
+      if (/[A-Za-z0-9`]/.test(cand)) {
+        cur.verify = (cur.verify ? cur.verify + ' ' : '') + cand;
+        continue;
+      }
+    }
+    // A step line ending in a VERIFY marker with nothing after it means the command is on the NEXT
+    // line. That is ordinary markdown wrapping, and it was being read as "no proof recorded".
+    if (cur && !cur.verify && /(?:^|[\s—·])\*{0,2}(?:single\s+)?verify(?:\s+\w+)?\s*(?:\([^)]*\))?\s*[:—–]\*{0,2}\s*$/i.test(ln)) {
+      cur.awaitVerify = true;
+      continue;
+    }
+    if (cur && cur.awaitVerify && ln.trim()) {
+      cur.verify = ln.trim().replace(/\*\*/g, '');
+      cur.awaitVerify = false;
+      continue;
+    }
     if (cur && !cur.verify && /^\s{4,}\S/.test(ln) && !cur.detail) cur.detail = ln.trim().replace(/\*\*/g, '');
   }
   const done = steps.filter((s2) => s2.done).length;
@@ -1090,8 +1308,8 @@ function planMap() {
 
   const b1 = band1Decision('Decide', 'Approve this plan?', [
     `<b>${txt(slug)}</b>`,
-    `<b>${total}</b> step${total === 1 ? '' : 's'}`,
-    `${done} done · ${running} running · ${Math.max(0, total - done - running)} to go`,
+    `<b>${nF('steps.total', total)}</b> step${total === 1 ? '' : 's'}`,
+    `${nF('steps.done', done)} done · ${nC(running)} running · ${nC(Math.max(0, total - done - running))} to go`,
   ]);
 
   const b2 = band2Facts('The facts you need to decide', [
@@ -1103,10 +1321,10 @@ function planMap() {
         firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
         firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
         firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
-        steps.length ? `${steps.length} steps, beginning: ${steps[0].title}` : '',
+        steps.length ? `${nC(steps.length)} steps, beginning: ${txt(steps[0].title)}` : '',
         'not stated in this plan — read plan.md before approving',
       ]), 150)) },
-    { k: "How it's proven", v: txt(`${invariants().length} invariants, each a command; every step carries its VERIFY.`) },
+    { k: "How it's proven", v: `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}` },
     { k: 'What it touches', v: txt(fieldText(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150)) },
     { k: 'Rollback', v: txt(fieldText(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150)) },
   ]);
@@ -1125,8 +1343,9 @@ function planMap() {
       verify + `</div>`;
   }).join('');
   const b4 = steps.length
-    ? bandSection('The work — every step carries the command that proves it',
-        `${total} steps. A box is only ticked when its VERIFY command has actually run and passed.`, stepRows)
+    ? bandSection(txt('The work — every step carries the command that proves it'),
+        `${nF('steps.total', total)} ${txt('steps. A box is only ticked when its VERIFY command has actually run and passed.')}`,
+        stepRows, true)
     : bandNA('The work', 'this plan declares no steps yet');
 
   // ── the rest of a world-class engineering plan (INV-COMPLETE-PLAN) ──
@@ -1161,7 +1380,7 @@ function planMap() {
   <div class="b-cols">${b5}${b6}</div>
   <div class="b-cols">${b7}${b8}</div>
   ${b9}
-  <div class="foot">Compass · Plan Map · ${txt(slug)} · ${total} steps · a pure function of plan.md</div>
+  <div class="foot">Compass · Plan Map · ${txt(slug)} · ${nF('steps.total', total)} steps · a pure function of plan.md</div>
 </div></section>`;
 }
 
@@ -1293,6 +1512,16 @@ function parseLedger(text) {
     const c = findCol(hdr, /^sev(erity)?$/i);
     return c >= 0 && cells[c] !== undefined ? cells[c] : null;
   };
+  // A row whose cells are all column LABELS is a header, not data. Used to detect a second table
+  // starting after a single blank line, which used to be counted as a finding.
+  const looksLikeHeader = (cells) => cells.length >= 2
+    && cells.every((c) => /^[A-Za-z][A-Za-z /#()-]{0,24}$/.test(String(c).replace(/\*/g, '').trim()))
+    // `fix`, `area`, `round` and `owner` are dropped from this set: they are ordinary CELL values
+    // too (`| gate | MAJOR | fix |` is a finding), and including them silently deleted real rows.
+    // What remains only ever heads a column.
+    && cells.some((c) => /^(issue\s*id|id|issue\s*number|sev(erity)?|status|verdict)$/i
+                          .test(String(c).replace(/\*/g, '').trim()));
+
   const pushRow = (cells, hdr) => {
     let id = leadingId(cells[0]);
     // Once a findings table's header is established, a row of the same shape IS a finding, even if
@@ -1350,17 +1579,41 @@ function parseLedger(text) {
       status: stCell != null ? String(stCell).replace(/\*/g, '').trim() : null,
     });
   };
+  // Is there ANY table in this file outside a blockquote? If so, quoted tables are quotations of
+  // earlier rounds and must NOT be counted — counting them inflated a 2-finding build to 5, and
+  // Compass ledgers quote prior rounds routinely. If not, the whole ledger is quoted, and reading
+  // it is the only way to avoid falsely telling the reader it could not be read.
+  const hasUnquotedTable = (() => {
+    const fs2 = fenceScanner();
+    for (const x of lines) {
+      const st = fs2(x);
+      if (st.fence || st.inside) continue;      // a fenced EXAMPLE table is not a real one
+      if (/^\s*\|/.test(x)) return true;
+    }
+    return false;
+  })();
   const fenceScan = fenceScanner();
-  for (const raw of lines) {
+  for (let _li = 0; _li < lines.length; _li++) {
+    const raw = lines[_li];
     // FENCE-BLIND, like every other reader here (INV-FENCE-BLIND). A ledger that SHOWS an example
     // table inside a code fence had that example counted as real findings.
     // Track the fence's CHARACTER and LENGTH: only a run at least as long, of the same character,
     // closes it. A four-backtick fence wrapping a three-backtick example was treated as two
     // separate fences, so the example's rows counted as findings — including a phantom one titled
     // `Issue ID`, the example's own header. Same rule the reader-copy extractor already uses.
-    const fst = fenceScan(raw);
+    // Strip the blockquote marker BEFORE scanning for fences. Scanning the raw line meant `> ```` was not recognised as a fence, so the >-stripped example rows inside it were parsed as findings:
+    // truth 1 became 2, and a CRITICAL OPEN finding was invented out of a code sample.
+    const quoted = /^\s*>/.test(raw);
+    const l = raw.replace(/^(\s*)>\s?/, '$1');
+    const fst = fenceScan(l);
     if (fst.fence || fst.inside) continue;
-    const l = raw;
+    // A blockquoted table is still a table — `^\s*\|` never matched `> | A-1 | ... |`, so the page
+    // said the ledger "could not be read" about a table that renders in every markdown viewer.
+    // But a ledger that QUOTES a prior round's table is the ordinary Compass shape, and counting
+    // those rows inflated a 2-finding build to 5. So a quoted table is read only when the file has
+    // NO unquoted table to read: it is a fallback for "the whole ledger is quoted", never an
+    // addition to rows that were found normally.
+    if (quoted && hasUnquotedTable) continue;
     if (!/^\s*\|/.test(l)) {
       // A blank line inside a table does NOT end it. Resetting on every non-pipe line dropped the
       // row after any blank, and dropped `pending` — the first data row — on the floor.
@@ -1419,6 +1672,17 @@ function parseLedger(text) {
     const cells = splitLedgerRow(l);
     if (!cells.length) { continue; }
     if (isSeparatorRow(cells)) { header = pending; pending = null; continue; }
+    // A SECOND TABLE starting after a single blank line: its header row was being parsed as a data
+    // row of the first table and counted as a finding — the page said 3 findings over 2 real rows
+    // and rendered one titled "ID". Compass's own ledgers repeat an id across review sections, so
+    // this is the ordinary shape. A row that is plainly a header ends the previous table.
+    // A header is followed by a SEPARATOR row. Requiring that is exact, and it tells the target
+    // case (a second table starting after one blank line) apart from a real finding whose cells
+    // happen to read like labels — `| gate | status | Major | open |` is a finding, and the label
+    // test alone deleted it.
+    const _nx = (lines[_li + 1] || '').replace(/^(\s*)>\s?/, '$1');
+    const nextIsSeparator = /^\s*\|[\s:|-]*\|?\s*$/.test(_nx) && /-/.test(_nx);
+    if (header && looksLikeHeader(cells) && !leadingId(cells[0]) && nextIsSeparator) { pending = cells; header = null; continue; }
     if (!header) {
       if (!pending) { pending = cells; continue; }
       // Two data rows and no separator between them: this table has no separator row. Decide once
@@ -1465,8 +1729,12 @@ function reviewArtefact() {
   // OPEN, so the two bands of one page contradicted each other on five builds.
   const CLOSED  = /(^|\b)(FIXED|RESOLVED|CLOSED|DONE|ACCEPTED|NOTED|WAIVED|OK|N\/A)\b/i;
   const OPENISH = /^\s*\**\s*(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|FLAGGED|NEW|WONTFIX|WON'T[\s-]?FIX)\b/i;
-  const isClosed = (r) => r.status != null && r.status.trim() !== '' && !OPENISH.test(r.status) && CLOSED.test(r.status);
-  const isOpen   = (r) => r.status != null && OPENISH.test(r.status);
+  // An open-ish word ANYWHERE in the status, not only at the start. "m4 FIXED …; rest OPEN." was
+  // read as closed and the row vanished from a list captioned as the complete set of what still
+  // needs you. When a status says both, the honest reading is the one that keeps it visible.
+  const OPEN_ANYWHERE = /(^|\b)(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|FLAGGED|WONTFIX|WON'T[\s-]?FIX)\b/i;
+  const isClosed = (r) => r.status != null && r.status.trim() !== '' && !OPEN_ANYWHERE.test(r.status) && CLOSED.test(r.status);
+  const isOpen   = (r) => r.status != null && (OPENISH.test(r.status) || OPEN_ANYWHERE.test(r.status));
   const isUnclear = (r) => !isClosed(r) && !isOpen(r);
   const fixed = rows.filter(isClosed).length;
   const open  = rows.filter(isOpen).length;
@@ -1493,8 +1761,8 @@ function reviewArtefact() {
       : unreadable ? 'This ledger could not be read — check it before accepting.'
       : open > 0 ? 'Accept this build with open findings?' : 'Accept what the reviews caught?', [
     `<b>${txt(slug)}</b>`,
-    ledgerMissing ? 'no review on file' : unreadable ? 'ledger unreadable' : `${rows.length} findings`,
-    ledgerMissing ? 'nothing to count' : unreadable ? 'nothing counted' : `${fixed} closed`,
+    ledgerMissing ? 'no review on file' : unreadable ? 'ledger unreadable' : `${nF('findings.total', rows.length)} findings`,
+    ledgerMissing ? 'nothing to count' : unreadable ? 'nothing counted' : `${nF('findings.closed', fixed)} closed`,
   ]);
   const b2 = band2Facts('The facts you need to decide', ledgerMissing ? [
     { k: 'How many', v: 'None recorded — this build has no review-ledger.md.' },
@@ -1505,12 +1773,12 @@ function reviewArtefact() {
     { k: 'What that means', v: 'Do not read this as "no findings". Open review-ledger.md and read it directly before accepting.' },
     { k: 'Where it came from', v: 'review-ledger.md.' },
   ] : [
-    { k: 'How many', v: `${rows.length} findings — ${nCrit} critical, ${nMaj} major.` },
-    { k: 'How many closed', v: `${fixed} closed, ${open} still open${unstated ? `, ${unstated} whose status this page could not read` : ''}.` },
+    { k: 'How many', v: `${nF('findings.total', rows.length)} findings — ${nF('findings.critical', nCrit)} critical, ${nF('findings.major', nMaj)} major.` },
+    { k: 'How many closed', v: `${nF('findings.closed', fixed)} closed, ${nF('findings.open', open)} still open${unstated ? `, ${nC(unstated)} whose status this page could not read` : ''}.` },
     { k: 'What that means', v: open ? 'Something was found and not fixed. Read the open rows before accepting.'
         : unstated ? 'Nothing is recorded as open, but some rows state no status — those are unresolved on the page, not resolved.'
         : 'Every finding was fixed and re-checked. Nothing is waiting on you.' },
-    { k: 'Where it came from', v: `review-ledger.md — written during the reviews, not after.${sevGuessed ? ` ${guessedN} of ${rows.length} rows state no severity this page could read, so their severity is taken from the row's wording instead.` : ''}` },
+    { k: 'Where it came from', v: `review-ledger.md — written during the reviews, not after.${sevGuessed ? ` ${nC(guessedN)} of ${nC(rows.length)} rows state no severity this page could read, so their severity is taken from the row's wording instead.` : ''}` },
   ]);
   const b3 = band3Flow(logicBlockFor('review'),
     flowCaption('How a finding travels: raised, proven reachable, fixed, then re-attacked.'),
@@ -1540,25 +1808,26 @@ function reviewArtefact() {
       `<div class="verify"><b>${txt(label)}</b>${txt(fieldText(r.status || 'not stated in the ledger', 90))}</div></div>`;
   }).join('');
   const moreRow = hiddenN > 0
-    ? `<div class="b-step"><div class="b-num"><span class="pill now">+${hiddenN}</span></div>` +
-      `<div><div class="b-ttl">${hiddenN} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
+    ? `<div class="b-step"><div class="b-num"><span class="pill now">+${nC(hiddenN)}</span></div>` +
+      `<div><div class="b-ttl">${nC(hiddenN)} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
       `<div class="b-det">Everything not marked closed is listed above — that is the complete set of what still needs you. The full record is review-ledger.md.</div></div>` +
-      `<div class="verify"><b>note</b>all ${rows.length} are counted in the totals</div></div>`
+      `<div class="verify"><b>note</b>all ${nF('findings.total', rows.length)} are counted in the totals</div></div>`
     : '';
+  // The title carries provenance markers, so it is rendered by the caller and passed raw.
   const b4 = bandSection(
-    ledgerMissing ? 'No review has been recorded'
-      : unreadable ? 'This ledger could not be read'
+    ledgerMissing ? txt('No review has been recorded')
+      : unreadable ? txt('This ledger could not be read')
       // The heading must be true. "Everything still open, and N closed on file" was printed on
       // builds where band 2 said `0 still open` in the line above it.
-      : hiddenN > 0 && (open + unstated) > 0 ? `Everything not closed, and ${hiddenN} closed ${hiddenN === 1 ? 'finding' : 'findings'} not shown here`
-      : hiddenN > 0 ? `${rows.length - hiddenN} of ${rows.length} findings, all of them closed`
-      : 'Every finding, and what happened to it',
-    'Each row was proven reachable before it counted, and re-attacked after it was fixed.',
+      : hiddenN > 0 && (open + unstated) > 0 ? `${txt('Everything not closed, and')} ${nC(hiddenN)} ${txt('closed ' + (hiddenN === 1 ? 'finding' : 'findings') + ' not shown here')}`
+      : hiddenN > 0 ? `${nC(rows.length - hiddenN)} ${txt('of')} ${nF('findings.total', rows.length)} ${txt('findings, all of them closed')}`
+      : txt('Every finding, and what happened to it'),
+    txt('Each row was proven reachable before it counted, and re-attacked after it was fixed.'),
     ledgerMissing
       ? '<div class="b-na"><b>No ledger</b> — this build has no review-ledger.md. That is missing evidence, not a clean bill of health.</div>'
       : unreadable
       ? '<div class="b-na"><b>Unreadable</b> — review-ledger.md has content, but no findings could be parsed from it. Read the file directly.</div>'
-      : (list + moreRow) || '<div class="b-na"><b>N/A</b> — no ledger rows yet</div>');
+      : (list + moreRow) || '<div class="b-na"><b>N/A</b> — no ledger rows yet</div>', true);
   return { body: `<section class="cv-body"><div class="wrap"><div class="kicker">Compass · Review</div>${b1}${b2}${b3}${b4}<div class="foot">Generated from review-ledger.md by compass-visual · a pure function of the build's state.</div></div></section>`, extra: _pillCss };
 }
 
@@ -1586,7 +1855,7 @@ function releaseCard() {
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
   const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => fieldText(String(t), 140));
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
-    + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nowItems.length - 6} more</li>` : '');
+    + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more</li>` : '');
   const facet = hdr('facets') || 'library';
   // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo
   const body = `
@@ -1598,7 +1867,7 @@ function releaseCard() {
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
     ${goal ? `<p class="lede">${txt(fieldText(String(rc('build-what', goal)), 400))}</p>` : ''}
   </div>
-  ${items ? `<div class="card"><div class="kicker">What changed — ${nowItems.length} in this release</div><ul>${items}</ul></div>` : ''}
+  ${items ? `<div class="card"><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
   <div class="card"><div class="kicker">Proof &amp; rollback</div>
     <div class="tl">${(() => {
       // A build that shipped with known open findings MUST say so on its own release page.
@@ -1610,7 +1879,7 @@ function releaseCard() {
       if (!m || !/ACCEPTED WITH OPEN FINDINGS/.test(rb)) return '';
       const why = (blk.match(/^- \[ \][^\n]*/m) || [''])[0].replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
       return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(fieldText(why, 120))}</span>`;
-    })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nowItems.length} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
+    })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nC(nowItems.length)} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
   </div>
   <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>
 </div></section>`;
@@ -1624,7 +1893,16 @@ function releaseCard() {
 // Line 1 is now `<title>`; the leak tracer's real property is that line 1 is NEVER a
 // `<!-- COMPASS-MOCK` marker, and that still holds.
 function page(styleBlocks, bodyMarkup) {
-  return `<title>${esc(demd(title))} · compass-visual</title>
+  // CR-15. `title` is contract.md's first heading, so using it for every view named the Review page,
+  // the Plan Map and the Release Card all "Contract — <slug>" — in the browser tab and, because that
+  // is where a published Artifact takes its gallery name, on every artefact Compass has shipped. A
+  // page says what it is.
+  // Only the four views gen.mjs actually serves. `progress` is not one — the usage line rejects it —
+  // so naming it here would be claiming a page that does not exist.
+  const VIEW_NAME = { brief: 'Contract', 'brief-body': 'Contract', 'plan-map': 'Plan',
+                      review: 'Review', 'release-card': 'Release' };
+  const pageName = VIEW_NAME[view] ? `${VIEW_NAME[view]} — ${slug}` : title;
+  return `<title>${esc(demd(pageName))} · compass-visual</title>
 <style>${styleBlocks}</style>
 ${bodyMarkup}
 `;
@@ -1722,6 +2000,15 @@ function genForms(literal) {
 //    normalized layer + declared never-show — ADDITIVE to the existing best-effort scrub (v0.17.0). ──
 function shareableScrub(html, declared = {}) {
   const hits = [];
+  // Strip provenance markers before matching. They are invisible to a reader and must be invisible
+  // to the leak gate too — a `<span>` between the characters of a password is not a reason to miss it.
+  // Strip ALL inline markup, not just provenance markers. `**bold**` becomes <b>, and a scrub rule
+  // matching a contiguous substring cannot see `AKIA<b>QWERTYUIOPASDFGH</b>` — which a reader reads
+  // as one key. Un-hiding only the markers I had added fixed the case I created and left the case
+  // markdown creates. The reader sees text; the gate must match on the same text.
+  const INLINE_TAG = /<\/?(?:span|b|strong|em|i|u|a|sup|sub|small|code|abbr|mark|time|var|q|s|wbr)\b[^>]*>/gi;
+  const unmark = (x) => { let prev; let cur = String(x); do { prev = cur; cur = cur.replace(INLINE_TAG, ''); } while (cur !== prev); return cur; };
+  html = unmark(html);
   const R = '<span class="chip">⟨redacted ✓⟩</span>';
   const SECRETS = [
     [/sk-[A-Za-z0-9]{8,}/g, 'api key'],
@@ -1730,10 +2017,25 @@ function shareableScrub(html, declared = {}) {
     [/eyJ[A-Za-z0-9_-]{6,}\.eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/g, 'jwt'],
     [/-----BEGIN [A-Z ]*PRIVATE KEY-----/g, 'pem private key'],
     [/\b[a-z][a-z0-9+.-]*:\/\/[^:@/\s]+:[^@/\s]+@/g, 'inline url credentials'],
-    [/\b[A-Z][A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|APIKEY|API_KEY)\s*[:=]\s*['"]?[^\s'"<]+/g, 'inline secret assignment'],
+    // The leading `[A-Z]` ate the first letter, so the alternation could never start at position 0:
+    // `API_KEY=`, `SECRET=`, `TOKEN=`, `PASSWORD=` and `SECRET_KEY=` were ALL missed, and only a
+    // prefixed `MY_API_KEY=` was caught. The bare forms are the common ones.
+    [/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_?KEY)[A-Z0-9_]*\s*[:=]\s*['"]?[^\s'"<]+/g, 'inline secret assignment'],
   ];
   // commercial-sensitive VALUES: the term adjacent to a numeric value (not the bare vocabulary).
-  const COMMERCIAL = [[/\b(?:IRR|take[- ]?rate|gross[- ]?rev(?:enue)?|COF)\b[^.\n<]{0,12}?\d[\d.,%]*/gi, 'commercial value']];
+  // R9-C2: the window was 12 characters and the class excluded `.`, so "The IRR for this fiscal
+  // year is 18.5% net" and "IRR approx. 18.5%" both published at exit 0 — the first too far, the
+  // second stopped by an ordinary full stop. A sentence is not 12 characters long, and a full stop
+  // is not a boundary a leak respects. Widened to a sentence-ish window that still cannot run past
+  // a line break, and fullwidth/Arabic-Indic digits count as digits because a reader reads them.
+  const COMMERCIAL = [[
+    // `margin` was added and immediately fired on the page's own CSS (`margin:10px 0 0`), turning a
+    // clean Brief into a hard-stop. A leak rule that cries wolf on a stylesheet gets switched off
+    // within a week, which is worse than the narrow rule it replaced. The vocabulary stays as the
+    // commercial-sensitivity guard defines it; what widened is the WINDOW, which is what the real
+    // bypasses used.
+    /\b(?:IRR|take[- ]?rate|gross[- ]?rev(?:enue)?|COF)\b[^\n<]{0,80}?[\p{Nd}][\p{Nd}.,%\u066b\u066c]*\s*%?/giu,
+    'commercial value']];
   let out = html;
   for (const [re, label] of [...SECRETS, ...COMMERCIAL]) {
     if (re.test(out)) { hits.push(label); out = out.replace(re, R); }
@@ -1877,6 +2179,78 @@ if (shareable && SCRUBBABLE.includes(view)) {
     console.error('  A blank here is a silent lie. Fix the source section, or the extractor — do not weaken this check.');
     process.exit(4);
   }
+}
+
+// ── v0.31: a page that carries `counted` numbers owes its reader the words, not just the markup.
+//
+// A marker is invisible to the person the warning is FOR. If any number on this page was worked out
+// by reading the build's files — rather than read from a declared data block — the page says so, in
+// the sentence the contract pins, next to the numbers it is about.
+//
+// v0.31 cold read, CR-2 + CR-3. The sentence used to say "numbers marked as counts" — a distinction
+// living in an HTML attribute no reader can see ("it never says WHICH numbers, so there's nothing to
+// act on") — and it covered only the numbers a reader could already check by eye, leaving the
+// unverifiable ones bare. Worse, arming on `counted` alone meant 15 of 116 pages carrying quoted
+// numbers and no counted ones printed NO caveat: every number on them unverifiable and unmarked.
+// So: arm on either kind, point at something visible, and say what the other numbers are.
+const hasCounted = /data-prov="counted"/.test(html);
+const hasQuoted = /data-prov="quoted"/.test(html);
+const hasDeclared = /data-count="/.test(html);
+if (hasCounted || hasQuoted) {
+  // How the unchecked numbers got here, named only for the kinds this page actually carries — so the
+  // sentence never describes a category that is not on the page, and each branch contains the exact
+  // words `unsaid` requires for the kinds present.
+  const how = hasCounted && hasQuoted
+    ? `they were either ` + COUNTED_NOTE + `, or copied from what someone wrote there`
+    : hasCounted
+      ? `they were ` + COUNTED_NOTE
+      : `they were copied from what someone wrote in this build's files`;
+  // The mark earns its place only where it separates one number from another. On a page where
+  // nothing is checked, underlining every number distinguishes nothing — so say it in words instead.
+  const body = hasDeclared
+    ? `Numbers with a dotted underline were not checked against anything: ` + how + `. Any of them `
+      + `can be wrong. The numbers without the underline were declared as data by this build, and `
+      + `this page is held to them.`
+    : `No number on this page was checked against anything: ` + how + `. Any of them can be wrong.`;
+  const note = `<div class="prov-note prov-note-inline">` + body + `</div>`;
+  // No literal hex fallbacks. Two of them (#8a8a8a, #2a2a2a) were the first colours the house
+  // anti-drift gate reported OFF-THEME — a note about honesty that broke the theme check.
+  // The affordance the sentence points at. Quiet enough not to shout on every number, distinct
+  // enough to be nameable. Applied only when a counted number is actually present, so the page never
+  // describes a mark it does not carry.
+  // CR-12. This used to be 12px, muted, under a hairline rule — footnote styling, and two
+  // independent cold readers skipped it for that reason before its position could matter. It now
+  // takes the house's "read this" grammar (the accent left-rule `.b-decide` uses) at body weight in
+  // the body's own colour, because it is a claim about every number above it, not an aside.
+  const css = `<style>.prov-note{font:400 13px/1.55 var(--ui);color:var(--ink);`
+    + `background:var(--surface);border:1px solid var(--line);`
+    + `border-left:5px solid var(--accent);border-radius:8px;padding:12px 14px;margin:14px 0}`
+    + (hasDeclared ? `[data-prov="counted"],[data-prov="quoted"]{border-bottom:1px dotted var(--mut2)}` : ``)
+    + `</style>`;
+  // B-1: appended before the footer, this sat AFTER 20+ finding rows on a review page while the
+  // reader decides on the numbers ~15 lines in. A caveat the decision-maker never reaches has been
+  // published, not delivered — the v0.26 lesson in a different costume. It goes with the numbers:
+  // immediately after the facts band, which is where the counts are read.
+  if (/<div class="b-facts">/.test(html)) {
+    // Insert directly after the facts band, before whatever follows it.
+    html = html.replace(/(<div class="b-facts">[\s\S]*?)(<div class="b-label"|<div class="foot">)/,
+      (m, band, next) => band + note + next);
+  } else if (/<div class="foot">/.test(html)) {
+    html = html.replace(/<div class="foot">/, note + '<div class="foot">');
+  } else if (html.includes('</body>')) {
+    html = html.replace('</body>', note + '</body>');
+  } else {
+    html += note;
+  }
+  html = html.includes('</head>') ? html.replace('</head>', css + '</head>') : css + html;
+}
+
+// A surviving sentinel is a private-use character sitting on a page a person will read, and it means
+// some path built text without going through `txt()`. Refuse rather than ship the glyph.
+if (CNT_A_RE.test(html)) {
+  console.error('compass-visual: REFUSING — a counted-number sentinel reached the output, so some text '
+    + 'path bypassed txt(). The number would render as a private-use glyph. Fix the path, not this check.');
+  process.exit(5);
 }
 
 if (outFile) { writeFileSync(outFile, html); process.stderr.write(`wrote ${outFile} (${html.length} bytes)\n`); }

@@ -3,6 +3,58 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.31.0] — 2026-08-20
+
+**Every number says where it came from.**
+
+Compass pages state a lot of numbers: how many findings a review caught, how many steps a plan has,
+how many are done. Until now every one of those was worked out by reading hand-written markdown with
+about ninety ad-hoc regular expressions — and when that guessing was wrong, the page stated the wrong
+number with exactly as much confidence as when it was right. Three shipped builds reported "0 of 17
+steps done" over plans that were finished.
+
+**Now every number on a page carries a marker saying what it is**, written at the moment the
+generator prints it:
+
+- **declared** — the build wrote this number down as data, and a gate holds the page to it.
+- **counted** — the generator worked it out by reading the files, so it may be wrong.
+- **quoted** — copied from what someone wrote in the build's files; as reliable as that file.
+- **literal** — a version, a date, an id. It claims nothing about this build's data.
+
+A gate checks the whole thing: **8,516 numbers across 140 pages, every one accounted for**, with 50
+positive controls that fail if the auditor is broken. It rides the review-build seam, so it gates
+rather than being something someone remembered to run.
+
+**Every page now also says, in words a reader can act on, which of its numbers were not checked** —
+and the disclosure covers the numbers a reader *cannot* verify, not just the ones they can. That
+correction came from a stranger reading the pages cold; the first version covered 2,358 numbers and
+left 6,158 bare.
+
+### Also
+- `gold-numbers-gate` audits the build it is handed. It used to run over 28 other build dirs and
+  report PASS while the build being gated declared 999 steps over a 16-checkbox plan.
+- `artefact-audit` can fail. It called its own gate with no source and no copy checks, collapsed
+  every problem into one line with `tail -1`, and returned 0 regardless.
+- Numbers the generator invents — a step number where the plan line had none, the "and N more" of a
+  truncated field — now say they were counted. 248 of them across 21 of 28 builds used to claim
+  someone had written them in a file.
+- Each view names itself. A Review page, a Plan Map and a Release Card all used to be titled
+  "Contract" in the browser tab and in the published gallery.
+- The review page stopped counting a second table's header row as a finding (it reported 3 findings
+  over 2 real rows, and named one of them "ID").
+
+### What this does not claim
+For the 27 builds that predate the data block there is no true number to check against — their data
+was never written down in a structured form, so any "independent reader" is another guess. Those
+pages make no correctness claim at all; they tell you the number was not checked against anything.
+That is the honest position, and it took four rejected designs to arrive at it.
+
+**The gold proves a disclosure is present, not that it is true.** A sentence containing the required
+phrase while asserting its opposite still scores clean — reaching that state takes an edit to the
+generator plus a re-pin of a hash in a tracked file, a visible diff rather than an accident, but it is
+a real limit. It is written into the build's contract with its reproduction, and it is v0.32's work.
+**This release shipped un-converged, under a user-signed waiver, with its open findings named.**
+
 ## [0.30.0] — 2026-08-20
 
 **The artefact layer, rebuilt around the reader.** Three complaints started this: the decision

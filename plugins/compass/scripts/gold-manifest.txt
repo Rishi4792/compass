@@ -1,33 +1,35 @@
+# auditor-sha256: db36d593e7cbe620  plugins/compass/scripts/page-audit.mjs
+# generator-sha256: cffb756e8cfcc620  plugins/compass/skills/compass-visual/gen.mjs
 # v0.31 gold manifest — the pinned page set, with a checksum per contributing file.
 # `.claude/builds/` is gitignored (0 files tracked), so the gold's INPUT cannot be recovered from
 # git on another machine. Review-1 C-4. These checksums make the input VERIFIABLE even though the
 # files are not tracked: a re-measurement that does not reproduce them is measuring something else.
 # Regenerate deliberately, never casually — a changed checksum means the baseline moved.
-always-clarity-v0-28 1f9c5bc3dfb2.2076e9632757.a2501aa41fe0.01bb4bf1c803.77bbb9fae9a9
-artefact-clarity-rebuild-v0-30 46abcad47e58.2a4713c76798.ced7ff711e2a.f6f8596c5eb9.7d8f7945e234
-autonomous-spawn-v0-11 6939ea0e43d9.835d726938c7.8deb7b218190.b17f1c3d8d1f.bd983a382521
-blast-radius-verify-v0-8 ad47999d1f1d.6fad27ac663e.4c08b05b79ce.148158af0b03.61bdffb528b8
-brief-generator-rebuild-v0-17-p2 2a4b22d24381.ab8a3bc65a47.dc259c36797b.1671542209ec.b7a7b386891f
-clarity-simplicity-v0-24 e34ffec548cc.d7a316bd33ea.fa2bbfa4a0dc.206977e57555.827e01d7bf68
-data-migration-compliance-v0-21-p2 5aab975396b1.0656aa0f3d67.dc3a8d18238d.b586677ad5fc.9f57aed26a09
-design-bundle-front-door-v0-14 13e6e1478ce6.7f395ed496cf.27d78f1fc7cf.bc34366ab28d.55a1f5d40baa
-design-gate-v0-5 54f96a0ccb9f.e2d88304b96d.165c264accce.43a3475d3c53.b4252a33757d
-edge-toctou-method-v0-19-p2 543079bf1577.58dd65cfe26a.80b77a6f9ec3.906625cf6601.5e73ba4f0919
-elegant-parallel-v0-6 dbae386235da.e816c2560d30.d1f5e01152b8.724527c80876.af72643a0cf2
-gtm-organic-launch 33aca2d17430.47f62cdd9a76.4e2139156e62.994ab85f4849.e3e94ae8cc3b
-lifecycle-migration-gates-v0-7 d3dc10a3f695.39dd49070d29.42a51e586947.9e2ef0e1a41d.d73c07cdd6f2
-loop-eyes-intake-v0-12-13 1a8429fae7e6.1c13119dddce.d24aee608881.a23af854c8de.6064bee6f66d
-namespaced-stage-gate-v0-9-1 bbc253208591.6499464fd6e0.800d612e7d2b.434c69e4c9ad.b84296cd9e38
-perf-fmea-method-v0-20-p2 df8f6cc2d666.7b7c670bcfbe.b7022727f901.8b2b4a1c7a0c.8b637eb25b19
-phase3-finisher-v0-23-p3 ffb6bc153af3.3bed9d5f01ba.b8aaba7cff02.4deb315e25c1.24e8071885a8
-program-ledger-test-rigor-v0-22-p3 d19410a1a10c.c9e3d2aae6d9.f71822cceb56.3d5d57a71527.5db7dbb96cda
-readme-traction-rewrite 11e43121a3cf.92b7594141cb.30660a530fb9.1ac6daf374e6.1ef7dd541a68
-session-scoped-build-isolation d404767c405e.786afa1725db.825bd24876a8.f7eec1e76676.d4b3afd79fa1
-stride-rbac-method-v0-18-p2 f1b7f965385a.50706edec772.090382db15ac.85ab52e02855.ab4a9d61d44c
-survive-cutover-v0-16-p2 fc029b8ee26a.6027d17b6dbe.5426395ab4d6.8523c5314e92.46e554b4816d
-trim-menu-3-v0-25 e5b4b4e2a4db.ee995e1ba27b.2b1b67bde48d.e02fa7ba30d3
-trust-clarity-v0-15-p1 0eabec08c127.2730f4cbcce6.4e4ea097748a.817af5a3b0fe.2ae5ef81c555
-two-gate-autoloop-v0-10 3faa18d624b0.fa066fab0884.f8ba0aa5ffa1.f8cefb320f04.f42b45a1a2a2
-view-redesign-v0-27 e0d67f73fd81.ea60c7e7e6d0.243f3b8faaf9.2f75429f7e95
-visual-artefacts-v0-29 1372c554db05.dfbac43ff273.f4c6397571c8.817e6180522e.ee43a0fc9e50
-visual-brief-delivery-v0-26 db79cb23c5f5.fb97b5ef241e.1bb1c92b4de9.ea346aa3dd91
+always-clarity-v0-28  .auto-mode:e3b0c44298fc.brief.html:c07ab926a36c.budget.env:de713c6fa2f3.contract.md:1f9c5bc3dfb2.intake.md:4f0b5d150fea.LEDGER:012a5ccdab15.logic-map-v1.md:213fc5048b0a.orient.log:87f4a6d216a6.plan-map.html:e5e21674c0b4.plan.md:2076e9632757.progress.md:01bb4bf1c803.receipts.md:77bbb9fae9a9.release-card.html:e79f253ffe86.review-ledger.md:a2501aa41fe0.session-chain.log:77e085a9634e
+artefact-clarity-rebuild-v0-30  .auto-mode:e3b0c44298fc..compass-format:f06e0c72d37c.box-spec.txt:6851b32dd30e.brief-body.html:31c6143e82fb.brief.fragment.html:16ed40254a45.brief.html:31c6143e82fb.brief.png:08090c85e3c6.budget.env:0603988dbad6.CARRY-FORWARD-v0-31.md:b6f17e5311a2.coldread-baseline.md:fe8795189d8b.coldread-intent.txt:6340665149c5.contract.md:46abcad47e58.intake.md:80932c8b1627.LEDGER:09afb53c805d.orient.log:e859aeecedaa.plan-map.fragment.html:4c8e3cb1883b.plan-map.html:aa9600da169d.plan-map.png:17ceb5d3ed1e.plan.md:2a4713c76798.progress.md:15c1a36d7999.receipts.md:7d8f7945e234.red-first-evidence.md:c570be07577b.release-card.html:288dd9bae761.review-ledger.md:ced7ff711e2a.review.html:40926f84afba.session-chain.log:fb01f745e288
+autonomous-spawn-v0-11  .auto-mode:e3b0c44298fc.budget.env:5b031b0551e1.contract.md:6939ea0e43d9.phase0-spawn.md:9272347eef90.plan.md:835d726938c7.progress.md:b17f1c3d8d1f.receipts.md:bd983a382521.review-ledger.md:8deb7b218190.session-chain.log:70141e058763
+blast-radius-verify-v0-8  contract.md:ad47999d1f1d.plan.md:6fad27ac663e.progress.md:148158af0b03.receipts.md:61bdffb528b8.review-ledger.md:4c08b05b79ce
+brief-generator-rebuild-v0-17-p2  brief-body.html:a26b58d10de6.brief.html:d73093994593.brief.png:7faef1306fea.contract.md:2a4b22d24381.intake.md:69fd1b0342ef.LEDGER:5a7f263143de.loop.log:f9dae7bcf867.observe.txt:932c6c1d5bbf.observe.txt:bd36bdec01bc.plan.md:ab8a3bc65a47.progress.md:1671542209ec.receipts.md:b7a7b386891f.review-ledger.md:dc259c36797b.score.md:fd9a89543187
+clarity-simplicity-v0-24  .auto-mode:e3b0c44298fc.brief.html:7522c397b37d.budget.env:72ea3247460d.contract.md:e34ffec548cc.plan-map.html:a9f43664a244.plan.md:d7a316bd33ea.progress.md:206977e57555.receipts.md:827e01d7bf68.release-card.html:06cb1c33fbdc.review-ledger.md:fa2bbfa4a0dc
+data-migration-compliance-v0-21-p2  brief.html:e106dca4691d.brief.png:3d345eef30e8.budget.env:8969e5b30580.contract.md:5aab975396b1.intake.md:35527ddc4f94.LEDGER:e71cc5b80f4e.loop.log:6fa8ddfd2ae0.observe.txt:7417771eaa8d.observe.txt:7417771eaa8d.plan.md:0656aa0f3d67.progress.md:b586677ad5fc.receipts.md:9f57aed26a09.review-ledger.md:dc3a8d18238d.session-chain.log:e8516cba1e95.spawn-session.log:e3b0c44298fc
+design-bundle-front-door-v0-14  .auto-mode:e3b0c44298fc.budget.env:dd58938143f9.contract.md:13e6e1478ce6.LEDGER:b6f1107fca4f.loop.log:52302efcb35f.observe.txt:32dd2bac536e.observe.txt:654b11814ed7.observe.txt:6c7af45ac026.plan.md:7f395ed496cf.progress.md:bc34366ab28d.receipts.md:55a1f5d40baa.review-ledger.md:27d78f1fc7cf.session-chain.log:db60689e72e4
+design-gate-v0-5  contract.md:54f96a0ccb9f.plan.md:e2d88304b96d.progress.md:43a3475d3c53.receipts.md:b4252a33757d.review-ledger.md:165c264accce
+edge-toctou-method-v0-19-p2  brief-body.html:35dcd3d06d3e.brief.html:be50f5821911.brief.png:3c396c665fac.contract.md:543079bf1577.intake.md:d62145fa26c2.LEDGER:5ebd3bde6700.loop.log:11f40e7c09ca.observe.txt:16335ee2f34b.observe.txt:d5607340d837.plan.md:58dd65cfe26a.progress.md:906625cf6601.receipts.md:5e73ba4f0919.review-ledger.md:80b77a6f9ec3.score.md:56b199e8b071
+elegant-parallel-v0-6  contract.md:dbae386235da.plan.md:e816c2560d30.progress.md:724527c80876.receipts.md:af72643a0cf2.review-ledger.md:d1f5e01152b8
+gtm-organic-launch  acceptance.sh:18b10a968fd2.contract.md:33aca2d17430.intake.md:8044ee8ff066.LEDGER:81c0fa99f128.logic-map-v1.md:1c382372f02b.loop.log:7e645a3891cd.plan.md:47f62cdd9a76.progress.md:994ab85f4849.receipts.md:e3e94ae8cc3b.review-ledger.md:4e2139156e62
+lifecycle-migration-gates-v0-7  contract.md:d3dc10a3f695.plan.md:39dd49070d29.progress.md:9e2ef0e1a41d.receipts.md:d73c07cdd6f2.review-ledger.md:42a51e586947
+loop-eyes-intake-v0-12-13  budget.env:e5984fa41a5e.contract.md:1a8429fae7e6.loop.log:da16f3597343.observe.txt:17ce6464e84a.observe.txt:c0141b55919f.plan-v1-superseded.md:d5d35d0ebf1e.plan.md:1c13119dddce.progress.md:a23af854c8de.receipts.md:6064bee6f66d.review-ledger.md:d24aee608881.session-chain.log:a6470b62998f.spawn-session.log:e3b0c44298fc
+namespaced-stage-gate-v0-9-1  contract.md:bbc253208591.plan.md:6499464fd6e0.progress.md:434c69e4c9ad.receipts.md:b84296cd9e38.review-ledger.md:800d612e7d2b
+perf-fmea-method-v0-20-p2  brief-body.html:7d5f653e21d6.brief.html:5b307eddf90e.brief.png:5780bb791239.contract.md:df8f6cc2d666.intake.md:48d38713f700.LEDGER:fb2a1d849cdc.loop.log:1d7078fc3da5.observe.txt:315d74b4a0a6.observe.txt:7c81b4a243c5.plan.md:7b7c670bcfbe.progress.md:8b2b4a1c7a0c.receipts.md:8b637eb25b19.review-ledger.md:b7022727f901.score.md:f1476c7ffb9b
+phase3-finisher-v0-23-p3  .auto-mode:e3b0c44298fc.budget.env:be286d99624b.contract.md:ffb6bc153af3.loop.log:dac08b01fd89.observe.txt:9ef4eef04644.observe.txt:9ef4eef04644.plan.md:3bed9d5f01ba.progress.md:4deb315e25c1.receipts.md:24e8071885a8.review-ledger.md:b8aaba7cff02.session-chain.log:14d9a0352f9b.spawn-session.log:5e78f1c20991
+program-ledger-test-rigor-v0-22-p3  .auto-mode:e3b0c44298fc.budget.env:50f1841ea753.contract.md:d19410a1a10c.LEDGER:864482f02635.loop.log:db0dfcf93d03.observe.txt:6b98febf8a4a.observe.txt:6b98febf8a4a.plan.md:c9e3d2aae6d9.progress.md:3d5d57a71527.receipts.md:5db7dbb96cda.review-ledger.md:f71822cceb56.session-chain.log:f8787cfff6eb.spawn-session.log:cebf60c25089
+readme-traction-rewrite  .auto-mode:e3b0c44298fc.acceptance.sh:36deb3c901f1.budget.env:415cb82f4b9e.contract.md:11e43121a3cf.loop.log:5703126b9d79.observe.txt:9e6527a55e27.plan.md:92b7594141cb.progress.md:1ac6daf374e6.receipts.md:1ef7dd541a68.review-ledger.md:30660a530fb9.session-chain.log:065a74344ba0.spawn-session.log:eead08817293
+session-scoped-build-isolation  contract.md:d404767c405e.plan.md:786afa1725db.progress.md:f7eec1e76676.receipts.md:d4b3afd79fa1.review-ledger.md:825bd24876a8
+stride-rbac-method-v0-18-p2  brief-body.html:c139b992a4eb.brief.html:85895d446ea0.brief.png:b2868c5af4a6.contract.md:f1b7f965385a.intake.md:9f293ad14ed6.LEDGER:2259577b5d94.loop.log:1f7145800985.observe.txt:1f46c6727ac1.observe.txt:d80285fc4827.plan.md:50706edec772.progress.md:85ab52e02855.receipts.md:ab4a9d61d44c.review-ledger.md:090382db15ac.score.md:f36f43ef7643
+survive-cutover-v0-16-p2  .auto-mode:e3b0c44298fc..auto-suspended:e3b0c44298fc.brief.html:d5e6bb75eed9.brief.png:0c9fa2924db0.budget.env:54fa5598ae2e.contract.md:fc029b8ee26a.intake.md:c637b43e26d9.LEDGER:3c4a4476a8ed.loop.log:44d46c7998e2.observe.txt:089103e588ce.observe.txt:19b9f4fc064c.plan.md:6027d17b6dbe.progress.md:8523c5314e92.receipts.md:46e554b4816d.review-ledger.md:5426395ab4d6.session-chain.log:2d380cecc250
+trim-menu-3-v0-25  .auto-mode:e3b0c44298fc.brief.html:abc8a4325186.budget.env:e4c91a81ce62.contract.md:e5b4b4e2a4db.plan-map.html:b5e2065f517b.plan.md:ee995e1ba27b.progress.md:2b1b67bde48d.receipts.md:e02fa7ba30d3.release-card.html:c1df055601bd
+trust-clarity-v0-15-p1  _r3-suite.log:f99c04460d27..auto-mode:e3b0c44298fc.brief-body.html:cca5d00f0ea3.brief.html:b0b352d8daec.brief.html:dd6ab78d00d8.brief.png:5c98f783f9d7.brief.png:eaf15a4a07f1.budget.env:49d826b1ac6d.cockpit.html:728c4fce53d9.cockpit.png:f68379ac8ab2.contract-brief.artifact.html:728a252856e1.contract-brief.html:00261a20d04a.contract-brief.png:755879cd7b89.contract.md:0eabec08c127.LEDGER:4d2092dc4416.loop.log:d49c5adff96e.observe.txt:11376ecb9500.observe.txt:4af723939709.observe.txt:5910879d56e3.observe.txt:819c1b89d835.plan.md:2730f4cbcce6.progress.md:817af5a3b0fe.receipts.md:2ae5ef81c555.review-ledger.md:4e4ea097748a.score.md:1f5e630be529.session-chain.log:5ae1c9a558a5.spawn-session.log:e3b0c44298fc
+two-gate-autoloop-v0-10  contract.md:3faa18d624b0.phase0-spawn.md:e2a300885d62.plan.md:fa066fab0884.progress.md:f8cefb320f04.receipts.md:f42b45a1a2a2.review-ledger.md:f8ba0aa5ffa1
+view-redesign-v0-27  .auto-mode:e3b0c44298fc.brief.html:7106caf6a4ae.brief.png:9bdb7615bd1d.budget.env:b2befb83dbd4.contract.md:e0d67f73fd81.plan-map.html:ee6ce2c8faea.plan-map.png:ffcabb5bd728.plan.md:ea60c7e7e6d0.progress.md:243f3b8faaf9.receipts.md:2f75429f7e95.release-card.html:8e6273d7876d.release-card.png:d4c51eac0886
+visual-artefacts-v0-29  .auto-mode:e3b0c44298fc.artefacts.log:116fcfb380b2.brief.html:094682d9fcaf.brief.png:0ed55d434ba6.budget.env:f23899e00f9e.contract.md:1372c554db05.intake.md:8fd98507bbdb.LEDGER:edd5b10a0b53.loop.log:26ad37fa4ad9.mock-v1.html:6ee52aa9539c.orient.log:94ff4756e748.plan-map.html:d0950d8b38f1.plan-map.png:4141eb8d7dd2.plan.md:dfbac43ff273.program-cockpit.html:5398c7f1ff9a.program-cockpit.png:fa35a839d77a.progress.md:817e6180522e.receipts.md:ee43a0fc9e50.release-card.html:1048e2423f77.release-card.png:5d6698017af7.review-ledger.md:f4c6397571c8.session-chain.log:5ad9d9b803d4
+visual-brief-delivery-v0-26  .auto-mode:e3b0c44298fc.brief.html:08df32116066.brief.png:c9ffd1069b8c.budget.env:f263c14934f8.contract.md:db79cb23c5f5.design-spec-brief.html:66fb01d14175.plan-map.html:d4f8209ca343.plan-map.png:1cc1db0b54d3.plan.md:fb97b5ef241e.progress.md:1bb1c92b4de9.receipts.md:ea346aa3dd91.release-card.html:e29ed6eed58c.release-card.png:302072c5fcdc

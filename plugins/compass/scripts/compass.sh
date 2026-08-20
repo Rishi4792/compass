@@ -595,6 +595,13 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_green_ci_gate >/dev/null 2>&1; then
       cmd_green_ci_gate "$dir" >/dev/null || die "gate: green-ci-gate FAILED for '$dir' (see stderr)."
     fi
+    # v0.31 the GOLD rides the review-build seam. Rounds 4-7 all recorded the same finding: the gold
+    # checks existed and NOTHING CALLED THEM, so every baseline was a number a human ran by hand.
+    # Guard-first N/A-pass: a tree with no proven-numbers.sh is untouched, so every legacy build
+    # still gates byte-identically.
+    if type cmd_gold_numbers_gate >/dev/null 2>&1; then
+      cmd_gold_numbers_gate "$dir" >/dev/null || die "gate: gold-numbers-gate FAILED for '$dir' (see stderr)."
+    fi
   fi
   # v0.21 compliance/PII gate rides the PLAN seam — guard-first N/A-pass on legacy (no `pii:` header).
   if [ "$stage" = "plan" ] && type cmd_pii_gate >/dev/null 2>&1; then
@@ -909,6 +916,86 @@ cmd_rollback_fwdcompat_gate() { # <slug|build-dir> — a schema/data change RECO
   grep -qiE '^[-*[:space:]]*rollback data-safety:.*old-code reads new-version writes.*OK' "$contract" \
     || die "rollback-fwdcompat: a schema/data change is declared but no recorded 'rollback data-safety: old-code reads new-version writes → OK' line. HARD STOP (INV-ROLLBACK-FWDCOMPAT); review-build re-challenges this recorded line — it is never independent proof."
   ok "rollback-fwdcompat: forward-compat rollback record present."
+}
+
+cmd_gold_numbers_gate() { # <slug|build-dir> — every number a page states is accounted for (v0.31)
+  local a="${1:-}"; [ -n "$a" ] || die "usage: compass.sh gold-numbers-gate <slug|build-dir>"
+  local root; root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+  local gold="$root/plugins/compass/scripts/proven-numbers.sh"
+  # Guard-first: absent script = this tree predates the gold. N/A-pass, recorded, never silent.
+  [ -f "$gold" ] || { ok "gold-numbers-gate: N/A — no proven-numbers.sh in this tree."; return 0; }
+  # ARM ON PRESENCE, never on absence. v0.28's mode-gate armed on a missing header and refused 25 of
+  # 26 existing builds; this gate armed on nothing at all and failed a LEGACY contract for a
+  # repo-wide reason that had nothing to do with the build being gated. A build predating the
+  # artefact-data format N/A-passes byte-identically.
+  local dir_res; dir_res="$(_cv_dir "$a")"
+  [ -f "$dir_res/.compass-format" ] || { ok "gold-numbers-gate: N/A — $(basename "$dir_res") predates the artefact-data format."; return 0; }
+  # THE INSTALLER GUARD. The gold's manifest pins the 28 build dirs of THIS repo; an installer has
+  # none of them. Without this, a brand-new user's very first stamped build hit this seam, the gold
+  # reported "compared 0 dirs, expected 28", and the gate failed — SILENTLY. That is v0.28's
+  # mode-gate all over again: a check that arms on someone else's data and refuses every real build.
+  # Found by exporting the staged tree and running it as an installer would, not by reasoning.
+  local man="$root/plugins/compass/scripts/gold-manifest.txt" present=0 first=""
+  if [ -f "$man" ]; then
+    while read -r _slug _rest || [ -n "${_slug:-}" ]; do
+      case "${_slug:-#}" in \#*|"") continue ;; esac
+      [ -z "$first" ] && first="$_slug"
+      [ -f "$root/.claude/builds/$_slug/contract.md" ] && { present=1; break; }
+    done < "$man"
+  fi
+  if [ "$present" -eq 0 ]; then
+    ok "gold-numbers-gate: N/A — this tree carries none of the gold's pinned build dirs (it is an install, not the Compass repo). The gold is a repo-specific measurement; your build still gates on everything else."
+    return 0
+  fi
+  # R9-C1: this ran the gold over the whole 28-dir corpus and NEVER LOOKED AT THE BUILD IT WAS
+  # HANDED. Gating `artefacts-from-data-v0-31` — which is deliberately outside the manifest —
+  # audited 28 other dirs and reported PASS while that build's own pages declared 999 steps over a
+  # 16-checkbox plan. Two skills print the promise "cross-checks every declared field against its
+  # source file and fails on a disagreement"; it was false on both halves.
+  #
+  # The dir being gated is audited FIRST, on its own terms, whether or not it is in the manifest.
+  local fail=0
+  if [ -f "$dir_res/plan.md" ]; then
+    local blk st sd bt bd
+    blk="$(awk '/^ {0,3}`{3,}compass-artefact-data[ \t]*\r?$/{f=1;next} f&&/^ {0,3}`{3,}[ \t]*\r?$/{exit} f{print}' "$dir_res"/*.md 2>/dev/null)"
+    if [ -n "$blk" ]; then
+      st="$(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX]\]/ { n++ } END { print n+0 }' "$dir_res/plan.md")"
+      sd="$(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[xX]\]/ { n++ } END { print n+0 }' "$dir_res/plan.md")"
+      bt="$(printf '%s' "$blk" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const b=JSON.parse(s);console.log(b["steps.total"]??"")}catch(e){console.log("")}})')"
+      bd="$(printf '%s' "$blk" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const b=JSON.parse(s);console.log(b["steps.done"]??"")}catch(e){console.log("")}})')"
+      [ -n "$bt" ] && [ "$bt" != "$st" ] && { echo "COMPASS-GATE: gold-numbers-gate: $(basename "$dir_res") declares steps.total=$bt but plan.md holds $st checkboxes."; fail=1; }
+      [ -n "$bd" ] && [ "$bd" != "$sd" ] && { echo "COMPASS-GATE: gold-numbers-gate: $(basename "$dir_res") declares steps.done=$bd but plan.md has $sd ticked."; fail=1; }
+    fi
+  fi
+  [ "$fail" -eq 0 ] || die "gold-numbers-gate: the build's own declared data contradicts its files."
+
+  # Round 3 C2 / item 3: the two checks above are the ONLY thing this gate ever did to the build it
+  # was handed, and they cover two fields of eleven. Nothing scored the build's own PAGES, so
+  # `artefacts-from-data-v0-31` — the build shipping this very gate — carried the new-format stamp
+  # with no data block, scored `noblock=5`, and the gate reported PASS because the 28 dirs it DID
+  # audit were clean. A gate that measures everything except its subject is decoration.
+  #
+  # `--only` runs the full auditor over this dir's own pages, on its own terms: every counter, plus
+  # the `invariants.total` cross-check that also never ran here. Corpus floors and the pinned-baseline
+  # checksum do not apply to a live build, and the flag skips exactly those.
+  local sout srrc
+  if sout="$(bash "$gold" "$root" --only "$(basename "$dir_res")" 2>&1)"; then srrc=0; else srrc=$?; fi
+  if [ "$srrc" -ne 0 ]; then
+    printf '%s\n' "$sout" | grep -E '^gold: ' >&2 || true
+    die "gold-numbers-gate: $(basename "$dir_res") does not pass the rule its own stamp selects (exit $srrc)."
+  fi
+
+  # Then the corpus-wide measurement, when this tree is the Compass repo.
+  local out rc
+  # `out="$(cmd)" || true; rc=$?` reads the exit of `true` — always 0. I introduced that while
+  # fixing the set -e abort and it made the gate report PASS over a corpus with 13 unmarked numbers.
+  if out="$(bash "$gold" "$root" 2>&1)"; then rc=0; else rc=$?; fi
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$out" | grep -E '^gold: ' >&2 || true
+    die "gold-numbers-gate: the gold is not at target (exit $rc). A number on a page is unaccounted for."
+  fi
+  ok "gold-numbers-gate: $(basename "$dir_res") clean; corpus $(printf '%s\n' "$out" | grep '^dirs=' | tail -1)"
+  return 0
 }
 
 cmd_green_ci_gate() { # <slug|build-dir> — a CI-declaring repo RECORDS a green-CI merge proof (item 6, INV-GREEN-CI)
@@ -3474,17 +3561,49 @@ cmd_artefact_publish() { # <html> [--url <artifact-url>] [--dir <build-dir>]
 # The observation channel: re-run the gate over the last rendered outputs and show the log.
 cmd_artefact_audit() { # <build-dir>
   local d="${1:-}"; [ -n "$d" ] && [ -d "$d" ] || die "usage: compass.sh artefact-audit <build-dir>"
-  local any=0 f
+  local any=0 f bad=0 src out rc
   # v0.30: program-cockpit deleted; review added. Kept `[ -f ]`-guarded so a build with only
   # some of these still audits cleanly.
+  #
+  # Round 3 M1: this called artefact-gate with NO `--source` and NO `--copy`, so `fresh`,
+  # `claimed-count-matches` and every copy check were structurally unreachable here — the audit
+  # could not fail on a stale artefact stating a wrong count, which is exactly what it found when
+  # run by hand. `tail -1` then collapsed however many problems there were into one line, and the
+  # function returned 0 regardless. Three separate ways for a defect to pass through a check.
   for f in "$d"/brief.html "$d"/plan-map.html "$d"/release-card.html "$d"/review.html; do
     [ -f "$f" ] || continue
     any=1
-    printf '  %-22s ' "$(basename "$f")"
-    node "$(dirname "$0")/artefact-gate.mjs" "$f" 2>&1 | tail -1
+    # Each view is checked against the file it is actually generated from. A view with no obvious
+    # source is still checked structurally rather than skipped.
+    # A page that renders steps must be told how many to expect, or `counts-match` reports "could not
+    # be checked" and passes — a check that cannot fail. The count comes from the same awk the gold
+    # uses: `- [ ]`/`- [x]` in plan.md, outside code fences.
+    local extra=""
+    case "$(basename "$f")" in
+      plan-map.html) src="$d/plan.md"
+                     extra="--bands"
+                     [ -f "$d/plan.md" ] && extra="$extra --steps $(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX]\]/ { n++ } END { print n+0 }' "$d/plan.md")" ;;
+      # NOT --steps: the review page renders FINDINGS, not plan steps, so handing it the plan's count
+      # asserts the wrong thing (it reported "body renders 43, --steps was given as 16"). Mine, from
+      # copying the plan-map's invocation without checking what the page counts.
+      review.html)   src="$d/review-ledger.md" ;;
+      *)             src="$d/contract.md" ;;
+    esac
+    printf '  %-22s\n' "$(basename "$f")"
+    # `out="$(cmd)"; rc=$?` aborts the whole function under `set -e` the moment cmd fails — the
+    # assignment IS the failing command, so `rc=$?` never runs and the audit dies silently with the
+    # findings still in `$out`. Same bug I put in `gold-numbers-gate` and had to be shown twice.
+    if [ -f "$src" ]; then
+      if out="$(node "$(dirname "$0")/artefact-gate.mjs" "$f" --copy --source "$src" $extra 2>&1)"; then rc=0; else rc=$?; fi
+    else
+      if out="$(node "$(dirname "$0")/artefact-gate.mjs" "$f" --copy $extra 2>&1)"; then rc=0; else rc=$?; fi
+    fi
+    printf '%s\n' "$out" | sed 's/^/    /'
+    [ "$rc" -eq 0 ] || bad=$((bad+1))
   done
   [ "$any" = 1 ] || echo "  (no artefacts rendered in $d yet)"
   [ -f "$d/artefacts.log" ] && { echo "  ── artefacts.log (last 5) ──"; tail -5 "$d/artefacts.log" | sed 's/^/  /'; } || true
+  [ "$bad" -eq 0 ] || { echo "  artefact-audit: $bad artefact(s) FAILED their gate."; return 1; }
   return 0
 }
 
@@ -4092,6 +4211,7 @@ main() {
     statusline-install) cmd_statusline_install "$@" ;;
     mode-gate)         cmd_mode_gate "$@" ;;
     artefact-gate)     cmd_artefact_gate "$@" ;;
+    gold-numbers-gate) cmd_gold_numbers_gate "$@" ;;
     rail)              cmd_rail "$@" ;;
     artefact-publish)  cmd_artefact_publish "$@" ;;
     artefact-audit)    cmd_artefact_audit "$@" ;;

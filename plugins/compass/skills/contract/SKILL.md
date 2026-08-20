@@ -64,6 +64,36 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
 
 ## 4. Write + emit
 - Write `contract.md` (version it: `v1` + a CHANGELOG section — later **amendments** bump the version and re-lock). Update `progress.md` (stage ① Contract draft).
+
+### Write the artefact-data block (v0.31, INV-DECLARED)
+
+Compass's pages state numbers. Until v0.31 every one of them was worked out by reading hand-written
+markdown with ~90 ad-hoc regular expressions, and when that guessing was wrong the page stated the
+wrong number with exactly as much confidence as when it was right. A `compass-artefact-data` fence in
+this build's state files ends the guessing for the fields it names: the generator states them
+verbatim and marks them `declared`, and `compass.sh gold-numbers-gate` cross-checks each one against
+the file it describes and FAILS on a disagreement.
+
+**Only declare a field with an EXACT, mechanically checkable source.** A plan checkbox and a bolded
+`INV-` id are syntax Compass itself writes, so counting them is not a heuristic. Do NOT declare
+`findings.*`: those come from classifying free text in a ledger, which is precisely the guessing this
+removed — and a declared number carries no caveat, so a wrong one reads as verified.
+
+A field you do not write is counted by reading and disclosed to the reader as such: a worse but
+honest outcome. Write what you actually know, and nothing you do not.
+
+At THIS stage only `invariants.total` has a source yet — there is no plan to count steps from. Append
+to `progress.md`:
+
+```compass-artefact-data
+{
+  "invariants.total": <count of distinct bolded **INV-* ids in contract.md>
+}
+```
+
+The plan stage adds `steps.total`; the build stage keeps `steps.done` current. Each stage owns the
+fields it can actually check.
+
 - **EMIT RECEIPT** to `receipts.md` — fill each box with what you actually did:
   ```
   ## RECEIPT — contract · <slug> · PASS

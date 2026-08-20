@@ -74,9 +74,24 @@ const scripts = (html.match(/<script\b/g) || []).length;
 check('self-contained', extAttrs === 0 && scripts === 0, `${extAttrs} external reference(s), ${scripts} script tag(s)`);
 
 // 5 ── counts shown match the source they claim to render.
+// A missing `--steps` used to skip this check AND the VERIFY check in silence. `claimed-count-matches`
+// in this same file refuses when `--source` is absent; a gate that quietly checks less because it was
+// given less is the softest failure there is.
+if (!wantSteps && /class="b-step"/.test(html)) {
+  check('counts-match', false,
+    'this page renders steps but --steps was not given, so the count could not be checked. Pass --steps N.');
+}
 if (wantSteps) {
   const rendered = (html.match(/class="b-step"/g) || []).length;
-  const header = (html.match(/<b>(\d+)<\/b>\s*steps?/) || [, ''])[1];
+  // v0.31: every number a page states now sits inside a provenance marker, so the header reads
+  // `<b><span data-prov="counted">20</span></b> steps`. Matching the raw markup found nothing and
+  // the gate reported `header says ?` on a page that plainly says 20 steps. Strip tags between the
+  // digits and the noun — the gate is asserting what the page SAYS, not how it is marked up.
+  // Keep the <b> anchor — stripping every tag let this match the FOOTER, or a build directory
+  // literally named "20 steps", and pass a page whose header was wrong. Only the provenance marker
+  // needs to be transparent here.
+  const plain = html.replace(/<(?!\/?b\b)[^>]+>/g, '');
+  const header = (plain.match(/<b>\s*(\d+)\s*<\/b>\s*steps?\b/) || [, ''])[1];
   check('counts-match', String(rendered) === String(wantSteps) && String(header) === String(wantSteps),
     `header says ${header || '?'}, body renders ${rendered}, --steps was given as ${wantSteps} (this gate does not read the step count from --source)`);
 

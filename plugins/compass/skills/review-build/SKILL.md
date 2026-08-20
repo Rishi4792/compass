@@ -84,6 +84,36 @@ The build is done on design ONLY when it is **indistinguishable from the mockup*
 - **[E] Secret-leak** — *independent agent:* `compass.sh secret-scan --commits <base>..HEAD` over the build's COMMITTED patches (a secret committed mid-build must not survive to ship just because the tree is now clean) + `compass.sh secret-scan <build-dir>` over the per-build text artifacts (any hit = CRITICAL, blocks CLOSED).
 - **[F] Verification audit & coverage** — *independent agent:* every "works" backed by a real command + fresh output (screenshot-only proof of a number/token = a finding); every plan-promised test present and passing. **Coverage, not sample:** a fix passing its test ≠ complete. When a fix is defined relative to a canonical set/list/enum (sensitive/commercial fields, roles, allowed values, secret patterns, redaction targets), assert the implementation is **driven by the canonical source itself** (imported/enumerated) — a hand-maintained copy/regex that duplicates a canonical set is a **Major finding** (it WILL drift, e.g. a redaction regex that misses real field keys), and the test must exercise the **full set** (or a property derived from it), not a hand-picked sample.
 
+
+### Write the artefact-data block (v0.31, INV-DECLARED)
+
+Compass's pages state numbers. Until v0.31 every one of them was worked out by reading hand-written
+markdown with ~90 ad-hoc regular expressions, and when that guessing was wrong the page stated the
+wrong number with exactly as much confidence as when it was right. A `compass-artefact-data` fence in
+this build's state files ends the guessing for the fields it names: the generator states them
+verbatim and marks them `declared`, and `compass.sh gold-numbers-gate` cross-checks each one against
+the file it describes and FAILS on a disagreement.
+
+**Only declare a field with an EXACT, mechanically checkable source.** A plan checkbox and a bolded
+`INV-` id are syntax Compass itself writes, so counting them is not a heuristic. Do NOT declare
+`findings.*`: those come from classifying free text in a ledger, which is precisely the guessing this
+removed — and a declared number carries no caveat, so a wrong one reads as verified.
+
+A field you do not write is counted by reading and disclosed to the reader as such: a worse but
+honest outcome. Write what you actually know, and nothing you do not.
+
+At THIS stage the block already exists — the contract, plan and build stages wrote it. Your job is to
+confirm it still agrees with the files, because the build stage has been ticking boxes since it was
+written:
+
+```bash
+compass.sh gold-numbers-gate .claude/builds/<slug>     # exit 0, and it audits THIS dir, not 28 others
+```
+
+A non-zero exit means a declared number now contradicts its source file. Fix the number, never the
+gate. (Until v0.31 this gate ran the corpus measurement and never looked at the dir it was handed, so
+a build could declare 999 steps over a 16-checkbox plan and be told it was clean.)
+
 ## Procedure → emit → human sign-off
 Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Rounds 2+: the groups the fixes touched **PLUS the independent [D]/[E]/[F] agents on the fix diff**, + the full regression suite re-run + footer. **Converge only when the final clean round was a genuine verify-the-fixes round** ([D]/[E]/[F] re-attacked the latest fix diff and found nothing) — two consecutive clean rounds, the last a fix-surface re-attack. Then **EMIT RECEIPT** (one line per asserted thing, with command + output):
 ```

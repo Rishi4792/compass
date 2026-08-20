@@ -1,0 +1,12 @@
+# reader-sha256: fbd59f025e669b36  plugins/compass/scripts/page-number.mjs
+# v0.31 defeat-corpus identity pin. R3-C3: the check pinned a COUNT, so deleting both entries
+# that actually defeat the generator and adding two trivial ones scored the same. Identity, not
+# arithmetic: each line is a slug, the sha256 of its ledger fixture, and the two values that make
+# it evidence. A removed slug fails. A hollowed-out fixture fails on its checksum.
+#
+# This does NOT make the corpus tamper-proof — an author who edits this file too can still weaken
+# it. It makes every weakening a VISIBLE DIFF LINE rather than a silent pass, which is the honest
+# bound a self-checked gold can hold.
+# slug  sha256[:16](review-ledger.md)  true.findings.total  must-not-state
+blockquoted-table  8d5db66871278b5c  1  0
+dup-id-two-tables  a44615d03e9fa4cf  2  3

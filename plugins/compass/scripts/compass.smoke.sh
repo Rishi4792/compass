@@ -16,6 +16,29 @@ mkdir -p .claude/builds
 printf '%s\n' "cc · g · status=plan-LOCKED" "em · g · status=plan-LOCKED" > .claude/builds/INDEX
 
 pass=0; fail=0
+
+# ── v0.31: assert on what the page SAYS, not on how its markup is written ────────────────────────
+# Every number a page states now sits inside a provenance marker (`<span data-prov="counted">3</span>
+# findings`), so `grep '3 findings' page.html` stops matching a page that plainly says 3 findings.
+# These assertions were always about the rendered text; matching raw markup was incidental. `psays`
+# strips tags and collapses whitespace, so it tests the sentence a reader actually reads — which is
+# both what the assertion meant and what survives the next markup change.
+psays() { # <html-file> <text>  → 0 if the rendered text contains <text>
+  # Tags become a SPACE, not a boundary marker. A reviewer proposed matching `page-number.mjs`'s
+  # rule (block tags -> `|`) so the two readers could not disagree, and I tried it: it broke 24
+  # assertions, because the phrases they check legitimately span elements — the decision chip line
+  # `20 steps · 7 done` is three sibling elements and ONE visual line to a reader.
+  #
+  # The two readers answer different questions and are right to differ. `page-number.mjs` asks "what
+  # number does this page state for X?", where fusing across a table cell would invent a number that
+  # is not there. `psays` asks "does the rendered text contain this phrase?", where refusing to read
+  # across a `<span>` boundary would deny a sentence the reader plainly sees. Same page, two
+  # questions. The boundary-fusion risk is real for the first and not for the second.
+  LC_ALL=C sed -e 's/<[^>]*>/ /g' "$1" 2>/dev/null \
+    | tr '\n' ' ' | sed -e 's/&nbsp;/ /g' -e 's/&amp;/\&/g' -e 's/  */ /g' \
+    | grep -qF "$2"
+}
+
 chk(){ if [ "$1" = "$2" ]; then echo "✓ $3"; pass=$((pass+1)); else echo "✗ $3 (got $1 want $2)"; fail=$((fail+1)); fi; }
 
 # ── legacy teeth ──
@@ -685,7 +708,7 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.30.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.30.0"
+chk "$(grep -c '0.31.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.31.0"
 chk "$(grep -c '0.29.2' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.2"
 chk "$(grep -c '## \[0.29.2\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.2 entry"
 
@@ -1053,9 +1076,9 @@ chk "$(grep -o 'class="verify"' "$V29T/fv.html" | wc -l | tr -d ' ')" "5" "v0.29
 
 # INV-COUNTS-MATCH — the shipped Plan Map said 0/18 for a 20-step plan.
 node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/ts.html" >/dev/null 2>&1
-chk "$(grep -c '<b>20</b> steps' "$V29T/ts.html")" "1" "v0.29 INV-COUNTS-MATCH: the header count equals the source"
+chk "$(psays "$V29T/ts.html" '20 steps · 7 done' && echo 1 || echo 0)" "1" "v0.29 INV-COUNTS-MATCH: the header count equals the source"
 chk "$(grep -o 'class="b-step"' "$V29T/ts.html" | wc -l | tr -d ' ')" "20" "v0.29 INV-COUNTS-MATCH: the body renders exactly that many steps"
-chk "$(grep -c '7 done' "$V29T/ts.html")" "1" "v0.29 INV-COUNTS-MATCH: done/remaining reflect the real checkbox state"
+chk "$(psays "$V29T/ts.html" '7 done' && echo 1 || echo 0)" "1" "v0.29 INV-COUNTS-MATCH: done/remaining reflect the real checkbox state"
 node "$V29G" "$V29FX/no-waves" plan-map --out "$V29T/nw.html" >/dev/null 2>&1
 chk "$(grep -ciE '[0-9]+ waves?' "$V29T/nw.html")" "0" "v0.29 INV-COUNTS-MATCH: no chip for a concept the plan never used (the '0 waves' defect)"
 
@@ -1339,7 +1362,7 @@ chk "$([ "$_r4v" = "value=0" ] && echo 0 || echo 1)" "1" "v0.30 R4-2: INV-2 sees
 mkdir -p "$_r4d/led"; printf '# c\n' > "$_r4d/led/contract.md"
 printf '# ledger\n\n- R1-C1 CRITICAL — a real finding written as a bullet, not a table row.\n- R1-C2 CRITICAL — another one.\n' > "$_r4d/led/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led.html" >/dev/null 2>&1
-_r4c="$(grep -o '[0-9]* findings' "$_r4d/led.html" | head -1 | cut -d' ' -f1)"
+_r4c="$(LC_ALL=C sed -e 's/<[^>]*>//g' "$_r4d/led.html" | tr '\n' ' ' | grep -o '[0-9][0-9]* findings' | head -1 | cut -d' ' -f1)"
 chk "$([ "${_r4c:-0}" -ge 2 ] && echo 1 || echo 0)" "1" "v0.30 R-1: a BULLET ledger is parsed (four shipped builds rendered '0 findings' over real ones)"
 # a ledger the parser cannot read must SAY so, never report zero
 printf '# ledger\n\n%s\n' "$(head -c 900 /dev/zero | tr '\0' 'x')" > "$_r4d/led/review-ledger.md"
@@ -1349,12 +1372,12 @@ chk "$?" "0" "v0.30 R-1: an unparseable ledger says so — it never prints '0 fi
 # R-5 — a bare pipe inside an inline code span must not split the row
 printf '# ledger\n\n| Issue ID | Area | Severity | Status |\n|---|---|---|---|\n| P1 | `a \| b` | CRITICAL | OPEN |\n' > "$_r4d/led/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led3.html" >/dev/null 2>&1
-grep -q '1 findings — 1 critical' "$_r4d/led3.html"
+psays "$_r4d/led3.html" '1 findings — 1 critical'
 chk "$?" "0" "v0.30 R-5: a pipe inside a code span does not split the row (severity read as CRITICAL)"
 # R-4 — severity is the cell's LEADING verdict, not a keyword anywhere in it
 printf '# ledger\n\n| Issue ID | Area | Severity | Status |\n|---|---|---|---|\n| P1 | x | MAJOR — not Critical, it cannot ship a wrong number | OPEN |\n' > "$_r4d/led/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led4.html" >/dev/null 2>&1
-grep -q '0 critical' "$_r4d/led4.html"
+psays "$_r4d/led4.html" '0 critical'
 chk "$?" "0" "v0.30 R-4: severity is the cell's leading verdict, not any keyword inside it"
 rm -rf "$_r4d"
 
@@ -1376,17 +1399,17 @@ chk "$?" "1" "v0.30 v11-C2: a short unparseable ledger does not read as clean (n
 # C1 — the FIRST row of a separator-less table must not be lost
 printf 'Columns: Issue ID | Severity | Status\n\n| A-1 | CRITICAL | OPEN |\n| A-2 | MAJOR | FIXED |\n| A-3 | MINOR | FIXED |\n' > "$_v11/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c1.html" >/dev/null 2>&1
-grep -q '3 findings' "$_v11/c1.html"
+psays "$_v11/c1.html" '3 findings'
 chk "$?" "0" "v0.30 v11-C1: a separator-less table keeps its FIRST row (it was silently dropped)"
 # C1b — a lone row with no header and no separator must still be counted
 printf '> a note\n| Z-9 | CRITICAL | OPEN |\n\nmore prose\n\n| Y-8 | MAJOR | FIXED |\n' > "$_v11/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c1b.html" >/dev/null 2>&1
-grep -q '2 findings' "$_v11/c1b.html"
+psays "$_v11/c1b.html" '2 findings'
 chk "$?" "0" "v0.30 v11-C1: a single-row table is flushed, not discarded when the table ends"
 # C3/C4 — a summary line is not a finding
 printf '# ledger\n\n- Findings: 0 Critical / 0 Major. Converged.\n\n| Issue | Sev | Status |\n|---|---|---|\n| MIN-1: the grep matched the island body | MINOR | FIXED |\n' > "$_v11/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c3.html" >/dev/null 2>&1
-grep -q '1 findings' "$_v11/c3.html"
+psays "$_v11/c3.html" '1 findings'
 chk "$?" "0" "v0.30 v11-C3: a summary bullet is not counted as a finding, and 'MIN-1: text' is"
 # M5 — the description column is found by NAME, not hard-coded to cells[1]
 printf '| Issue ID | Review | Severity | Failure mode | Status |\n|---|---|---|---|---|\n| Q-1 | R2 | MAJOR | the gate accepted a forged record | FIXED |\n' > "$_v11/b/review-ledger.md"
@@ -1396,7 +1419,7 @@ chk "$?" "0" "v0.30 v11-M5: the row description comes from Failure mode, not the
 # C5 — a status of 'VERIFIED FIXED' is closed, not OPEN
 printf '| Issue ID | Severity | Status |\n|---|---|---|\n| W-1 | MAJOR | VERIFIED FIXED |\n' > "$_v11/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c5.html" >/dev/null 2>&1
-grep -q '0 still open' "$_v11/c5.html"
+psays "$_v11/c5.html" '0 still open'
 chk "$?" "0" "v0.30 v11-C5: 'VERIFIED FIXED' is closed (it rendered as OPEN, contradicting band 2)"
 # the VERIFY regression: the ordinary word 'verify' in prose must not truncate a step
 mkdir -p "$_v11/p"; printf '# c\n\n## Goal\nA thing.\n' > "$_v11/p/contract.md"
@@ -1406,7 +1429,7 @@ node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/p" plan-map --out "$_v1
 # grep for the joined phrase tests the layout, not the property.
 sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' | grep -q 'the rest of this sentence must survive'
 chk "$?" "0" "v0.30 v11: the word 'verify' in prose does not truncate a step (only a literal VERIFY: marker does)"
-grep -q 'cmd 1' "$_v11/pv.html"
+psays "$_v11/pv.html" 'cmd 1'
 chk "$?" "0" "v0.30 v11: the real VERIFY command is still extracted from the step line"
 rm -rf "$_v11"
 
@@ -1417,24 +1440,24 @@ mkdir -p "$_r2v/b"; printf '# c\n\n## Goal\nA thing.\n' > "$_r2v/b/contract.md"
 # R2-C1 — range / compound / numeric ids were dropped, and the page then printed the all-clear
 printf '| Issue ID | Severity | Status |\n|---|---|---|\n| R-1..R-11 | CRITICAL | OPEN |\n| G3/G4 | CRITICAL | OPEN |\n| 1 | CRITICAL | OPEN |\n| A-2 | MINOR | FIXED |\n' > "$_r2v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/id.html" >/dev/null 2>&1
-grep -q '4 findings' "$_r2v/id.html"
+psays "$_r2v/id.html" '4 findings'
 chk "$?" "0" "v0.30 v11-R2-C1: range, compound and numeric ids are findings (they vanished)"
 grep -q 'Nothing is waiting on you' "$_r2v/id.html"
 chk "$?" "1" "v0.30 v11-R2-C1: three OPEN CRITICALs never render as 'nothing is waiting on you'"
 # R2-M4 — the parser must be fence-blind like every other reader here
 printf '# how to write a ledger\n\n```\n| Issue ID | Severity | Status |\n|---|---|---|\n| EX-1 | CRITICAL | OPEN |\n| EX-2 | CRITICAL | OPEN |\n```\n\n| Issue ID | Severity | Status |\n|---|---|---|\n| A-1 | MINOR | FIXED |\n' > "$_r2v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/fence.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r2v/fence.html"
+psays "$_r2v/fence.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R2-M4: an EXAMPLE table inside a code fence is not counted as findings"
 # R2-M5 — a prose bullet that merely mentions a severity is not a finding
 printf '# ledger\n\n- R1-C1 CRITICAL — a real finding.\n\nre-attacked, no new material:\n- R2-M1/M2 (rollback-rehearsed, no CRITICAL left)\n' > "$_r2v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/bul.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r2v/bul.html"
+psays "$_r2v/bul.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R2-M5: a severity word in a prose bullet does not invent a finding"
 # R2-C3 — band 2 and band 4 must agree, including on an unrecognised status
 printf '| Issue ID | Severity | Status |\n|---|---|---|\n| A-1 | MAJOR | G2 — user decision |\n| A-2 | MAJOR | VERIFIED FIXED |\n' > "$_r2v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/st.html" >/dev/null 2>&1
-grep -q '0 still open' "$_r2v/st.html"
+psays "$_r2v/st.html" '0 still open'
 chk "$?" "0" "v0.30 v11-R2-C3: 'VERIFIED FIXED' is closed and an unknown status is not counted open"
 _r2o="$(grep -o 'class="verify"><b>OPEN</b>' "$_r2v/st.html" | wc -l | tr -d ' ')"
 chk "${_r2o:-0}" "0" "v0.30 v11-R2-C3: band 4 prints no OPEN label when band 2 says none are open"
@@ -1452,14 +1475,14 @@ chk "$?" "1" "v0.30 v11-R2-M1: '*Verify:*' after a sentence IS the marker (92 fa
 # R2-M3 — a label ending in a colon must not swallow its content
 mkdir -p "$_r2v/g"; printf '# c\n\n## Goal\nA thing.\n\n## Reconciliation\nGold figures (pinned literals):\n\n- version = 0.13.0\n- selftest_passed = 349\n' > "$_r2v/g/contract.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/g" brief --out "$_r2v/gb.html" >/dev/null 2>&1
-grep -q 'selftest_passed = 349' "$_r2v/gb.html"
+psays "$_r2v/gb.html" 'selftest_passed = 349' 
 chk "$?" "0" "v0.30 v11-R2-M3: a colon-terminated label keeps its content (the gold figures were dropped)"
 # R2-C4 — the Release Card must never advertise "0 changes"
 _zc=0
 for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
   [ -f "$_d/contract.md" ] || continue
   node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_d" release-card --out "$_r2v/rc.html" >/dev/null 2>&1 || continue
-  grep -q '0 changes' "$_r2v/rc.html" && _zc=$((_zc+1))
+  psays "$_r2v/rc.html" '0 changes' && _zc=$((_zc+1))
 done
 chk "$_zc" "0" "v0.30 v11-R2-C4: no Release Card says '0 changes' (11 did, one under a lede saying 'Five changes')"
 rm -rf "$_r2v"
@@ -1471,27 +1494,27 @@ printf '# c\n\n## Goal\nA thing.\n' > "$_r3v/b/contract.md"; cp "$_r3v/b/contrac
 # R3-2 — ledgers head the column `Sev` and write `Crit` / `Maj`
 printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | Crit | OPEN |\n| A-2 | **Crit** | OPEN |\n| A-3 | Maj | OPEN |\n' > "$_r3v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/sev.html" >/dev/null 2>&1
-grep -q '3 findings — 2 critical, 1 major' "$_r3v/sev.html"
+psays "$_r3v/sev.html" '3 findings — 2 critical, 1 major'
 chk "$?" "0" "v0.30 v11-R3-2: abbreviated severities (Crit/Maj) grade correctly"
 # R3-1 — six real bullet formats, not one
 printf '# ledger\n\n- **A1-C1 CRITICAL** — one.\n- **A2-C2 CRITICAL** (reason) — two.\n- **A3-C3 (CRITICAL)** — three.\n- **A4-C4 [CRITICAL]** — four.\n' > "$_r3v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/bul.html" >/dev/null 2>&1
-grep -q '4 findings — 4 critical' "$_r3v/bul.html"
+psays "$_r3v/bul.html" '4 findings — 4 critical'
 chk "$?" "0" "v0.30 v11-R3-1: a bullet's severity is read from anywhere in its leading segment"
 # R3-1b — a sub-finding inherits its parent's severity
 printf '# ledger\n\n- **C1 (CRITICAL)** — the parent.\n- **C1a (a detail)** → the first half.\n- **C1b (another)** → the second half.\n' > "$_r3v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/sub.html" >/dev/null 2>&1
-grep -q '3 findings — 3 critical' "$_r3v/sub.html"
+psays "$_r3v/sub.html" '3 findings — 3 critical'
 chk "$?" "0" "v0.30 v11-R3-1: C1a/C1b inherit C1's severity (two CRITICALs were hidden)"
 # R3-3 — the same-shape rescue must not invent findings
 printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | OPEN |\n| — | — | NONE |\n| Total | — | — |\n| 2026-08-18 | — | — |\n' > "$_r3v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/resc.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r3v/resc.html"
+psays "$_r3v/resc.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R3-3: a no-findings row, a totals row and a date are not findings"
 # R3-4 — "NOT FIXED" with a space is OPEN, not closed
 printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | NOT FIXED |\n' > "$_r3v/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/nf.html" >/dev/null 2>&1
-grep -q '1 still open' "$_r3v/nf.html"
+psays "$_r3v/nf.html" '1 still open'
 chk "$?" "0" "v0.30 v11-R3-4: 'NOT FIXED' (with a space) is OPEN"
 # R3-5 — a bracketed qualifier between VERIFY and its colon
 printf -- '- [x] **S1 — a step.** Do the thing. **Verify (INV-8):** `bash smoke.sh`\n- [x] **S2 — another.** Do it. **SINGLE VERIFY (merged):** `bash recon.sh`\n' > "$_r3v/p/plan.md"
@@ -1519,7 +1542,7 @@ chk "$_r3ef" "0" "v0.30 v11-R3-6: the gate can SEE an empty labelled field (noth
 printf '# c\n\n## Goal\nA thing.\n\n## Reconciliation\nGold figures (pinned):\n- lead = 4\n- lag = 0\n' > "$_r3v/g_contract.md"
 mkdir -p "$_r3v/g"; cp "$_r3v/g_contract.md" "$_r3v/g/contract.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/g" brief --out "$_r3v/gb.html" >/dev/null 2>&1
-grep -q 'lead = 4' "$_r3v/gb.html"
+psays "$_r3v/gb.html" 'lead = 4'
 chk "$?" "0" "v0.30 v11-R3-8: the Proof card keeps the gold figures under a colon label"
 rm -rf "$_r3v"
 
@@ -1531,22 +1554,22 @@ printf '# c\n\n## Goal\nA thing.\n' > "$_r4w/b/contract.md"; cp "$_r4w/b/contrac
 printf '| Issue ID | Status |\n|---|---|\n| R1-M1 | OPEN |\n' > "$_r4w/b/review-ledger.md"
 printf '| Issue ID | Area | Status |\n|---|---|---|\n| R1-M1 | the CRITIQUE-TARGET list and cold-critic wiring | OPEN |\n' > "$_r4w/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/sv.html" >/dev/null 2>&1
-grep -q '0 critical' "$_r4w/sv.html"
+psays "$_r4w/sv.html" '0 critical'
 chk "$?" "0" "v0.30 v11-R4-C1: 'CRITIQUE-TARGET' does not grade a row CRITICAL (13 rows on 4 builds did)"
 # R4-C3 — the rescue's blocklist must BITE, not be gated behind a severity check
 printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | OPEN |\n| N/A | MAJOR | OPEN |\n| TOTAL | CRITICAL | OPEN |\n| — | MINOR | folded above |\n' > "$_r4w/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/rs.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r4w/rs.html"
+psays "$_r4w/rs.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R4-C3: N/A, TOTAL and a roll-up dash row are not findings"
 # R4-C2 — a bare count leading a summary bullet is not an id
 printf '# ledger\n\n- **A-1 CRITICAL** — real.\n- **3 MINOR hardenings applied (round 2 fixes):** (a) one (b) two\n' > "$_r4w/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/bc.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r4w/bc.html"
+psays "$_r4w/bc.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R4-C2: a leading COUNT ('3 MINOR hardenings') is not a finding id"
 # R4-M6 — inheritance must not make R10 a child of R1
 printf '# ledger\n\n- **R1 (CRITICAL)** — the parent.\n- **R10 — a later note that is not a finding**\n' > "$_r4w/b/review-ledger.md"
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/inh.html" >/dev/null 2>&1
-grep -q '1 findings' "$_r4w/inh.html"
+psays "$_r4w/inh.html" '1 findings'
 chk "$?" "0" "v0.30 v11-R4-M6: R10 does not inherit R1's severity (fires as soon as a ledger passes 9)"
 # R4-M5 — ONE fence rule: stripFences must handle a 3-tick sample nested in a 4-tick fence
 # The Goal is placed AFTER the nested fence: with the old naive toggle the 4-backtick opener and
