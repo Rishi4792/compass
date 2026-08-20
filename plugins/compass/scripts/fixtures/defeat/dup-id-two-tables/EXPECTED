@@ -1,0 +1,9 @@
+view: review
+true.findings.total: 2
+must-not-state: 3
+reproduction: 2026-08-20, against shipped v0.30.0 (6d2fa18). The page stated "3 findings — 1
+critical, 1 major" and rendered a row titled "ID": the SECOND table's header row was counted as a
+finding. Compass's own ledgers repeat an id across review sections (R1-1 appears in
+review-contract and again in review-plan), so this is the shape, not a contrivance.
+why-it-matters: an implementation that keeps the prose parsing and only adds provenance labels
+still states 3 here. This entry is what makes the label half of the gold un-gameable.

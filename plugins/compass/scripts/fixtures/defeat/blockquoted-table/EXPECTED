@@ -1,0 +1,12 @@
+view: review
+true.findings.total: 1
+must-not-state: 0
+reproduction: 2026-08-20, against shipped v0.30.0 (6d2fa18). The page said the ledger "could not
+be read" and stated no numbers, over a table that renders correctly in every markdown viewer.
+why-it-matters: a false refusal is not as bad as a wrong number, but the page states something
+untrue about its own input, which the contract's Goal forbids.
+refusal-must-not-claim: could not be read
+note: a refusal is only honest if what it SAYS is true. This page states no number, which is the
+right shape — but it says the ledger "could not be read" about a table that renders correctly in
+every markdown viewer. Stating a falsehood about its own input is what the Goal forbids, so a
+refusal that misdescribes the cause fails this entry. Naming the real reason passes.

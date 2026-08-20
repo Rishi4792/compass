@@ -1,0 +1,33 @@
+# v0.31 gold manifest — the pinned page set, with a checksum per contributing file.
+# `.claude/builds/` is gitignored (0 files tracked), so the gold's INPUT cannot be recovered from
+# git on another machine. Review-1 C-4. These checksums make the input VERIFIABLE even though the
+# files are not tracked: a re-measurement that does not reproduce them is measuring something else.
+# Regenerate deliberately, never casually — a changed checksum means the baseline moved.
+always-clarity-v0-28 1f9c5bc3dfb2.2076e9632757.a2501aa41fe0.01bb4bf1c803.77bbb9fae9a9
+artefact-clarity-rebuild-v0-30 46abcad47e58.2a4713c76798.ced7ff711e2a.f6f8596c5eb9.7d8f7945e234
+autonomous-spawn-v0-11 6939ea0e43d9.835d726938c7.8deb7b218190.b17f1c3d8d1f.bd983a382521
+blast-radius-verify-v0-8 ad47999d1f1d.6fad27ac663e.4c08b05b79ce.148158af0b03.61bdffb528b8
+brief-generator-rebuild-v0-17-p2 2a4b22d24381.ab8a3bc65a47.dc259c36797b.1671542209ec.b7a7b386891f
+clarity-simplicity-v0-24 e34ffec548cc.d7a316bd33ea.fa2bbfa4a0dc.206977e57555.827e01d7bf68
+data-migration-compliance-v0-21-p2 5aab975396b1.0656aa0f3d67.dc3a8d18238d.b586677ad5fc.9f57aed26a09
+design-bundle-front-door-v0-14 13e6e1478ce6.7f395ed496cf.27d78f1fc7cf.bc34366ab28d.55a1f5d40baa
+design-gate-v0-5 54f96a0ccb9f.e2d88304b96d.165c264accce.43a3475d3c53.b4252a33757d
+edge-toctou-method-v0-19-p2 543079bf1577.58dd65cfe26a.80b77a6f9ec3.906625cf6601.5e73ba4f0919
+elegant-parallel-v0-6 dbae386235da.e816c2560d30.d1f5e01152b8.724527c80876.af72643a0cf2
+gtm-organic-launch 33aca2d17430.47f62cdd9a76.4e2139156e62.994ab85f4849.e3e94ae8cc3b
+lifecycle-migration-gates-v0-7 d3dc10a3f695.39dd49070d29.42a51e586947.9e2ef0e1a41d.d73c07cdd6f2
+loop-eyes-intake-v0-12-13 1a8429fae7e6.1c13119dddce.d24aee608881.a23af854c8de.6064bee6f66d
+namespaced-stage-gate-v0-9-1 bbc253208591.6499464fd6e0.800d612e7d2b.434c69e4c9ad.b84296cd9e38
+perf-fmea-method-v0-20-p2 df8f6cc2d666.7b7c670bcfbe.b7022727f901.8b2b4a1c7a0c.8b637eb25b19
+phase3-finisher-v0-23-p3 ffb6bc153af3.3bed9d5f01ba.b8aaba7cff02.4deb315e25c1.24e8071885a8
+program-ledger-test-rigor-v0-22-p3 d19410a1a10c.c9e3d2aae6d9.f71822cceb56.3d5d57a71527.5db7dbb96cda
+readme-traction-rewrite 11e43121a3cf.92b7594141cb.30660a530fb9.1ac6daf374e6.1ef7dd541a68
+session-scoped-build-isolation d404767c405e.786afa1725db.825bd24876a8.f7eec1e76676.d4b3afd79fa1
+stride-rbac-method-v0-18-p2 f1b7f965385a.50706edec772.090382db15ac.85ab52e02855.ab4a9d61d44c
+survive-cutover-v0-16-p2 fc029b8ee26a.6027d17b6dbe.5426395ab4d6.8523c5314e92.46e554b4816d
+trim-menu-3-v0-25 e5b4b4e2a4db.ee995e1ba27b.2b1b67bde48d.e02fa7ba30d3
+trust-clarity-v0-15-p1 0eabec08c127.2730f4cbcce6.4e4ea097748a.817af5a3b0fe.2ae5ef81c555
+two-gate-autoloop-v0-10 3faa18d624b0.fa066fab0884.f8ba0aa5ffa1.f8cefb320f04.f42b45a1a2a2
+view-redesign-v0-27 e0d67f73fd81.ea60c7e7e6d0.243f3b8faaf9.2f75429f7e95
+visual-artefacts-v0-29 1372c554db05.dfbac43ff273.f4c6397571c8.817e6180522e.ee43a0fc9e50
+visual-brief-delivery-v0-26 db79cb23c5f5.fb97b5ef241e.1bb1c92b4de9.ea346aa3dd91
