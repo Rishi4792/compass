@@ -12,21 +12,22 @@
 set -uo pipefail
 ROOT="${1:-.}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 MAN="$HERE/gold-manifest.txt"
 G="$ROOT/plugins/compass/skills/compass-visual/gen.mjs"
 [ -f "$MAN" ] || { echo "recount: no manifest at $MAN"; exit 2; }
 
-bad=0; checked=0
+bad=0; checked=0; missing=""
 while IFS= read -r line; do
   case "$line" in \#*|"") continue ;; esac
   slug="${line%% *}"
   [ -n "$slug" ] || continue
   d="$ROOT/.claude/builds/$slug"
-  [ -f "$d/contract.md" ] || continue
+  [ -f "$d/contract.md" ] || { missing="$missing $slug"; continue; }
   # ---- what the PAGE says -------------------------------------------------------------------
-  node "$G" "$d" review --out /tmp/rc.html >/dev/null 2>&1 || continue
-  page="$(node -e '
-const h=require("fs").readFileSync("/tmp/rc.html","utf8").replace(/<[^>]+>/g,"|");
+  node "$G" "$d" review --out "$TMP/rc.html" >/dev/null 2>&1 || continue
+  page="$(PAGE="$TMP/rc.html" node -e '
+const h=require("fs").readFileSync(process.env.PAGE,"utf8").replace(/<[^>]+>/g,"|");
 const m=h.match(/(\d+) findings/); const r=/could not be read|No review has been recorded/.test(h);
 console.log(m? m[1] : (r? "REFUSED":"NONE"));')"
   # ---- what an INDEPENDENT read says --------------------------------------------------------
@@ -66,5 +67,9 @@ PY
     echo "  DISAGREE $slug — page states $page, an independent read finds $truth"; bad=$((bad+1))
   fi
 done < "$MAN"
+# The `pages == 140` fix was applied to the gold and not here, so a dir vanishing — ordinary, since
+# `.claude/builds/` is gitignored — silently shrank the denominator and the check passed.
+WANT=28
+[ "$checked" -eq "$WANT" ] || { echo "recount: compared $checked builds, expected $WANT — the pinned set changed$missing"; exit 1; }
 echo "recount: $checked builds compared, $bad disagreements"
 [ "$bad" -eq 0 ]
