@@ -1608,6 +1608,34 @@ bash "$PLUGIN_ROOT/scripts/compass.sh" converge-waiver "$_wv/b" >/dev/null 2>&1
 chk "$?" "1" "v0.30 INV-WAIVER: the waiver applies ONLY to an un-converged receipt, never as a general bypass"
 rm -rf "$_wv"
 
+# ── v0.30 POST-SHIP, found by dogfooding v0.31's first stage against shipped v0.30.0 ───────────
+_ps="$(mktemp -d)"; mkdir -p "$_ps/b"
+printf 'compass-format: v0.30\n' > "$_ps/b/.compass-format"
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n' > "$_ps/b/contract.md"
+printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > "$_ps/b/receipts.md"
+# INV-0's evidence records a PRE-CHANGE failure. It cannot exist while the contract is being
+# locked, because the work has not started — so arming redfirst-check at the CONTRACT seam made it
+# impossible for any new build to lock its own contract. It belongs where INV-0's own words put it:
+# "before its step is ticked".
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
+chk "$?" "0" "v0.30 post-ship: a NEW build can lock its contract (redfirst-check is not on the contract seam)"
+printf '## RECEIPT — build · b · PASS\n- [x] done\n' >> "$_ps/b/receipts.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" build >/dev/null 2>&1
+chk "$?" "1" "v0.30 post-ship: redfirst-check STILL bites at the build seam (no evidence = refused)"
+printf 'ASSERT-INVARIANTS-RUN root=/x tree=%s\nINV-1 value=9 target=0 RED\n' "$(git -C "$PLUGIN_ROOT" rev-parse HEAD 2>/dev/null || echo 0)" > "$_ps/b/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" build >/dev/null 2>&1
+chk "$?" "0" "v0.30 post-ship: with real evidence the build seam passes"
+# The rail printed a frame with NOTHING inside it whenever no link was passed — against its own
+# comment that an empty frame is worse than silence.
+printf '# Progress\n\n**Stage:** ① contract\n' > "$_ps/b/progress.md"
+_r1="$(bash "$PLUGIN_ROOT/scripts/compass.sh" rail "$_ps/b" --artefact brief 2>&1)"
+chk "${#_r1}" "0" "v0.30 post-ship: the rail prints NOTHING when it has nothing to point at"
+printf '<title>x</title><p>hi</p>' > "$_ps/b/brief.html"
+_r2="$(bash "$PLUGIN_ROOT/scripts/compass.sh" rail "$_ps/b" --artefact brief 2>&1)"
+case "$_r2" in *brief.html*) _rr=0 ;; *) _rr=1 ;; esac
+chk "$_rr" "0" "v0.30 post-ship: the rail finds the view's own file without being handed a path"
+rm -rf "$_ps"
+
 # ── v0.30 INV-A11Y: the new theme's contrast claim is EXECUTED, not asserted ─────────────────
 # contrast-check.mjs existed and NO suite ran it, so a theme added this build carried an
 # accessibility claim that nothing verified — the founding defect of this build, in a new place.

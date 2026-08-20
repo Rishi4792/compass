@@ -558,11 +558,6 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_perf_budget_gate >/dev/null 2>&1; then
       cmd_perf_budget_gate "$dir" >/dev/null || die "gate: perf-budget-gate FAILED for '$dir' (see stderr)."
     fi
-    # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED. Guard-first: a build dir
-    # with no evidence file and no declared INVARIANTs N/A-passes, so legacy builds are untouched.
-    if type cmd_redfirst_check >/dev/null 2>&1 && { [ -f "$dir/.compass-format" ] || [ -f "$dir/red-first-evidence.md" ]; }; then
-      cmd_redfirst_check "$dir" >/dev/null || die "gate: redfirst-check FAILED for '$dir' (see stderr)."
-    fi
     # v0.30 INV-10 — a self-referential reconciliation gold hard-stops here, at the seam every
     # downstream stage crosses. Guard-first: no ## Reconciliation section → N/A-pass.
     if type cmd_gold_gate >/dev/null 2>&1; then
@@ -576,6 +571,17 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_mode_gate >/dev/null 2>&1; then
       cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
     fi
+  fi
+  # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED, checked when the work is
+  # handed on as DONE. It was wired to the CONTRACT seam, which cannot work: evidence of a
+  # pre-change failure can only exist once the work has started, so a brand-new build could never
+  # lock its own contract. Found by dogfooding v0.31's first stage against the shipped v0.30.0.
+  # INV-0's own wording is "before its step is ticked" — that is here, not at contract.
+  # Guard-first is unchanged: a dir with no stamp and no evidence file N/A-passes.
+  if { [ "$stage" = "build" ] || [ "$stage" = "review-build" ]; } \
+     && type cmd_redfirst_check >/dev/null 2>&1 \
+     && { [ -f "$dir/.compass-format" ] || [ -f "$dir/red-first-evidence.md" ]; }; then
+    cmd_redfirst_check "$dir" >/dev/null || die "gate: redfirst-check FAILED for '$dir' (see stderr)."
   fi
   if [ "$stage" = "review-build" ] && type cmd_sketch_gate >/dev/null 2>&1; then
     cmd_sketch_gate "$dir" >/dev/null || die "gate: sketch-gate (leak re-check) FAILED for '$dir' (see stderr)."
@@ -3391,6 +3397,15 @@ cmd_rail() { # <build-dir> [--artefact <view>] [--url <url>] [--local <path>]
     done_="$(LC_ALL=C grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null | head -1)"; done_="${done_:-0}"
     [ "${tot:-0}" -gt 0 ] 2>/dev/null && seg=" · step ${done_}/${tot}"
   fi
+  # Resolve the BODY before printing anything. The frame used to print with nothing inside it
+  # whenever no link was passed — and this function's own comment says an empty frame is worse than
+  # silence. Found by dogfooding: the first rail v0.31 printed was four empty lines.
+  # If a view was named and its file is on disk, that IS the local fallback; nobody should have to
+  # pass a path the build already knows.
+  if [ -z "$url" ] && [ -z "$local_path" ] && [ -n "$view" ] && [ -f "$dir/$view.html" ]; then
+    local_path="$dir/$view.html"
+  fi
+  [ -n "$url" ] || [ -n "$local_path" ] || return 0
   local title; title="$(printf '%s' "${view:-BUILD}" | tr 'a-z-' 'A-Z ')"
   printf '\xe2\x95\xad\xe2\x94\x80 %s \xc2\xb7 %s%s\n' "$title" "$stage" "$seg"
   printf '\xe2\x94\x82\n'
