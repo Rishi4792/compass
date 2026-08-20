@@ -183,8 +183,8 @@ rm -rf "$(dirname "$FSD")"
 for nm in INV-ENGINEFIX INV-GRAMMAR INV-PS-NOVERIFIER INV-PS-BUDGET INV-COLDGO INV-SUSPEND F-CONV F-STATUS INV-INTAKE INV-SKETCH INV-TEMPLATES INV-WIRED INV-ORIENT INV-BRIEF INV-LOCK INV-MODE INV-EXPLAIN INV-FEYNMAN INV-BUGBAR INV-REFUTE INV-DEDUPE INV-RESTORE INV-PARITY INV-FLAG INV-SECPIN INV-COMMSCAN INV-NO-LEAK INV-CANARY INV-BAKE INV-BURNRATE INV-WATCHER INV-ABORT INV-NA-EXPLICIT INV-BC INV-RBACSTRIDE-BLOCK INV-RBACSTRIDE-METHOD INV-RBACSTRIDE-RECEIPT INV-PLAN-RBAC INV-RBAC-NODEP INV-RBAC-BYTEINERT INV-EDGERACE-BLOCK INV-EDGERACE-METHOD INV-EDGERACE-RECEIPT INV-EDGERACE-BYTEINERT INV-PLAN-CONCURRENCY INV-PERFFMEA-BLOCK INV-PERFFMEA-METHOD INV-PERFFMEA-RECEIPT INV-PERFFMEA-BYTEINERT INV-PLAN-FMEA INV-SCHEMA-PIN INV-PERFBUDGET INV-CROSSTAB-BLOCK INV-CROSSTAB-METHOD INV-CROSSTAB-RECEIPT INV-CROSSTAB-BYTEINERT INV-PLAN-CROSSTAB INV-NA-CHALLENGE INV-EXPAND-CONTRACT INV-BACKFILL-RECON INV-ROLLBACK-FWDCOMPAT INV-GREEN-CI INV-PII-GATE INV-IMG-SECRET INV-PROGRAM-LEDGER INV-PROGRAM-ADVANCE-GUARD INV-PROGRAM-NEXT INV-PROGRAM-STALE INV-MUTATION-EXEC INV-MUTATION-RESTORE INV-REDGREEN INV-DORA-RECORD INV-DORA-LEDGER INV-DRIFT INV-HERMETIC-BLOCK INV-HERMETIC-METHOD INV-HERMETIC-RECEIPT INV-DURABILITY INV-ONE-DOOR INV-SURFACE-3 INV-PUSH-STAGE INV-PUSH-RESUME INV-ASCII-CHEAP INV-PERF-ASCII INV-PROGRAM-COCKPIT INV-MULTI-CONTRACT INV-MODE-AT-LOCK INV-ARTIFACT-MILESTONES INV-NO-LIFECYCLE-CHANGE INV-SUITES-GREEN INV-MENU-3 INV-START-SKILL INV-EXPLAIN-SKILL INV-GATE-FOOTER-GO INV-GO-ROUTES INV-NO-DEAD-REF INV-GEN-PARSE INV-BRIEF-IA INV-RENDER-REAL INV-MILESTONE-DELIVERY INV-BRIEF-SHAREABLE INV-VIEW-IA INV-VIEW-DETERMINISTIC INV-VIEW-GATES INV-ORIENT-DELIVERED INV-ORIENT-INERT INV-ORIENT-NOREPEAT INV-CARD INV-CARD-HONEST INV-CARD-CAP INV-CARD-GATE INV-CARD-RECEIPT INV-ONE-RENDERER INV-STATUSLINE INV-MODE-ASKED INV-MODE-VISIBLE INV-NOT-BYTEINERT INV-LOCALE-SAFE INV-TERMINAL-STATUS INV-FENCE-BLIND INV-BANDS INV-LOGIC-BLOCK INV-VERIFY-SHOWN INV-COUNTS-MATCH INV-NO-TRUNCATION INV-COMPLETE-PLAN INV-STRUCTURE INV-FRESH INV-DELIVERED INV-HOUSE; do
   chk "$(grep -cF "$nm" "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "recon.sh pins INV group: $nm"
 done
-chk "$(grep -c 'FLOOR_SELFTEST=556' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the selftest floor 556 (actual-5 margin rule)"
-chk "$(grep -c 'FLOOR_SMOKE=551' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.28 recon.sh pins the smoke floor 551 (actual-5 margin rule)"
+chk "$(grep -c 'FLOOR_SELFTEST=556' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.30 recon.sh pins the selftest floor 556 (actual 561) — re-pinned with the assertions that pin it, in the same change"
+chk "$(grep -c 'FLOOR_SMOKE=568' "$PLUGIN_ROOT/scripts/compass.recon.sh")" "1" "v0.30 recon.sh pins the smoke floor 568 (actual 573) — re-pinned with the assertions that pin it, in the same change"
 
 # ── v0.13.0 S12 (P1/VZ-2 DURABLE template asserts): the contract skill must always carry ──
 CSK="$PLUGIN_ROOT/skills/contract/SKILL.md"
@@ -288,10 +288,19 @@ chk "$(grep -c '^name: compass-visual' "$VIS15/SKILL.md")" "1" "v0.15 INV-BRIEF:
 VSMK="$(mktemp -d)/v"; mkdir -p "$VSMK"
 printf '%s\n' '# Contract — vsmk' '## Goal & scope' 'A tiny fixture to exercise the generator.' '## Reconciliation' 'Numeric N/A.' '## Acceptance & INVARIANTs' '- **INV-X:** a bound.' '- **INV-Y:** guards the thing → CRITICAL. → *assert:* grep it.' '## Scope ladder' '- NOW: a' '- LATER: b' '- NEVER: c' > "$VSMK/contract.md"
 node "$VIS15/gen.mjs" "$VSMK" brief-body --out "$VSMK/body.html" >/dev/null 2>&1
-chk "$(head -1 "$VSMK/body.html" 2>/dev/null | grep -c '^<!doctype html>')" "1" "v0.15 INV-BRIEF/INV-NO-LEAK: generated body line-1 is doctype, not COMPASS-MOCK"
+# v0.30 INV-6: artefacts are BODY FRAGMENTS (the Artifact host supplies the skeleton), so line 1
+# is no longer a doctype. REWRITTEN to the property that actually mattered and still does — line 1
+# is never a COMPASS-MOCK leak marker — plus the new shape. Deleting it would drop the leak tracer.
+chk "$( { ! head -1 "$VSMK/body.html" 2>/dev/null | grep -q '^<!-- COMPASS-MOCK' && head -1 "$VSMK/body.html" 2>/dev/null | grep -qE '^<title>|^<style'; } && echo 1 || echo 0)" "1" "v0.30 INV-6/INV-NO-LEAK: generated body line-1 is a fragment start, never a COMPASS-MOCK marker"
 # INV-BRIEF durable house-gates (R3-M5): the pure-node gates run on the generated body IN THE SUITE (no Chrome)
 RKG="$PLUGIN_ROOT/skills/rk-house-style"
-( node "$RKG/gates/anti-drift-grep.mjs" "$VSMK/body.html" "$RKG/themes/neutral-indigo.json" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-BRIEF: generated brief-body passes rk-house-style anti-drift (durable gold, no Chrome)"
+# v0.30: ARTEFACT views are scored against the PINNED artefact theme, not neutral-indigo.
+# REWRITTEN, not deleted — the property ("generated output carries no off-theme colour or face")
+# is unchanged; only the theme it is scored against moved, because Compass's own artefacts and the
+# product UIs Compass builds are now two systems for two audiences. neutral-indigo stays asserted
+# at :248 as the rk-house-style default, which is still true and still matters.
+CATH="$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json"
+( node "$RKG/gates/anti-drift-grep.mjs" "$VSMK/body.html" "$CATH" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-BRIEF: generated brief-body passes rk-house-style anti-drift (durable gold, no Chrome)"
 ( node "$RKG/gates/compose-check.mjs" "$VSMK/body.html" >/dev/null 2>&1 ); chk "$?" "0" "v0.15 INV-BRIEF: generated brief-body passes rk-house-style compose-check (durable gold)"
 # INV-BRIEF invariant completeness (R3-M2): keep the internal '→ CRITICAL', drop ONLY the '→ *assert:*' tail
 node "$VIS15/gen.mjs" "$VSMK" brief --out "$VSMK/brief.html" >/dev/null 2>&1
@@ -430,7 +439,11 @@ printf '%s\n' '# c' '## Goal & scope' 'x' '## Reconciliation' 'N/A' '## Scope la
 chk "$( { grep -qi 'certainty' "$VIS15/SKILL.md" && grep -q 'MALFORMED brief-data fence' "$VIS15/gen.mjs"; } && echo 1 || echo 0)" "1" "v0.17 INV-BRIEF-HONEST: SKILL.md documents bounded-certainty + gen.mjs header notes exit-2 dual meaning (R3 F3)"
 rm -rf "$(dirname "$VSMK")"
 # INV-LOCK
-chk "$( { grep -q 'This is the contract — lock it' "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-LOCK: contract skill produces the Brief + requires an explicit lock"
+# v0.30 INV-2 (BUTTONS): REWRITTEN, not deleted. The old form asserted the typed lock phrase was
+# PRESENT; v0.30 removes it because it sat in front of both AskUserQuestion moments and neither
+# fired. The property that survives is the one that mattered: the lock is an explicit human
+# checkpoint at the Brief seam — now a button, not a sentence.
+chk "$( { ! grep -qF "$(cat "$PLUGIN_ROOT/scripts/fixtures/lockphrase.txt")" "$CSK15" && grep -qi 'produce the Contract Brief' "$CSK15" && grep -q 'AskUserQuestion' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.30 INV-2: lock seam is buttons (typed phrase gone, AskUserQuestion present, Brief still produced)"
 # INV-MODE
 chk "$( { grep -q '\*\*Auto\*\*' "$CSK15" && grep -q 'Human-gated' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-MODE: contract skill offers Auto vs Human-gated (each explained)"
 # INV-EXPLAIN
@@ -672,7 +685,7 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.29.2' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.29.2"
+chk "$(grep -c '0.30.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.30.0"
 chk "$(grep -c '0.29.2' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.2"
 chk "$(grep -c '## \[0.29.2\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.2 entry"
 
@@ -724,7 +737,7 @@ chk "$([ "$(grep -c 'compass.sh cockpit' "$PLUGIN_ROOT/commands/go.md")" -ge 1 ]
 # INV-MODE-AT-LOCK — the pre-contract mode prompt is gone (kill test = the deletion)
 chk "$(grep -c 'BEFORE writing the contract' "$PLUGIN_ROOT/skills/start/SKILL.md")" "0" "v0.24 INV-MODE-AT-LOCK: start skill has no pre-contract mode prompt"
 # INV-ARTIFACT-MILESTONES — the 3 views exist + milestone-gate bites (negative fails, positive passes)
-chk "$([ "$(grep -c "'plan-map'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'program-cockpit'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'release-card'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-ARTIFACT-MILESTONES: gen.mjs adds plan-map/program-cockpit/release-card"
+chk "$([ "$(grep -c "'plan-map'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'review'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && [ "$(grep -c "'release-card'" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.30 INV-ARTIFACT-MILESTONES: gen.mjs adds plan-map/review/release-card"
 if ( "$SH" milestone-gate "$V24/.claude/builds/b" release-card ) >/dev/null 2>&1; then mn=0; else mn=1; fi
 chk "$mn" "1" "v0.24 INV-ARTIFACT-MILESTONES: milestone-gate FAILS when the artifact is absent (biting)"
 printf 'x' > "$V24/.claude/builds/b/release-card.html"
@@ -820,7 +833,9 @@ V26T="$(mktemp -d)"
 node "$GENJS" "$FXB" brief-body --out "$V26T/body.html" >/dev/null 2>&1
 # INV-GEN-PARSE — hero shows the Goal not the Non-goals sentinel (region-scoped); every card populated
 _hero="$(awk '/class="ba"/{exit} {print}' "$V26T/body.html")"
-_lede="$(grep 'class="lede"' "$V26T/body.html" | head -1)"
+# v0.30: the goal moved out of the lede into the Build-what fact card (it used to render in
+# both, one directly under the other). Same property, new home — rewritten, not deleted.
+_lede="$(grep -o 'Build what</div><div class="v">[^<]*' "$V26T/body.html" | head -1)"
 chk "$([ "$(printf '%s' "$_lede" | grep -c 'revenue')" -ge 1 ] && [ "$(printf '%s' "$_hero" | grep -c 'NONGOAL-SENTINEL')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: the lede shows the real Goal (an empty goal reddens it) + hero carries no Non-goals sentinel"
 # exercise sec('Goal') ITSELF (a contract with NO **Goal:** header falls through to sec) — this is what bites the anchored-sec fix
 node "$GENJS" "$PLUGIN_ROOT/scripts/fixtures/brief-contract-nohdr" brief-body --out "$V26T/nohdr.html" >/dev/null 2>&1
@@ -870,7 +885,7 @@ rm -rf "$V26T"
 # ── v0.29.2: milestone-view mental-model redesign (plan-map/release-card/program-cockpit) ──
 FXV="$PLUGIN_ROOT/scripts/fixtures/view-fixture"
 GENV="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
-THEMEV="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
+THEMEV="$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json"  # v0.30: artefact views score against the pinned artefact theme
 ADV="$PLUGIN_ROOT/skills/rk-house-style/gates/anti-drift-grep.mjs"
 COV="$PLUGIN_ROOT/skills/rk-house-style/gates/compose-check.mjs"
 V27T="$(mktemp -d)"
@@ -886,16 +901,24 @@ node "$GENV" "$FXV/b" program-cockpit --out "$V27T/pc.html" >/dev/null 2>&1
 chk "$([ "$(grep -c 'class="b-decide"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -c 'class="b-facts"' "$V27T/pm.html")" -ge 1 ] && [ "$(grep -o 'class="b-step"' "$V27T/pm.html" | wc -l | tr -d ' ')" -ge 1 ] && [ "$(grep -o 'class="verify"' "$V27T/pm.html" | wc -l | tr -d ' ')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-VIEW-IA: plan-map has the decision + facts bands, ≥1 step, and every step carries its VERIFY"
 chk "$([ "$(grep -c 'card vr-hero' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c 'v9.9.9' "$V27T/rc.html")" -ge 1 ] && [ "$(grep -c '<li>' "$V27T/rc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card has the vr-hero + version (not ?) + ≥1 changed item"
 chk "$([ "$(grep -c 'LATER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && [ "$(grep -c 'NEVER-SENTINEL' "$V27T/rc.html")" -eq 0 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: release-card shows NOW items ONLY — LATER/NEVER absent (the v0.24 R2 guard, now biting)"
-chk "$([ "$(grep -c 'card vpc-tl' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'P1|P2' "$V27T/pc.html")" -ge 1 ] && [ "$(grep -cE 'p1-a|p2-a' "$V27T/pc.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: program-cockpit has the vpc-tl timeline + ≥1 phase + ≥1 contract child-row"
+node "$GENV" "$FXV/b" review --out "$V27T/rv.html" >/dev/null 2>&1
+chk "$([ "$(grep -c 'b-step' "$V27T/rv.html")" -ge 1 ] && [ "$(grep -c 'Compass · Review' "$V27T/rv.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.30 INV-VIEW-IA: the review artefact renders its finding rows (replaces the deleted program-cockpit assertion)"
 mkdir -p "$V27T/eb/b"; cp "$FXV/b"/*.md "$V27T/eb/b/" 2>/dev/null; node "$GENV" "$V27T/eb/b" program-cockpit --out "$V27T/pce.html" >/dev/null 2>&1
-chk "$([ "$(grep -c 'Standalone build' "$V27T/pce.html")" -ge 1 ] && [ "$(grep -c 'This build' "$V27T/pce.html")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.27 INV-VIEW-IA: program-cockpit no-PROGRAM.md empty state renders + the build strip still populates"
+node "$GENV" "$V27T/eb/b" review --out "$V27T/rve.html" >/dev/null 2>&1
+# The PROPERTY, not the wording: a build with no ledger must say so and must NEVER print the
+# all-clear. Three shipped builds rendered "Every finding was fixed and re-checked. Nothing is
+# waiting on you." over a directory containing no review-ledger.md at all.
+chk "$([ "$(grep -ci 'no review-ledger\|No review has been recorded\|no ledger rows yet' "$V27T/rve.html")" -ge 1 ] && [ "$(grep -c 'Nothing is waiting on you' "$V27T/rve.html")" -eq 0 ] && echo 1 || echo 0)" "1" "v0.30 INV-VIEW-IA: no ledger says so and never prints the all-clear"
 # INV-VIEW-DETERMINISTIC — each view byte-identical across two runs
-_det=1; for v in plan-map release-card program-cockpit; do node "$GENV" "$FXV/b" $v --out "$V27T/x-$v.html" >/dev/null 2>&1; node "$GENV" "$FXV/b" $v --out "$V27T/y-$v.html" >/dev/null 2>&1; diff -q "$V27T/x-$v.html" "$V27T/y-$v.html" >/dev/null 2>&1 || _det=0; done
-chk "$_det" "1" "v0.27 INV-VIEW-DETERMINISTIC: plan-map/release-card/program-cockpit each byte-identical across two runs"
+_det=1; for v in plan-map release-card review; do node "$GENV" "$FXV/b" $v --out "$V27T/x-$v.html" >/dev/null 2>&1; node "$GENV" "$FXV/b" $v --out "$V27T/y-$v.html" >/dev/null 2>&1; diff -q "$V27T/x-$v.html" "$V27T/y-$v.html" >/dev/null 2>&1 || _det=0; done
+chk "$_det" "1" "v0.30 INV-VIEW-DETERMINISTIC: plan-map/release-card/review each byte-identical across two runs"
 # INV-VIEW-GATES — each redesigned view body (+ brief-body) passes anti-drift + compose
 node "$GENV" "$FXV/b" brief-body --out "$V27T/bb.html" >/dev/null 2>&1
-_g=1; for f in pm rc pc bb; do node "$ADV" "$V27T/$f.html" "$THEMEV" 2>&1 | grep -q '0 off-theme' || _g=0; node "$COV" "$V27T/$f.html" 2>&1 | grep -q 'composed' || _g=0; done
-chk "$_g" "1" "v0.27 INV-VIEW-GATES: each redesigned view body + brief-body passes anti-drift (0 off-theme) + compose-check"
+# v0.30: `pc` was the program-cockpit file, which the generator no longer writes. Re-pointed
+# at the review artefact that replaced it, so the gate coverage stays at four views.
+node "$GENV" "$FXV/b" review --out "$V27T/rv.html" >/dev/null 2>&1
+_g=1; for f in pm rc rv bb; do node "$ADV" "$V27T/$f.html" "$THEMEV" 2>&1 | grep -q '0 off-theme' || _g=0; node "$COV" "$V27T/$f.html" 2>&1 | grep -q 'composed' || _g=0; done
+chk "$_g" "1" "v0.30 INV-VIEW-GATES: each view body + brief-body passes anti-drift (0 off-theme) + compose-check"
 rm -rf "$V27T"
 
 
@@ -982,14 +1005,18 @@ chk "$(grep -c 'progress-card' "$PLUGIN_ROOT/shared/gate.md")" "0" "v0.28 INV-NO
 # ══ v0.29.2 "visual artefacts" — the four views, rebuilt. Every assert below fails when
 # the BEHAVIOUR breaks, and each one traces to a defect measured in the shipped output. ══
 V29FX="$PLUGIN_ROOT/scripts/fixtures/artefacts"; V29G="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
-V29AG="$PLUGIN_ROOT/scripts/artefact-gate.mjs"; V29TH="$PLUGIN_ROOT/skills/rk-house-style/themes/neutral-indigo.json"
+V29AG="$PLUGIN_ROOT/scripts/artefact-gate.mjs"; V29TH="$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json"  # v0.30: ditto
 V29T="$(mktemp -d)"
 
 # INV-FENCE-BLIND — a drawing is not data. The shipped brief printed `<goal from INDEX>`
 # four times because the parser read an ASCII mockup inside a ``` fence as a contract field.
 node "$V29G" "$V29FX/fenced" brief --out "$V29T/f.html" >/dev/null 2>&1
 chk "$(grep -c 'goal from INDEX' "$V29T/f.html")" "0" "v0.29 INV-FENCE-BLIND: a Goal: inside a code fence is NOT read as the contract's goal"
-chk "$([ "$(grep -c 'lives in a proper section' "$V29T/f.html")" -ge 2 ] && echo 1 || echo 0)" "1" "v0.29 INV-FENCE-BLIND: the REAL section goal is used instead"
+# v0.30: was `-ge 2`, which only held because the goal rendered in BOTH the lede and the
+# Build-what card. It renders once now. REWRITTEN to the property the check is actually for, and
+# strengthened: the real goal must appear AND the fenced decoy must NOT. Counting occurrences
+# never tested fence-blindness; this does.
+chk "$([ "$(grep -c 'lives in a proper section' "$V29T/f.html")" -ge 1 ] && [ "$(grep -c 'goal from INDEX' "$V29T/f.html")" -eq 0 ] && echo 1 || echo 0)" "1" "v0.30 INV-FENCE-BLIND: the REAL section goal is used and the FENCED decoy is not"
 node "$V29G" "$V29FX/fenced" plan-map --out "$V29T/fp.html" >/dev/null 2>&1
 chk "$(grep -o 'class="b-step"' "$V29T/fp.html" | wc -l | tr -d ' ')" "1" "v0.29 INV-FENCE-BLIND: checkboxes inside a fenced receipt template are NOT plan steps"
 
@@ -999,14 +1026,14 @@ chk "$([ -f "$V29T/ng.html" ] && echo 1 || echo 0)" "0" "v0.29 INV-NO-TOKEN: and
 ( node "$V29G" "$V29FX/fenced" brief --out "$V29T/ok.html" >/dev/null 2>&1 ); chk "$?" "0" "v0.29 INV-NO-TOKEN: no false positive on a contract that merely QUOTES a token"
 
 # INV-HOUSE — every body's palette comes from the theme file.
-_h=1; for _v in brief-body plan-map release-card program-cockpit; do
+_h=1; for _v in brief-body plan-map release-card review; do
   node "$V29G" "$V29FX/five-verify" "$_v" --out "$V29T/h-$_v.html" >/dev/null 2>&1
   node "$PLUGIN_ROOT/skills/rk-house-style/gates/anti-drift-grep.mjs" "$V29T/h-$_v.html" "$V29TH" 2>&1 | grep -q '0 off-theme' || _h=0
 done
 chk "$_h" "1" "v0.29 INV-HOUSE: all four view bodies score 0 off-theme against the theme"
 
 # INV-LOGIC-BLOCK — a diagram, not an icon. Counted structurally so "decorative" is a number.
-_l=1; for _v in brief-body plan-map release-card program-cockpit; do
+_l=1; for _v in brief-body plan-map release-card review; do
   _r=$(grep -o '<rect' "$V29T/h-$_v.html" | wc -l | tr -d ' '); _p=$(grep -o '<path' "$V29T/h-$_v.html" | wc -l | tr -d ' '); _x=$(grep -o '<text' "$V29T/h-$_v.html" | wc -l | tr -d ' ')
   { [ "$_r" -ge 3 ] && [ "$_p" -ge 2 ] && [ "$_x" -ge 3 ]; } || _l=0
 done
@@ -1051,7 +1078,10 @@ chk "$([ "$(grep -o 'class="b-na"' "$V29T/mp.html" | wc -l | tr -d ' ')" -ge 5 ]
 ( node "$V29AG" "$V29T/ts.html" --bands --steps 99 >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES on a count that disagrees with the source"
 python3 -c "import re,sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(re.sub(r'<svg[\s\S]*?</svg>','',s))" "$V29T/ts.html" "$V29T/nosvg.html"
 ( node "$V29AG" "$V29T/nosvg.html" >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when the logic block is missing"
-python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace('</body>','<script>x</script></body>'))" "$V29T/ts.html" "$V29T/scr.html"
+# v0.30: re-anchored from '</body>' — which the fragment no longer contains, making the seed a
+# NO-OP and the mutation test silently vacuous (it would have "passed" by comparing a clean file
+# to itself). Anchored on a token the fragment does carry, exactly as the band seed below does.
+python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace('<div class=\"b-sec\"','<script>x</script><div class=\"b-sec\"',1))" "$V29T/ts.html" "$V29T/scr.html"
 ( node "$V29AG" "$V29T/scr.html" >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when a script tag appears"
 python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace('<div class=\"b-decide\"','<div class=\"b-x\"',1))" "$V29T/ts.html" "$V29T/nob.html"
 ( node "$V29AG" "$V29T/nob.html" --bands >/dev/null 2>&1 ); chk "$?" "1" "v0.29 INV-STRUCTURE: BITES when the decision band is gone"
@@ -1066,15 +1096,634 @@ chk "$(node "$V29AG" "$V29T/h-release-card.html" --bands >/dev/null 2>&1 && echo
 
 # INV-DELIVERED — the wiring exists at the seams, and the kill-switch is honoured.
 chk "$([ "$(grep -c 'artefact-gate' "$PLUGIN_ROOT/skills/contract/SKILL.md")" -ge 1 ] && [ "$(grep -c 'artefact-gate' "$PLUGIN_ROOT/skills/plan/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: contract + plan skills gate the artefact before showing it"
-chk "$([ "$(grep -c 'artefact-deliver' "$PLUGIN_ROOT/skills/contract/SKILL.md")" -ge 1 ] && [ "$(grep -c 'artefact-deliver' "$PLUGIN_ROOT/skills/plan/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: both seams deliver locally rather than relying on an Artifact"
-chk "$([ "$(grep -c 'COMPASS_NO_OPEN' "$CURSH")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.29 INV-DELIVERED: the kill-switch is honoured in the delivery path"
+# v0.30: the seams publish to ONE stored URL instead of copying to a personal folder. REWRITTEN.
+chk "$([ "$(grep -c 'artefact-publish' "$PLUGIN_ROOT/skills/contract/SKILL.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.30 INV-DELIVERED: the contract seam publishes via artefact-publish"
+# v0.30: was a byte-presence grep for the kill-switch string — which would survive as theatre once
+# the block it gated was deleted. REPLACED with a BEHAVIOUR assert on the real failure path:
+# publishing with no URL and none stored must exit non-zero, name the local file, and write no
+# stored URL. "Delivered" used to be unfalsifiable — the only thing that could fail was a copy.
+_apdir="$(mktemp -d)"; printf '<title>x</title>' > "$_apdir/brief.html"
+bash "$SH" artefact-publish "$_apdir/brief.html" --dir "$_apdir" >/dev/null 2>&1
+_aprc=$?
+chk "$([ "$_aprc" -ne 0 ] && [ ! -f "$_apdir/artifact-urls" ] && echo 1 || echo 0)" "1" "v0.30 INV-DELIVERED: publish with no URL exits non-zero and stores nothing"
+bash "$SH" artefact-publish "$_apdir/brief.html" --dir "$_apdir" --url https://example.test/a >/dev/null 2>&1
+chk "$([ "$(grep -c '^brief=https://example.test/a$' "$_apdir/artifact-urls" 2>/dev/null)" -eq 1 ] && echo 1 || echo 0)" "1" "v0.30 INV-7: a published URL is stored once for reuse"
+bash "$SH" artefact-publish "$_apdir/brief.html" --dir "$_apdir" 2>/dev/null | grep -q 'https://example.test/a'
+chk "$?" "0" "v0.30 INV-7: republish hands back the SAME URL (never a second artefact)"
+rm -rf "$_apdir"
 
 # determinism — the same source renders byte-identically (no clock, no locale leakage).
 node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/d1.html" >/dev/null 2>&1
 TZ=Asia/Kolkata LC_ALL=en_US.UTF-8 node "$V29G" "$V29FX/twenty-steps" plan-map --out "$V29T/d2.html" >/dev/null 2>&1
 chk "$(diff -q "$V29T/d1.html" "$V29T/d2.html" >/dev/null 2>&1 && echo 1 || echo 0)" "1" "v0.29 views are deterministic across TZ and locale"
 rm -rf "$V29T"
+# ── v0.30 R3 stream B: every gate below was DEFEATED by an adversarial pass. Each assertion here
+# is the exact attack that worked, so a regression re-opens the same door loudly. ────────────────
+_b3d="$(mktemp -d)"
+# B1 — a zero-byte .compass-format passed as "created by new-build"
+mkdir -p "$_b3d/b1"; printf -- '---\ncompass-format: v0.30\n---\n# c\n' > "$_b3d/b1/contract.md"; : > "$_b3d/b1/.compass-format"
+bash "$PLUGIN_ROOT/scripts/compass.sh" contract-gate "$_b3d/b1" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B1: a zero-byte compass-format stamp is not proof of new-build"
+# B6 — evidence prose that records the OPPOSITE of a pre-change RED
+mkdir -p "$_b3d/b6"; printf '# c\n- **INV-A:** x\n' > "$_b3d/b6/contract.md"
+printf 'INV-A ran and was GREEN from the start. It never went RED.\n' > "$_b3d/b6/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_b3d/b6" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B6: 'never went RED' is anti-evidence, not evidence"
+printf -- '- **INV-A** — DEFERRED to a later build.\n' > "$_b3d/b6/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_b3d/b6" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B6: a deferral with no reason does not discharge an INVARIANT"
+printf 'INV-A    value=0    target=0    RED\n' > "$_b3d/b6/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_b3d/b6" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B6: a machine row whose value equals its target is not a RED"
+mkdir -p "$_b3d/b6t"; printf '# c\n| id | rule |\n|---|---|\n| **INV-Q** | a thing |\n' > "$_b3d/b6t/contract.md"
+printf 'nothing here\n' > "$_b3d/b6t/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_b3d/b6t" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B6: invariants declared in a TABLE are not 'no invariants'"
+# B3 — the gold gate, three ways
+_g3(){ mkdir -p "$_b3d/$1"; printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Reconciliation\n' > "$_b3d/$1/contract.md"; printf '%s\n' "$2" >> "$_b3d/$1/contract.md"; printf 'compass-format: v0.30\n' > "$_b3d/$1/.compass-format"; }
+_g3 g1 'The gold is self-computed by the reproducing query.
+png: N/A — headless, no browser.
+provenance: the v0.29.2 tree.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_b3d/g1" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B3: an unrelated 'N/A — ' line no longer switches the gold gate off"
+_g3 g2 'The gold is self-computed by the reproducing query, rather than typed in by hand.
+provenance: the v0.29.2 tree.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_b3d/g2" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B3: a negation of something ELSE no longer clears a self-referential gold"
+_g3 g3 'The gold: we run the OLD query and the NEW query over the same snapshot and diff them.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_b3d/g3" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B3: a NEW build must name external provenance (paraphrase defeats a blocklist)"
+_g3 g4 'gold = 3 of 24 builds report a false 0 — an independent pre-build baseline, not self-computed by the new code.
+provenance: on-disk build state predating this build.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_b3d/g4" >/dev/null 2>&1
+chk "$?" "0" "v0.30 R3-B3: a genuine disclaimer still passes (the filter did not get too broad)"
+# B4/B9 — one extractor, shared by gen.mjs and copy-gate
+_j="$(grep -m1 -vE '^#|^$' "$PLUGIN_ROOT/scripts/fixtures/copy/positive-control.txt")"
+printf 'x\n```compass-reader-copy \nlead: %s\n```\n' "$_j" > "$_b3d/tsp.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_b3d/tsp.md" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B4: a trailing space on the fence no longer hides the block from the gate"
+printf -- '- s\n  ```compass-reader-copy\n  lead: %s\n  ```\n' "$_j" > "$_b3d/ind.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_b3d/ind.md" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B9: an indented fence inside a list item is still policed"
+printf '````compass-reader-copy\na: clean\n```\nlead: %s\n````\n' "$_j" > "$_b3d/nest.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_b3d/nest.md" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B9: an inner fence no longer closes a 4-backtick block early"
+printf '```compass-reader-copy\n\n```\n' > "$_b3d/empty.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_b3d/empty.md" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-B9: an EMPTY block is a defect, not 'no block present'"
+printf '# just a doc\n' > "$_b3d/none.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_b3d/none.md" >/dev/null 2>&1
+chk "$?" "0" "v0.30 R3-B4: a file with genuinely no block still N/A-passes (set -e does not abort it)"
+# B7/B8 — the copy checks
+printf '<html><body><div class="v">The build rebuilds the artefact layer so a stranger can read it</div><div class="v">The build rebuilds the artefact layer so a stranger can read it</div></body></html>' > "$_b3d/dup.html"
+_dupout="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_b3d/dup.html" --copy 2>&1 || true)"
+case "$_dupout" in *no-duplicated-sentence*) _dr=0 ;; *) _dr=1 ;; esac
+chk "$_dr" "0" "v0.30 R3-B7: a repeated line with NO terminal punctuation is caught"
+rm -rf "$_b3d"
+
+# ── v0.30 R3 round 2: nineteen more defeats, four of them CRITICAL. Same shape as round 1 — each
+# mechanism was built correctly and then aimed at a narrower input than the property it asserts. ──
+_r2d="$(mktemp -d)"
+_g3(){ mkdir -p "$_r2d/$1"; printf '# c\n\n%s\n' "$2" > "$_r2d/$1/contract.md"; printf 'compass-format: v0.30\n' > "$_r2d/$1/.compass-format"; }
+# R2-6 — three one-line escapes past gold-gate, each with the fixture's own control text present
+_g3 n1 '## 7. Reconciliation
+The gold is self-computed by the reproducing query.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n1" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-6: a NUMBERED Reconciliation heading is still scanned"
+_g3 n2 '## Reconciliation
+Independent figure: 4,182 loans.
+The gold is self-computed by the reproducing query.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n2" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-6: the blocklist runs even when no line contains the word gold"
+_g3 n3 '## Reconciliation
+gold: 4,182 loans (units N/A). The gold is self-computed by the reproducing query.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n3" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-6: N/A must be the gold declaration, not any substring in the section"
+# R2-7 — provenance that points back at the build
+_g3 n4 '## Reconciliation
+gold: 4,182 loans.
+We run the OLD query and the NEW query over the same snapshot and diff the two answers.
+provenance: the query itself.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n4" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-7: a provenance naming the build itself is not provenance"
+# R2-8 — typographic hyphen + non-breaking space
+_g3 n5 '## Reconciliation
+The gate is cross‑path parity — both paths produce the same figure.
+provenance: measured by the build itself.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n5" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-8: unicode dashes/spaces are normalised before matching"
+# regression: the doctrine stated CORRECTLY must still pass (2 shipped contracts write it)
+_g3 n6 '## Reconciliation
+gold = 3 of 24 builds report a false 0 — an independent pre-build baseline, not self-computed by the new code.
+A gate agreeing with itself proves nothing, so each INVARIANT pins the real failure shape.
+provenance: on-disk build state predating this build.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r2d/n6" >/dev/null 2>&1
+chk "$?" "0" "v0.30 R3-R2-6: a contract stating the doctrine CORRECTLY is not flagged"
+# R2-9 — one typed line naming five invariants reported as five machine rows
+mkdir -p "$_r2d/rf"; printf '# c\n- **INV-1:** a\n- **INV-2:** b\n' > "$_r2d/rf/contract.md"
+printf 'ASSERT-INVARIANTS-RUN root=/x tree=5f0b53f8e9f889fc15bb54e123c8aba59acd91e6\nINV-1 INV-2  value=9  target=0  RED\n' > "$_r2d/rf/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r2d/rf" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-9: a row naming several invariants at once is not runner-shaped evidence"
+printf 'INV-1 value=8 target=0 RED\nINV-2 value=8 target=0 RED\n' > "$_r2d/rf/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r2d/rf" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-R2-9: evidence with no assert-invariants provenance header is refused"
+# R2-14 — the count claim, three ways past a case-sensitive digits-only regex
+for _v in "11 INVARIANTs" "eleven invariants" "11 invariant checks"; do
+  printf '<html><body><p>covers %s here</p></body></html>' "$_v" > "$_r2d/c.html"
+  node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r2d/c.html" --copy --source "$PLUGIN_ROOT/../../.claude/builds/artefact-clarity-rebuild-v0-30/contract.md" >/dev/null 2>&1
+  chk "$?" "1" "v0.30 R3-R2-14: a false count written as '$_v' is caught"
+done
+# R2-16 — INV-5 must search the WHOLE plugin, not a hand-listed subset
+_inv="$_r2d/inv"; mkdir -p "$_inv/plugins"; cp -R "$PLUGIN_ROOT" "$_inv/plugins/compass" 2>/dev/null
+# The seed lives in the excluded fixtures dir; writing it inline planted a real INV-5 violation
+# in the shipped tree, so the plugin could not reach its own pass target as committed.
+printf '\n%s\n' "$(cat "$PLUGIN_ROOT/scripts/fixtures/portable/seed-violation.txt")" >> "$_inv/plugins/compass/shared/gate.md"
+_v5="$(bash "$PLUGIN_ROOT/scripts/assert-invariants.sh" "$_inv" 2>/dev/null | awk '/^INV-5/{print $2}')"
+chk "$([ "$_v5" = "value=0" ] && echo 0 || echo 1)" "1" "v0.30 R3-R2-16: a violation in shared/ is found (INV-5 searches the whole plugin)"
+rm -rf "$_r2d"
+
+# ── v0.30 R3 round 3: 29 more defeats. Shape: "called on the right thing, but only on ONE of the
+# N places the property lives — and the fix that proved it works was never wired to its siblings." ─
+_r3d="$(mktemp -d)"
+# R3-21 — INV-6 could not go red: it tested line 1, and every generated page opens with <title>
+printf '<title>x</title>\n<style>a{}</style>\n<!doctype html><html><head></head><body>\n<p>hi</p>\n' > "$_r3d/doc.html"
+_r3n="$(sed -e 's/<code>[^<]*<\/code>/ /g' "$_r3d/doc.html" | tr -d '\r' | grep -ciE '<!doctype|<html[ >]|<head[ >]|</head>|<body[ >]' || echo 0)"
+chk "$([ "${_r3n:-0}" -ge 1 ] && echo 1 || echo 0)" "1" "v0.30 R3-21: a document wrapper below line 1 is still a document"
+# R3-06/R3-08 — redfirst-check must reject ERR rows and PASS verdicts
+mkdir -p "$_r3d/rf"; printf '# c\n- **INV-1:** a\n' > "$_r3d/rf/contract.md"
+_r3sha="$(git -C "$PLUGIN_ROOT" rev-parse HEAD 2>/dev/null || echo 0000000)"
+printf 'ASSERT-INVARIANTS-RUN root=/x tree=%s\nINV-1 value=ERR-no-pattern-file target=0 RED\n' "$_r3sha" > "$_r3d/rf/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r3d/rf" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-06: an ERR row measured nothing — it is not a recorded RED"
+printf 'ASSERT-INVARIANTS-RUN root=/x tree=%s\nINV-1 value=1 target=0 PASS\n' "$_r3sha" > "$_r3d/rf/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r3d/rf" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-08: a row whose verdict is PASS is not a recorded RED"
+# R3-01/R3-03 — gold-gate section extraction
+_gg(){ mkdir -p "$_r3d/$1"; printf '# c\n\n%s\n' "$2" > "$_r3d/$1/contract.md"; printf 'compass-format: v0.30\n' > "$_r3d/$1/.compass-format"; }
+_gg s1 '## Reconciliation
+
+### Gold figure
+The gold is self-computed by the reproducing query.
+provenance: the query itself.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r3d/s1" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-01: a sub-heading no longer truncates the Reconciliation section"
+_gg s2 '**Reconciliation**
+The gate is cross-path parity.
+provenance: the query itself.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r3d/s2" >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-03: a bold pseudo-heading opens the section too"
+_gg s3 '## Reconciliation
+Cross-path parity is explicitly rejected as a gold for this build.
+gold = 4,182 loans.
+provenance: the audited MIS pack dated 2026-03-31.'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gold-gate "$_r3d/s3" >/dev/null 2>&1
+chk "$?" "0" "v0.30 R3-29: a contract that REJECTS a self-referential gold is not refused for saying so"
+# R3-13/R3-14 — the copy checks must not depend on a class allow-list
+printf '<div class="v">asking a person to read one page and <b>decide</b> from it, without hedging, so they can dec</div>' > "$_r3d/cut.html"
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3d/cut.html" --copy >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-13: a cut field containing an inline tag is still seen"
+printf '<p>x</p><span class="chip">This build rebuilds the artefact layer so a stranger can read it and decide</span><span class="chip">This build rebuilds the artefact layer so a stranger can read it and decide</span>' > "$_r3d/dup2.html"
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3d/dup2.html" --copy >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-14: a duplicate outside the old tag list is caught"
+printf '<p class="lede">This release ships the rebuilt artefact layer so you can read one page and dec</p>' > "$_r3d/lede.html"
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3d/lede.html" --copy >/dev/null 2>&1
+chk "$?" "1" "v0.30 R3-14: a hard slice in a paragraph is caught (the Release Card has no v fields)"
+# R3-09/R3-10 covered above with the insight-gate block; R3-22/23 — load-bearing files tracked
+for _f in scripts/reader-copy.mjs scripts/fixtures/portable/variants.txt scripts/fixtures/lockphrase.txt; do
+  git -C "$PLUGIN_ROOT" ls-files --error-unmatch "$_f" >/dev/null 2>&1
+  chk "$?" "0" "v0.30 R3-22/23: $_f is tracked (an untracked gate vanishes on a fresh clone)"
+done
+rm -rf "$_r3d"
+
+# ── v0.30 R3 round 4 + the ledger-parser rewrite. Round 4's shape: the check looks in the right
+# place at the right thing, and the shell plumbing underneath silently answers "no". ─────────────
+_r4d="$(mktemp -d)"
+# R4-1 — `set -o pipefail` above `grep -q` returns 141 on an EARLY match, so the check read
+# "no match" precisely when there was one. This asserts the pipeline shape is gone.
+# Match a PIPE FEEDING grep -q, not any pipe on the line — the pattern itself contains `|`
+# alternations, which is what made the first version of this assertion test nothing.
+_r4p="$(grep -cE '\|[[:space:]]*(LC_ALL=C[[:space:]]+)?grep[[:space:]]+-q' "$PLUGIN_ROOT/scripts/assert-invariants.sh" || true)"
+chk "${_r4p:-0}" "0" "v0.30 R4-1: assert-invariants pipes nothing into grep -q (pipefail returns 141 on an early match)"
+# and the behaviour itself: a document wrapper below line 1, in a file big enough to fill the pipe
+{ printf '<title>x</title>\n'; head -c 40000 /dev/zero | tr '\0' 'a'; printf '\n<!doctype html>\n<html>\n'; } > "$_r4d/big.html"
+_r4o="$(sed -e 's/<code>[^<]*<\/code>/ /g' "$_r4d/big.html" | tr -d '\r')"
+grep -qiE '<!doctype|<html[ >]' <<<"$_r4o"
+chk "$?" "0" "v0.30 R4-1: the here-string form still fires on a 40 KB page with an early match"
+# RF-3 — the deferral-distinctness rule could not fire: `tr` collapsed the newline
+mkdir -p "$_r4d/rf"; printf '# c\n- **INV-1:** a\n- **INV-2:** b\n- **INV-3:** c\n' > "$_r4d/rf/contract.md"
+_r4sha="$(git -C "$PLUGIN_ROOT" rev-parse HEAD 2>/dev/null || echo 0000000)"
+printf 'ASSERT-INVARIANTS-RUN root=/x tree=%s\nINV-1 value=9 target=0 RED\n- **INV-2** DEFERRED — we will do it later\n- **INV-3** DEFERRED — we will do it later\n' "$_r4sha" > "$_r4d/rf/red-first-evidence.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r4d/rf" >/dev/null 2>&1
+chk "$?" "1" "v0.30 RF-3: two deferrals with the SAME reason are refused (the rule could not fire at all)"
+# FP-1 — the id regex omitted `-`, so the count check refused 13 of 28 CORRECT builds
+printf -- '- **INV-MILESTONE-DELIVERY:** a\n- **INV-ONE-DOOR:** b\n' > "$_r4d/src.md"
+printf '<p>this page covers 2 invariants</p>' > "$_r4d/ok.html"
+# Assert THIS check, not the whole page — a one-line fixture legitimately fails the band and
+# logic-block checks, which says nothing about the count regex.
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r4d/ok.html" --copy --source "$_r4d/src.md" 2>&1 | grep -c 'claimed-count' > "$_r4d/n" || true
+chk "$(cat "$_r4d/n")" "0" "v0.30 FP-1: a multi-hyphen invariant id counts as ONE id (the gate must not refuse correct work)"
+printf '<p>this page covers 9 invariants</p>' > "$_r4d/lie.html"
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r4d/lie.html" --copy --source "$_r4d/src.md" 2>&1 | grep -c 'claimed-count' > "$_r4d/n2" || true
+chk "$(cat "$_r4d/n2")" "1" "v0.30 FP-1: a false count is still refused"
+# C1 — the jargon gates matched case-SENSITIVELY, and reader copy is sentences
+printf '# c\n\n```compass-reader-copy\nlead: Self-computed numbers are what we avoid here.\n```\n' > "$_r4d/cap.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" copy-gate "$_r4d/cap.md" >/dev/null 2>&1
+chk "$?" "1" "v0.30 C1: sentence-initial jargon (Self-computed) is caught, not just the lowercase form"
+# R4-2/3 — count_re never received the fixes count_matches got
+_r4t="$_r4d/tree"; mkdir -p "$_r4t/plugins"; cp -R "$PLUGIN_ROOT" "$_r4t/plugins/compass" 2>/dev/null
+mkdir -p "$_r4t/plugins/compass/skills/compass-visual/fixtures"
+cp "$PLUGIN_ROOT/scripts/fixtures/lockphrase.txt" "$_r4t/plugins/compass/skills/compass-visual/fixtures/PLANTED.md" 2>/dev/null
+_r4v="$(bash "$PLUGIN_ROOT/scripts/assert-invariants.sh" "$_r4t" 2>/dev/null | awk '/^INV-2/{print $2}')"
+chk "$([ "$_r4v" = "value=0" ] && echo 0 || echo 1)" "1" "v0.30 R4-2: INV-2 sees a violation in a skills fixtures dir (its twin INV-5 already did)"
+# The ledger parser: a bullet ledger must never render "0 findings"
+mkdir -p "$_r4d/led"; printf '# c\n' > "$_r4d/led/contract.md"
+printf '# ledger\n\n- R1-C1 CRITICAL — a real finding written as a bullet, not a table row.\n- R1-C2 CRITICAL — another one.\n' > "$_r4d/led/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led.html" >/dev/null 2>&1
+_r4c="$(grep -o '[0-9]* findings' "$_r4d/led.html" | head -1 | cut -d' ' -f1)"
+chk "$([ "${_r4c:-0}" -ge 2 ] && echo 1 || echo 0)" "1" "v0.30 R-1: a BULLET ledger is parsed (four shipped builds rendered '0 findings' over real ones)"
+# a ledger the parser cannot read must SAY so, never report zero
+printf '# ledger\n\n%s\n' "$(head -c 900 /dev/zero | tr '\0' 'x')" > "$_r4d/led/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led2.html" >/dev/null 2>&1
+grep -q 'could not be read' "$_r4d/led2.html"
+chk "$?" "0" "v0.30 R-1: an unparseable ledger says so — it never prints '0 findings, nothing waiting'"
+# R-5 — a bare pipe inside an inline code span must not split the row
+printf '# ledger\n\n| Issue ID | Area | Severity | Status |\n|---|---|---|---|\n| P1 | `a \| b` | CRITICAL | OPEN |\n' > "$_r4d/led/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led3.html" >/dev/null 2>&1
+grep -q '1 findings — 1 critical' "$_r4d/led3.html"
+chk "$?" "0" "v0.30 R-5: a pipe inside a code span does not split the row (severity read as CRITICAL)"
+# R-4 — severity is the cell's LEADING verdict, not a keyword anywhere in it
+printf '# ledger\n\n| Issue ID | Area | Severity | Status |\n|---|---|---|---|\n| P1 | x | MAJOR — not Critical, it cannot ship a wrong number | OPEN |\n' > "$_r4d/led/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4d/led" review --out "$_r4d/led4.html" >/dev/null 2>&1
+grep -q '0 critical' "$_r4d/led4.html"
+chk "$?" "0" "v0.30 R-4: severity is the cell's leading verdict, not any keyword inside it"
+rm -rf "$_r4d"
+
+# ── v0.30 review-3 on contract v11 (narrowed scope). Round 1's shape: the ledger REWRITE fixed the
+# row-splitting heuristics and introduced new ways to lose rows, plus an all-clear over no evidence. ─
+_v11="$(mktemp -d)"
+mkdir -p "$_v11/b"; printf '# c\n\n## Goal\nA thing.\n' > "$_v11/b/contract.md"
+# C2 — a build with NO ledger must never print the all-clear
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/none.html" >/dev/null 2>&1
+grep -q 'Nothing is waiting on you' "$_v11/none.html"
+chk "$?" "1" "v0.30 v11-C2: no review-ledger.md NEVER prints 'nothing is waiting on you'"
+grep -qi 'no review-ledger\|No review has been recorded' "$_v11/none.html"
+chk "$?" "0" "v0.30 v11-C2: a missing ledger says so — missing evidence is not an all-clear"
+# a SHORT ledger that plainly says do-not-ship must not read as clean either
+printf 'Round 1 found three CRITICAL defects. Do not ship.\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/short.html" >/dev/null 2>&1
+grep -q 'Nothing is waiting on you' "$_v11/short.html"
+chk "$?" "1" "v0.30 v11-C2: a short unparseable ledger does not read as clean (no 400-char floor)"
+# C1 — the FIRST row of a separator-less table must not be lost
+printf 'Columns: Issue ID | Severity | Status\n\n| A-1 | CRITICAL | OPEN |\n| A-2 | MAJOR | FIXED |\n| A-3 | MINOR | FIXED |\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c1.html" >/dev/null 2>&1
+grep -q '3 findings' "$_v11/c1.html"
+chk "$?" "0" "v0.30 v11-C1: a separator-less table keeps its FIRST row (it was silently dropped)"
+# C1b — a lone row with no header and no separator must still be counted
+printf '> a note\n| Z-9 | CRITICAL | OPEN |\n\nmore prose\n\n| Y-8 | MAJOR | FIXED |\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c1b.html" >/dev/null 2>&1
+grep -q '2 findings' "$_v11/c1b.html"
+chk "$?" "0" "v0.30 v11-C1: a single-row table is flushed, not discarded when the table ends"
+# C3/C4 — a summary line is not a finding
+printf '# ledger\n\n- Findings: 0 Critical / 0 Major. Converged.\n\n| Issue | Sev | Status |\n|---|---|---|\n| MIN-1: the grep matched the island body | MINOR | FIXED |\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c3.html" >/dev/null 2>&1
+grep -q '1 findings' "$_v11/c3.html"
+chk "$?" "0" "v0.30 v11-C3: a summary bullet is not counted as a finding, and 'MIN-1: text' is"
+# M5 — the description column is found by NAME, not hard-coded to cells[1]
+printf '| Issue ID | Review | Severity | Failure mode | Status |\n|---|---|---|---|---|\n| Q-1 | R2 | MAJOR | the gate accepted a forged record | FIXED |\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/m5.html" >/dev/null 2>&1
+grep -q 'the gate accepted a forged record' "$_v11/m5.html"
+chk "$?" "0" "v0.30 v11-M5: the row description comes from Failure mode, not the Review column"
+# C5 — a status of 'VERIFIED FIXED' is closed, not OPEN
+printf '| Issue ID | Severity | Status |\n|---|---|---|\n| W-1 | MAJOR | VERIFIED FIXED |\n' > "$_v11/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/b" review --out "$_v11/c5.html" >/dev/null 2>&1
+grep -q '0 still open' "$_v11/c5.html"
+chk "$?" "0" "v0.30 v11-C5: 'VERIFIED FIXED' is closed (it rendered as OPEN, contradicting band 2)"
+# the VERIFY regression: the ordinary word 'verify' in prose must not truncate a step
+mkdir -p "$_v11/p"; printf '# c\n\n## Goal\nA thing.\n' > "$_v11/p/contract.md"
+printf -- '- [x] **1 · A step.** There is nothing to verify (the common case) and the rest of this sentence must survive. **VERIFY:** `cmd 1`\n' > "$_v11/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/p" plan-map --out "$_v11/pv.html" >/dev/null 2>&1
+# Strip tags first: the step's text is legitimately split across its title and detail divs, so a
+# grep for the joined phrase tests the layout, not the property.
+sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' | grep -q 'the rest of this sentence must survive'
+chk "$?" "0" "v0.30 v11: the word 'verify' in prose does not truncate a step (only a literal VERIFY: marker does)"
+grep -q 'cmd 1' "$_v11/pv.html"
+chk "$?" "0" "v0.30 v11: the real VERIFY command is still extracted from the step line"
+rm -rf "$_v11"
+
+# ── v0.30 review-3 on contract v11, round 2. Shape: round 1's ID FILTER — added to stop a
+# fabricated finding — became the mechanism by which real findings disappeared. ─────────────────
+_r2v="$(mktemp -d)"
+mkdir -p "$_r2v/b"; printf '# c\n\n## Goal\nA thing.\n' > "$_r2v/b/contract.md"
+# R2-C1 — range / compound / numeric ids were dropped, and the page then printed the all-clear
+printf '| Issue ID | Severity | Status |\n|---|---|---|\n| R-1..R-11 | CRITICAL | OPEN |\n| G3/G4 | CRITICAL | OPEN |\n| 1 | CRITICAL | OPEN |\n| A-2 | MINOR | FIXED |\n' > "$_r2v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/id.html" >/dev/null 2>&1
+grep -q '4 findings' "$_r2v/id.html"
+chk "$?" "0" "v0.30 v11-R2-C1: range, compound and numeric ids are findings (they vanished)"
+grep -q 'Nothing is waiting on you' "$_r2v/id.html"
+chk "$?" "1" "v0.30 v11-R2-C1: three OPEN CRITICALs never render as 'nothing is waiting on you'"
+# R2-M4 — the parser must be fence-blind like every other reader here
+printf '# how to write a ledger\n\n```\n| Issue ID | Severity | Status |\n|---|---|---|\n| EX-1 | CRITICAL | OPEN |\n| EX-2 | CRITICAL | OPEN |\n```\n\n| Issue ID | Severity | Status |\n|---|---|---|\n| A-1 | MINOR | FIXED |\n' > "$_r2v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/fence.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r2v/fence.html"
+chk "$?" "0" "v0.30 v11-R2-M4: an EXAMPLE table inside a code fence is not counted as findings"
+# R2-M5 — a prose bullet that merely mentions a severity is not a finding
+printf '# ledger\n\n- R1-C1 CRITICAL — a real finding.\n\nre-attacked, no new material:\n- R2-M1/M2 (rollback-rehearsed, no CRITICAL left)\n' > "$_r2v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/bul.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r2v/bul.html"
+chk "$?" "0" "v0.30 v11-R2-M5: a severity word in a prose bullet does not invent a finding"
+# R2-C3 — band 2 and band 4 must agree, including on an unrecognised status
+printf '| Issue ID | Severity | Status |\n|---|---|---|\n| A-1 | MAJOR | G2 — user decision |\n| A-2 | MAJOR | VERIFIED FIXED |\n' > "$_r2v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/st.html" >/dev/null 2>&1
+grep -q '0 still open' "$_r2v/st.html"
+chk "$?" "0" "v0.30 v11-R2-C3: 'VERIFIED FIXED' is closed and an unknown status is not counted open"
+_r2o="$(grep -o 'class="verify"><b>OPEN</b>' "$_r2v/st.html" | wc -l | tr -d ' ')"
+chk "${_r2o:-0}" "0" "v0.30 v11-R2-C3: band 4 prints no OPEN label when band 2 says none are open"
+# R2-C2 — an empty file is not a missing file
+printf '   \n\t\n' > "$_r2v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/b" review --out "$_r2v/mt.html" >/dev/null 2>&1
+grep -q 'is empty' "$_r2v/mt.html"
+chk "$?" "0" "v0.30 v11-R2-m3: an EMPTY ledger says it is empty, not that no file exists"
+# R2-M1 — a plan writing `*Verify:*` after a sentence is not "none recorded"
+mkdir -p "$_r2v/p"; printf '# c\n\n## Goal\nA.\n' > "$_r2v/p/contract.md"
+printf -- '- [x] **S1 — a step** in compass.sh: do the thing. *Verify:* `bash compass.sh status` exit 0\n' > "$_r2v/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/p" plan-map --out "$_r2v/pv.html" >/dev/null 2>&1
+grep -q 'none recorded' "$_r2v/pv.html"
+chk "$?" "1" "v0.30 v11-R2-M1: '*Verify:*' after a sentence IS the marker (92 false 'none recorded' claims)"
+# R2-M3 — a label ending in a colon must not swallow its content
+mkdir -p "$_r2v/g"; printf '# c\n\n## Goal\nA thing.\n\n## Reconciliation\nGold figures (pinned literals):\n\n- version = 0.13.0\n- selftest_passed = 349\n' > "$_r2v/g/contract.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r2v/g" brief --out "$_r2v/gb.html" >/dev/null 2>&1
+grep -q 'selftest_passed = 349' "$_r2v/gb.html"
+chk "$?" "0" "v0.30 v11-R2-M3: a colon-terminated label keeps its content (the gold figures were dropped)"
+# R2-C4 — the Release Card must never advertise "0 changes"
+_zc=0
+for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
+  [ -f "$_d/contract.md" ] || continue
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_d" release-card --out "$_r2v/rc.html" >/dev/null 2>&1 || continue
+  grep -q '0 changes' "$_r2v/rc.html" && _zc=$((_zc+1))
+done
+chk "$_zc" "0" "v0.30 v11-R2-C4: no Release Card says '0 changes' (11 did, one under a lede saying 'Five changes')"
+rm -rf "$_r2v"
+
+# ── v0.30 review-3 on contract v11, round 3. Shape unchanged: round 2's WIDENINGS let non-findings
+# in, its NARROWINGS still dropped real ones — and the suites were green through all of it. ──────
+_r3v="$(mktemp -d)"; mkdir -p "$_r3v/b" "$_r3v/p"
+printf '# c\n\n## Goal\nA thing.\n' > "$_r3v/b/contract.md"; cp "$_r3v/b/contract.md" "$_r3v/p/contract.md"
+# R3-2 — ledgers head the column `Sev` and write `Crit` / `Maj`
+printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | Crit | OPEN |\n| A-2 | **Crit** | OPEN |\n| A-3 | Maj | OPEN |\n' > "$_r3v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/sev.html" >/dev/null 2>&1
+grep -q '3 findings — 2 critical, 1 major' "$_r3v/sev.html"
+chk "$?" "0" "v0.30 v11-R3-2: abbreviated severities (Crit/Maj) grade correctly"
+# R3-1 — six real bullet formats, not one
+printf '# ledger\n\n- **A1-C1 CRITICAL** — one.\n- **A2-C2 CRITICAL** (reason) — two.\n- **A3-C3 (CRITICAL)** — three.\n- **A4-C4 [CRITICAL]** — four.\n' > "$_r3v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/bul.html" >/dev/null 2>&1
+grep -q '4 findings — 4 critical' "$_r3v/bul.html"
+chk "$?" "0" "v0.30 v11-R3-1: a bullet's severity is read from anywhere in its leading segment"
+# R3-1b — a sub-finding inherits its parent's severity
+printf '# ledger\n\n- **C1 (CRITICAL)** — the parent.\n- **C1a (a detail)** → the first half.\n- **C1b (another)** → the second half.\n' > "$_r3v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/sub.html" >/dev/null 2>&1
+grep -q '3 findings — 3 critical' "$_r3v/sub.html"
+chk "$?" "0" "v0.30 v11-R3-1: C1a/C1b inherit C1's severity (two CRITICALs were hidden)"
+# R3-3 — the same-shape rescue must not invent findings
+printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | OPEN |\n| — | — | NONE |\n| Total | — | — |\n| 2026-08-18 | — | — |\n' > "$_r3v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/resc.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r3v/resc.html"
+chk "$?" "0" "v0.30 v11-R3-3: a no-findings row, a totals row and a date are not findings"
+# R3-4 — "NOT FIXED" with a space is OPEN, not closed
+printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | NOT FIXED |\n' > "$_r3v/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/b" review --out "$_r3v/nf.html" >/dev/null 2>&1
+grep -q '1 still open' "$_r3v/nf.html"
+chk "$?" "0" "v0.30 v11-R3-4: 'NOT FIXED' (with a space) is OPEN"
+# R3-5 — a bracketed qualifier between VERIFY and its colon
+printf -- '- [x] **S1 — a step.** Do the thing. **Verify (INV-8):** `bash smoke.sh`\n- [x] **S2 — another.** Do it. **SINGLE VERIFY (merged):** `bash recon.sh`\n' > "$_r3v/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/p" plan-map --out "$_r3v/pv.html" >/dev/null 2>&1
+grep -q 'none recorded' "$_r3v/pv.html"
+chk "$?" "1" "v0.30 v11-R3-5: 'Verify (INV-8):' and 'SINGLE VERIFY (merged):' are markers"
+# R3-7 — sub-step labels must not collide with real step numbers
+printf -- '- [x] **1 · one.** x **VERIFY:** `a`\n- [x] **4a · sub.** y **VERIFY:** `b`\n- [x] **4b · sub.** z **VERIFY:** `c`\n- [x] **5 · five.** w **VERIFY:** `d`\n' > "$_r3v/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/p" plan-map --out "$_r3v/pn.html" >/dev/null 2>&1
+_r3n="$(grep -o 'class="b-num">[0-9a-z]*</div>' "$_r3v/pn.html" | sed 's/.*>\(.*\)<.*/\1/' | sort | uniq -d | wc -l | tr -d ' ')"
+chk "${_r3n:-0}" "0" "v0.30 v11-R3-7: sub-step labels (4a/4b) keep their own number — no duplicates"
+# R3-6 — a labelled field must never render empty
+printf -- '- [x] **1 · one.** x **VERIFY:** `a`\n' > "$_r3v/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/p" plan-map --out "$_r3v/pe.html" >/dev/null 2>&1
+grep -q 'class="v"></div>' "$_r3v/pe.html"
+chk "$?" "1" "v0.30 v11-R3-6: no labelled field renders empty on the plan-approval page"
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3v/pe.html" --copy >/dev/null 2>&1
+printf '<div class="k">What changes</div><div class="v"></div>' > "$_r3v/empty.html"
+# Capture first — `node … | grep -q` under `set -o pipefail` reports NODE's exit (1 on a FAIL page),
+# not grep's. That is the R4-1 class, in an assertion written during the round that found it.
+_r3e="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3v/empty.html" --copy 2>&1 || true)"
+case "$_r3e" in *no-empty-field*) _r3ef=0 ;; *) _r3ef=1 ;; esac
+chk "$_r3ef" "0" "v0.30 v11-R3-6: the gate can SEE an empty labelled field (nothing looked for it)"
+# R3-8 — a colon-terminated label in lineMatching keeps its content
+printf '# c\n\n## Goal\nA thing.\n\n## Reconciliation\nGold figures (pinned):\n- lead = 4\n- lag = 0\n' > "$_r3v/g_contract.md"
+mkdir -p "$_r3v/g"; cp "$_r3v/g_contract.md" "$_r3v/g/contract.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r3v/g" brief --out "$_r3v/gb.html" >/dev/null 2>&1
+grep -q 'lead = 4' "$_r3v/gb.html"
+chk "$?" "0" "v0.30 v11-R3-8: the Proof card keeps the gold figures under a colon label"
+rm -rf "$_r3v"
+
+# ── v0.30 review-3 on contract v11, round 4. The SIBLING pattern, sixth occurrence: a fix applied
+# to one of two functions holding the same rule. These assertions pin the rules that are now SHARED.
+_r4w="$(mktemp -d)"; mkdir -p "$_r4w/b" "$_r4w/p"
+printf '# c\n\n## Goal\nA thing.\n' > "$_r4w/b/contract.md"; cp "$_r4w/b/contract.md" "$_r4w/p/contract.md"
+# R4-C1 — a severity must be a WHOLE WORD. "CRITIQUE-TARGET" is not CRITICAL.
+printf '| Issue ID | Status |\n|---|---|\n| R1-M1 | OPEN |\n' > "$_r4w/b/review-ledger.md"
+printf '| Issue ID | Area | Status |\n|---|---|---|\n| R1-M1 | the CRITIQUE-TARGET list and cold-critic wiring | OPEN |\n' > "$_r4w/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/sv.html" >/dev/null 2>&1
+grep -q '0 critical' "$_r4w/sv.html"
+chk "$?" "0" "v0.30 v11-R4-C1: 'CRITIQUE-TARGET' does not grade a row CRITICAL (13 rows on 4 builds did)"
+# R4-C3 — the rescue's blocklist must BITE, not be gated behind a severity check
+printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | CRITICAL | OPEN |\n| N/A | MAJOR | OPEN |\n| TOTAL | CRITICAL | OPEN |\n| — | MINOR | folded above |\n' > "$_r4w/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/rs.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r4w/rs.html"
+chk "$?" "0" "v0.30 v11-R4-C3: N/A, TOTAL and a roll-up dash row are not findings"
+# R4-C2 — a bare count leading a summary bullet is not an id
+printf '# ledger\n\n- **A-1 CRITICAL** — real.\n- **3 MINOR hardenings applied (round 2 fixes):** (a) one (b) two\n' > "$_r4w/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/bc.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r4w/bc.html"
+chk "$?" "0" "v0.30 v11-R4-C2: a leading COUNT ('3 MINOR hardenings') is not a finding id"
+# R4-M6 — inheritance must not make R10 a child of R1
+printf '# ledger\n\n- **R1 (CRITICAL)** — the parent.\n- **R10 — a later note that is not a finding**\n' > "$_r4w/b/review-ledger.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" review --out "$_r4w/inh.html" >/dev/null 2>&1
+grep -q '1 findings' "$_r4w/inh.html"
+chk "$?" "0" "v0.30 v11-R4-M6: R10 does not inherit R1's severity (fires as soon as a ledger passes 9)"
+# R4-M5 — ONE fence rule: stripFences must handle a 3-tick sample nested in a 4-tick fence
+# The Goal is placed AFTER the nested fence: with the old naive toggle the 4-backtick opener and
+# the 3-backtick inner opener cancelled, so everything past the mockup was swallowed and the Brief
+# rendered a Goal taken from the INDEX instead of the contract.
+# What the naive toggle actually does: the 4-backtick opener and the 3-backtick inner opener
+# cancel, so the SAMPLE'S OWN CONTENT falls outside the fence and reaches the reader's page.
+# The goal line below is the bait — it must render; the mockup text must not.
+# The naive toggle's exact symptom: the 4-tick opener and the 3-tick INNER opener cancel, so the
+# text BETWEEN the inner fences falls outside the block and reaches the reader. `MOCKUPLEAKSENTINEL`
+# is the bait — it sits between the inner ``` pair, which is precisely what leaks.
+printf '# c\n\n## Goal\n````\nouter sample line.\n```\nMOCKUPLEAKSENTINEL should never reach a page.\n```\n````\nThe real goal sentence.\n' > "$_r4w/b/contract.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/b" brief --out "$_r4w/fn.html" >/dev/null 2>&1
+grep -q 'MOCKUPLEAKSENTINEL' "$_r4w/fn.html"
+chk "$?" "1" "v0.30 v11-R4-M5: a 3-backtick sample nested in a 4-backtick fence does not leak onto the page"
+# R4-M2 — step numbers: BOTH separators
+printf '# c\n\n## Goal\nA.\n' > "$_r4w/p/contract.md"
+printf -- '- [x] **1. one.** x **VERIFY:** `a`\n- [x] **1b. sub.** y **VERIFY:** `b`\n- [x] **2. two.** z **VERIFY:** `c`\n' > "$_r4w/p/plan.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_r4w/p" plan-map --out "$_r4w/sn.html" >/dev/null 2>&1
+_r4b="$(node -e "
+const h=require('fs').readFileSync(process.argv[1],'utf8');
+const rows=[...h.matchAll(/class=\"b-num\">([0-9a-z]+)<\/div>[\s\S]{0,80}?class=\"b-ttl\">([^<]{0,14})/g)];
+console.log(rows.filter(r=>{const m=r[2].match(/^(\d+[a-z]?)\s*[.·)]/);return m&&m[1]!==r[1];}).length);" "$_r4w/sn.html")"
+chk "${_r4b:-9}" "0" "v0.30 v11-R4-M2: a '1b. ' step keeps its own number (16 of 17 rows contradicted their title)"
+# R4-M3 — the empty-field check must see a value that only LOOKS empty
+for _v in '&nbsp;' '—'; do
+  printf '<div class="k">Build what</div><div class="v">%s</div>' "$_v" > "$_r4w/ef.html"
+  _r4e="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r4w/ef.html" --copy 2>&1 || true)"
+  case "$_r4e" in *no-empty-field*) _r4ef=0 ;; *) _r4ef=1 ;; esac
+  chk "$_r4ef" "0" "v0.30 v11-R4-M3: a field containing only '$_v' counts as empty"
+done
+rm -rf "$_r4w"
+
+# ── v0.30 INV-WAIVER: a review that did NOT converge is a real state, and Compass could not say it.
+# Before this, the options were PASS or blocked — so shipping a knowingly-un-converged build meant
+# ticking a box that was false, which is the falsification this whole build exists to prevent.
+# It lives in its OWN subcommand, never inside cmd_gate: v0.28's INV-NO-LIFECYCLE-CHANGE freezes
+# that function byte-for-byte and caught the first attempt to put it there.
+_wv="$(mktemp -d)"; mkdir -p "$_wv/b"
+printf '# c\n' > "$_wv/b/contract.md"
+_mk_rb() { printf '## RECEIPT — review-build · b · %s\n- [x] gate: build receipt OK\n- [ ] converged in two consecutive clean rounds — NO.\n%s\n' "$1" "$2" > "$_wv/b/receipts.md"; }
+_mk_rb 'ACCEPTED WITH OPEN FINDINGS' ''
+bash "$PLUGIN_ROOT/scripts/compass.sh" converge-waiver "$_wv/b" >/dev/null 2>&1
+chk "$?" "1" "v0.30 INV-WAIVER: 'ACCEPTED WITH OPEN FINDINGS' alone does NOT let a build ship"
+_mk_rb 'ACCEPTED WITH OPEN FINDINGS' '- [x] converge-waiver: user-signed · Rishi accepted the open parsing risk'
+bash "$PLUGIN_ROOT/scripts/compass.sh" converge-waiver "$_wv/b" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-WAIVER: a USER-SIGNED waiver lets it ship, un-converged and recorded"
+# the waiver may never be a model-authored header — the cold-critic lesson, applied again
+_mk_rb 'ACCEPTED WITH OPEN FINDINGS' '- [x] converge-waiver: auto'
+bash "$PLUGIN_ROOT/scripts/compass.sh" converge-waiver "$_wv/b" >/dev/null 2>&1
+chk "$?" "1" "v0.30 INV-WAIVER: 'converge-waiver: auto' is not a signature"
+# the normal gate is UNCHANGED — an un-converged receipt still cannot walk through it
+_mk_rb 'ACCEPTED WITH OPEN FINDINGS' '- [x] converge-waiver: user-signed · signed'
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_wv/b" review-build >/dev/null 2>&1
+chk "$?" "1" "v0.30 INV-WAIVER: cmd_gate stays frozen — the waiver widens nothing there"
+# and the waiver refuses to bless an ordinary PASS receipt, so it cannot become a general bypass
+printf '## RECEIPT — review-build · b · PASS\n- [x] gate ok\n- [x] converge-waiver: user-signed · x\n' > "$_wv/b/receipts.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" converge-waiver "$_wv/b" >/dev/null 2>&1
+chk "$?" "1" "v0.30 INV-WAIVER: the waiver applies ONLY to an un-converged receipt, never as a general bypass"
+rm -rf "$_wv"
+
+# ── v0.30 INV-A11Y: the new theme's contrast claim is EXECUTED, not asserted ─────────────────
+# contrast-check.mjs existed and NO suite ran it, so a theme added this build carried an
+# accessibility claim that nothing verified — the founding defect of this build, in a new place.
+node "$PLUGIN_ROOT/scripts/contrast-check.mjs" "$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-A11Y: every token pair meets its contrast target in BOTH themes"
+# The --html mode: contrast-check's own header says a token file "cannot show a bad pairing that
+# gen.mjs composes", and until now every caller passed the token file alone — the gate ran in the
+# weaker of its two modes, which is the mode its author documented as insufficient.
+_ccd="$(mktemp -d)"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$PLUGIN_ROOT/../../.claude/builds/artefact-clarity-rebuild-v0-30" brief-body --out "$_ccd/p.html" >/dev/null 2>&1
+node "$PLUGIN_ROOT/scripts/contrast-check.mjs" "$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json" --html "$_ccd/p.html" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-A11Y: contrast checked against the GENERATED page, not the token file alone"
+rm -rf "$_ccd"
+node "$PLUGIN_ROOT/scripts/contrast-check.mjs" --self-test >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-A11Y: contrast-check --self-test — including that a MISSING token fails rather than passes"
+_ctd="$(mktemp -d)"
+python3 -c "import json,sys;t=json.load(open(sys.argv[1]));t['mut']='#f2f4f4';json.dump(t,open(sys.argv[2],'w'))" "$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json" "$_ctd/bad.json" 2>/dev/null
+node "$PLUGIN_ROOT/scripts/contrast-check.mjs" "$_ctd/bad.json" >/dev/null 2>&1
+chk "$?" "1" "v0.30 INV-A11Y: an illegible pair FAILS (the check can go red)"
+rm -rf "$_ctd"
+
+# ── v0.30 INV-1: the cold-read gate's contract ───────────────────────────────────────────────
+# The intent check WAS lexical — it counted how many of the pinned intent's words appeared in the
+# reader's answer. That is a proxy for comprehension and the wrong one: it failed the rebuilt Brief
+# because the page had just been rewritten to STOP using the project's vocabulary, so a reader who
+# understood it perfectly matched 2 of 12 terms. A metric that punishes the thing it measures.
+# Replaced by a second grader that judges meaning, and by a refusal to guess when none is supplied.
+bash -c 'node "$0" --self-test' "$PLUGIN_ROOT/scripts/insight-gate.mjs" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-1: insight-gate --self-test — every guard fires"
+_ig="$PLUGIN_ROOT/scripts/insight-gate.mjs"; _igd="$(mktemp -d)"
+printf 'MESSAGE: lock a contract for rebuilding the pages.\nIMPLICATION: it commits the build to named checks.\n' > "$_igd/intent.txt"
+printf '<title>t</title><p>Lock this contract? This page asks you to lock a rebuild of the pages.</p>' > "$_igd/p.html"
+# The probe is MANDATORY (R3-09): a verdict without one is a read that only quoted the headline.
+printf '{"message":{"answer":"It asks you to lock a contract for rebuilding the pages.","confident":true,"quote":"Lock this contract? This page asks you"},"implication":{"answer":"It commits the build to named checks.","confident":true,"quote":"asks you to lock a rebuild of the pages"},"probe":{"question":"What does this page ask you to lock?","answer":"a rebuild of the pages","evidence":"asks you to lock a rebuild of the pages"}}' > "$_igd/v.json"
+# and one WITHOUT a probe, which must not pass
+printf '{"message":{"answer":"It asks you to lock a contract for rebuilding the pages.","confident":true,"quote":"Lock this contract? This page asks you"},"implication":{"answer":"It commits the build to named checks.","confident":true,"quote":"asks you to lock a rebuild of the pages"}}' > "$_igd/v-noprobe.json"
+_ish="$(node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1],'utf8').trim()).digest('hex').slice(0,16))" "$_igd/intent.txt")"
+printf '{"message_matches":true,"implication_matches":true,"intent_sha":"%s","reason":"t"}' "$_ish" > "$_igd/g.json"
+# The control read the gate now requires: the reader correctly refused the known-bad page.
+printf '{"message":{"answer":"cannot tell what this page asks","confident":false},"implication":{"answer":"cannot tell","confident":false}}' > "$_igd/ctl.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" < "$_igd/v.json" >/dev/null 2>&1
+# 2 (usage), not 3: no read was GRADED, so no read COMPLETED, and this file's exit contract reserves
+# 3 for a completed read with a negative verdict. Either way it is not a pass — which is the point.
+chk "$?" "2" "v0.30 INV-1: --grader is mandatory — an ungraded read cannot pass"
+# ── The self-grading defeat: a reader that appends its own `grader` block to its own stdout. It
+# scored GO. The reader's own claim about its own correctness is now discarded before scoring.
+printf '{"message":{"answer":"It asks you to lock a contract for rebuilding the pages.","confident":true,"quote":"Lock this contract? This page asks you"},"implication":{"answer":"It commits the build to named checks.","confident":true,"quote":"asks you to lock a rebuild of the pages"},"grader":{"message_matches":true,"implication_matches":true,"reason":"self-graded by the reader itself"}}' > "$_igd/self.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" < "$_igd/self.json" >/dev/null 2>&1
+chk "$?" "2" "v0.30 INV-1: the reader may NOT grade itself (a grader on stdin is discarded)"
+# ── The control round: documented in insight-gate's header since round 2, called from nowhere.
+printf '{"message":{"answer":"it locks the rebuild","confident":true},"implication":{"answer":"a stranger grades it","confident":true}}' > "$_igd/ctl-go.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" --control "$_igd/ctl-go.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "3" "v0.30 INV-1: a GO on the known-bad control VOIDS the round (the reader passes anything)"
+printf '{"message":{"answer":"unclear what this page wants","confident":false},"implication":{"answer":"not sure","confident":false}}' > "$_igd/ctl-no.json"
+printf '{}' > "$_igd/ctl-empty.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" --control "$_igd/ctl-empty.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "3" "v0.30 R3-R2-3: an EMPTY control verdict is an unrun control, not a careful reader"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" --control "$_igd/ctl-no.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-1: a control the reader correctly refused leaves the round standing"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" --control "$_igd/ctl.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-1: a graded, unhedged, quoted read is a GO"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" --control "$_igd/ctl.json" < "$_igd/v-noprobe.json" >/dev/null 2>&1
+chk "$?" "3" "v0.30 R3-09: the probe is MANDATORY — a reader cannot opt out of being tested"
+printf '{"message_matches":true,"implication_matches":true,"intent_sha":"deadbeefdeadbeef","reason":"t"}' > "$_igd/gwrong.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/gwrong.json" --control "$_igd/ctl.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "3" "v0.30 R3-10: the grader must have graded against THIS pinned intent"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "2" "v0.30 R3-R2-2: --control is mandatory — the anti-rubber-stamp guard cannot be omitted"
+printf '{"message_matches":true,"implication_matches":false,"intent_sha":"%s","reason":"t"}' "$_ish" > "$_igd/gbad.json"
+node "$_ig" --artefact "$_igd/p.html" --intent "$_igd/intent.txt" --grader "$_igd/gbad.json" --control "$_igd/ctl.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "3" "v0.30 INV-1: the grader rejecting either half is a NO-GO"
+node "$_ig" --artefact "$_igd/nope.html" --intent "$_igd/intent.txt" --grader "$_igd/g.json" < "$_igd/v.json" >/dev/null 2>&1
+chk "$?" "4" "v0.30 INV-1: a missing artefact is ERROR(4), never NO-GO(3) — a broken harness is not evidence"
+rm -rf "$_igd"
+
+# ── v0.30 INV-RUNNER: the assertion runner is itself covered ─────────────────────────────────
+# Nothing tested `assert-invariants.sh`. It changed six times during this build and INV-5 read
+# 8 -> 6 -> 7 on one unmodified tree, so "the invariants pass" meant nothing without this.
+bash "$PLUGIN_ROOT/scripts/assert-invariants.sh" "$PLUGIN_ROOT/../.." --self-test >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-RUNNER: assert-invariants --self-test — every guard fires"
+_gc="$(bash "$PLUGIN_ROOT/scripts/assert-invariants.sh" "$PLUGIN_ROOT/../.." --self-test 2>/dev/null | grep -c '  ok ')"
+chk "$([ "$_gc" -ge 13 ] && echo 1 || echo 0)" "1" "v0.30 INV-RUNNER: at least 13 guards run (each earned by an attack that previously reached a false PASS)"
+# the anti-gaming control page must not be silently regenerated — if it becomes the page under
+# test, "a GO on the control voids the round" has nothing to score.
+chk "$(shasum -a 256 "$PLUGIN_ROOT/scripts/fixtures/insight/control-brief.png" 2>/dev/null | cut -c1-16)" "16737533e56d08c7" "v0.30 INV-RUNNER: the cold-read control page is unchanged (sha pinned)"
+
+# ── v0.30 INV-RAIL: the terminal surface ─────────────────────────────────────────────────────
+_rd="$(mktemp -d)"; mkdir -p "$_rd/b"; printf '# c\n' > "$_rd/b/contract.md"
+printf '**Stage:** build\n' > "$_rd/b/progress.md"
+_r1="$(bash "$SH" rail "$_rd/b" --artefact brief --url https://x.test/a 2>/dev/null)"
+chk "$(printf '%s' "$_r1" | grep -c 'https://x.test/a')" "1" "v0.30 INV-RAIL: the URL variant carries the link"
+chk "$(printf '%s' "$_r1" | grep -c 'step ')" "0" "v0.30 INV-RAIL: no plan.md means NO step segment (never a false 0/0)"
+_r2="$(bash "$SH" rail "$_rd/b" --artefact brief --local /tmp/x.html 2>/dev/null)"
+chk "$(printf '%s' "$_r2" | grep -c 'No link this time')" "1" "v0.30 INV-RAIL: the fallback states there is no link, and why"
+chk "$(bash "$SH" rail "$_rd/empty" 2>/dev/null | wc -c | tr -d ' ')" "0" "v0.30 INV-RAIL: an empty/absent dir prints NOTHING, not an empty frame"
+# widths must differ — a uniform width would mean a right border, which cannot hold a 68-char URL
+chk "$([ "$(printf '%s' "$_r1" | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')" -gt 1 ] && echo 1 || echo 0)" "1" "v0.30 INV-RAIL: no right border (line widths are ragged by design)"
+# INV-LOCALE-SAFE: this repo has a documented class where byte-ranges under LC_ALL=C returned empty
+chk "$([ "$(LC_ALL=C bash "$SH" rail "$_rd/b" --artefact brief --url https://x.test/a | md5 -q)" = "$(LC_ALL=en_US.UTF-8 bash "$SH" rail "$_rd/b" --artefact brief --url https://x.test/a | md5 -q)" ] && echo 1 || echo 0)" "1" "v0.30 INV-RAIL: byte-identical under LC_ALL=C and UTF-8"
+rm -rf "$_rd"
+
+# ── v0.30 INV-COPY-GATE: the artefact gate stops being purely structural ─────────────────────
+# The structural gate passed a page that printed its goal three times, cut fields mid-word,
+# mashed two headings into one word, and claimed 11 invariants while showing 2 — all invisible
+# to "are the four bands present". A defective fixture proves each copy check can go red; the
+# real Brief proves none of them fires on correct work.
+_cgf="$PLUGIN_ROOT/scripts/fixtures/copygate/defective.html"
+_cgo="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_cgf" --copy 2>&1 || true)"
+for _c in no-duplicated-sentence no-mashed-headings no-mid-field-cut claimed-count-matches; do
+  chk "$(printf '%s' "$_cgo" | grep -c -- "$_c")" "1" "v0.30 INV-COPY-GATE: --copy catches $_c"
+done
+node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_cgf" >/dev/null 2>&1
+chk "$?" "0" "v0.30 INV-COPY-GATE: the same fixture PASSES structurally — proving the copy checks are what caught it"
+
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null
 [ "$fail" = 0 ]
+

@@ -1,0 +1,13 @@
+# expects: 4 patterns in the matching pattern file — bump this deliberately when the gate's
+# coverage changes, so a DELETED pattern line cannot silently stop being checked.
+# POSITIVE CONTROL — planted violations the INV-5 pattern MUST catch, every run.
+# If the pattern stops matching these, the assertion is broken and reports RED-by-error,
+# never its pass target. This is the half INV-0 was missing: "prove it can fail" was
+# measured against the moving current tree; this is a FIXED known-violating input.
+# Earned by: CRLF pattern file → 0 matches with 3 real violations on disk; BSD grep -R
+# not descending a bare symlink → 0; an empty or substituted pattern file → 0.
+  cp "$f" ~/Downloads/thing.html
+  local dl="$HOME/Downloads/$name"
+  if command -v open >/dev/null 2>&1; then
+  ts="$(command -v tailscale)"
+  Taildrops a copy to the user's other Mac

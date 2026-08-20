@@ -14,7 +14,9 @@ If the contract's Non-goals mark **deploy out of scope**, skip — the build is 
 ## Step 0 — own, claim the ship lock (single-flight), then gate
 1. **Own this build:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"` (the Stop hook guards this session through ship).
 2. **Claim the ship lock FIRST and unconditionally (v0.9.0 single-flight):** `compass.sh ship-claim <slug>`. **Non-zero → STOP** — another build holds the lock (it names the holder); only one build per project ships at a time. The lock self-heals (steals a SHIPPED/ROLLED-BACK or >2h-stale holder), so a crashed ship never deadlocks future ships. **You MUST `compass.sh ship-release <slug>` on EVERY exit from ship — success (SHIPPED), yield (Step 0.4), or any hard-stop (prod unreachable)** — so the lock is never leaked.
-3. **Gate:** `compass.sh gate .claude/builds/<slug> review-build`. **Non-zero → STOP** (build not CLOSED/signed-off; `ship-release` first), offer `compass:review-build`. Read `contract.md` (deploy/rollback/observability are the invariant here).
+3. **Gate:** `compass.sh gate .claude/builds/<slug> review-build`. **Non-zero → STOP** (build not CLOSED/signed-off; `ship-release` first), offer `compass:review-build`.
+   - **The one exception, and it is the user's to make (v0.30):** if the review-build receipt reads `ACCEPTED WITH OPEN FINDINGS`, the gate refuses — correctly. A review that did not converge may still ship, but ONLY when the user has signed for it. Run `compass.sh converge-waiver .claude/builds/<slug>`; it exits 0 only when the receipt carries a `- [x] converge-waiver: user-signed · <what is open, and who accepted it>` line, and it prints every unmet item to stderr every time. **Non-zero → STOP.** A model-authored header does not count — that is how cold-critic became switchable. This check deliberately does NOT live inside `compass.sh gate`: v0.28's INV-NO-LIFECYCLE-CHANGE freezes that function's PASS/SUPERSEDED/unchecked-box semantics byte-for-byte, and a lifecycle change must never be made in passing.
+   - **When the waiver path is used, everything downstream must say so.** The Release Card carries `shipped un-converged — <one line naming what is open>`, and the ship receipt records `converge-waiver: honoured`. A build that ships with known open findings and does not say so on its own release page is the defect this rule exists to prevent. Read `contract.md` (deploy/rollback/observability are the invariant here).
 
 ## Step 0.4 — ship-contention ordering gate (v0.9.0, before the merge-consequence gate)
 `compass.sh ship-contenders <slug>` lists OTHER ship-ready builds in this project (CLOSED, deploy not waived). If non-empty, **AskUserQuestion: which build ships first?**
@@ -83,7 +85,9 @@ Record the results in the **cutover-box** below, then **`compass.sh ship-cutover
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> ship`.
 
-**v0.24.0/v0.26.0 milestone — Release card (INV-MILESTONE-DELIVERY; before the terminal SHIPPED write):** generate `node skills/compass-visual/gen.mjs .claude/builds/<slug> release-card --out .claude/builds/<slug>/release-card.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/release-card.html <dir>/release-card.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record `- [x] MILESTONE: release-card render=release-card.html png=<release-card.png OR N/A — reason> artifact=<claude.ai URL OR N/A — reason>` (one concrete value per key; bare N/A fails), then run **`compass.sh milestone-gate .claude/builds/<slug> release-card`** — **non-zero → STOP**. At a program **phase-boundary**, likewise produce `program-cockpit` + its `MILESTONE:` line and `milestone-gate … program-cockpit`.
+**v0.24.0/v0.26.0 milestone — Release card (INV-MILESTONE-DELIVERY; before the terminal SHIPPED write):** generate `node skills/compass-visual/gen.mjs .claude/builds/<slug> release-card --out .claude/builds/<slug>/release-card.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/release-card.html <dir>/release-card.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record `- [x] MILESTONE: release-card render=release-card.html png=<release-card.png OR N/A — reason> artifact=<claude.ai URL OR N/A — reason>` (one concrete value per key; bare N/A fails), then run **`compass.sh milestone-gate .claude/builds/<slug> release-card`** — **non-zero → STOP**. *(v0.30: the phase-boundary `program-cockpit` artefact is REMOVED. It duplicated the text cockpit and, once the view was deleted, this clause would have halted ship with no path forward for any build carrying a PROGRAM.md — `milestone-gate` would look for a file the generator refuses to write.)*
+
+**v0.30 — gate the Release Card like every other artefact.** `compass.sh artefact-gate <dir>/release-card.html --copy --source <dir>/contract.md` (non-zero → STOP). No `--bands`: the Release Card is a shipping certificate, not a decision page, so it carries no decision band by design — but its copy is read by a person and is checked exactly like the others. Until v0.30 it was the one artefact no structural gate ever saw.
 
 **Then set the terminal status — by branch (NEVER write SHIPPED unconditionally):**
 - **N/A / waived path:** run `compass.sh lifecycle-audit .claude/builds/<slug> SHIPPED` — **non-zero → STOP** — and only on PASS write `progress.md` = `**Status:** SHIPPED` (or `ROLLED-BACK` on a rollback). Done — no §5. (The post-ship loop box reads `waived: <reason>` or `legacy-N/A`.)
@@ -143,6 +147,12 @@ does **not** present a second gate — the stage owns it.
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the RAIL when this stage produced an artefact — run
+   `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
+   when nothing could publish it) and show it, so the link is in front of the user beside the
+   buttons rather than described in prose. (v0.30: the rail existed and nothing called it — a
+   surface nobody invokes is not a surface, the same defect this build was raised to fix.)
 
    Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
    sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when

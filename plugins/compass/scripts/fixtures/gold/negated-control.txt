@@ -1,0 +1,9 @@
+# NEGATIVE CONTROL — sentences that DISCLAIM a self-referential gold. The gate must NOT flag these.
+# Earned by a real false positive: a legacy build was refused for the sentence "an independent
+# pre-build baseline, not self-computed by the new code" — i.e. refused for saying it did the right
+# thing. A gate that fires on correct work gets switched off, which is how cold-critic became
+# disableable in the first place.
+  an independent pre-build baseline, not self-computed by the new code
+  the gold is NOT computed by the reproducing query
+  this is never self-computed
+  provenance is independent, not cross-path parity

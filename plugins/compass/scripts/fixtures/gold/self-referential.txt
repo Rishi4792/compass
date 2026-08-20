@@ -1,0 +1,11 @@
+cross-path parity
+cross path parity
+parity between the two paths
+compares the two code paths
+the query agrees with itself
+agreeing with itself
+self-computed
+self computed
+computed by the reproducing query
+derived from the same query
+both paths produce the same

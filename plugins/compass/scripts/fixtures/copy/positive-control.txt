@@ -1,0 +1,11 @@
+# expects: 7 patterns in the matching pattern file — bump deliberately when coverage changes.
+# coverage changes, so a DELETED pattern line cannot silently stop being checked.
+# POSITIVE CONTROL (INV-0b) — jargon the copy gate MUST catch, every run.
+# Taken verbatim from the pre-change Brief that a cold reader could not decode.
+INV-ORIENT: a front-door invocation with a Compass state-root
+the cmd_progress_card path
+see gen.mjs:385 for the layout
+a legacy contract N/A-passes here
+the gate is guard-first
+this row is byte-inert
+a self-computed gold proves nothing

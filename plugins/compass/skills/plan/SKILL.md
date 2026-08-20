@@ -38,7 +38,7 @@ Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP
 ## Emit
 `progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
 ```
-**v0.29.0 — regenerate, gate, deliver.** `node skills/compass-visual/gen.mjs <dir> plan-map --out <dir>/plan-map.html` → `compass.sh artefact-gate <dir>/plan-map.html --bands --steps <N> --source <dir>/plan.md` (non-zero → STOP) → `compass.sh artefact-deliver <dir>/plan-map.html`. The gate proves the header count matches the plan and that every step carries its VERIFY, so a stale or wrong Plan Map cannot reach the user.
+**v0.29.0 — regenerate, gate, deliver.** `node skills/compass-visual/gen.mjs <dir> plan-map --out <dir>/plan-map.html` → `compass.sh copy-gate <dir>/contract.md` (the reader-copy block, before it is laid out) → `compass.sh artefact-gate <dir>/plan-map.html --bands --copy --steps <N> --source <dir>/plan.md` (non-zero → STOP) → `compass.sh artefact-publish <dir>/plan-map.html --url <the published URL>` (stores the URL so a republish updates the SAME artefact; with no URL and none stored it exits non-zero and names the local file). The gate proves the header count matches the plan and that every step carries its VERIFY, so a stale or wrong Plan Map cannot reach the user.
 
 **v0.24.0/v0.26.0 milestone — Plan Map (INV-MILESTONE-DELIVERY):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/plan-map.html <dir>/plan-map.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record the `MILESTONE:` line below, then run **`compass.sh milestone-gate <dir> plan-map`** (non-zero → STOP). Leaving the box unchecked also makes the frozen `compass.sh gate` refuse to advance.
 
@@ -78,6 +78,12 @@ does **not** present a second gate — the stage owns it.
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the RAIL when this stage produced an artefact — run
+   `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
+   when nothing could publish it) and show it, so the link is in front of the user beside the
+   buttons rather than described in prose. (v0.30: the rail existed and nothing called it — a
+   surface nobody invokes is not a surface, the same defect this build was raised to fix.)
 
    Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
    sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when

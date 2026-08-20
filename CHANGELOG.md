@@ -3,6 +3,51 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.30.0] — 2026-08-20
+
+**The artefact layer, rebuilt around the reader.** Three complaints started this: the decision
+question had stopped appearing, the progress line never showed, and the artefacts were "not thought
+out, and very random".
+
+**For you**
+- **Decisions are buttons.** The typed lock phrase is gone from the whole plugin, so the question
+  actually gets asked instead of being typed past. The mode question comes before the render.
+- **One link, not a pile.** An artefact publishes to a single Artifact URL stored in build state;
+  regenerating updates the same link. macOS-only `open`, `~/Downloads` and the peer-to-peer send are
+  deleted — nothing requires a particular machine.
+- **A terminal block that renders** — a left-rail ASCII block printed in the response, with a
+  one-line hook backstop. No hook can render a multi-line box (every line gets a prefix), which also
+  means v0.28's 11-line orient block was mangled in production and is now fixed.
+- **Pages written for a person.** The model writes plain-language copy into a declared block; the
+  generator only lays it out, from one pinned design system, deterministically.
+- **Five views** — Contract Brief, Plan Map, Release Card, and a review artefact reporting what the
+  reviews caught.
+
+**Under the pages**
+- **INV-0 (RED-FIRST)** — no promise counts until its check has been run against the old code and
+  watched to fail. **INV-0b (POSITIVE-CONTROL)** — every pattern check carries a known-bad input it
+  must keep matching, so a rotted pattern reports an error instead of a pass.
+- The evidence record requires the checker's own output plus a code-version stamp resolving to a
+  real commit; typed prose no longer passes as a measurement.
+- Nine adversarial rounds fixed **107** reader-visible defects; every fix carries a test replaying
+  the attack. Suite **578 → 682**.
+- New: `compass.sh converge-waiver` — Compass can now record "shipped with known open findings"
+  instead of forcing a false checkbox. It requires a user-signed line and prints what is unmet every
+  time. It sits outside `cmd_gate` on purpose: v0.28's INV-NO-LIFECYCLE-CHANGE freezes that
+  function byte-for-byte and caught the first attempt to put it there.
+
+**Shipped un-converged, deliberately.** The review did not reach two clean rounds; it ran nine and
+each found real defects at a similar rate, because `gen.mjs` reads hand-written markdown and every
+reader of that is a judgement that can be wrong both ways. Everything found is fixed; the CAUSE is
+not. **An unusually formatted ledger can still make a review page state a wrong count.** Accepted by
+an explicit user-signed waiver. The cause is v0.31's work: the model writes findings and steps as
+structured data and the generator stops parsing prose.
+
+**The lesson.** The suites were green through all nine rounds and caught **none** of the 107
+findings. A suite written by the same author, in the same session, as the code it tests converges on
+agreeing with that code. Compass knew a check must be proven able to fail; it lacked the other half —
+the proof must come from somewhere the author does not control.
+
 ## [0.29.2] — 2026-08-17
 
 **The Release Card said "0 changes" for every standard contract.** It read shipped items only from a `### NOW` section of numbered items, but the ladder the contract skill actually writes is `## Scope ladder` with `- NOW:` bullets — so a release card advertised that nothing had shipped. Now read from the canonical ladder (which already separates NOW from LATER/NEVER, so the v0.24 guard against advertising deferred items as shipped is preserved), with the numbered form kept as a fallback. The hero also names the release rather than repeating the contract's document title.

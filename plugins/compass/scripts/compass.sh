@@ -558,6 +558,20 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_perf_budget_gate >/dev/null 2>&1; then
       cmd_perf_budget_gate "$dir" >/dev/null || die "gate: perf-budget-gate FAILED for '$dir' (see stderr)."
     fi
+    # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED. Guard-first: a build dir
+    # with no evidence file and no declared INVARIANTs N/A-passes, so legacy builds are untouched.
+    if type cmd_redfirst_check >/dev/null 2>&1 && { [ -f "$dir/.compass-format" ] || [ -f "$dir/red-first-evidence.md" ]; }; then
+      cmd_redfirst_check "$dir" >/dev/null || die "gate: redfirst-check FAILED for '$dir' (see stderr)."
+    fi
+    # v0.30 INV-10 — a self-referential reconciliation gold hard-stops here, at the seam every
+    # downstream stage crosses. Guard-first: no ## Reconciliation section → N/A-pass.
+    if type cmd_gold_gate >/dev/null 2>&1; then
+      cmd_gold_gate "$dir" >/dev/null || die "gate: gold-gate FAILED for '$dir' (see stderr)."
+    fi
+    # v0.30 INV-3 — the build dir must have been created by `new-build` if it claims the format.
+    if type cmd_contract_gate >/dev/null 2>&1; then
+      cmd_contract_gate "$dir" >/dev/null || die "gate: contract-gate FAILED for '$dir' (see stderr)."
+    fi
     # v0.28 INV-MODE-ASKED — contract-header driven, guard-first N/A-pass on legacy.
     if type cmd_mode_gate >/dev/null 2>&1; then
       cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
@@ -588,6 +602,20 @@ cmd_scan_receipt() { # <build-dir> <stage>
   [ -f "$f" ] || die "no receipts.md — emit the $stage receipt first."
   local block; block="$(last_block "$f" "$stage")"
   [ -n "$block" ] || die "no $stage receipt found to scan."
+  # A user-signed convergence waiver. Compass could previously express only two states for a
+  # review: PASS, or blocked. There is a third that really happens — the review did NOT converge
+  # and a human decided to ship anyway, knowing what is open. With no way to say that, the only
+  # route forward was to tick a box that was not true, which is precisely the falsification this
+  # whole build exists to prevent. So the state is now sayable, and it is sayable ONLY by the user:
+  # a `converge-waiver: user-signed` line, the same shape as the cold-critic waiver, never a header
+  # the checked party writes. The unchecked box then STAYS unchecked — it is the record of what was
+  # not achieved — and every downstream surface must repeat that this build shipped un-converged.
+  if printf '%s' "$block" | grep -qE '^- \[x\] converge-waiver: user-signed'; then
+    local _unchecked; _unchecked="$(printf '%s' "$block" | grep -c '^- \[ \]' || echo 0)"
+    ok "$stage receipt: ACCEPTED WITH OPEN FINDINGS — user-signed convergence waiver present; $_unchecked box(es) deliberately left unchecked as the record."
+    printf '%s' "$block" | grep '^- \[ \]' | sed 's/^/    NOT ACHIEVED: /' >&2
+    return 0
+  fi
   if printf '%s' "$block" | grep -q '^\- \[ \]'; then
     die "$stage receipt still has unchecked boxes — set status FAIL and do not hand on:
 $(printf '%s' "$block" | grep '^\- \[ \]')"
@@ -1704,12 +1732,26 @@ cmd_render() { # <html> <png>
   done
   [ -n "$chrome" ] || { echo "render: N/A — no headless browser found (install Chrome/Chromium)" >&2; return 3; }
   case "$html" in /*) : ;; *) html="$PWD/$html" ;; esac
+  # v0.30: artefacts are BODY FRAGMENTS, which carry no <meta charset>. Chrome screenshotting a
+  # file:// URL with no charset declaration falls back to the browser default, not UTF-8 — and a
+  # generated brief carries 14 non-ASCII lines (— · ✓ → ≥). Every PNG would ship mojibake,
+  # INCLUDING the image the cold-read gate is scored on, so the acceptance test would have been
+  # grading garbled text. Wrap CONDITIONALLY: a complete document is passed through untouched,
+  # because `render` is a public subcommand also used on full pages.
+  local _wrapped=""
+  if ! head -c 200 "$html" 2>/dev/null | grep -qiE '<!doctype|<html'; then
+    _wrapped="$(mktemp -t compass-render).html"
+    { printf '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\n'
+      cat "$html"; } > "$_wrapped"
+    html="$_wrapped"
+  fi
   rm -f "$png" 2>/dev/null || true
   ( "$chrome" --headless=new --disable-gpu --no-sandbox --hide-scrollbars --force-device-scale-factor=2 \
       --window-size=980,1500 --screenshot="$png" "file://$html" >/dev/null 2>&1 ) &
   local cpid=$!
   ( sleep 30 && kill -9 "$cpid" 2>/dev/null ) & local wpid=$!
   wait "$cpid" 2>/dev/null || true; kill -9 "$wpid" 2>/dev/null || true
+  [ -n "$_wrapped" ] && rm -f "$_wrapped" 2>/dev/null
   { [ -f "$png" ] && [ -s "$png" ]; } || { echo "render: FAILED — no non-empty PNG produced" >&2; return 1; }
   ok "render: $png produced."
 }
@@ -2389,13 +2431,35 @@ cmd_coldgo_gate() { # <build-dir>   (run from within the target repo)
   local c="$dir/contract.md" r="$dir/receipts.md"
   [ -f "$c" ] || die "coldgo-gate: no contract.md"
   local facets cc; facets="$(hdr_get "$c" Facets || true)"; cc="$(hdr_get "$c" cold-critic || true)"
-  case "$facets" in *web*) : ;; *) ok "coldgo-gate: N/A — not a web-facet build."; return 0 ;; esac
-  case "$cc" in
-    "")    ok "coldgo-gate: N/A — legacy web build (no cold-critic header, pre-v0.12)."; return 0 ;;
-    off*)  ok "coldgo-gate: waived — ${cc#off}"; return 0 ;;
-    on*)   : ;;
-    *)     die "coldgo-gate: unparseable cold-critic header value '${cc}'." ;;
-  esac
+  # v0.30 INV-1: a dir carrying the script-written `.compass-format` stamp is a NEW-FORMAT build.
+  # For those the gate arms REGARDLESS of facet, and neither of the two model-authored escapes
+  # below is honoured — `cold-critic:` is a header the checked party writes, so leaving it off or
+  # setting it to `off` let the subject switch its own gate off. The contract's own words:
+  # "the gates are not switchable; a switchable gate is not a gate." A waiver now needs a
+  # user-signed receipt line (`gate-cleared`/`fire-g2` shape), not a contract header.
+  # Legacy dirs (no stamp) keep the byte-identical pre-v0.30 behaviour below — arming on absence
+  # is what failed 25 of 26 existing builds when mode-gate first shipped.
+  local _stamped=0; [ -f "$dir/.compass-format" ] && _stamped=1
+  if [ "$_stamped" = 1 ]; then
+    case "$cc" in
+      off*)
+        if grep -qE '^- \[x\] cold-critic-waiver: user-signed' "$r" 2>/dev/null; then
+          ok "coldgo-gate: waived — user-signed waiver recorded in receipts."; return 0
+        fi
+        echo "refuse: header-waiver" >&2
+        die "coldgo-gate: 'cold-critic: off' is a model-authored header and no longer waives this gate.
+  A waiver requires a user-signed receipt line:
+  - [x] cold-critic-waiver: user-signed · <reason>" ;;
+    esac
+  else
+    case "$facets" in *web*) : ;; *) ok "coldgo-gate: N/A — not a web-facet build."; return 0 ;; esac
+    case "$cc" in
+      "")    ok "coldgo-gate: N/A — legacy web build (no cold-critic header, pre-v0.12)."; return 0 ;;
+      off*)  ok "coldgo-gate: waived — ${cc#off}"; return 0 ;;
+      on*)   : ;;
+      *)     die "coldgo-gate: unparseable cold-critic header value '${cc}'." ;;
+    esac
+  fi
   [ -f "$r" ] || { echo "refuse: streak" >&2; die "coldgo-gate: no receipts.md — no cold-critic runs recorded."; }
   # Grammar tripwire (R3 round-2): any cold-critic header that matches none of the three pinned
   # forms is a FAIL-CLOSED parse error — a malformed header must never shift the block window.
@@ -3280,39 +3344,125 @@ cmd_artefact_gate() { # <html> [--source <md>] [--steps N] [--bands]
   node "$(dirname "$0")/artefact-gate.mjs" "$f" "$@"
 }
 
-# INV-DELIVERED — write, gate, copy, open HERE, send THERE.
-# "Open on whichever machine the user is at" is not achievable: taildrop moves a file into
-# an inbox and cannot open it, and SSH to the other Mac is not available. So the promise is
-# the achievable one, and the OUTPUT SAYS WHICH HAPPENED rather than implying both.
-cmd_artefact_deliver() { # <html> [--name <basename>]
-  local f="${1:-}"; [ -n "$f" ] && [ -f "$f" ] || die "usage: compass.sh artefact-deliver <html-file>"
-  local name="${3:-}"; [ -n "$name" ] || name="compass-$(basename "$f" .html)-$(basename "$(dirname "$f")").html"
-  local dl="$HOME/Downloads/$name"
-  local opened="skipped" sent="skipped" oc=0 sc=0
-
-  cp "$f" "$dl" 2>/dev/null || die "artefact-deliver: could not copy to $dl"
-
-  if [ -n "${COMPASS_NO_OPEN:-}" ]; then
-    opened="off (COMPASS_NO_OPEN=1)"; sent="off (COMPASS_NO_OPEN=1)"
-  else
-    if command -v open >/dev/null 2>&1; then
-      open "$dl" >/dev/null 2>&1; oc=$?; opened="opened here (exit $oc)"
-    else opened="no 'open' on this machine"; fi
-    local ts; ts="$(command -v tailscale || echo /opt/homebrew/bin/tailscale)"
-    if [ -x "$ts" ]; then
-      local peer; peer="$("$ts" status 2>/dev/null | awk '$5=="active;"||$0~/macOS/{print $2}' | grep -vi "$(hostname -s | tr 'A-Z' 'a-z')" | head -1)"
-      if [ -n "$peer" ]; then "$ts" file cp "$dl" "$peer:" >/dev/null 2>&1; sc=$?; sent="sent to $peer (exit $sc)"
-      else sent="no other Mac on the tailnet"; fi
-    else sent="tailscale not installed"; fi
+# ── v0.30 INV-5 PORTABLE: delivery is a URL, or an honest statement that there is none ────────
+# WHAT WAS HERE, AND WHY IT WENT — described, never spelled, because writing the paths out is
+# how they keep coming back (this comment tripped the portability check twice before this
+# wording; the same thing happened to the note explaining the removal of the typed lock phrase):
+#   · a hardcoded personal downloads folder, assumed to exist — not a given off macOS
+#   · a macOS-only file opener that silently did nothing elsewhere and STILL reported success,
+#     because its exit code was captured into a string and never checked
+#   · a peer-to-peer file sender behind a hardcoded Apple-Silicon package path, used to push the
+#     UNREDACTED brief to whichever machine a fragile awk over its status output picked first.
+#     One person's convenience, shipped to every installer as a product feature, carrying their
+#     reconciliation gold to a host chosen by a text-parsing accident.
+# The replacement records where the artefact went. Publishing itself is done by the caller (the
+# Artifact tool lives in the agent, not in bash), so this owns the STATE: one URL per artefact,
+# stored and reused, or an honest local-path fallback naming why there is no link.
+# ── v0.30: the RAIL — the terminal surface that carries the artefact link ─────────────────────
+# LEFT BORDER ONLY. A closed four-sided box needs >=74 columns to hold a 68-character artefact
+# URL, and shatters below that; with no right border there is nothing to align to, so it cannot
+# misalign and only the URL line wraps on a narrow terminal.
+# It is printed in the model's RESPONSE, not by a hook: proven this session that every hook
+# prefixes EVERY line of a systemMessage with "<HookName> says: ", which destroys box art. The
+# one-line hook backstop ships with v0.31, where it can be one line.
+cmd_rail() { # <build-dir> [--artefact <view>] [--url <url>] [--local <path>]
+  local dir="${1:-}"; shift || true
+  [ -n "$dir" ] || die "usage: compass.sh rail <build-dir> [--artefact <view>] [--url <url>] [--local <path>]"
+  local view="" url="" local_path=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --artefact) view="${2:-}"; shift 2 ;;
+      --url) url="${2:-}"; shift 2 ;;
+      --local) local_path="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  # An empty or absent build dir prints NOTHING — an empty frame is worse than silence.
+  [ -d "$dir" ] || return 0
+  [ -f "$dir/contract.md" ] || return 0
+  local slug; slug="$(basename "$dir")"
+  local stage; stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | head -1)"
+  [ -n "$stage" ] || stage="contract"
+  # Step k/n ONLY when plan.md exists. Printing 0/0 for a build with no plan states a falsehood.
+  local seg=""
+  if [ -f "$dir/plan.md" ]; then
+    local tot done_
+    tot="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null | head -1)"; tot="${tot:-0}"
+    done_="$(LC_ALL=C grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null | head -1)"; done_="${done_:-0}"
+    [ "${tot:-0}" -gt 0 ] 2>/dev/null && seg=" · step ${done_}/${tot}"
   fi
-  ok "artefact-deliver: $dl  ·  $opened  ·  $sent"
+  local title; title="$(printf '%s' "${view:-BUILD}" | tr 'a-z-' 'A-Z ')"
+  printf '\xe2\x95\xad\xe2\x94\x80 %s \xc2\xb7 %s%s\n' "$title" "$stage" "$seg"
+  printf '\xe2\x94\x82\n'
+  if [ -n "$url" ]; then
+    printf '\xe2\x94\x82   \xe2\x96\xb8  %s\n' "$url"
+    printf '\xe2\x94\x82\n'
+    printf '\xe2\x94\x82   That page is the decision. Everything here is a pointer to it.\n'
+  elif [ -n "$local_path" ]; then
+    printf '\xe2\x94\x82   \xe2\x96\xb8  %s\n' "$local_path"
+    printf '\xe2\x94\x82\n'
+    printf '\xe2\x94\x82   No link this time \xe2\x80\x94 nothing here could publish it.\n'
+    printf '\xe2\x94\x82   Open the file above in a browser.\n'
+  fi
+  printf '\xe2\x94\x82\n'
+  printf '\xe2\x95\xb0\xe2\x94\x80 %s\n' "$slug"
+}
+
+cmd_artefact_publish() { # <html> [--url <artifact-url>] [--dir <build-dir>]
+  local f="${1:-}"; shift || true
+  [ -n "$f" ] && [ -f "$f" ] || die "usage: compass.sh artefact-publish <html-file> [--url <url>] [--dir <build-dir>]"
+  local url="" dir=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --url) url="${2:-}"; shift 2 ;;
+      --dir) dir="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "$dir" ] || dir="$(dirname "$f")"
+  local view; view="$(basename "$f" .html)"
+  local store="$dir/artifact-urls"
+  local prior=""; [ -f "$store" ] && prior="$(LC_ALL=C grep -E "^${view}=" "$store" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+
+  if [ -z "$url" ] && [ -n "$prior" ]; then
+    # INV-7: republishing must UPDATE the same artefact, never create a second one. Hand the
+    # caller the stored URL so it republishes in place. Before this, every regeneration made a
+    # new artefact — the user's gallery already carries duplicate Briefs from that.
+    ok "artefact-publish: reuse this URL for '$view' (INV-7, republish in place): $prior"
+    return 0
+  fi
+
+  if [ -z "$url" ]; then
+    # No URL and none stored: the caller could not publish. Say so, name the local file, and
+    # exit NON-ZERO. The old path always exited 0 — a `cp` was the only thing that could fail —
+    # so "delivered" was unfalsifiable.
+    echo "artefact-publish: NO PUBLISH PATH — no URL supplied and none stored for '$view'." >&2
+    echo "  The artefact is on disk at: $f" >&2
+    echo "  Open that file, or re-run where the Artifact tool is available." >&2
+    return 3
+  fi
+
+  case "$url" in https://*) : ;; *) die "artefact-publish: '$url' is not an https URL." ;; esac
+  local tmp; tmp="$(mktemp)"
+  [ -f "$store" ] && LC_ALL=C grep -vE "^${view}=" "$store" > "$tmp" 2>/dev/null
+  printf '%s=%s\n' "$view" "$url" >> "$tmp"
+  mv "$tmp" "$store"
+  # Observability: a delivery with no line did not happen.
+  printf 'artefact=%s url=%s gate=PASS\n' "$view" "$url" >> "$dir/../orient.log" 2>/dev/null || true
+  if [ -n "$prior" ] && [ "$prior" != "$url" ]; then
+    ok "artefact-publish: '$view' URL REPLACED (the stored one no longer resolved): $url"
+  else
+    ok "artefact-publish: '$view' → $url (stored; republish reuses it)"
+  fi
 }
 
 # The observation channel: re-run the gate over the last rendered outputs and show the log.
 cmd_artefact_audit() { # <build-dir>
   local d="${1:-}"; [ -n "$d" ] && [ -d "$d" ] || die "usage: compass.sh artefact-audit <build-dir>"
   local any=0 f
-  for f in "$d"/brief.html "$d"/plan-map.html "$d"/release-card.html "$d"/program-cockpit.html; do
+  # v0.30: program-cockpit deleted; review added. Kept `[ -f ]`-guarded so a build with only
+  # some of these still audits cleanly.
+  for f in "$d"/brief.html "$d"/plan-map.html "$d"/release-card.html "$d"/review.html; do
     [ -f "$f" ] || continue
     any=1
     printf '  %-22s ' "$(basename "$f")"
@@ -3346,16 +3496,33 @@ cmd_mode_gate() { # <build-dir>
   # was fixed it still failed 3 real builds that had recorded a genuine explicit
   # choice in the old wording.
   local c="$dir/contract.md"
-  [ -f "$c" ] || return 0
+  if [ ! -f "$c" ]; then
+    [ -f "$dir/.compass-format" ] && die "mode-gate: no contract.md in a v0.30 build dir."
+    return 0
+  fi
   local hdr; hdr="$(LC_ALL=C sed -nE 's/^mode-asked:[[:space:]]*([A-Za-z-]+).*/\1/p' "$c" 2>/dev/null | head -1 || true)"
-  case "$(printf '%s' "${hdr:-}" | tr 'A-Z' 'a-z')" in
-    required) : ;;
-    *) return 0 ;;                              # legacy / not declared → N/A-pass
-  esac
+  # v0.30 INV-3: arm on the UNION — the script-written stamp OR the legacy header. A union is a
+  # strict superset, so v0.29 builds that declared `mode-asked: required` keep their gate, while a
+  # v0.30 dir is armed by something the contract stage cannot author. Never a REPLACEMENT: keying
+  # only on the stamp would silently un-arm every v0.29 build that had opted in.
+  local _armed=0 _stamped_dir=0
+  [ -f "$dir/.compass-format" ] && { _armed=1; _stamped_dir=1; }
+  case "$(printf '%s' "${hdr:-}" | tr 'A-Z' 'a-z')" in required) _armed=1 ;; esac
+  [ "$_armed" = 1 ] || return 0                 # legacy / not declared → N/A-pass
   local f="$dir/receipts.md"
-  [ -f "$f" ] || return 0
+  # v0.30: on a STAMPED dir these three early returns must DIE, not pass. Review (V4/R3-4) found a
+  # stamped dir still N/A-passed all of them — a missing receipts.md, or an empty contract block,
+  # silently satisfied the gate that exists to prove the question was asked. On a legacy dir they
+  # keep returning 0, byte-identically.
+  if [ ! -f "$f" ]; then
+    [ "$_stamped_dir" = 1 ] && die "mode-gate: no receipts.md in a v0.30 build dir — the mode question cannot have been recorded."
+    return 0
+  fi
   local blk; blk="$(last_block "$f" contract 2>/dev/null)"
-  [ -n "$blk" ] || return 0
+  if [ -z "$blk" ]; then
+    [ "$_stamped_dir" = 1 ] && die "mode-gate: no contract receipt block in a v0.30 build dir — the mode question cannot have been recorded."
+    return 0
+  fi
   # `|| true` is load-bearing: compass.sh runs `set -euo pipefail`, so a grep
   # with NO match returns 1, pipefail propagates it, and set -e kills the
   # function *silently* — which killed the legacy N/A-pass below and failed 25
@@ -3381,6 +3548,424 @@ cmd_mode_gate() { # <build-dir>
 # One line for the Claude Code status line: always on screen, zero output cost.
 # Prints NOTHING when no build is in flight — a permanent empty line would be
 # worse than no status line at all.
+# ── v0.30 INV-3: the build-dir creation seam ────────────────────────────────────────────────
+# WHY THIS EXISTS: INV-3 says mode-gate must not be disarmable by the party it checks. The first
+# design armed it on a `compass-format:` HEADER — but the model writes contract.md, so the model
+# wrote the stamp, and omitting one line disarmed the gate. Review found `compass-format` appeared
+# ZERO times in this script, there was no build-dir-creating command at all, and the v0.30 build's
+# own directory had been made with `mkdir -p`. The stamp has to be written by something the
+# contract stage cannot author: a dotfile, written here.
+# ── v0.30 INV-10: a non-reproducible gold HARD-STOPS. It does not get substituted. ────────────
+# WHY: this happened. A pinned reconciliation gold turned out to be analyst-coded and not
+# reproducible, and the agent replaced it with "cross-path parity" — two of its own code paths
+# compared against each other — then presented that as the gate. Two paths can agree and both be
+# wrong. contract/SKILL.md already says the gold "may NOT be computed by the reproducing query
+# (a query agreeing with itself proves nothing)" and review-contract grades a self-computed gold
+# CRITICAL, but nothing executed either sentence. This does.
+# ── v0.30 INV-9: no internal code on a reader-facing surface ──────────────────────────────────
+# SCOPED to the model-authored reader-copy block ONLY. It never inspects quoted contract text, the
+# invariant table (where the codes ARE the subject), or code shown as code — an earlier draft that
+# scanned the whole page would have fired on every correct Brief, and a gate that fires on correct
+# work gets disabled within a week.
+# ── v0.30 INV-0: the gate that governs the other gates ────────────────────────────────────────
+# Every INVARIANT must have been run against the PRE-CHANGE tree and observed to FAIL before it
+# counts. An assertion that has never failed is not an assertion, and three review rounds were
+# defeated by exactly that. This reads the generated evidence and refuses if any row is missing
+# its RED — including its own.
+cmd_redfirst_check() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh redfirst-check <build-dir>"
+  local f="$dir/red-first-evidence.md"
+  [ -f "$f" ] || die "redfirst-check: no red-first-evidence.md in '$dir'.
+  Generate it: assert-invariants.sh <repo-root> > $f
+  An INVARIANT with no recorded pre-change FAIL has not been proven able to fail."
+  [ -s "$f" ] || die "redfirst-check: red-first-evidence.md is EMPTY — an empty record is not a record."
+  # Which INVARIANTs does the contract declare? Count EVERY form. The bullet-only regex reported
+  # "N/A — declares no INVARIANTs" for a contract that declared them in a markdown table, which is
+  # an ordinary way to write one: the gate answered "nothing to check" to a contract full of checks.
+  local c="$dir/contract.md" declared="" tokens=""
+  if [ -f "$c" ]; then
+    declared="$(LC_ALL=C grep -oE '(^| |\||\*)\*\*INV-[0-9A-Za-z]+' "$c" 2>/dev/null | grep -oE 'INV-[0-9A-Za-z]+' | sort -u || true)"
+    tokens="$(LC_ALL=C grep -oE 'INV-[0-9A-Za-z]+' "$c" 2>/dev/null | sort -u || true)"
+  fi
+  if [ -z "$declared" ] && [ -n "$tokens" ]; then
+    die "redfirst-check: the contract mentions INVARIANT ids ($(printf '%s' "$tokens" | tr '\n' ' ')) but none match the
+  declaration form this gate can read. Refusing to report 'no INVARIANTs' for a contract full of them.
+  Declare each as '- **INV-x:** …' or '| **INV-x** |' so the check can find it."
+  fi
+  [ -n "$declared" ] || { ok "redfirst-check: N/A — contract declares no INVARIANTs."; return 0; }
+
+  # ── A row is evidence only if the RUNNER produced it. ───────────────────────────────────────
+  # Round 2 defeated the prose version in one line: `INV-1 INV-2 INV-5 INV-9 INV-11  value=9
+  # target=0  RED` — never executed, five invariants on one line — and the gate reported
+  # "machine=5 hand=0", with a die message that had literally dictated the string to write. The
+  # lesson is not "add more phrases to the blocklist": a literal list cannot win a paraphrase race
+  # against the thing it is trying to read. So the format is what is trusted, not the words.
+  #
+  # A machine row must be EXACTLY what assert-invariants.sh prints: one invariant, its value, its
+  # target, its verdict — nothing else before it on the line. And the file must carry the runner's
+  # provenance header naming a tree that actually exists in this repo's history, which a person
+  # writing prose has no way to forge without running the thing.
+  local hdr_sha=""
+  hdr_sha="$(LC_ALL=C grep -oE '^ASSERT-INVARIANTS-RUN .*tree=[0-9a-f]{7,40}' "$f" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' | head -1 || true)"
+  if [ -z "$hdr_sha" ]; then
+    die "redfirst-check: $f carries no assert-invariants provenance header.
+  Every machine-measured record starts with a line the runner writes:
+      ASSERT-INVARIANTS-RUN root=<repo> tree=<git sha>
+  Produce it by RUNNING the checks against the pre-change tree:
+      scripts/assert-invariants.sh <repo-root> >> $f
+  A file of hand-written rows is the author grading their own work — round 2 got five fake
+  machine rows past this gate with a single typed line."
+  fi
+  # Verify the named tree really exists. git searches upward from the build dir itself, so this
+  # works wherever the build lives inside the repo. Where there is no repo the claim CANNOT be
+  # checked — and the pass line says so rather than implying it was verified. Honest degradation
+  # is the whole point: a check that quietly stops checking is the defect this build is about.
+  local sha_state="unverified (no git repo here)"
+  if command -v git >/dev/null 2>&1 && git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$dir" rev-parse --verify --quiet "${hdr_sha}^{commit}" >/dev/null 2>&1 \
+      || die "redfirst-check: the evidence header names tree $hdr_sha, which is not a commit in this repo.
+  The pre-change measurement must have been taken against a real tree."
+    sha_state="tree ${hdr_sha%%"${hdr_sha#???????}"} verified"
+  fi
+  # Phrases that record the OPPOSITE of a pre-change FAIL while still containing the token RED.
+  # A literal list cannot win a paraphrase race — the header and shape requirements above are what
+  # actually carry this gate — but it is free and it catches the careless case.
+  local antired='never[[:space:]]+went[[:space:]]+RED|GREEN[[:space:]]+from[[:space:]]+the[[:space:]]+start|already[[:space:]]+green|did[[:space:]]+not[[:space:]]+fail|was[[:space:]]+not[[:space:]]+RED|no[[:space:]]+RED[[:space:]]+observed|passed[[:space:]]+cleanly[[:space:]]+before|green[[:space:]]+the[[:space:]]+whole[[:space:]]+time|to[[:space:]]+satisfy[[:space:]]+the[[:space:]]+gate|this[[:space:]]+row[[:space:]]+is[[:space:]]+decoration'
+  local missing="" faked="" deferred="" machine=0 hand=0 i row mrow
+  for i in $declared; do
+    # THE machine row: the runner's exact shape, this invariant and no other on the line.
+    # `PASS` must NOT be in this alternation. Five rows ending in the literal word PASS were
+    # accepted as "a recorded pre-change RED" — the gate read the shape and ignored the verdict.
+    mrow="$(LC_ALL=C grep -E "^[[:space:]]*${i}[[:space:]]+value=[^[:space:]]+[[:space:]]+target=[^[:space:]]+[[:space:]]+RED" "$f" 2>/dev/null | head -1 || true)"
+    if [ -n "$mrow" ]; then
+      # An ERR row measured NOTHING. `value=ERR-no-pattern-file … RED` is the runner saying its
+      # precondition was broken, and it is exactly what the documented workflow produces when the
+      # pre-change tree predates the fixtures — so the normal path was recording five ERRs and
+      # this gate was calling them five machine-measured REDs, with the tree sha verified. The
+      # runner's own --assert-red refuses those; so must this.
+      if printf '%s' "$mrow" | LC_ALL=C grep -q 'value=ERR'; then faked="$faked $i(ERR-not-a-measurement)"; continue; fi
+      # A runner-shaped row with a confession bolted on is still a confession. This list cannot win
+      # a paraphrase race on its own — the header + shape requirements above are what actually
+      # carry the check — but it costs nothing and catches the careless case.
+      if printf '%s' "$mrow" | LC_ALL=C grep -qiE "$antired"; then faked="$faked $i(anti-evidence)"; continue; fi
+      local v t
+      v="$(printf '%s' "$mrow" | LC_ALL=C grep -oE 'value=[^[:space:]]+' | head -1 | cut -d= -f2)"
+      t="$(printf '%s' "$mrow" | LC_ALL=C grep -oE 'target=[^[:space:]]+' | head -1 | cut -d= -f2)"
+      if [ "$v" = "$t" ]; then faked="$faked $i(value=target)"; continue; fi
+      machine=$((machine+1)); continue
+    fi
+    row="$(LC_ALL=C grep -E "(^|[^A-Za-z0-9-])${i}([^A-Za-z0-9-]|$)" "$f" 2>/dev/null | head -4 || true)"
+    if [ -z "$row" ]; then missing="$missing $i"; continue; fi
+    if printf '%s' "$row" | LC_ALL=C grep -qE 'value=[^[:space:]]+[[:space:]]+target='; then
+      # It LOOKS like a machine row but is not shaped like one — several invariants sharing a line,
+      # or text before the id. That is the round-2 forgery exactly; refuse it by name.
+      faked="$faked $i(not-runner-shaped)"; continue
+    fi
+    if printf '%s' "$row" | LC_ALL=C grep -qE 'DEFERRED|Deferred'; then
+      printf '%s' "$row" | LC_ALL=C grep -qE '(DEFERRED|Deferred).*(—|--|:)[[:space:]]*[A-Za-z][A-Za-z]' \
+        || { faked="$faked $i(bare-DEFERRED)"; continue; }
+      deferred="$deferred $i"; continue
+    fi
+    if printf '%s' "$row" | LC_ALL=C grep -q 'RED'; then hand=$((hand+1)); continue; fi
+    missing="$missing $i"
+  done
+  # Deferrals must each say something DIFFERENT. Four identical "DEFERRED — we will do it later"
+  # rows passed round 2; a reason copy-pasted across every row is not a reason, it is the same
+  # non-answer repeated until the count is satisfied.
+  if [ -n "$deferred" ]; then
+    local reasons dupes
+    # `tr -s '[:space:]' ' '` COLLAPSES THE TRAILING NEWLINE INTO A SPACE, so every reason ran into
+    # the next one and `sort | uniq -d` saw a single long line — the check could not fire for any
+    # input at all, including the four-identical-reasons defeat quoted in the comment above it.
+    # A guard whose own recorded defeat still passes is not a guard. Normalise WITHOUT eating the
+    # line ending, and emit exactly one line per reason.
+    reasons="$(for i in $deferred; do
+      LC_ALL=C grep -m1 -E "(^|[^A-Za-z0-9-])${i}([^A-Za-z0-9-]|$)" "$f" 2>/dev/null \
+        | sed -E 's/.*(DEFERRED|Deferred)[^A-Za-z]*//; s/[[:space:]]+/ /g; s/^ //; s/ $//'
+    done)"
+    dupes="$(printf '%s\n' "$reasons" | grep -v '^$' | sort | uniq -d | head -1 || true)"
+    [ -z "$dupes" ] || die "redfirst-check: two or more INVARIANTs are deferred with the SAME reason:
+    \"$dupes\"
+  If the reason is genuinely identical they are one deferral, not several. State what each one
+  is waiting on, or stop deferring it."
+  fi
+  [ -z "$faked" ] || die "redfirst-check: these rows claim evidence but record the opposite of a pre-change FAIL:$faked
+  A row that says the check was green from the start, or whose measured value equals its target,
+  is a record that the check CANNOT fail — the exact thing INV-0 exists to catch."
+  [ -z "$missing" ] || die "redfirst-check: no recorded pre-change RED for:$missing
+  Each INVARIANT must be run against the pre-change tree and observed to FAIL before it counts.
+  A command that is green before the work begins is decoration, not a check."
+  # Visible degradation: a caller must be able to see how much of this was measured by a runner and
+  # how much is hand-written prose. A silent blend reads as "all machine-verified".
+  local total=$((machine+hand)); local dn=0
+  [ -n "$deferred" ] && dn="$(printf '%s' "$deferred" | wc -w | tr -d ' ')"
+  [ "$machine" -gt 0 ] || die "redfirst-check: not one row was produced by assert-invariants.sh (machine=0).
+  Hand-written RED prose alone is the author grading their own work. Run:
+  scripts/assert-invariants.sh <repo-root> >> $f"
+  [ "$total" -gt 0 ] || die "redfirst-check: every declared INVARIANT is DEFERRED — nothing is proven."
+  ok "redfirst-check: every declared INVARIANT has a recorded pre-change RED (machine=$machine hand=$hand deferred=$dn; $sha_state)."
+}
+
+cmd_copy_gate() { # <file> [--block <fence-name>]
+  local f="${1:-}"; [ -n "$f" ] && [ -f "$f" ] || die "usage: compass.sh copy-gate <file>"
+  local fx; fx="$(dirname "${BASH_SOURCE[0]}")/fixtures/copy"
+  local pat="$fx/jargon.txt" ctl="$fx/positive-control.txt"
+  [ -f "$pat" ] || die "copy-gate: pattern file missing at $pat"
+  [ -s "$pat" ] || die "copy-gate: pattern file is EMPTY at $pat"
+  # INV-0b: if the pattern stops catching the known jargon, refuse to report a verdict.
+  # PER-LINE coverage plus a pinned count — the same rule INV-5's control uses. `-ge 6` against a
+  # 7-line control meant one pattern could be deleted outright and the total still cleared the bar,
+  # so `guard-first` stopped being policed while this gate kept printing PASS.
+  local _cl _cmiss=""
+  while IFS= read -r _cl; do
+    case "$_cl" in ''|'#'*) continue ;; esac
+    grep -qE -- "$_cl" "$ctl" 2>/dev/null || _cmiss="$_cmiss
+    $_cl"
+  done < "$pat"
+  [ -z "$_cmiss" ] || die "copy-gate: PATTERN BROKEN — these lines no longer match the positive control:$_cmiss
+  Refusing to report a verdict."
+  local _cw _ch
+  _cw="$(sed -n 's/^# expects:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ctl" | head -1)"
+  _ch="$(grep -cE '^[^#[:space:]]' "$pat" 2>/dev/null || echo 0)"
+  if [ -n "$_cw" ] && [ "${_ch:-0}" != "$_cw" ]; then
+    die "copy-gate: PATTERN COUNT CHANGED — $_ch lines, the control expects $_cw. Bump the pin deliberately or restore the line."
+  fi
+  # Extract the reader-copy block with THE extractor — the same code gen.mjs lays the page out
+  # from, so the gate and the renderer can never disagree about what the block is. They did: this
+  # was a prefix-matching awk while gen.mjs required an exact fence, and one trailing space on the
+  # fence line made gen.mjs render copy that the gate reported as absent. Silent in both directions.
+  local rc_ex; rc_ex="$(dirname "${BASH_SOURCE[0]}")/reader-copy.mjs"
+  [ -f "$rc_ex" ] || die "copy-gate: the shared extractor is missing at $rc_ex"
+  command -v node >/dev/null 2>&1 || die "copy-gate: node is required to read the reader-copy block."
+  # set -e: a bare \`body="$(node …)"\` whose substitution exits 3 aborts the whole script BEFORE the
+  # N/A branch below can run — the unguarded-read-under-set-e class. Assign inside an if-condition.
+  local body rcx
+  if body="$(node "$rc_ex" --extract "$f" 2>/dev/null)"; then rcx=0; else rcx=$?; fi
+  case "$rcx" in
+    0) : ;;
+    3) ok "copy-gate: N/A — no compass-reader-copy block in $(basename "$f")."; return 0 ;;
+    *) # malformed: a fence the author wrote that the parser cannot read. Reporting N/A here is how
+       # an indented or 4-backtick block went unpoliced while the gate printed a pass.
+       die "copy-gate: $(basename "$f") has a compass-reader-copy block that cannot be parsed:
+$(node "$rc_ex" --extract "$f" 2>&1 >/dev/null | sed 's/^/    /')
+  A block this gate cannot read is a block it did not check. Fix the fence — do not ship it unchecked." ;;
+  esac
+  [ -n "$body" ] || die "copy-gate: the compass-reader-copy block in $(basename "$f") is empty."
+  # Case-INSENSITIVE, and dashes normalised. Reader copy is sentences, so the terms appear
+  # capitalised at the start of one — `Self-computed`, `Guard-first`, `Byte-inert` all passed a
+  # case-sensitive match while their lowercase forms failed. gold-gate already normalises the
+  # typographic dash family; this gate did not, so a U+2011 hyphen also walked through.
+  local _nbody; _nbody="$(printf '%s\n' "$body" | sed $'s/[‐‑‒–—―]/-/g; s/[  ]/ /g')"
+  local hits; hits="$(printf '%s\n' "$_nbody" | grep -niEo -f "$pat" 2>/dev/null | head -5 || true)"
+  if [ -n "$hits" ]; then
+    echo "refuse: reader-jargon" >&2
+    die "copy-gate: internal code reached reader-facing copy in $(basename "$f"):
+$(printf '%s' "$hits" | sed 's/^/    /')
+  Reader copy names things in plain words and introduces a term before using it.
+  See shared/feynman.md. The contract may be as precise as it likes — the artefact is
+  where a person decides."
+  fi
+  ok "copy-gate: reader copy carries no internal codes."
+}
+
+cmd_gold_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh gold-gate <build-dir>"
+  local c="$dir/contract.md"; [ -f "$c" ] || return 0
+  local fx; fx="$(dirname "${BASH_SOURCE[0]}")/fixtures/gold"
+  local pat="$fx/self-referential.txt" ctl="$fx/positive-control.txt"
+  [ -f "$pat" ] || die "gold-gate: pattern file missing at $pat"
+  # PER-LINE coverage, not a total. `-ge 4` against an 11-line pattern meant 7 lines could be
+  # deleted outright and the control still reported 4/4 — silent pattern rot, the same defect the
+  # INV-5 control was fixed for two hundred lines away in the other file. Every pattern line must
+  # prove itself, and the count is pinned so a DELETED line cannot pass unnoticed either.
+  local _pl _missing=""
+  while IFS= read -r _pl; do
+    case "$_pl" in ''|'#'*) continue ;; esac
+    grep -qiF -- "$_pl" "$ctl" 2>/dev/null || _missing="$_missing
+    $_pl"
+  done < "$pat"
+  [ -z "$_missing" ] || die "gold-gate: PATTERN BROKEN — these lines no longer match the positive control:$_missing
+  Refusing to report a verdict."
+  local _want _have
+  _want="$(sed -n 's/^# expects:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ctl" | head -1)"
+  _have="$(grep -cE '^[^#[:space:]]' "$pat" 2>/dev/null || echo 0)"
+  if [ -n "$_want" ] && [ "${_have:-0}" != "$_want" ]; then
+    die "gold-gate: PATTERN COUNT CHANGED — $_have lines, the control expects $_want.
+  A deleted pattern line stops a whole class being checked; bump the pin deliberately or restore it."
+  fi
+
+  # Heading: ANY prefix, any level. `## 7. Reconciliation` fell straight through "no section" and
+  # PASSed a contract whose very next line was the fixture's own positive-control sentence.
+  # End the section on a heading at the SAME OR SHALLOWER level — never on its own sub-heading.
+  # `## Reconciliation` followed by `### Gold figure` used to terminate the section at the
+  # sub-heading, handing the hardened blocklist an empty string and printing "N/A — no
+  # Reconciliation section" over a body holding three verbatim positive-control lines. A bold
+  # pseudo-heading (`**Reconciliation**`) opened nothing at all.
+  local sec; sec="$(awk '
+    function lvl(s){n=0; while(substr(s,n+1,1)=="#") n++; return n}
+    tolower($0) ~ /^[[:space:]]{0,3}#+.*reconcil/  { f=1; d=lvl($0); next }
+    tolower($0) ~ /^[[:space:]]*\*\*reconcil[a-z]*:?\*\*[[:space:]]*:?[[:space:]]*$/ { f=1; d=99; next }
+    f && d==99 && /^[[:space:]]*\*\*[A-Za-z][A-Za-z ]*:?\*\*[[:space:]]*:?[[:space:]]*$/ { f=0 }
+    f && /^[[:space:]]{0,3}#+[[:space:]]/ { if (d==99 || lvl($0) <= d) { f=0 } }
+    f' "$c" 2>/dev/null)"
+  [ -n "$sec" ] || { ok "gold-gate: N/A — no Reconciliation section."; return 0; }
+
+  # Normalise before matching. Typographic hyphens and non-breaking spaces are ordinary in
+  # model-authored prose and defeated a fixed-string search: `cross‑path parity` with U+2011 read
+  # as clean. Map the dash and space families to ASCII first.
+  local nsec; nsec="$(printf '%s' "$sec" | sed $'s/[‐‑‒–—―]/-/g; s/[              ]/ /g')"
+
+  # ── The blocklist runs over the WHOLE section, ALWAYS. ──────────────────────────────────────
+  # Every previous defeat was an N/A arm switching this off: a section with no line containing the
+  # word "gold"; a units column reading "(units N/A)"; a numbered heading. Whether a gold is
+  # *declared* decides whether PROVENANCE is required — it must never decide whether a
+  # self-referential check is allowed to ship. Those are different questions and conflating them
+  # is what made three one-line escapes work.
+  local negform bad still phrases
+  phrases="$(sed 's/[][\.*^$(){}?+|/]/\\&/g' "$pat" | paste -sd'|' - )"
+  # Disclaimer forms, before the phrase. Two hand-written CORRECT sentences were refused in round 3
+  # — "Cross-path parity is explicitly rejected as a gold" and "We refuse any figure that is
+  # self-computed" — because only `refuses? to` was listed and the negation had to sit within two
+  # words. A gate that refuses a contract for saying it does the right thing gets switched off.
+  negform="(not|never|no|is not|are not|was not|were not|rather than|instead of|may not be|must not be|cannot be|can not be|forbidden|forbids?|refuses?|refused|rejects?|rejected|bans?|banned|disallows?|prohibits?|avoids?|excludes?|never[[:space:]]+use)([[:space:]]+[A-Za-z]+){0,5}[[:space:]]+($phrases)"
+  # A negation can sit on EITHER side of the phrase. Two shipped contracts write "A gate agreeing
+  # with itself proves nothing — so each INVARIANT pins the real failure shape", which is the gate's
+  # own doctrine stated correctly, and a before-only filter flagged both. A guard that fires on
+  # correct work gets switched off within a week, so the after-form counts too.
+  local postneg
+  postneg="($phrases)([[:space:]]+[A-Za-z]+){0,5}[[:space:]]+(proves?[[:space:]]+nothing|is[[:space:]]+not[[:space:]]+evidence|means?[[:space:]]+nothing|is[[:space:]]+worthless|is[[:space:]]+(explicitly[[:space:]]+)?(refused|rejected|forbidden|banned|disallowed|prohibited|excluded|avoided|not[[:space:]]+allowed|not[[:space:]]+used)|does[[:space:]]+not[[:space:]]+count|would[[:space:]]+prove[[:space:]]+nothing)"
+  # A negation only excuses the phrase if it GOVERNS it. "The board figure is not available so the
+  # gold is self-computed by the reproducing query" put a negation five words away that negates
+  # something else entirely — and the gate accepted the confession. Widening the window to catch
+  # real disclaimers ("We refuse any figure that is self-computed") made that possible, so the
+  # window stays wide and a CLAUSE BOUNDARY between the negation and the phrase cancels it.
+  # ERE has no lookahead, so this is a second pattern subtracted rather than an inline exclusion.
+  local connform
+  connform="(not|never|no|is not|are not|was not|were not|forbidden|forbids?|refuses?|refused|rejects?|rejected|bans?|banned|disallows?|prohibits?|avoids?|excludes?)([[:space:]]+[A-Za-z]+){0,5}[[:space:]]+(so|because|therefore|thus|hence|since|but|although|however|yet)([[:space:]]+[A-Za-z]+){0,5}[[:space:]]+($phrases)"
+  local _cand _keep=""
+  _cand="$(printf '%s' "$nsec" | grep -inFf "$pat" 2>/dev/null || true)"
+  while IFS= read -r _cand_line; do
+    [ -n "$_cand_line" ] || continue
+    # excused only when a disclaimer governs it and no clause boundary intervenes
+    if grep -qiE "$negform" <<<"$_cand_line" && ! grep -qiE "$connform" <<<"$_cand_line"; then continue; fi
+    if grep -qiE "$postneg" <<<"$_cand_line"; then continue; fi
+    _keep="$_keep$_cand_line
+"
+  done <<<"$_cand"
+  bad="$(printf '%s' "$_keep" | grep -v '^$' | head -3 || true)"
+  still="$(grep -iFf "$pat" "$ctl" 2>/dev/null | grep -ivE "$negform" | grep -ivcE "$postneg" || echo 0)"
+  [ "${still:-0}" -ge 4 ] || die "gold-gate: NEGATION FILTER TOO BROAD — it now swallows $((4-still)) of the 4 positive-control lines. Refusing to report a verdict."
+  if [ -n "$bad" ]; then
+    echo "refuse: self-referential-gold" >&2
+    die "gold-gate: the reconciliation gold is SELF-REFERENTIAL — a check the build runs against itself.
+$(printf '%s' "$bad" | sed 's/^/    /')
+  A query agreeing with itself proves nothing. If the pinned gold turned out not to be
+  reproducible, that is a HARD STOP: say so and ask the user to choose (find another
+  independent figure, accept a weaker gate explicitly, or re-cut the contract).
+  Substituting a check the code can pass is exactly the failure this gate exists to stop."
+  fi
+
+  # ── Provenance, required of NEW builds that declare a gold. ─────────────────────────────────
+  # N/A is a WHOLE-LINE / leading-token test now. Matching "N/A" anywhere let `gold: 4,182 loans
+  # (units N/A)` read as "no gold declared".
+  local goldlines realgold
+  goldlines="$(printf '%s' "$nsec" | LC_ALL=C grep -i 'gold' || true)"
+  realgold="$(printf '%s' "$goldlines" | LC_ALL=C grep -ivE '^[[:space:]]*[-*>]?[[:space:]]*(\*\*)?gold[^:]*:?(\*\*)?[[:space:]]*(is[[:space:]]+)?N/A\b' || true)"
+  if [ -f "$dir/.compass-format" ] && [ -n "$realgold" ]; then
+    local prov
+    prov="$(printf '%s' "$nsec" | LC_ALL=C grep -iE 'provenance[^A-Za-z]*[:=-]' | head -1 || true)"
+    [ -n "$prov" ] || die "gold-gate: this contract declares a numeric gold but names no provenance.
+  Add a 'provenance:' line to the Reconciliation section naming the EXTERNAL artefact the figure
+  comes from (an audited report, a board figure, a pre-change measurement of the old tree)."
+    # A provenance that points back at the build is not provenance. "provenance: the query itself"
+    # and "provenance: measured by the build itself" both satisfied a mere presence check, which
+    # made the requirement decorative on exactly the contracts it was written to catch.
+    local pval; pval="$(printf '%s' "$prov" | sed -E 's/.*[Pp]rovenance[^A-Za-z]*[:=-][[:space:]]*//')"
+    if printf '%s' "$pval" | LC_ALL=C grep -qiE 'itself|self-comput|^[[:space:]]*(the[[:space:]]+)?(same[[:space:]]+)?(query|build|code|script|gate|check|tool|run|pipeline)[[:space:].]*$|measured[[:space:]]+by[[:space:]]+the[[:space:]]+(build|query|code|script)'; then
+      echo "refuse: self-referential-provenance" >&2
+      die "gold-gate: the provenance line points back at this build:
+    $pval
+  Provenance names something this build did NOT produce. If no such source exists, that is the
+  HARD STOP — say so and ask the user, rather than citing the build as its own witness."
+    fi
+    printf '%s' "$pval" | LC_ALL=C grep -qE '[A-Za-z]{3}.*[A-Za-z]{3}' || die "gold-gate: the provenance line says nothing:
+    $pval"
+  fi
+  ok "gold-gate: reconciliation gold is not self-referential."
+}
+
+# ── Human-typed utilities (v0.30, review-3) ───────────────────────────────────────────────────
+# `orient-audit`, `artefact-audit`, `statusline-install`, `worktree-rm`, `cwd-slug` and
+# `scripts/spawn-smoke.sh` are invoked by NO skill, hook or suite. That is deliberate for a
+# forensic/CLI utility and a defect for anything meant to run automatically — the two look
+# identical from the outside, which is how six gates in this plugin came to exist and never run.
+# They are recorded here as the first kind. `spawn-smoke.sh` is asserted only to EXIST by the smoke
+# suite, which is not coverage; it is a manual feasibility harness.
+cmd_converge_waiver() { # <build-dir>  — may a NON-CONVERGED review-build hand on to ship?
+  # Compass had two states for a review: PASS, or blocked. A third really happens — the review did
+  # NOT converge and a human decided to ship anyway, knowing what is open. With no way to say that,
+  # the only route forward was to tick a box that was false, which is the falsification this build
+  # exists to prevent. So the state is sayable, and ONLY the user can say it.
+  #
+  # This deliberately does NOT live in `cmd_gate`: v0.28's INV-NO-LIFECYCLE-CHANGE freezes that
+  # function's PASS/SUPERSEDED/unchecked-box semantics byte-for-byte, and it caught the attempt
+  # immediately. A lifecycle change is high blast-radius and must not be made in passing — so the
+  # gate stays frozen and the exception is an explicit, separate, loud step the ship stage takes.
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh converge-waiver <build-dir>"
+  local f="$dir/receipts.md"; [ -f "$f" ] || die "converge-waiver: no receipts.md in '$dir'."
+  local block; block="$(last_block "$f" review-build)"
+  [ -n "$block" ] || die "converge-waiver: no review-build receipt in '$dir'."
+  local header; header="$(printf '%s' "$block" | head -n1)"
+  case "$header" in
+    *"ACCEPTED WITH OPEN FINDINGS"*) : ;;
+    *) die "converge-waiver: the review-build receipt is not 'ACCEPTED WITH OPEN FINDINGS' — use the normal gate." ;;
+  esac
+  printf '%s' "$block" | grep -qE '^- \[x\] converge-waiver: user-signed' \
+    || die "converge-waiver: no user-signed waiver in the review-build receipt.
+  A review that did not converge may only ship with a line the USER signs:
+  - [x] converge-waiver: user-signed · <what is open, and who accepted it>
+  A model-authored header does not count — that is how cold-critic became switchable."
+  # Loud, every time, to stderr: nobody reads this build's state and misses it.
+  printf 'COMPASS-GATE: WARN — this build SHIPS UN-CONVERGED under a user-signed waiver.\n' >&2
+  printf '%s' "$block" | grep '^- \[ \]' | sed 's/^/    NOT ACHIEVED: /' >&2
+  printf '%s' "$block" | grep -E '^- \[x\] converge-waiver: user-signed' | cut -c1-160 | sed 's/^/    SIGNED: /' >&2
+  ok "converge-waiver: user-signed waiver present — ship may proceed, un-converged and recorded."
+}
+
+cmd_new_build() { # <slug> [--state-root <dir>]
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: compass.sh new-build <slug>"
+  case "$slug" in *[!a-zA-Z0-9._-]*) die "new-build: slug may only contain [A-Za-z0-9._-]: '$slug'" ;; esac
+  local sr; sr="$(cmd_state_root 2>/dev/null)" || sr=".claude/builds"
+  local dir="$sr/$slug"
+  [ -d "$dir" ] && die "new-build: '$dir' already exists — refusing to overwrite a build directory."
+  mkdir -p "$dir" || die "new-build: could not create '$dir'"
+  printf 'compass-format: v0.30\ncreated: build-dir created by compass.sh new-build\n' > "$dir/.compass-format"
+  ok "new-build: $dir (stamped .compass-format v0.30)"
+}
+
+# Guard-first refusal, with the DISCRIMINATOR review demanded: a legacy dir and a hand-made dir are
+# byte-identical states, so a gate cannot refuse one and N/A-pass the other without a signal. The
+# signal is "claims the new format but was not created by new-build" — a contract carrying a
+# `compass-format:` header while the dotfile is absent. A legacy contract has neither and passes,
+# so all 27 existing builds keep working (the rollback clause requires exactly that).
+cmd_contract_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh contract-gate <build-dir>"
+  local c="$dir/contract.md"
+  [ -f "$c" ] || return 0
+  local hdr; hdr="$(hdr_get "$c" compass-format || true)"
+  [ -n "$hdr" ] || { ok "contract-gate: N/A — legacy build dir (no compass-format header)."; return 0; }
+  [ -f "$dir/.compass-format" ] || die "contract-gate: '$c' declares 'compass-format: $hdr' but $dir/.compass-format is absent.
+  That header is model-written and proves nothing. Create build dirs with:
+  compass.sh new-build <slug>"
+  # A stamp is evidence only if it carries what new-build writes. `: > .compass-format` produced a
+  # 0-byte file that passed as "created by new-build" — a stamp anyone can forge with one keystroke
+  # is not a stamp.
+  LC_ALL=C grep -q '^compass-format: v' "$dir/.compass-format" 2>/dev/null || die "contract-gate: $dir/.compass-format exists but is empty or malformed.
+  Expected a line 'compass-format: v<version>' as written by 'compass.sh new-build'.
+  A zero-byte stamp is not proof the dir was created by new-build."
+  ok "contract-gate: build dir was created by new-build (stamp present and well-formed)."
+}
+
 cmd_statusline() { # [<build-dir>]
   local dir="${1:-}"
   if [ -z "$dir" ]; then
@@ -3482,11 +4067,18 @@ main() {
     orient)            cmd_orient "$@" ;;
     progress-card)     cmd_progress_card "$@" ;;
     progress-gate)     cmd_progress_gate "$@" ;;
+    redfirst-check)    cmd_redfirst_check "$@" ;;
+    copy-gate)         cmd_copy_gate "$@" ;;
+    gold-gate)         cmd_gold_gate "$@" ;;
+    converge-waiver)   cmd_converge_waiver "$@" ;;
+    new-build)         cmd_new_build "$@" ;;
+    contract-gate)     cmd_contract_gate "$@" ;;
     statusline)        cmd_statusline "$@" ;;
     statusline-install) cmd_statusline_install "$@" ;;
     mode-gate)         cmd_mode_gate "$@" ;;
     artefact-gate)     cmd_artefact_gate "$@" ;;
-    artefact-deliver)  cmd_artefact_deliver "$@" ;;
+    rail)              cmd_rail "$@" ;;
+    artefact-publish)  cmd_artefact_publish "$@" ;;
     artefact-audit)    cmd_artefact_audit "$@" ;;
     orient-audit)      python3 "$(dirname "$0")/orient-audit.py" "$@" ;;
     milestone-gate)    cmd_milestone_gate "$@" ;;

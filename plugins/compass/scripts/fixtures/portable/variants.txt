@@ -1,0 +1,11 @@
+# SECOND CONTROL (v0.30, review-3 round 2) — the SAME violations, phrased differently.
+# Round 2 defeated the per-line control check by rewriting each pattern to the first control's
+# literal text: a line copied from the control always matches the control, so the check passed
+# while the patterns caught nothing real. Pinning the LINE COUNT did not help either — the count
+# was unchanged. What a pattern must prove is that it generalises, so it must also catch these,
+# which share no verbatim string with positive-control.txt.
+      open "$out"
+  OUT_DIR=${HOME}/Downloads
+    exec tailscale file cp -- "$report" laptop:
+  if [ -x "$(command -v open)" ]; then say "opening"; fi
+        taildrop_send "$page"

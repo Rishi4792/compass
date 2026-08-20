@@ -24,6 +24,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { extractReaderCopy, parseReaderCopy } from '../../scripts/reader-copy.mjs';
 
 // ── args ──────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -32,8 +33,12 @@ const view = argv[1];
 const shareable = argv.includes('--shareable');
 const outIdx = argv.indexOf('--out');
 const outFile = outIdx >= 0 ? argv[outIdx + 1] : null;
-if (!dir || !['brief', 'brief-body', 'cockpit', 'plan-map', 'program-cockpit', 'release-card'].includes(view || '')) {
-  console.error('usage: node gen.mjs <build-dir> <brief|brief-body|cockpit|plan-map|program-cockpit|release-card> [--shareable] [--out <file>]');
+// v0.30: the canonical view list, in ONE place. `cockpit` (an orphan HTML view nothing ever
+// invoked) and `program-cockpit` are deleted; `review` is added. Smoke reads this line rather
+// than re-typing the set, which is why deleting a view used to mean finding six copies.
+export const VIEWS = ['brief', 'brief-body', 'plan-map', 'release-card', 'review'];
+if (!dir || !VIEWS.includes(view || '')) {
+  console.error(`usage: node gen.mjs <build-dir> <${VIEWS.join('|')}> [--shareable] [--out <file>]`);
   process.exit(2);
 }
 const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : '');
@@ -47,12 +52,26 @@ if (!contract) { console.error(`gen: no contract.md in ${dir}`); process.exit(2)
 // contract's goal and printed to the user four times. Blank the fenced lines
 // (keeping line COUNT, so any line-based logic stays aligned) and parse that.
 // The raw text is still available for anything that genuinely needs the fences.
+// THE fence rule, used by every reader here. A fence closes only on a run of the SAME character
+// at least as long as the opener, so a 3-backtick sample nested in a 4-backtick mockup does not
+// end the block. Three readers held three copies; two were fixed and this one — the one every
+// contract and plan field passes through — was not. That is v0.29's INV-FENCE-BLIND defect back.
+function fenceScanner() {
+  let ch = '', len = 0;
+  return (line) => {
+    const m = String(line).match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!m) return { fence: false, inside: !!ch };
+    if (!ch) { ch = m[1][0]; len = m[1].length; return { fence: true, inside: true }; }
+    if (m[1][0] === ch && m[1].length >= len) { ch = ''; len = 0; }
+    return { fence: true, inside: true };
+  };
+}
 function stripFences(md) {
   const out = [];
-  let inFence = false;
+  const scan = fenceScanner();
   for (const ln of String(md).split('\n')) {
-    if (/^\s*(```|~~~)/.test(ln)) { inFence = !inFence; out.push(''); continue; }
-    out.push(inFence ? '' : ln);
+    const st = scan(ln);
+    out.push(st.fence || st.inside ? '' : ln);
   }
   return out.join('\n');
 }
@@ -69,6 +88,44 @@ function sections(md) {
 }
 // EVERY field/section read goes through the fence-blind copy (INV-FENCE-BLIND).
 const contractFields = stripFences(contract);
+
+// ── v0.30 INV-9: the READER-COPY BLOCK ────────────────────────────────────────────────────────
+// The model writes plain-language copy into a declared fence; gen.mjs lays it out and NEVER
+// invents it. Before this, every reader-facing field was scraped out of contract markdown, which
+// is why "INV-ORIENT: a front-door invocation with a Compass state-root" reached a page whose job
+// was to ask "Lock this contract?". A contract may be as jargon-dense as it needs to be — the
+// artefact is where a person decides, and the two are now different texts.
+// Guard-first: a contract with no block keeps the pre-v0.30 scraping behaviour byte-identically,
+// so all 27 existing builds still render.
+const READER_COPY = (() => {
+  // ONE extractor, shared with `compass.sh copy-gate` (scripts/reader-copy.mjs). This used to be a
+  // second, subtly different regex living here: it required the fence line to end immediately in a
+  // newline while copy-gate accepted a prefix match. One trailing space on the fence and this
+  // parser still rendered the block onto the page while the GATE reported "no block to check".
+  // Two parsers for one format is a drift bug waiting on a keystroke.
+  const r = extractReaderCopy(contract);
+  if (r.status === 'malformed') {
+    // Never silently fall back to scraping: a block the author WROTE and this cannot read is a
+    // defect to surface, not a reason to render unreviewed contract prose at a reader.
+    console.error(`gen: ${r.why}`);
+    process.exit(4);
+  }
+  if (r.status !== 'ok') return null;
+  const out = parseReaderCopy(r.body);
+  return Object.keys(out).length ? out : null;
+})();
+// rc('build-what', <fallback>) — the block wins where it speaks, the old path fills the rest.
+const rc = (key, fallback) => {
+  const v = READER_COPY && READER_COPY[key];
+  return (Array.isArray(v) ? v[0] : v) || fallback;
+};
+// rcList('now', fallback) — the block's plain-language list where it speaks, the contract's own
+// scope ladder where it does not. Guard-first, exactly like rc().
+const rcList = (key, fallback) => {
+  const v = READER_COPY && READER_COPY[key];
+  if (!v) return fallback;
+  return [].concat(v);
+};
 const secs = sections(contractFields);
 // anchored-at-start (after an optional `N.` numeric prefix), NOT a loose substring —
 // so `Goal` no longer matches `Non-goals`, and `## 4. Security …` / `## 2. Scope ladder` still resolve.
@@ -99,16 +156,40 @@ const breakColors = (s) => String(s)
   .replace(/#([0-9a-fA-F]{3,8})/g, '#​$1')     // #7C74FF → # + zero-width + hex (renders identically)
   .replace(/(rgba?|hsla?)(\()/gi, '$1​$2');    // rgb(/hsl( → rgb + zero-width + (
 // convert the contract's inline markdown to HTML AFTER escaping (so **/* /` never render literally)
-const mdInline = (s) => s
-  .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-  .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<em>$1</em>')
-  .replace(/`([^`]+)`/g, '<code>$1</code>');
+const mdInline = (s) => {
+  let out = String(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  // An ODD number of asterisks leaves an orphan: pairing consumes the opener of the next span and
+  // the closer arrives on the page as literal punctuation — three shipped Briefs ended a sentence
+  // "…own shareable Brief.)*". Markdown syntax is never something a reader should meet, so drop
+  // what is left over — but never inside a code span, where an asterisk is content.
+  out = out.split(/(<code>[\s\S]*?<\/code>)/).map((seg, i) => (i % 2 ? seg : seg.replace(/\*/g, ''))).join('');
+  return out;
+};
 const txt = (s) => mdInline(esc(breakColors(String(s))));
 
 // ── first paragraph of a section (skips leading blank/bold-label lines) ──
 function firstPara(body) {
   const paras = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-  return paras[0] || '';
+  const first = paras[0] || '';
+  // A paragraph ending in a COLON is a label, and its content is whatever follows. Returning the
+  // label alone silently dropped the content on 24 fields across 22 pages — including the Brief's
+  // "Proof" card on two builds, where the label survived and all four pinned gold figures (the
+  // numbers the build is checked against) did not. Nothing could see it: the text ends in a colon,
+  // which both the truncator and the cut check accept as a terminator.
+  if (/:$/.test(first) && paras[1]) {
+    // Skip a markdown TABLE's scaffolding. The card that exists to show the gold figure printed
+    // `| Figure | Value | Source |; |---|---|---|` — the header and the separator row — and then
+    // dropped the second figure. A reader should see the numbers, not the table's plumbing.
+    const rest = paras[1].split('\n')
+      .filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l))
+      .map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/\s*\|\s*/g, ' — ').trim())
+      .filter(Boolean);
+    if (rest.length) return `${first} ${rest.join('; ')}`;
+  }
+  return first;
 }
 // ── render a FULL section body as paragraphs (blank-line separated; lines joined by <br>) — used on the
 //    LOCAL Brief so the reconciliation figure/tolerance and the F-SECPIN role×view matrix + STRIDE-lite are
@@ -127,11 +208,29 @@ function invariants() {
   const body = sec('INVARIANT') || sec('Acceptance');
   const rows = [];
   for (const l of body.split('\n')) {
-    const m = l.match(/^-\s+\*\*(INV-[A-Z0-9][A-Z0-9-]*)[^*]*\*\*:?\s*(.*)$/);
+    const m = l.match(/^-\s+\*\*(INV-[A-Za-z0-9][A-Za-z0-9-]*)[^*]*\*\*:?\s*(.*)$/);
     if (!m) continue;
     // drop ONLY the "→ *assert:*" recipe tail — NOT every internal arrow, or binding text is lost
     // (INV-COMMSCAN's "→ CRITICAL", INV-SUITES' full "→ 0 … → PASS" chain, INV-NO-LEAK) (R3-M2).
-    let summary = m[2].split(/→\s*\*?\s*assert/i)[0].replace(/\*/g, '').replace(/[:.\s]+$/, '').trim();
+    let summary = m[2].split(/→\s*\*?\s*assert/i)[0].replace(/\*/g, '').replace(/[:\s]+$/, '').trim();
+    if (summary && !/[.!?)]$/.test(summary)) summary += '.';
+    // A deferred INVARIANT carries a bookkeeping marker ("— original text retained …"); render
+    // the deferral plainly instead of leaking the marker as if it were the assertion.
+    // the marker sits inside the BOLD NAME, not the summary, so match the whole line
+    const defer = l.match(/DEFERRED TO ([A-Za-z0-9.]+)/);
+    if (defer) {
+      // Name WHAT is deferred. One canned sentence for every deferral printed the identical line
+      // twice on the Brief — a reader saw the same words in two rows and could not tell what
+      // differed, which is the duplication the copy gate now catches. The contract keeps the
+      // original wording under "original text retained"; that clause is the plain answer.
+      const kept = l.match(/original text retained[^:]*:\s*\*\*\([^)]*\)\s*—\s*([^*]+)\*\*/);
+      const what = kept ? kept[1].replace(/[.\s]+$/, '') : '';
+      // ONE sentence, not two: a shared closing sentence is itself a repeated 40-char line, and
+      // the copy gate counts sentences, not rows. Folding the clause in keeps each row unique.
+      summary = what
+        ? `Not in this release — ${what}; it ships with the work it governs, in ${defer[1]}.`
+        : `Not in this release; it ships with the work it governs, in ${defer[1]}.`;
+    }
     rows.push({ name: m[1], summary });
   }
   return rows;
@@ -150,7 +249,7 @@ function scope() {
       if (items.length) return items;
     }
     const body = sec('Scope ladder') || sec('scope');
-    return bullets(body, new RegExp('^-\\s+' + kw + '\\b', 'i'))
+    return bullets(body, new RegExp('^-\\s+\\**\\s*' + kw + '\\b', 'i'))
       .map((l) => l.replace(new RegExp('^-\\s+' + kw + '\\s*:?\\s*', 'i'), '').replace(/\*/g, '').trim());
   };
   return { now: grab('NOW'), later: grab('LATER'), never: grab('NEVER') };
@@ -226,15 +325,32 @@ function goldFigures() {
 // theme edit would have silently drifted the artefacts out of the house system while
 // the anti-drift gate kept passing against the OLD values. Read the theme file and emit
 // the custom properties from it, so drift is impossible by construction.
-const THEME = JSON.parse(readFileSync(new URL('../rk-house-style/themes/neutral-indigo.json', import.meta.url), 'utf8'));
+// v0.30: the PINNED artefact design system. rk-house-style/neutral-indigo stays the system for the
+// PRODUCT UIs Compass builds for users — two systems, two audiences, decided at contract time.
+const THEME = JSON.parse(readFileSync(new URL('./themes/compass-artefact.json', import.meta.url), 'utf8'));
 const THEME_VARS = Object.entries(THEME)
   .filter(([k, v]) => !k.startsWith('_') && typeof v === 'string' && !k.startsWith('font'))
   .map(([k, v]) => `--${k}:${v};`)
   .join(' ');
+const DARK_VARS = Object.entries(THEME._dark || {})
+  .filter(([k]) => !k.startsWith('_'))
+  .map(([k, v]) => `--${k}:${v};`)
+  .join(' ');
 const HOUSE_CSS = `
+  /* v0.30: all three theme states, defined at TOKEN level only. Components are styled through
+     the tokens and never inside a media or [data-theme] block — a colour whose only definition
+     sits behind [data-theme] never applies in the un-stamped "system" state, which is the
+     classic unreadable-artifact bug. */
   :root{
     ${THEME_VARS}
   }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ ${DARK_VARS} }
+  }
+  :root[data-theme="dark"]{ ${DARK_VARS} }
+  /* The host paints its own ground in ITS theme, so a transparent body borrows the wrong one.
+     body carries an explicit background from a token. */
+  body{background:var(--bg);color:var(--ink);margin:0}
   *{box-sizing:border-box;margin:0}
   .cv-body{background:var(--bg);color:var(--ink);
     font-family:${THEME.fontSans};
@@ -246,7 +362,7 @@ const HOUSE_CSS = `
   .cv-body .lede b{color:var(--ink);font-weight:600}
   /* ── v0.29.0 the four bands — identical order on every view (INV-BANDS) ── */
   .cv-body .b-decide{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--accent);
-    border-radius:12px;padding:20px 22px;box-shadow:0 1px 2px rgba(10,37,64,0.04);margin-bottom:16px}
+    border-radius:12px;padding:20px 22px;box-shadow:0 1px 2px ${THEME.shadow};margin-bottom:16px}
   .cv-body .b-decide .ask{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
   .cv-body .b-decide h1{font-size:26px;letter-spacing:-.015em;line-height:1.2;margin-top:0}
   .cv-body .b-id{color:var(--mut);margin-top:8px;font-size:13.5px}
@@ -280,8 +396,10 @@ const HOUSE_CSS = `
   .cv-body .pill.later{background:var(--amberBg);color:var(--amberFg)}
   .cv-body .pill.never{background:var(--redBg);color:var(--redFg)}
   .cv-body table.t{width:100%;border-collapse:collapse;font-size:13px}
-  .cv-body table.t th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--kicker);padding:0 0 8px}
-  .cv-body table.t td{padding:8px 10px 8px 0;border-top:1px solid var(--line);color:var(--mut);vertical-align:top}
+  .cv-body table.t th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--kicker);padding:0 18px 8px 0}
+  .cv-body table.t th:last-child{padding-right:0}
+  .cv-body table.t td{padding:8px 18px 8px 0;border-top:1px solid var(--line);color:var(--mut);vertical-align:top;text-align:left}
+  .cv-body table.t td:last-child{padding-right:0}
   .cv-body table.t td.k{color:var(--ink);white-space:nowrap;font-weight:600;font-size:12px}
   .cv-body .foot{color:var(--kicker);font-size:12px;text-align:center;padding-top:4px}
   @media (max-width:900px){
@@ -291,13 +409,13 @@ const HOUSE_CSS = `
     .cv-body .verify{grid-column:2}
   }
   .cv-body .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-    box-shadow:0 1px 2px rgba(10,37,64,.04);padding:18px 20px;margin-top:16px}
+    box-shadow:0 1px 2px ${THEME.shadow};padding:18px 20px;margin-top:16px}
   .cv-body .card>.kicker{margin-bottom:8px;font-weight:700;text-transform:uppercase}
   .cv-body .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
   .cv-body .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
   .cv-body p{font-size:13px;color:var(--mut);line-height:1.55}
   .cv-body p b{color:var(--ink);font-weight:600}
-  .cv-body code{font-family:ui-monospace,monospace;font-size:12px;background:var(--chipBg);color:var(--ink);padding:1px 5px;border-radius:5px}
+  .cv-body code{font-family:${THEME.fontMono};font-size:12px;background:var(--chipBg);color:var(--ink);padding:1px 5px;border-radius:5px}
   .cv-body ul{list-style:none;margin-top:6px}
   .cv-body li{font-size:13px;color:var(--ink);line-height:1.5;padding:5px 0 5px 16px;position:relative;border-top:1px solid var(--line)}
   .cv-body li:first-child{border-top:0}
@@ -375,52 +493,141 @@ function parseMermaid(md) {
 }
 // Lay the graph out in reading order as a snake, so it reads left-to-right then back —
 // the shape a person scans, not a force-directed tangle.
-function logicBlock(graph) {
+function logicBlock(graph, ariaLead) {
   const ids = [...graph.nodes.keys()];
-  const COLS = 4, W = 210, H = 52, GX = 24, GY = 46, PAD = 8;
+  const W = 210, H = 54, GX = 30, GY = 54, PAD = 8, MAXCOL = 4;
+
+  // ── LAYERED layout, computed from the graph ────────────────────────────────────────────────
+  // The old layout placed nodes in DECLARATION order across a 4-column snake: row 1 ran
+  // left-to-right, row 2 right-to-left, row 3 left-to-right. A cold reader put it plainly —
+  // "I had to reverse direction mid-read". Arrows were then drawn between whatever grid cells
+  // the nodes happened to land in, so the picture looked structured and read as noise.
+  // Depth is now the longest path along SOLID edges (a dashed edge is a refusal, not flow), so
+  // every row reads the same direction and an arrow always points forward.
+  // Depth over ALL edges, not just solid ones. Using solid-only put every refusal TARGET at
+  // depth 0 — "STOP, fix the page" floated to the top row, above the step that refuses into it —
+  // and collapsed the chain into one narrow column with the page half empty. A refusal is still
+  // a successor: it happens after the thing that refuses.
+  const depth = new Map(ids.map((id) => [id, 0]));
+  for (let pass = 0; pass < ids.length; pass++) {
+    let moved = false;
+    for (const e of graph.edges) {
+      if (!depth.has(e.a) || !depth.has(e.b)) continue;
+      if (depth.get(e.b) < depth.get(e.a) + 1) { depth.set(e.b, depth.get(e.a) + 1); moved = true; }
+    }
+    if (!moved) break;
+  }
+  // Reading order = depth, ties broken by declaration. Wrap at MAXCOL, ALWAYS left-to-right —
+  // the snake reversed every other row and a cold reader said so: "I had to reverse direction
+  // mid-read."
+  // A REFUSAL TERMINAL is a node reached only by a dashed edge with nothing leaving it — "STOP,
+  // fix the page", "fallback: local path + reason". Depth ordering legitimately placed these
+  // inline on the main track, and a cold reader could not tell whether the happy path routed
+  // THROUGH a stop. They get their own band below the flow: still connected, visibly not the
+  // main track.
+  const outDeg = new Map(ids.map((id) => [id, 0]));
+  const inSolid = new Map(ids.map((id) => [id, 0]));
+  const inDashed = new Map(ids.map((id) => [id, 0]));
+  for (const e of graph.edges) {
+    if (outDeg.has(e.a)) outDeg.set(e.a, outDeg.get(e.a) + 1);
+    if (e.dashed) { if (inDashed.has(e.b)) inDashed.set(e.b, inDashed.get(e.b) + 1); }
+    else if (inSolid.has(e.b)) inSolid.set(e.b, inSolid.get(e.b) + 1);
+  }
+  const isTerminal = (id) => outDeg.get(id) === 0 && inDashed.get(id) > 0 && inSolid.get(id) === 0;
+  const byDepth = (a, b) => (depth.get(a) - depth.get(b)) || (ids.indexOf(a) - ids.indexOf(b));
+  const flow = ids.filter((id) => !isTerminal(id)).sort(byDepth);
+  const terms = ids.filter(isTerminal).sort(byDepth);
+
   const pos = new Map();
-  ids.forEach((id, i) => {
-    const row = Math.floor(i / COLS);
-    const colRaw = i % COLS;
-    const col = row % 2 === 0 ? colRaw : COLS - 1 - colRaw;   // snake
+  flow.forEach((id, i) => {
+    const row = Math.floor(i / MAXCOL), col = i % MAXCOL;
     pos.set(id, { x: PAD + col * (W + GX), y: PAD + row * (H + GY), row });
   });
-  const rows = Math.ceil(ids.length / COLS);
-  const vw = PAD * 2 + COLS * W + (COLS - 1) * GX;
+  const flowRows = Math.ceil(flow.length / MAXCOL);
+  // one blank row of separation, so the band reads as a different kind of thing
+  const termRow0 = flowRows + (terms.length ? 1 : 0);
+  terms.forEach((id, i) => {
+    const row = termRow0 + Math.floor(i / MAXCOL), col = i % MAXCOL;
+    pos.set(id, { x: PAD + col * (W + GX), y: PAD + row * (H + GY), row });
+  });
+  const rows = termRow0 + Math.ceil(terms.length / MAXCOL);
+  const vw = PAD * 2 + MAXCOL * W + (MAXCOL - 1) * GX;
   const vh = PAD * 2 + rows * H + (rows - 1) * GY;
+
   const boxes = ids.map((id) => {
     const p = pos.get(id);
     const { lead, rest } = splitLead(graph.nodes.get(id), 30);
-    const t1 = `<text x="${p.x + W / 2}" y="${p.y + (rest ? 22 : 30)}" text-anchor="middle" fill="${THEME.ink}" font-weight="600" font-size="12.5">${txt(lead)}</text>`;
-    const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 38}" text-anchor="middle" fill="${THEME.mut}" font-size="11.5">${txt(splitLead(rest, 34).lead)}</text>` : '';
+    const t1 = `<text x="${p.x + W / 2}" y="${p.y + (rest ? 22 : 31)}" text-anchor="middle" fill="${THEME.ink}" font-weight="600" font-size="12.5">${txt(lead)}</text>`;
+    // A sub-label is a deliberate second line, not an accident: same colour family, clearly
+    // smaller, and set on its own baseline. The old treatment read as a rendering fault.
+    const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 39}" text-anchor="middle" fill="${THEME.mut}" font-size="11" font-style="italic">${txt(fieldText(rest, 34))}</text>` : '';
     return `<rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="${THEME.surface}" stroke="${THEME.line}"/>${t1}${t2}`;
   }).join('');
+
   const arrows = graph.edges.map((e) => {
     const a = pos.get(e.a), b = pos.get(e.b);
     if (!a || !b) return '';
     const stroke = e.dashed ? THEME.redFg : THEME.mut;
     const dash = e.dashed ? ' stroke-dasharray="5 4"' : '';
     const mk = e.dashed ? 'arR' : 'arN';
-    let d;
+    let d, lx, ly;
     if (a.row === b.row) {
-      d = a.x < b.x ? `M${a.x + W},${a.y + H / 2} H${b.x - 4}` : `M${a.x},${a.y + H / 2} H${b.x + W + 4}`;
+      const fwd = a.x < b.x;
+      d = fwd ? `M${a.x + W},${a.y + H / 2} H${b.x - 4}` : `M${a.x},${a.y + H / 2} H${b.x + W + 4}`;
+      lx = (a.x + b.x) / 2 + W / 2; ly = a.y + H / 2 - 7;
     } else {
-      const midY = a.y + H + GY / 2;
+      const midY = Math.min(a.y, b.y) + H + GY / 2;
       d = `M${a.x + W / 2},${a.y + H} V${midY} H${b.x + W / 2} V${b.y - 4}`;
+      lx = (a.x + b.x) / 2 + W / 2; ly = midY - 6;
     }
-    return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.6"${dash} marker-end="url(#${mk})"/>`;
+    // Every dashed edge says WHAT refused. "Dashed = refuses and stops" told the reader a line
+    // was a refusal but never which check refused or why — they had to guess the source.
+    // Stagger: three refusals converging on nearby midpoints printed one on top of another,
+    // which is how the first attempt at this fix failed.
+    const slot = graph.edges.filter((x) => x.label).indexOf(e);
+    const label = e.label
+      ? `<text x="${lx}" y="${ly - (slot % 2) * 13}" text-anchor="middle" fill="${stroke}" font-size="10.5" font-weight="600">${txt(e.label)}</text>`
+      : '';
+    return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.6"${dash} marker-end="url(#${mk})"/>${label}`;
   }).join('');
-  return `<svg viewBox="0 0 ${vw} ${vh}" role="img" aria-label="How this build flows: ${txt(ids.map((i) => graph.nodes.get(i)).join(', then '))}">` +
+
+  return `<svg viewBox="0 0 ${vw} ${vh}" role="img" aria-label="${txt(ariaLead || 'How this build flows')}: ${txt(ids.map((i) => graph.nodes.get(i)).join(', then '))}">` +
     `<defs>` +
     `<marker id="arN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.mut}"/></marker>` +
     `<marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.redFg}"/></marker>` +
     `</defs>${arrows}${boxes}</svg>`;
 }
-// Always produce a block. With no mermaid fence, derive one from the build's own stages
-// so the diagram is still true and specific rather than absent.
+
+// A finding's own lifecycle. The review page captioned its diagram "How a finding travels: raised,
+// proven reachable, fixed, then re-attacked" and then drew whatever mermaid graph the CONTRACT
+// happened to contain — a picture of the build's data flow under a caption about findings. 14 of
+// the 28 existing builds carry a contract mermaid, so on half of them the page said one thing and
+// showed another. A kind with its own graph now keeps it.
+const KIND_GRAPHS = {
+  review: {
+    aria: 'How a finding travels',
+    nodes: new Map([
+      ['a', 'a reviewer raises it'], ['b', 'proven reachable'], ['c', 'fixed'],
+      ['d', 're-attacked, still fixed'], ['e', 'dropped — not reachable'],
+    ]),
+    edges: [
+      { a: 'a', b: 'b' }, { a: 'b', b: 'c' }, { a: 'c', b: 'd' },
+      { a: 'b', b: 'e', dashed: true, label: 'already guarded' },
+      { a: 'd', b: 'c', dashed: true, label: 'broke again' },
+    ],
+  },
+};
+// Which graph the last call actually drew. The captions used to assert what the picture showed
+// while `logicBlockFor` ignored its `kind` and drew the contract's mermaid whenever one existed —
+// so the Release Card captioned a data-flow diagram "every box a real gate it had to pass", and
+// the Plan Map captioned the same picture "the shape of the work". Three of five views said one
+// thing and showed another. A caption is now derived from what was drawn.
+let LAST_GRAPH_SOURCE = '';
 function logicBlockFor(kind) {
+  if (KIND_GRAPHS[kind]) { LAST_GRAPH_SOURCE = 'kind'; return logicBlock(KIND_GRAPHS[kind], KIND_GRAPHS[kind].aria); }
   const g = parseMermaid(contract);
-  if (g) return logicBlock(g);
+  if (g) { LAST_GRAPH_SOURCE = 'contract'; return logicBlock(g); }
+  LAST_GRAPH_SOURCE = 'lifecycle';
   const nodes = new Map([
     ['c', 'contract locked'], ['p', 'plan locked'], ['b', 'build, step by step'],
     ['r', 'adversarial review'], ['s', 'ship'], ['x', 'a gate refuses'],
@@ -432,14 +639,40 @@ function logicBlockFor(kind) {
   return logicBlock({ nodes, edges });
 }
 
+// Call AFTER logicBlockFor (argument order guarantees it): returns the caller's caption only when
+// the caller's own graph was drawn, and otherwise names what the reader is actually looking at.
+function flowCaption(own) {
+  if (LAST_GRAPH_SOURCE === 'contract') return 'Drawn from this contract\u2019s own logic map \u2014 every box is a real check, not a stage name.';
+  if (LAST_GRAPH_SOURCE === 'lifecycle') return 'The Compass lifecycle this build passes through \u2014 this contract carries no diagram of its own.';
+  return own;
+}
 const firstNonEmpty = (xs) => (xs.find((x) => x && String(x).trim()) || '').toString().trim();
 const firstBullet = (body) => {
   const m = String(body || '').split('\n').find((l) => /^\s*-\s+\S/.test(l));
   return m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
 };
 const lineMatching = (body, re) => {
-  const m = String(body || '').split('\n').find((l) => re.test(l) && /\S/.test(l));
-  return m ? m.replace(/^\s*[-*]\s+/, '').replace(/\*\*/g, '').trim() : '';
+  const lines = String(body || '').split('\n');
+  const i = lines.findIndex((l) => re.test(l) && /\S/.test(l));
+  if (i < 0) return '';
+  const clean = (l) => l.replace(/^\s*[-*]\s+/, '').replace(/\*\*/g, '').trim();
+  const first = clean(lines[i]);
+  // The SAME colon rule firstPara got in round 2, which this sibling never received: a line ending
+  // in a colon is a label and its content is what follows. The Brief's "Proof" card is fed from
+  // here, so on six pages it printed `Gold figures (literal, pinned):` and dropped the figures —
+  // the very numbers that card exists to show.
+  if (/:$/.test(first)) {
+    const rest = [];
+    for (let j = i + 1; j < lines.length && rest.length < 6; j++) {
+      if (/^\s*\|?\s*:?-{2,}/.test(lines[j])) continue;   // a table's separator row is not content
+      const t = clean(lines[j]).replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/\s*\|\s*/g, ' — ');
+      if (!t) { if (rest.length) break; else continue; }
+      if (/^#/.test(lines[j])) break;
+      rest.push(t);
+    }
+    if (rest.length) return `${first} ${rest.join('; ')}`;
+  }
+  return first;
 };
 // `touches` lives on the INDEX row, not in contract.md — read it there rather than
 // showing the reader a vague fallback.
@@ -477,13 +710,78 @@ function bandNA(title, reason) {
 }
 // INV-NO-TRUNCATION: split long prose at a sentence/word boundary into a lead and the
 // rest. NEVER a character slice — a title cut mid-word reads as a bug, because it is one.
+// v0.30 defect 7 + 2: an honest field. splitLead() cuts at a word boundary and DISCARDS the rest,
+// which produced "…and so the class" and a Blast-radius list ending on a dangling separator — both
+// read as "there is more, silently dropped". This trims a trailing separator and, when a list IS
+// shortened, SAYS SO with a count instead of implying it.
+// NOTE (v0.30, review-3 round 2): an attempt to mechanically strip addresses out of scraped
+// engineering prose was tried here and REVERTED. Deleting "(contract.md:3349, receipts.md:3356)"
+// from "flip its three early returns (missing contract.md:3349, missing receipts.md:3356, empty
+// block:3358)" leaves "(missing, missing, empty block:3358" — jargon traded for gibberish, which is
+// worse for the reader, not better. Prose written for engineers cannot be machine-translated into
+// prose written for a decision-maker; that is precisely why the architecture is "the model writes
+// the reader copy into the state file, gen.mjs only lays it out". Where reader copy is absent the
+// page shows the plan's own words and SAYS they are the plan's own words.
+// Markdown emphasis markers are SOURCE syntax; a reader should never meet one. Stray `*` and `**`
+// were reaching pages — a Brief ended a sentence `…own shareable Brief.)*` — because prose is
+// scraped from markdown and only paired markers were being stripped upstream.
+function demd(x) {
+  return String(x || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,;:)])/g, '$1$2')
+    .replace(/\*+/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+function fieldText(v, max = 150) {
+  const full = demd(String(v || '').trim());
+  if (full.length <= max) return full.replace(/[;,]\s*$/, '');
+  const parts = full.split(/;\s*/).filter(Boolean);
+  if (parts.length > 1) {
+    const kept = [];
+    let n = 0;
+    for (const part of parts) {
+      if (n + part.length > max && kept.length) break;
+      kept.push(part); n += part.length + 2;
+    }
+    const hidden = parts.length - kept.length;
+    return kept.join('; ') + (hidden > 0 ? ` — and ${hidden} more` : '');
+  }
+  // Prefer a sentence boundary, so a shortened field ends where a thought ends. A bare ellipsis
+  // is still a cut — the artefact gate is right to flag it — so when there is no clean boundary,
+  // SAY the field continues instead of trailing off.
+  // Ending on a sentence boundary is right; ending there SILENTLY is not. This path dropped the
+  // rest of the field on 43 of 140 pages with nothing to show it had — this build's own Brief kept
+  // "a stranger could not do that" and dropped "Target: none of them, and the stranger answers both
+  // questions plainly", which is the half that says what success looks like. And because the text
+  // ends in a full stop, the cut check cannot see it either.
+  const sentence = full.slice(0, max + 60).match(/^[\s\S]*?[.!?](?=\s)/);
+  if (sentence && sentence[0].length >= max * 0.5) {
+    const kept = sentence[0].trim();
+    return kept.length < full.trim().length ? `${kept} (continues)` : kept;
+  }
+  const cut = splitLead(full, max);
+  const lead = cut.lead.replace(/[;,]\s*$/, '');
+  return cut.rest ? `${lead} (continues)` : lead;
+}
+
 function splitLead(text, softMax = 92) {
   const t = String(text || '').trim();
   if (t.length <= softMax) return { lead: t, rest: '' };
   const dot = t.slice(0, softMax + 40).search(/[.!?](\s|$)/);
   if (dot > 20) return { lead: t.slice(0, dot + 1).trim(), rest: t.slice(dot + 1).trim() };
+  // NOTE: do NOT add a "(continues)" marker or a synthetic full stop here. `lead` and `rest` are
+  // rendered adjacently (title then detail), so nothing is lost and the text must stay contiguous —
+  // INV-NO-TRUNCATION asserts a 363-character title survives WHOLE, and inserting a marker between
+  // the halves breaks exactly that. A marker belongs where content is DROPPED, which is fieldText,
+  // not here. (Tried and reverted in review-3 round 2.)
+  // A comma-joined path list has no spaces, so `lastIndexOf(' ')` found nothing and the fallback
+  // was `t.length` — "do not cut at all". Downstream the field was still clipped, and it landed
+  // mid-filename ("…CHANGELOG.md,RE") with nothing to say it continued. Fall back to a comma or a
+  // slash before giving up, and always hand back the remainder so the caller can mark it.
   const sp = t.lastIndexOf(' ', softMax);
-  const cut = sp > 20 ? sp : t.length;
+  const cm = Math.max(t.lastIndexOf(',', softMax), t.lastIndexOf(';', softMax));
+  const cut = sp > 20 ? sp : (cm > 20 ? cm + 1 : (softMax > 20 ? softMax : t.length));
   return { lead: t.slice(0, cut).trim(), rest: t.slice(cut).trim() };
 }
 
@@ -495,8 +793,11 @@ function briefBody() {
   const security_ = security();
   const facets = hdr('Facets') || hdr('facets') || 'library';
   const version = (title.match(/·\s*(v[\d.]+)\s*$/) || [, 'v1'])[1];
-  const doneSentence = splitLead(goal, 120).lead;
-  const nowItems = (sc.now || []);
+  const doneSentence = fieldText(goal, 120);
+  // v0.30: the reader-copy block now covers the scope ladder too. It previously covered only the
+  // four decision cards, so the ladder rendered contract prose verbatim — which is where the cold
+  // reader hit six words of insider shorthand in a row and got nothing from it.
+  const nowItems = rcList('now', sc.now || []);
   const touches = hdr('touches') || '';
 
   // idParts carry markup deliberately, so they are pre-escaped here rather than by the band.
@@ -508,32 +809,39 @@ function briefBody() {
   // the one row a reader actually scans.
   const doneMeans = firstNonEmpty([
     firstBullet(sec('Acceptance & INVARIANTs')), firstPara(sec('Done')),
-    (goal.split(/(?<=[.!?])\s/)[1] || ''), 'every INVARIANT below passes its command',
+    (goal.split(/(?<=[.!?])\s/)[1] || ''), 'every INVARIANT below passes its command.',
   ]);
   const goldLine = firstNonEmpty([
     lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i),
-    firstBullet(sec('Reconciliation')), 'no reconciliation declared',
+    firstBullet(sec('Reconciliation')), 'no reconciliation declared.',
   ]);
-  const blast = firstNonEmpty([touches, indexTouches(), 'declared in the plan']);
+  // v0.30 defect 7: the list ended on a dangling separator, which reads as "and more, silently
+  // dropped". Trim it, and say how many are not shown rather than implying it.
+  const blast = String(firstNonEmpty([touches, indexTouches(), 'declared in the plan.']))
+    .replace(/[;,]\s*$/, '').trim();
   const b2 = band2Facts('The facts you need to decide', [
-    { k: 'Build what', v: txt(splitLead(goal, 150).lead) },
-    { k: 'Done means', v: txt(splitLead(doneMeans, 150).lead) },
+    { k: 'Build what', v: txt(fieldText(rc('build-what', goal), 150)) },
+    { k: 'Done means', v: txt(fieldText(rc('done-means', doneMeans), 150)) },
     { k: 'Proof', v: shareable
         ? 'Reconciliation gold is pinned locally and enforced by the suites; the literal is withheld here.'
-        : txt(splitLead(goldLine, 150).lead) },
-    { k: 'Blast radius', v: txt(splitLead(blast, 150).lead) },
+        : txt(fieldText(rc('proof', goldLine), 150)) },
+    { k: 'Blast radius', v: txt(fieldText(rc('blast-radius', blast), 150)) },
   ]);
 
   const b3 = band3Flow(
     logicBlockFor('contract'),
-    'Drawn from this contract\u2019s own logic map — every box is a real check, not a stage name.',
+    // Route through flowCaption like every other view. The Brief asserted "drawn from this
+    // contract's own logic map" unconditionally — so on the 14 of 28 builds whose contract carries
+    // no diagram, the Brief and the Plan Map of the SAME build described one picture two different
+    // ways, and the Brief's version was the false one.
+    flowCaption('Drawn from this contract\u2019s own logic map — every box is a real check, not a stage name.'),
     ['Solid = the happy path', 'Dashed = refuses and stops'],
   );
 
   const scopeRows = [
     ...nowItems.map((i) => ({ p: 'now', t: i })),
-    ...((sc.later || []).length ? [{ p: 'later', t: (sc.later || []).join(' · ') }] : []),
-    ...((sc.never || []).length ? [{ p: 'never', t: (sc.never || []).join(' · ') }] : []),
+    ...(rcList('later', sc.later || []).length ? [{ p: 'later', t: rcList('later', sc.later || []).join(' · ') }] : []),
+    ...(rcList('never', sc.never || []).length ? [{ p: 'never', t: rcList('never', sc.never || []).join(' · ') }] : []),
   ];
   const scopeCard = scopeRows.length
     ? bandSection('What\u2019s in scope', 'What ships now, what waits, and what we\u2019ve ruled out for good.',
@@ -543,7 +851,7 @@ function briefBody() {
   const invCard = inv.length
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
-        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${txt(splitLead(i.summary, 150).lead)}</td></tr>`).join('') + `</table>`)
+        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${txt(fieldText(i.summary, 150))}</td></tr>`).join('') + `</table>`)
     : bandNA('The promises that can\u2019t break', 'this contract pins no INVARIANTs');
 
   // ── restored behaviour (R2-M1 rule: a behavioural guard is re-expressed, never retired) ──
@@ -574,16 +882,18 @@ function briefBody() {
   const guardCard = security_.present
     ? bandSection('Guardrails', 'How this gets turned off, undone, and watched.',
         `<ul class="pl">` +
-        `<li><span class="pill now">off</span><span>${txt(splitLead(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract', 150).lead)}</span></li>` +
-        `<li><span class="pill now">undo</span><span>${txt(splitLead(firstPara(sec('Rollback')) || 'rollback declared in the contract', 150).lead)}</span></li>` +
-        `<li><span class="pill now">watch</span><span>${txt(splitLead(firstPara(sec('Observability')) || 'observability declared in the contract', 150).lead)}</span></li>` +
+        `<li><span class="pill now">off</span><span>${txt(fieldText(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150))}</span></li>` +
+        `<li><span class="pill now">undo</span><span>${txt(fieldText(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150))}</span></li>` +
+        `<li><span class="pill now">watch</span><span>${txt(fieldText(firstPara(sec('Observability')) || 'observability declared in the contract.', 150))}</span></li>` +
         `</ul>`)
     : bandNA('Guardrails', 'no Security & data-sensitivity block in this contract — treat the sensitive surface as unclassified, not a cleared N/A');
 
   return `<section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Contract Brief${shareable ? ' · shareable' : ''}</div>
   ${b1}
-  <p class="lede">${txt(goal)}</p>
+  <!-- v0.30 defect 1: the goal used to render here AND in the Build-what card directly below,
+       so the reader met the same sentence twice in the first screen (three times before the cover
+       was removed). The facts row owns it now. -->
   ${shareableCaveat}
   ${b2}
   ${b3}
@@ -616,7 +926,7 @@ function cover() {
   .cv-cover .mark em{font-style:normal;color:#B8B2FF}
   .cv-cover .sub{margin-top:18px;font-size:18px;font-weight:500;color:#C9C5F0;max-width:62ch;line-height:1.45}
   .cv-cover .sub b{color:#EFEDFF;font-weight:700} .cv-cover .sub em{font-style:normal;color:#B8B2FF}
-  .cv-cover .sub code{font-family:ui-monospace,monospace;font-size:15px;color:#B8B2FF}
+  .cv-cover .sub code{font-family:${THEME.fontMono};font-size:15px;color:#B8B2FF}
   .cv-cover .needle{position:absolute;left:50%;top:40px;transform:translateX(-50%)}
 </style>
 <section class="cv-cover">
@@ -724,14 +1034,53 @@ function planMap() {
     const m = ln.match(/^\s*-\s*\[([ x])\]\s*(.+)$/);
     if (m) {
       const raw = m[2].replace(/\*\*/g, '').replace(/`/g, '');
-      const num = (raw.match(/^(\d+)\s*·\s*/) || [, String(steps.length + 1)])[1];
-      const body = raw.replace(/^\d+\s*·\s*/, '');
+      // SUB-STEP labels are part of the plan's own numbering: `4a`, `7b`, `25b`. Matching only
+      // `\d+` made them fall back to positional numbering, so the rendered column read
+      // 1 2 3 4 5 6 5 6 7 10 8 9 … — a reader saw "5" twice and a row numbered 10 labelled 7b.
+      // BOTH separators. Round 3 taught this `4a` for the `·` form only; two builds write `1b. `,
+      // so 16 of 17 rows on one plan-map showed a number contradicting the number in their own
+      // title. Same sibling class as the fence and severity readers.
+      const num = (raw.match(/^(\d+[a-z]?)\s*[·.)]\s+/) || [, String(steps.length + 1)])[1];
+      let body = raw.replace(/^\d+[a-z]?\s*[·.)]\s+/, '');
+      // The VERIFY usually sits ON the checkbox line, at the end: "… VERIFY: <command>". This
+      // branch used to `continue` before the VERIFY matcher below ever ran, so the matcher was
+      // unreachable for the format real plans actually use — all 30 steps rendered "none recorded"
+      // under a caption promising every tick was proven. Split it off the body here.
+      let inlineVerify = '';
+      // Case-SENSITIVE and the colon is REQUIRED. With `/i` and an optional colon this matched the
+      // ordinary English word in "nothing to verify (the common case)" and truncated the step
+      // there — silently, on any step whose text happens to contain "verify". The convention is a
+      // literal uppercase `VERIFY:` marker, so match exactly that.
+      // Found by POSITION, not by case. Case-sensitivity was chosen to stop the ordinary word
+      // "verify" in prose truncating a step — but real plans write `*Verify:*` and `- verify:`, so
+      // it produced 92 false "none recorded for this step" claims on pages that display the very
+      // command they say does not exist. The marker is what starts a segment: the line, a sentence
+      // end, or a bullet. "there is nothing to verify (the common case)" is mid-sentence and is
+      // therefore still not a marker.
+      // A QUALIFIER may sit between the word and its colon — `**Verify (INV-8):**`,
+      // `**SINGLE VERIFY (merged):**`, `*Verify each:*` — and the separator may be a dash rather
+      // than a colon. 17 steps across 8 builds said "none recorded" while printing their command
+      // in the very next column, under a caption promising a box is only ticked once it has run.
+      const iv = body.match(/(?:^|(?<=[.;·—])\s+|(?<=\s)[-*]\s+)\*{0,2}(?:single\s+)?verify(?:\s+\w+)?\s*(?:\([^)]*\))?\s*[:—–]\*{0,2}\s*(.+)$/i)
+              || body.match(/(?:^|\s)\*{1,2}V\.\*{1,2}\s*(.+)$/)
+              // `*V.*` with nothing after it is a shorthand the plan defines once, not an absent
+              // proof. Saying "none recorded" about it is false on all 17 of that build's steps.
+              || (/\s\*{1,2}V\.\*{1,2}\s*$/.test(body) ? [body, 'V. — the shared verify recipe this plan defines once'] : null);
+      if (iv) { inlineVerify = iv[1].trim(); body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
       const { lead, rest } = splitLead(body, 74);
-      cur = { n: num, title: lead, detail: rest, verify: '', done: m[1] === 'x' };
+      cur = { n: num, title: lead, detail: rest, verify: inlineVerify, done: m[1] === 'x' };
       steps.push(cur);
       continue;
     }
-    const v = ln.match(/^\s*\*\*VERIFY:?\*\*\s*(.+)$/i) || ln.match(/^\s*VERIFY:\s*(.+)$/i);
+    // Also match VERIFY written INLINE, which is how a real plan writes it: the checkbox line ends
+    // "… **VERIFY:** `cmd`". Requiring it at line start meant all 30 steps rendered "Verify — none
+    // recorded for this step" on a page whose own caption reads "A box is only ticked when its
+    // VERIFY command has actually run and passed" — 30 ticked boxes over 30 empty proofs, and the
+    // gate's --steps check compared two integers and passed it.
+    const VQ = '(?:single\\s+)?verify(?:\\s+\\w+)?\\s*(?:\\([^)]*\\))?\\s*[:—–]?';
+    const v = ln.match(new RegExp(`^\\s*\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'))
+           || ln.match(new RegExp(`^\\s*[-*]\\s*\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'))
+           || ln.match(new RegExp(`(?:^|(?<=[.;·\u2014])\\s+)\\*{0,2}${VQ}\\*{0,2}\\s*(.+)$`, 'i'));
     if (v && cur) { cur.verify = (cur.verify ? cur.verify + ' ' : '') + v[1].replace(/\*\*/g, '').trim(); continue; }
     if (cur && !cur.verify && /^\s{4,}\S/.test(ln) && !cur.detail) cur.detail = ln.trim().replace(/\*\*/g, '');
   }
@@ -746,14 +1095,24 @@ function planMap() {
   ]);
 
   const b2 = band2Facts('The facts you need to decide', [
-    { k: 'What changes', v: txt(splitLead(firstNonEmpty([firstPara(psecGet('The approach')), firstPara(psecGet('Approach')), firstPara(sec('Goal & scope'))]), 150).lead) },
+    // Never empty. All three fallbacks were absent on 7 builds, so the first fact under "The facts
+    // you need to decide" — on the page asking "Approve this plan?" — rendered as a blank box, and
+    // the gate could not see it because an empty string trips no rule. Widen the chain, then say
+    // plainly that the plan does not state it.
+    { k: 'What changes', v: txt(fieldText(firstNonEmpty([
+        firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
+        firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
+        firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
+        steps.length ? `${steps.length} steps, beginning: ${steps[0].title}` : '',
+        'not stated in this plan — read plan.md before approving',
+      ]), 150)) },
     { k: "How it's proven", v: txt(`${invariants().length} invariants, each a command; every step carries its VERIFY.`) },
-    { k: 'What it touches', v: txt(splitLead(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above']), 150).lead) },
-    { k: 'Rollback', v: txt(splitLead(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'declared in the contract']), 150).lead) },
+    { k: 'What it touches', v: txt(fieldText(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150)) },
+    { k: 'Rollback', v: txt(fieldText(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150)) },
   ]);
 
   const b3 = band3Flow(logicBlockFor('plan'),
-    'The shape of the work — every box is a real check, not a stage name.',
+    flowCaption('The shape of the work — every box is a real check, not a stage name.'),
     ['Solid = the happy path', 'Dashed = refuses and stops']);
 
   const stepRows = steps.map((st) => {
@@ -778,8 +1137,8 @@ function planMap() {
     if (!body) return bandNA(title, naReason);
     const items = bullets(body, /^-\s+/).slice(0, 8);
     const inner = items.length
-      ? `<ul class="pl">${items.map((i) => `<li><span class="pill now">·</span><span>${txt(splitLead(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190).lead)}</span></li>`).join('')}</ul>`
-      : `<p class="b-det">${txt(splitLead(firstPara(body), 400).lead)}</p>`;
+      ? `<ul class="pl">${items.map((i) => `<li><span class="pill now">·</span><span>${txt(fieldText(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190))}</span></li>`).join('')}</ul>`
+      : `<p class="b-det">${txt(fieldText(firstPara(body), 400))}</p>`;
     return bandSection(title, purpose, inner);
   };
   const b5 = secOrNA('The approach', 'What we\u2019re doing, and what we deliberately rejected.',
@@ -842,7 +1201,7 @@ function programCockpit() {
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Program Cockpit</div>
   <h1>${txt(pname || title)}</h1>
-  ${band3Flow(logicBlockFor('program'), 'The lifecycle every phase of this program passes through.', ['Solid = the happy path', 'Dashed = refuses and stops'])}
+  ${band3Flow(logicBlockFor('program'), flowCaption('The lifecycle every phase of this program passes through.'), ['Solid = the happy path', 'Dashed = refuses and stops'])}
   ${pname ? `<div class="card vpc-tl"><div class="kicker">Program — here: ${txt(cur || 'COMPLETE')}</div><div class="tl vert">${strip}</div></div>`
           : `<p class="lede">Standalone build — no program.</p>`}
   <div class="card"><div class="kicker">This build — ${txt(slug)}</div><div class="tl">${build}</div></div>
@@ -852,13 +1211,367 @@ function programCockpit() {
 }
 
 // RELEASE CARD — what shipped (version + NOW-scope headline). Milestone: ship. Deterministic (contract.md).
+// ── review artefact (v0.30) ───────────────────────────────────────────────────────────────────
+// "What the reviews caught, and what happened to it." The contract puts this above the Release
+// Card deliberately: a shipping certificate tells you a thing shipped; this tells you what was
+// wrong with it and whether anyone fixed it. It reads the ledger, which is the only record that
+// survives a review.
+// ── the ledger parser (v0.30, review-3 round 4) ───────────────────────────────────────────────
+// Four rounds of patching a row-splitting heuristic produced a page that printed a wrong number on
+// 21 of 25 builds — including four that rendered "0 findings · Nothing is waiting on you" over
+// ledgers mentioning CRITICAL a dozen times. The heuristic assumed one well-formed table shape. A
+// real ledger has ten column counts, bullet sections, header rows, inline code spans containing a
+// bare pipe, and tables with no Status column at all. So: parse it properly, once.
+function splitLedgerRow(line) {
+  // Mask what must not be treated as a column edge: markdown's `\|` escape, and any pipe inside an
+  // inline code span (`a \| b`). Both were splitting rows into the wrong columns — and the two rows
+  // that DOCUMENT that bug were themselves being mis-read by it.
+  let masked = line.replace(/\\\|/g, '\u0001');
+  masked = masked.replace(/`[^`]*`/g, (m) => m.replace(/\|/g, '\u0002'));
+  const cells = masked.split('|');
+  if (cells.length && !cells[0].trim()) cells.shift();
+  if (cells.length && !cells[cells.length - 1].trim()) cells.pop();
+  return cells.map((c) => c.replace(/\u0001/g, '|').replace(/\u0002/g, '|').trim());
+}
+const isSeparatorRow = (cells) => cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
+function findCol(header, re) {
+  if (!header) return -1;
+  return header.findIndex((h) => re.test(String(h).replace(/\*/g, '').trim()));
+}
+// The leading verdict of a cell, never a keyword anywhere in it: "**MAJOR** — … **Not Critical**:
+// it cannot ship a wrong number" was being graded CRITICAL off its own explanation.
+// THE severity vocabulary, used by every reader. Whole words only: `CRITIQUE-TARGET`,
+// `cold-critic` and `Majority` are not severities, and substring matching graded 13 real rows
+// wrong — three of them rows whose own id says Major, shipping with a red `crit` pill.
+const SEV_WORD = /\b(CRIT(?:ICAL)?|BLOCKER|MAJ(?:OR)?|MIN(?:OR)?|NIT)\b/i;
+function sevFromText(t) {
+  const m = String(t || '').match(SEV_WORD);
+  if (!m) return null;
+  const w = m[1].toUpperCase();
+  return (w.startsWith('CRIT') || w === 'BLOCKER') ? 'crit' : w.startsWith('MAJ') ? 'maj' : 'min';
+}
+function leadingSeverity(cell) {
+  // ABBREVIATIONS COUNT. Real ledgers head the column `Sev` and write `Crit`, `Maj`, `Crit→spec`.
+  // Demanding the full word painted two CRITICAL findings `min` on a shipped page and printed
+  // "1 critical" where there were three.
+  const m = String(cell || '').replace(/\*/g, '').trim().match(/^(CRIT(?:ICAL)?|MAJ(?:OR)?|MIN(?:OR)?)\b/i);
+  if (!m) return null;
+  const w = m[1].toUpperCase();
+  return w.startsWith('CRIT') ? 'crit' : w.startsWith('MAJ') ? 'maj' : 'min';
+}
+function parseLedger(text) {
+  const out = [];
+  const lines = String(text || '').split('\n');
+  let header = null, pending = null, blanks = 0;
+  const seenSev = new Map();   // id → severity, for sub-finding inheritance
+  // An id is a SHORT TOKEN WITH NO SPACES — not necessarily one bare word starting with a letter.
+  // Requiring `^[A-Za-z]` and a single `-`/`.`-joined token dropped every row whose id is a range
+  // or a list (`R-1..R-11`, `G3/G4/G6/G7/S1/S2`) or a plain number (`1`) — ids this very ledger
+  // uses. A four-row ledger of three OPEN CRITICALs rendered as "1 findings … Nothing is waiting
+  // on you", which is precisely the output the previous round was convened to eliminate. Narrowing
+  // an id filter to fix a fabricated-finding bug created a vanishing-finding bug.
+  const NOT_ID = /^(findings?|round|severity|status|total|summary|notes?|honest|converged|clean|verdict|tally|columns?|issue|id|area|fix|owner|round\s*#?)$/i;
+  const isId = (x) => !!x && !/\s/.test(x) && x.length <= 32 && !NOT_ID.test(x)
+    && /[0-9]/.test(x) && /^[A-Za-z0-9]/.test(x) && /^[A-Za-z0-9][A-Za-z0-9._/,+-]*$/.test(x)
+    // A DATE, a VERSION or a URL satisfies every shape rule above and is never a finding id.
+    // These were excluded only in the rescue path, so they still walked in through the front door.
+    && !/^\d{4}-\d{2}-\d{2}$/.test(x) && !/^v?\d+\.\d+(\.\d+)?$/.test(x) && !/^https?:/i.test(x);
+  // Does this header look like a findings table? Used to decide whether an ODD-SHAPED first cell
+  // in an established table is still a finding row.
+  const isFindingsHeader = (h) => !!h && h.length >= 2
+    && (findCol(h, /^(issue\s*id|id|issue|finding)$/i) === 0 || findCol(h, /^sev(erity)?$/i) >= 0 || findCol(h, /^(status|verdict)$/i) >= 0);
+  // The id cell often carries the id AND its description: `MIN-1: the grep matched the island body`.
+  // Requiring the whole cell to be an id dropped every row of one ledger and single rows from
+  // three more — the page then reported "no review recorded" over six real findings.
+  const leadingId = (cell) => {
+    const c = String(cell || '').replace(/\*/g, '').replace(/`/g, '').trim();
+    if (isId(c)) return c;
+    const m = c.match(/^([A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)*)\s*[:—-]\s+\S/);
+    return m && isId(m[1]) ? m[1] : null;
+  };
+  const sevCellRaw = (cells, hdr) => {
+    const c = findCol(hdr, /^sev(erity)?$/i);
+    return c >= 0 && cells[c] !== undefined ? cells[c] : null;
+  };
+  const pushRow = (cells, hdr) => {
+    let id = leadingId(cells[0]);
+    // Once a findings table's header is established, a row of the same shape IS a finding, even if
+    // its id cell is unusual. Dropping it silently is how a readable one-row ledger came to be
+    // reported as unreadable.
+    if (!id && (isFindingsHeader(hdr) ? cells.length === hdr.length : (!hdr || !hdr.length) && cells.length >= 3)) {
+      // The rescue exists for real ids the shape test cannot express (`R-1..R-11`, `FN-1/2/3`).
+      // It must NOT rescue a row that is not a finding at all: a `| — | … | NONE |` "no material
+      // findings" row, a totals row, a date, a version, a URL. Three shipped builds gained phantom
+      // findings this way, one of them titled `—`.
+      const raw = String(cells[0] || '').replace(/[*_`]/g, '').trim();
+      const looksLikeId = raw && raw.length <= 32 && !/\s/.test(raw)
+        && !/^[—–-]+$/.test(raw) && !/^(total|totals|none|n\/a|sum|—)$/i.test(raw)
+        && !/^https?:/i.test(raw) && !/^\d{4}-\d{2}-\d{2}$/.test(raw) && !/^v?\d+\.\d+/.test(raw);
+      // `hasSeverity` may PROMOTE an odd-but-plausible id; it may never override a rejection.
+      // As an AND-guard it made the whole blocklist dead, because a findings table always has a
+      // severity — so a `| — | MINOR ×11 | folded into the above |` roll-up row shipped as a
+      // finding, and the page counted 51 where the ledger records 50.
+      if (!looksLikeId) return;
+      // Never a parse-order index: a row rendered `(row 159)` on the shipping page, OPEN, on a
+      // page telling the reader to read the open rows — and "row 159" appears nowhere in the file.
+      id = raw.slice(0, 32);
+    }
+    if (!id) return;
+    const sevCol = findCol(hdr, /^sev(erity)?$/i);
+    const stCol  = findCol(hdr, /^(status|verdict|state|outcome|disposition|resolution|result|fix applied)$/i);
+    // The DESCRIPTION column, by name. This was hard-coded to cells[1] — which on the standard
+    // ledger header is `Review`, so on 19 builds every row's description read "R1" or "R2" under
+    // a heading saying "Every finding, and what happened to it".
+    let ttlCol = findCol(hdr, /^(failure mode|finding|title|description|issue|problem|what)$/i);
+    if (ttlCol < 0) ttlCol = findCol(hdr, /^(affected area|area)$/i);
+    if (ttlCol < 0) ttlCol = cells.findIndex((c, i) => i > 0 && i !== sevCol && i !== stCol && String(c).trim().length > 12);
+    // A row whose cell count does not match its header is NOT safely indexable. Guessing produced
+    // four Major findings graded `min` off the Root-cause column, under a caption claiming the
+    // table had no severity column at all.
+    const shapeOk = !hdr || !hdr.length || cells.length === hdr.length;
+    const sevCell = (shapeOk && sevCol >= 0) ? cells[sevCol] : null;
+    const stCell  = (shapeOk && stCol  >= 0) ? cells[stCol]  : null;
+    out.push({
+      id,
+      // Only use the id cell's REMAINDER when there actually is one (`MIN-1: text`). When the cell
+      // is just the id, the description lives in another column and falling back to the id printed
+      // the id twice.
+      title: ((() => { const c = String(cells[0] || '').replace(/\*/g, '').trim();
+                       const rest = c.replace(/^[A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)*\s*[:—-]\s+/, '').trim();
+                       return rest && rest !== c ? rest : ''; })()
+              || String((ttlCol >= 0 ? cells[ttlCol] : cells[1]) || '').replace(/\*/g, '').trim()
+              || String(cells.find((c, i) => i > 0 && String(c).trim().length > 8) || '').replace(/\*/g, '').trim()
+              || id),
+      text: cells.slice(1).join(' — '),
+      sev: sevCell != null ? (leadingSeverity(sevCell) || sevFromText(sevCell) || 'min')
+         : (sevFromText(cells.join(' ')) || 'min'),
+      sevStated: sevCell != null && leadingSeverity(sevCell) != null,
+      shapeMismatch: !shapeOk,
+      status: stCell != null ? String(stCell).replace(/\*/g, '').trim() : null,
+    });
+  };
+  const fenceScan = fenceScanner();
+  for (const raw of lines) {
+    // FENCE-BLIND, like every other reader here (INV-FENCE-BLIND). A ledger that SHOWS an example
+    // table inside a code fence had that example counted as real findings.
+    // Track the fence's CHARACTER and LENGTH: only a run at least as long, of the same character,
+    // closes it. A four-backtick fence wrapping a three-backtick example was treated as two
+    // separate fences, so the example's rows counted as findings — including a phantom one titled
+    // `Issue ID`, the example's own header. Same rule the reader-copy extractor already uses.
+    const fst = fenceScan(raw);
+    if (fst.fence || fst.inside) continue;
+    const l = raw;
+    if (!/^\s*\|/.test(l)) {
+      // A blank line inside a table does NOT end it. Resetting on every non-pipe line dropped the
+      // row after any blank, and dropped `pending` — the first data row — on the floor.
+      if (!l.trim()) { blanks++; if (blanks < 2) continue; }
+      // The severity may appear ANYWHERE in the bullet's leading segment — the part before the
+      // first dash or colon — and in any wrapper: `**A-1 CRITICAL**`, `A-1 (CRITICAL)`,
+      // `**A-1 (Crit)** —`, `A-1 [CRITICAL] —`. Requiring it immediately after the id kept ONE of
+      // six real formats, so a build with 28 bullet findings (four of them CRITICAL) rendered
+      // "6 findings — 2 critical" and another rendered "2 findings — 0 critical" over 23.
+      const bm = l.match(/^\s*[-*]\s+(.{1,120}?)\s*[—:–\u2192-]\s+(.+)$/);
+      const b = (() => {
+        if (!bm) return null;
+        const head = bm[1].replace(/\*\*/g, '').trim();
+        const idm = head.match(/^\(?\[?([A-Za-z0-9][A-Za-z0-9._/,+-]*)\)?\]?/);
+        if (!idm) return null;
+        // A BARE COUNT is not an id: "- **3 MINOR hardenings applied (round 2 fixes):**" became a
+        // finding called `3`. A finding id carries a letter somewhere.
+        if (!/[A-Za-z]/.test(idm[1])) return null;
+        const sevm = head.match(/\b(CRIT(?:ICAL)?|MAJ(?:OR)?|MIN(?:OR)?)\b/i);
+        if (sevm) { seenSev.set(idm[1], sevm[1]); return [l, idm[1], sevm[1], bm[2]]; }
+        // A SUB-FINDING inherits its parent's severity: `C1a` and `C1b` are the two halves of `C1`
+        // and state no severity of their own. Requiring an explicit one dropped them, hiding two
+        // CRITICALs. Inheritance is narrow on purpose — the id must extend an id already seen —
+        // so an ordinary prose bullet still cannot become a finding.
+        for (const [pid, psev] of seenSev) {
+          // A SEPARATOR must follow the parent id. Bare `startsWith` made `R10` a child of `R1`
+          // — and `R1…R10` is the commonest id scheme here, so this fired the moment a ledger
+          // numbered past nine, silently and with `sevStated: true` so the page did not disclose it.
+          if (idm[1] !== pid && new RegExp(`^${pid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[a-z.]`).test(idm[1])) {
+            return [l, idm[1], psev, bm[2]];
+          }
+        }
+        return null;
+      })();
+      // The severity must be the bullet's OWN, stated right after its id — not a word appearing
+      // somewhere in its prose. A re-attack note reading "- R2-M1/M2 (rollback-rehearsed …)" was
+      // counted as a finding called `R2` because the sentence happened to mention a severity.
+      if (b && isId(b[1]) && b[2]) {
+        const body = String(b[3]).replace(/\*\*/g, '').trim();
+        const W = String(b[2]).toUpperCase();
+        const word = W.startsWith('CRIT') ? 'CRITICAL' : W.startsWith('MAJ') ? 'MAJOR' : 'MINOR';
+        out.push({ id: b[1], title: body, text: body,
+          sev: word === 'CRITICAL' ? 'crit' : word === 'MAJOR' ? 'maj' : 'min',
+          sevStated: true, shapeMismatch: false, status: null });
+      }
+      if (l.trim()) {
+        // FLUSH before resetting. A single-row table (one row, no header, no separator) parked its
+        // only row in `pending`, and ending the table threw it away — one real finding per
+        // occurrence, silently. Only the very last pending was ever recovered.
+        if (pending && leadingId(pending[0])) pushRow(pending, []);
+        header = null; pending = null;
+      }
+      continue;
+    }
+    blanks = 0;
+    const cells = splitLedgerRow(l);
+    if (!cells.length) { continue; }
+    if (isSeparatorRow(cells)) { header = pending; pending = null; continue; }
+    if (!header) {
+      if (!pending) { pending = cells; continue; }
+      // Two data rows and no separator between them: this table has no separator row. Decide once
+      // whether `pending` was a header or a finding — and if it was a finding, KEEP IT. The first
+      // version dropped it silently, losing the first row of six shipped ledgers.
+      const pendingIsId = !!leadingId(pending[0]);
+      if (pendingIsId) { header = []; pushRow(pending, header); }
+      else { header = pending; }
+      pending = null;
+      pushRow(cells, header);
+      continue;
+    }
+    pushRow(cells, header);
+  }
+  // A table that ended with `pending` still holding a data row (no separator, single row).
+  if (pending && leadingId(pending[0])) pushRow(pending, []);
+  return out;
+}
+
+function reviewArtefact() {
+  const led = read('review-ledger.md');
+  const rows = parseLedger(led);
+  // The same id appears in more than one review section (`R2-1` from review-plan and from
+  // review-build). Rendering both as bare `R2-1` left a reader unable to tell which row is which.
+  const idSeen = new Map();
+  for (const r of rows) {
+    const n = (idSeen.get(r.id) || 0) + 1;
+    idSeen.set(r.id, n);
+    if (n > 1) r.dupN = n;
+  }
+  const guessedN = rows.filter((r) => !r.sevStated).length;
+  const sevGuessed = guessedN > 0;
+  const unknownStatus = rows.filter((r) => r.status == null).length;
+  const sev = (r) => r.sev || 'min';
+  const nCrit = rows.filter((r) => sev(r) === 'crit').length;
+  const nMaj  = rows.filter((r) => sev(r) === 'maj').length;
+  // CLOSED means the row's own status says so. Unknown status is NOT open and NOT closed — saying
+  // "still open" about 49 rows whose tables carry no status column is a wrong number, and saying
+  // "closed" about them would be worse. ACCEPTED / NOTED / WAIVED are dispositions, not failures
+  // left lying around, so they count as dealt with and are labelled by their own word.
+  // Anchored to the START of the status, but tolerant of a leading word: `VERIFIED FIXED` was
+  // rendering as OPEN. A status that is stated but recognised by neither list is its own third
+  // state — band 2 used to describe those rows as "states no status" while band 4 labelled them
+  // OPEN, so the two bands of one page contradicted each other on five builds.
+  const CLOSED  = /(^|\b)(FIXED|RESOLVED|CLOSED|DONE|ACCEPTED|NOTED|WAIVED|OK|N\/A)\b/i;
+  const OPENISH = /^\s*\**\s*(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|FLAGGED|NEW|WONTFIX|WON'T[\s-]?FIX)\b/i;
+  const isClosed = (r) => r.status != null && r.status.trim() !== '' && !OPENISH.test(r.status) && CLOSED.test(r.status);
+  const isOpen   = (r) => r.status != null && OPENISH.test(r.status);
+  const isUnclear = (r) => !isClosed(r) && !isOpen(r);
+  const fixed = rows.filter(isClosed).length;
+  const open  = rows.filter(isOpen).length;
+  const unstated = rows.filter(isUnclear).length;
+
+  // "0 findings · Nothing is waiting on you" printed over a ledger mentioning CRITICAL twelve times
+  // is the worst output this page can produce, and four shipped builds produced it. If the file has
+  // real content the parser could not read, SAY THAT — never report zero.
+  // THREE states, not two. "No ledger file at all" is not "every finding was fixed" — and the page
+  // said exactly that on three shipped builds and on every build before its first review: `0
+  // findings · Every finding was fixed and re-checked. Nothing is waiting on you.` over a directory
+  // with no review-ledger.md in it. A 400-character floor also meant a real 147-byte ledger reading
+  // "Round 1 found three CRITICAL defects. Do not ship." produced the same all-clear.
+  // An all-clear is only ever printed when rows were actually parsed AND all of them are closed.
+  // An empty file is not a missing file. The page said "There is no review-ledger.md in this
+  // build directory" about a file that exists and is blank. The substance was right; the stated
+  // fact was false, and a page that states a false fact about itself cannot be trusted on the rest.
+  const ledgerAbsent = !led;
+  const ledgerMissing = !led || !led.trim();
+  const unreadable = rows.length === 0 && !ledgerMissing;
+
+  const b1 = band1Decision('Decide',
+    ledgerMissing ? 'No review has been recorded for this build yet.'
+      : unreadable ? 'This ledger could not be read — check it before accepting.'
+      : open > 0 ? 'Accept this build with open findings?' : 'Accept what the reviews caught?', [
+    `<b>${txt(slug)}</b>`,
+    ledgerMissing ? 'no review on file' : unreadable ? 'ledger unreadable' : `${rows.length} findings`,
+    ledgerMissing ? 'nothing to count' : unreadable ? 'nothing counted' : `${fixed} closed`,
+  ]);
+  const b2 = band2Facts('The facts you need to decide', ledgerMissing ? [
+    { k: 'How many', v: 'None recorded — this build has no review-ledger.md.' },
+    { k: 'What that means', v: 'This is NOT "no problems found". It means no review has written anything down yet. Read it as missing evidence, not as an all-clear.' },
+    { k: 'Where it came from', v: ledgerAbsent ? 'There is no review-ledger.md in this build directory.' : 'review-ledger.md exists in this build directory but is empty.' },
+  ] : unreadable ? [
+    { k: 'How many', v: 'Unknown — review-ledger.md has content this page could not parse into findings.' },
+    { k: 'What that means', v: 'Do not read this as "no findings". Open review-ledger.md and read it directly before accepting.' },
+    { k: 'Where it came from', v: 'review-ledger.md.' },
+  ] : [
+    { k: 'How many', v: `${rows.length} findings — ${nCrit} critical, ${nMaj} major.` },
+    { k: 'How many closed', v: `${fixed} closed, ${open} still open${unstated ? `, ${unstated} whose status this page could not read` : ''}.` },
+    { k: 'What that means', v: open ? 'Something was found and not fixed. Read the open rows before accepting.'
+        : unstated ? 'Nothing is recorded as open, but some rows state no status — those are unresolved on the page, not resolved.'
+        : 'Every finding was fixed and re-checked. Nothing is waiting on you.' },
+    { k: 'Where it came from', v: `review-ledger.md — written during the reviews, not after.${sevGuessed ? ` ${guessedN} of ${rows.length} rows state no severity this page could read, so their severity is taken from the row's wording instead.` : ''}` },
+  ]);
+  const b3 = band3Flow(logicBlockFor('review'),
+    flowCaption('How a finding travels: raised, proven reachable, fixed, then re-attacked.'),
+    ['Solid = the happy path', 'Dashed = dropped, or sent back round']);
+
+  // EVERY row that is not closed is shown. The cut applies only to closed rows — a heading that
+  // says "everything still blocking acceptance is above" was false while 42 of 66 open rows sat
+  // below it, and no cap can make that sentence true.
+  const notClosed = rows.filter((r) => !isClosed(r));
+  const closedRows = rows.filter(isClosed);
+  const CLOSED_SHOWN = Math.max(0, 24 - notClosed.length);
+  const shown = [...notClosed, ...closedRows.slice(0, CLOSED_SHOWN)];
+  const hiddenN = rows.length - shown.length;
+  const list = shown.map((r) => {
+    const cls = sev(r);
+    // THREE labels, matching band 2's three counts. A status that is stated but recognised by
+    // neither list rendered as OPEN here while band 2 filed it under "could not read" — so three
+    // shipped builds printed two different open counts on one page, one of them saying "0 still
+    // open" directly above a row labelled OPEN.
+    const label = r.status == null ? 'no status'
+      : isClosed(r) ? r.status.split(/\s+/)[0].toLowerCase()
+      : isOpen(r) ? 'OPEN'
+      : `? ${r.status.split(/\s+/)[0].toLowerCase()}`;
+    return `<div class="b-step"><div class="b-num"><span class="pill ${cls === 'crit' ? 'never' : cls === 'maj' ? 'later' : 'now'}">${cls}</span></div>` +
+      `<div><div class="b-ttl">${txt(fieldText(r.id + (r.dupN ? ` (${r.dupN})` : ''), 90))}</div>` +
+      `<div class="b-det">${txt(fieldText(r.title || r.text || '', 190))}</div></div>` +
+      `<div class="verify"><b>${txt(label)}</b>${txt(fieldText(r.status || 'not stated in the ledger', 90))}</div></div>`;
+  }).join('');
+  const moreRow = hiddenN > 0
+    ? `<div class="b-step"><div class="b-num"><span class="pill now">+${hiddenN}</span></div>` +
+      `<div><div class="b-ttl">${hiddenN} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
+      `<div class="b-det">Everything not marked closed is listed above — that is the complete set of what still needs you. The full record is review-ledger.md.</div></div>` +
+      `<div class="verify"><b>note</b>all ${rows.length} are counted in the totals</div></div>`
+    : '';
+  const b4 = bandSection(
+    ledgerMissing ? 'No review has been recorded'
+      : unreadable ? 'This ledger could not be read'
+      // The heading must be true. "Everything still open, and N closed on file" was printed on
+      // builds where band 2 said `0 still open` in the line above it.
+      : hiddenN > 0 && (open + unstated) > 0 ? `Everything not closed, and ${hiddenN} closed ${hiddenN === 1 ? 'finding' : 'findings'} not shown here`
+      : hiddenN > 0 ? `${rows.length - hiddenN} of ${rows.length} findings, all of them closed`
+      : 'Every finding, and what happened to it',
+    'Each row was proven reachable before it counted, and re-attacked after it was fixed.',
+    ledgerMissing
+      ? '<div class="b-na"><b>No ledger</b> — this build has no review-ledger.md. That is missing evidence, not a clean bill of health.</div>'
+      : unreadable
+      ? '<div class="b-na"><b>Unreadable</b> — review-ledger.md has content, but no findings could be parsed from it. Read the file directly.</div>'
+      : (list + moreRow) || '<div class="b-na"><b>N/A</b> — no ledger rows yet</div>');
+  return { body: `<section class="cv-body"><div class="wrap"><div class="kicker">Compass · Review</div>${b1}${b2}${b3}${b4}<div class="foot">Generated from review-ledger.md by compass-visual · a pure function of the build's state.</div></div></section>`, extra: _pillCss };
+}
+
 function releaseCard() {
   // version: prefer an explicit "Ships as vX.Y.Z" anchor over the first semver in the file
   // (which could be an older version mentioned in prose) — review-build R2 MINOR-5.
   const ver = (contractFields.match(/Ships as \*{0,2}v(\d+\.\d+\.\d+)/i)
             || contractFields.match(/v(\d+\.\d+\.\d+)/) || [, hdr('version') || '?'])[1];
   // "What shipped" = the GOAL, not the H1 title line — R2 MAJOR-4 (`sec('')` returned __pre__ = title).
-  const goal = hdr('Goal') || (contractFields.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1] || '';
+  // The SAME fallback chain the Brief uses. This one stopped at `**Goal:**`, so 21 of 28 Release
+  // Cards rendered no "what shipped" line at all — the card's entire subject, missing.
+  const goal = hdr('Goal') || (contractFields.match(/\*\*Goal:\*\*\s*(.+)/) || [, ''])[1]
+    || firstPara(sec('Goal')) || firstPara(sec('Goal & scope')) || '';
   // "In this release" = the NOW block's numbered items ONLY — never the LATER/NEVER `- ` bullets
   // (R2 MAJOR-3: the old fallback advertised deferred + non-goal items as shipped).
   // v0.29.1: the canonical ladder the contract skill actually writes is `## Scope ladder`
@@ -871,7 +1584,7 @@ function releaseCard() {
   const nowBlock = (contractFields.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
   const numbered = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
-  const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => splitLead(String(t), 140).lead);
+  const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => fieldText(String(t), 140));
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
     + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nowItems.length - 6} more</li>` : '');
   const facet = hdr('facets') || 'library';
@@ -879,29 +1592,41 @@ function releaseCard() {
   const body = `
 <section class="cv-body"><div class="wrap">
   <div class="kicker">Compass · Release</div>
-  ${band3Flow(logicBlockFor('release'), 'How this build reached production \u2014 every box a real gate it had to pass.', ['Solid = the happy path', 'Dashed = refuses and stops'])}
+  ${band3Flow(logicBlockFor('release'), flowCaption('How this build reached production \u2014 every box a real gate it had to pass.'), ['Solid = the happy path', 'Dashed = refuses and stops'])}
   <div class="card vr-hero"><div class="kicker">Shipped</div>
     <h1>${txt(slug)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
-    ${goal ? `<p class="lede">${txt(String(goal).slice(0, 400))}</p>` : ''}
+    ${goal ? `<p class="lede">${txt(fieldText(String(rc('build-what', goal)), 400))}</p>` : ''}
   </div>
   ${items ? `<div class="card"><div class="kicker">What changed — ${nowItems.length} in this release</div><ul>${items}</ul></div>` : ''}
   <div class="card"><div class="kicker">Proof &amp; rollback</div>
-    <div class="tl"><span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length} changes</span><span class="chip">reversible — revert the release commit + tag</span></div>
+    <div class="tl">${(() => {
+      // A build that shipped with known open findings MUST say so on its own release page.
+      // Derived from the receipt, not written by hand, because "say so" is exactly the thing a
+      // person forgets when they are relieved to be shipping.
+      const rb = read('receipts.md');
+      const blk = (rb.split(/^## RECEIPT — review-build/m).pop() || '');
+      const m = blk.match(/^- \[x\] converge-waiver: user-signed[^\n]*/m);
+      if (!m || !/ACCEPTED WITH OPEN FINDINGS/.test(rb)) return '';
+      const why = (blk.match(/^- \[ \][^\n]*/m) || [''])[0].replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
+      return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(fieldText(why, 120))}</span>`;
+    })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nowItems.length} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
   </div>
   <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>
 </div></section>`;
   return { body, extra: _pillCss };
 }
 
-// ── full HTML page wrapper (line 1 = <!doctype html>, NEVER a COMPASS-MOCK marker) ──
+// ── v0.30 INV-6: a BODY FRAGMENT, not a full document ─────────────────────────────────────────
+// The Artifact host wraps whatever it is given in its own <!doctype><head></head><body> skeleton,
+// so emitting a complete document nested a document inside a document and put this <style> — all
+// of it — inside the body. One file, two destinations: it must be a fragment.
+// Line 1 is now `<title>`; the leak tracer's real property is that line 1 is NEVER a
+// `<!-- COMPASS-MOCK` marker, and that still holds.
 function page(styleBlocks, bodyMarkup) {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} · compass-visual</title>
-<style>${styleBlocks}</style></head>
-<body>${bodyMarkup}
-</body></html>
+  return `<title>${esc(demd(title))} · compass-visual</title>
+<style>${styleBlocks}</style>
+${bodyMarkup}
 `;
 }
 
@@ -1029,7 +1754,7 @@ function shareableScrub(html, declared = {}) {
       // so a declared value containing an HTML metachar would render escaped and slip a raw-only regex (RB-v0.26).
       for (const target of new Set([form, esc(form)])) {
         const re = new RegExp(esc_re(target), 'g');
-        if (re.test(out)) { hits.push('declared gold residue'); out = out.replace(re, R); }
+        if (re.test(out)) { hits.push('declared gold residue.'); out = out.replace(re, R); }
       }
     }
   }
@@ -1078,12 +1803,17 @@ let html;
 if (view === 'brief-body') {
   html = page(HOUSE_CSS, briefBody());
 } else if (view === 'brief') {
-  html = page(HOUSE_CSS, cover() + briefBody());
+  // v0.30: no cinematic cover. It was a separate visual world inside a decision page — 13
+  // off-theme colours and its own face — and a body fragment published as an Artifact has no
+  // place for a 430px full-page hero. `cinematic-hero` stays the bundled skill for launch and
+  // marketing assets; that is its job, not this one. `brief` and `brief-body` are now the same
+  // page, and `brief-body` is retained as an alias so existing callers keep working.
+  html = page(HOUSE_CSS, briefBody());
 } else if (view === 'plan-map') {
   html = page(HOUSE_CSS + _pillCss, planMap());
-} else if (view === 'program-cockpit') {
-  const c = programCockpit();
-  html = page(HOUSE_CSS + c.extra, c.body);
+} else if (view === 'review') {
+  const r = reviewArtefact();
+  html = page(HOUSE_CSS + r.extra, r.body);
 } else if (view === 'release-card') {
   const c = releaseCard();
   html = page(HOUSE_CSS + c.extra, c.body);
@@ -1092,7 +1822,18 @@ if (view === 'brief-body') {
   html = page(HOUSE_CSS + c.extra, c.body);
 }
 
-if (shareable && (view === 'brief' || view === 'brief-body')) {
+// v0.30 INV-5/leak: the scrub used to run for the Brief ONLY, while the plan-map and release-card
+// were published too — and gen.mjs's own note calls the unscrubbed copy INV-BRIEF-LOCAL-FULL,
+// i.e. deliberately never meant to leave the machine. This build made exactly that copy the
+// published one. EXTEND first, refuse second: refusing without extending would have blocked
+// precisely the artefacts Features 1-2 must publish.
+const SCRUBBABLE = ['brief', 'brief-body', 'plan-map', 'release-card', 'review'];
+if (shareable && !SCRUBBABLE.includes(view)) {
+  console.error(`gen: REFUSED — '${view}' has no redaction path, so it cannot be published shareable.`);
+  console.error('  Add it to SCRUBBABLE and give it a brief-data fence, or publish it locally only.');
+  process.exit(3);
+}
+if (shareable && SCRUBBABLE.includes(view)) {
   // brief-data fence: parsed ONLY on the shareable path (LOCAL never touches it — INV-BRIEF-LOCAL-FULL).
   const bd = parseBriefData(contract);
   if (bd.malformed) {

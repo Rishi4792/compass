@@ -106,6 +106,22 @@ Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Ro
 ```
 Self-check: `compass.sh scan-receipt .claude/builds/<slug> review-build`. **Then require a HUMAN sign-off** — show the receipt's command+output lines (the falsifiable evidence, not a summary) as the transition proof, then present the gate below. On **Approve**: `progress.md` = `CLOSED`; INDEX `status=closed`; run `compass.sh close .claude/builds/<slug> <slug>` (clears CURRENT); Approve advances to `compass:ship` (or stays CLOSED if the contract waives deploy).
 
+
+## Review artefact (v0.30 — before the receipt)
+The reviews produce the one artefact that says what was actually wrong and whether anyone fixed it.
+Generate, gate, publish — in that order, and STOP on any non-zero:
+
+`node skills/compass-visual/gen.mjs <dir> review --out <dir>/review.html`
+→ `compass.sh artefact-gate <dir>/review.html --copy --source <dir>/contract.md`
+→ the cold read runs as `node scripts/insight-gate.mjs --artefact <dir>/review.html --intent <dir>/coldread-intent.txt --grader <grader-verdict.json> --control <control-verdict.json> < <reader-verdict.json>` (INV-1: a fresh separate-context reader whose verdict arrives on **stdin**, a second grader that never sees the page, and a control read of the known-bad page that VOIDs the round if the reader passes it too). All three are FILES except the reader's, which is piped — run it without the pipe and it waits on stdin forever.
+→ `compass.sh artefact-publish <dir>/review.html --url <the published URL>`
+→ `compass.sh rail <dir> --artefact review --url <that URL>` and SHOW it.
+
+Record: `- [x] MILESTONE: review-artefact render=review.html artifact=<URL OR N/A — reason>`
+
+> The contract ranks this above the Release Card on purpose: a shipping certificate says a thing
+> shipped; this says what was wrong with it and whether it got fixed.
+
 <!-- FEYNMAN -->
 ## In plain words — where we are and what's next
 **What just happened.** Final adversarial pass: I assumed every feature was broken until a re-run proved otherwise — re-loading pages, re-running the reconciliation, exercising the rollback on a copy, confirming the monitoring signal fires, checking nothing sensitive leaked.
@@ -132,6 +148,12 @@ does **not** present a second gate — the stage owns it.
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+
+   Then PUSH the RAIL when this stage produced an artefact — run
+   `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
+   when nothing could publish it) and show it, so the link is in front of the user beside the
+   buttons rather than described in prose. (v0.30: the rail existed and nothing called it — a
+   surface nobody invokes is not a surface, the same defect this build was raised to fix.)
 
    Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
    sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when

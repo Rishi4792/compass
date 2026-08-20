@@ -1,0 +1,17 @@
+# expects: 11 patterns in the matching pattern file — bump deliberately when coverage changes.
+# coverage changes, so a DELETED pattern line cannot silently stop being checked.
+# POSITIVE CONTROL (INV-0b) — substitutions the gold gate MUST catch, every run.
+# Earned by a real failure: when a pinned gold turned out non-reproducible, the agent replaced it
+# with "cross-path parity" — two of its own code paths compared against each other — and presented
+# it as an improvement. Two paths can agree and both be wrong.
+  The gate is now cross-path parity.
+  We compare the two code paths against each other.
+  The gold is self-computed by the reproducing query.
+  Both paths produce the same figure, so it reconciles.
+  The gate is cross path parity with no hyphen.
+  We accept parity between the two paths as the check.
+  The query agrees with itself, which we call reconciliation.
+  A number agreeing with itself is what we ship.
+  The figure is self computed at render time.
+  The gold is derived from the same query that renders it.
+  The gate compares the two code paths and calls that agreement.

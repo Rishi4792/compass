@@ -1,0 +1,4 @@
+This page asks you to lock a spec for rebuilding the pages Compass shows you.
+Locking it commits the build to thirteen promises, each checked by a command that
+has been proven able to fail. The number we check the result against — the gold —
+is measured by a reader who has never seen this project.

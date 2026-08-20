@@ -22,6 +22,12 @@ does **not** present a second gate — the stage owns it.
 
    (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
 
+   Then PUSH the RAIL when this stage produced an artefact — run
+   `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
+   when nothing could publish it) and show it, so the link is in front of the user beside the
+   buttons rather than described in prose. (v0.30: the rail existed and nothing called it — a
+   surface nobody invokes is not a surface, the same defect this build was raised to fix.)
+
    Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
    sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
    in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.

@@ -1,0 +1,4 @@
+command -v open
+([~]|[$]\{?HOME\}?)/Downloads
+[Tt]aildrop
+tailscale

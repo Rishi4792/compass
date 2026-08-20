@@ -6,7 +6,7 @@ description: Render a build's Contract Brief and progress Cockpit as self-contai
 
 # compass-visual
 
-Two views of a build, generated deterministically from its on-disk state by `gen.mjs`.
+Five views of a build, generated deterministically from its on-disk state by `gen.mjs`.
 
 - **Contract Brief** — *what we're building.* A cinematic-hero cover (its own accent + grade) over an rk-house-style body: the goal, what it touches, the reconciliation gold, the invariants, the NOW/LATER/NEVER scope, and the security classification. A pure function of `contract.md`.
 - **Cockpit** — *where it stands.* Stage timeline (done / ◉ here / left), step k/n, the next action, and what the reviews caught. From `progress.md` / `plan.md` / `receipts.md` / `review-ledger.md`.
