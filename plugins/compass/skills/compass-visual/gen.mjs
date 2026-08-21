@@ -88,7 +88,11 @@ function lossy(site, keptChars, fullChars, unitsDropped, droppedUnitsFn, shownFn
   let shownProbe = '';
   try {
     const sh = typeof shownFn === 'function' ? shownFn() : shownFn;
-    shownProbe = String(sh == null ? '' : sh).replace(/\s+/g, ' ').trim().slice(0, 120);
+    // 60, not 120. A path whose shown half is later shortened AGAIN by another path — firstPara
+    // feeding fieldText is the common case — only keeps its opening on the page. Sixty characters
+    // survive that and are still far too specific for a dump to satisfy by accident: an aggregation
+    // would have to reproduce every row's opening line immediately before itself.
+    shownProbe = String(sh == null ? '' : sh).replace(/\s+/g, ' ').trim().slice(0, 60);
   } catch { shownProbe = ''; }
   LOSSY_ROWS.push({ ev: LOSSY_ROWS.length, site, view, dir, keptChars, fullChars,
                     charsDropped: Math.max(0, fullChars - keptChars), unitsDropped, probes, shownProbe });
@@ -507,7 +511,15 @@ function invariants() {
     // invariant is split off here and reaches no rendered page, with nothing saying it was removed.
     const _invParts = m[2].split(/→\s*\*?\s*assert/i);
     let summary = _invParts[0].replace(/\*/g, '').replace(/[:\s]+$/, '').trim();
-    if (_invParts.length > 1) lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1, () => [_invParts.slice(1).join(' ')]);
+    // v0.32.0 S7: the assert recipe is carried OUT on the row so the invariant table can disclose
+    // it. The shown half is the summary — what the page actually prints for this row — so the check
+    // can tie the control to it. Dropping the command that PROVES an invariant, unmarked, was the
+    // largest unmarked destroying path in this file.
+    let _dropped = '';
+    if (_invParts.length > 1) {
+      _dropped = 'assert:' + _invParts.slice(1).join(' ');
+      lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1, () => [_invParts.slice(1).join(' ')], () => summary);
+    }
     if (summary && !/[.!?)]$/.test(summary)) summary += '.';
     // A deferred INVARIANT carries a bookkeeping marker ("— original text retained …"); render
     // the deferral plainly instead of leaking the marker as if it were the assertion.
@@ -524,12 +536,17 @@ function invariants() {
       // the copy gate counts sentences, not rows. Folding the clause in keeps each row unique.
       // P11. NOT ENUMERATED IN SECTION 9. The page says "Not in this release" but never says the
       // invariant's own wording was discarded to say it — a partial marker, not a full one.
-      lossy('invariants.deferredReplaced', 0, summary.length, 1, () => [summary]);
+      // The invariant's ORIGINAL wording, replaced wholesale by the deferral sentence. Carried out
+      // the same way; its shown half is the sentence that replaced it.
+      const _origSummary = summary;
+      lossy('invariants.deferredReplaced', 0, summary.length, 1, () => [_origSummary],
+            () => (what ? `Not in this release — ${what}` : 'Not in this release'));
+      _dropped = _dropped ? `${_origSummary}\n\n${_dropped}` : _origSummary;
       summary = what
         ? `Not in this release — ${what}; it ships with the work it governs, in ${defer[1]}.`
         : `Not in this release; it ships with the work it governs, in ${defer[1]}.`;
     }
-    rows.push({ name: m[1], summary });
+    rows.push({ name: m[1], summary, dropped: _dropped });
   }
   return rows;
 }
@@ -1260,7 +1277,10 @@ function briefBody() {
   const invCard = inv.length
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
-        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${fieldDisclosed(i.summary, 150)}</td></tr>`).join('') + `</table>`)
+        inv.map((i) => { const _p = fieldParts(i.summary, 150);
+          // ONE control for this row, holding everything this row lost: the field's own remainder
+          // AND the assert recipe / original wording that `invariants()` split off upstream.
+          return `<tr><td class="k">${txt(i.name)}</td><td>${txt(_p.shown)}${disclose([_p.rest, i.dropped].filter(Boolean).join('\n\n'))}</td></tr>`; }).join('') + `</table>`)
     : (ARTEFACT_DATA && Number.isFinite(ARTEFACT_DATA['invariants.total']) && ARTEFACT_DATA['invariants.total'] > 0
         // v0.32.0 S19b: "pins no INVARIANTs" is a CLAIM, and it was false on any contract whose
         // invariant shape this parser does not know — it printed it beside a header stating a

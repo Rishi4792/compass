@@ -213,6 +213,8 @@ for (const d of dirs) {
 
 let probesTotal = 0, unreachable = 0, reachable = 0, dumped = 0, unitsSeen = 0, inControl = 0, inFlowOnly = 0;
 const unbindable = new Set();
+const nrPaths = new Set();
+let notRendered = 0;
 // ── the SECOND measure, and the reason it exists ─────────────────────────────────────────────
 // The probe measure above is keyed to what the generator REPORTS dropping. That denominator moves:
 // hide a whole ledger row and the field truncations inside it never happen, so the count FALLS
@@ -246,15 +248,30 @@ for (const p of pages) {
   // control containing the text, so two rows whose remainders read the same collapsed onto one
   // control and the anti-dump rule then killed both — 106 of 172 fixture probes, 62%, even when
   // every row had its own control. That is why an honest fix scored WORSE than a cheat.
-  const claimed = new Map();                       // control index -> ev that owns it
+  const claimed = new Map();
+  const evShown = new Map();                       // control index -> ev that owns it
   for (const r of rows) {
     unitsSeen += r.unitsDropped || 0;
+    // A PREFIX, because a shown half is often shortened AGAIN downstream: `invariants()` hands over
+    // the summary, and `fieldParts` may then cut it to forty characters, so the full sixty would
+    // never appear on the page. Thirty characters survive that and are still far too specific for an
+    // aggregation to satisfy by accident — it would have to reproduce every row's opening line
+    // immediately before itself, which is no longer an aggregation.
+    const shown = normalise(r.shownProbe || '').slice(0, 30);
+    if (!shown) unbindable.add(r.site);
     for (const raw of (r.probes || [])) {
       const probe = normalise(raw);
       probesTotal++;
       const b = (byPath[r.site] ||= { probes: 0, reachable: 0, unreachable: 0 });
       b.probes++;
       if (probe.length < 12) { placed.push({ r, probe, ci: -1, inFlow: false, b }); continue; }
+      // NOT RENDERED. A destroying path can fire for a field this page never shows — `invariants()`
+      // runs on the plan-map purely to COUNT invariants, and the plan-map has no invariant table.
+      // Nothing was shortened for a reader there, because there is no row. Such events are reported
+      // in their own bucket and counted in NEITHER column, exactly like a unit too short to probe.
+      // The escape hatch is closed by the SOURCE measure: hide a row's shown half to make it "not
+      // rendered" and its source lines stop being findable, which raises SOURCE UNREACHABLE.
+      if (shown && shown.length >= 20 && !text.includes(shown)) { notRendered++; nrPaths.add(r.site); probesTotal--; b.probes--; continue; }
       // v0.32 S6b: ONE control speaks for ONE event, and an event is credited only if it CLAIMS a
       // control of its own. The earlier version fell back to a control another event already owned,
       // which let contract §9's cheat 4 — every remainder dumped into one control — credit 8 probes
@@ -281,9 +298,10 @@ for (const p of pages) {
       // ten of the thirteen paths are not wired yet (that is S7), and their probes were matching
       // the dump and passing on size alone. A path that cannot be bound is reported as UNBINDABLE
       // and counted UNREACHABLE — never credited on a maybe.
-      const shown = normalise(r.shownProbe || '');
-      if (!shown) unbindable.add(r.site);
-      const budget = Math.min((r.charsDropped || probe.length) * 1.5 + 400, 2000);
+
+      // A floor as well as a ceiling: one row's control may hold what SEVERAL paths dropped from
+      // that row, so sizing it against a single event's characters was too tight.
+      const budget = Math.min(Math.max((r.charsDropped || probe.length) * 1.5 + 400, 800), 2000);
       let ci = -1;
       for (let i = 0; i < ctrls.length; i++) {
         if (!ctrls[i].text.includes(probe)) continue;
@@ -293,9 +311,15 @@ for (const p of pages) {
         // at the end fails this for every row but at most one, whatever the box's size.
         if (!shown) continue;                                 // see the note below: fail CLOSED
         if (!ctrls[i].before.includes(shown)) continue;
+        // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
+        // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
+        // and the honest fix puts everything that row lost into ONE control. Keying by event made
+        // the second path unable to claim its own row's control. Two DIFFERENT rows still cannot
+        // share one, which is the property cheat 4 attacks.
         const owner = claimed.get(i);
-        if (owner === undefined || owner === r.ev) { ci = i; claimed.set(i, r.ev); break; }
+        if (owner === undefined || owner === shown) { ci = i; claimed.set(i, shown); break; }
       }
+      evShown.set(r.ev, shown);
       if (ci >= 0) { const m = evPerCtrl.get(ci) || new Map(); m.set(r.ev, probe); evPerCtrl.set(ci, m); }
       placed.push({ r, probe, ci, inFlow: text.includes(probe), b });
     }
@@ -308,7 +332,9 @@ for (const p of pages) {
   // nothing are an aggregation, which is contract §9's cheat 4 and still caught.
   // With exclusive claiming, a control can only ever hold ONE event, so the dump case is now
   // expressed by what a dump cannot do: give every row a control of its own.
-  const isDump = (ci) => (evPerCtrl.get(ci) || new Map()).size > 1;
+  // A dump is a control speaking for more than one ROW. Several events from the SAME row sharing
+  // one control is the honest shape, not an aggregation.
+  const isDump = (ci) => new Set([...(evPerCtrl.get(ci) || new Map()).keys()].map((ev) => evShown.get(ev))).size > 1;
   for (const q of placed) {
     if (q.ci >= 0 && !isDump(q.ci)) { reachable++; inControl++; q.b.reachable++; continue; }
     if (q.ci >= 0) { unreachable++; dumped++; q.b.unreachable++; continue; }
@@ -367,7 +393,7 @@ const result = {
   pagesRendered: rendered, pagesFailed: failures.length, failures,
   unitsDropped: unitsSeen, probes: probesTotal, unprobed: Math.max(0, unitsSeen - probesTotal),
   reachable, reachableInAControl: inControl, reachableInFlowOnly: inFlowOnly,
-  unbindablePaths: [...unbindable].sort(),
+  unbindablePaths: [...unbindable].sort(), notRendered, notRenderedPaths: [...nrPaths].sort(),
   unreachable, dumpedIntoAsharedControl: dumped,
   sourceLines: srcLines, sourceReachable: srcReachable, sourceUnreachable: srcUnreachable,
   byPath, examples,
@@ -383,6 +409,11 @@ else {
     console.log(`                          UNMEASURED, never folded into either column.`);
   }
   const bindUnreach = Object.keys(byPath).filter((k) => !unbindable.has(k)).reduce((a, k) => a + byPath[k].unreachable, 0);
+  if (notRendered) {
+    console.log(`  ...NOT RENDERED       : ${notRendered}  — the field's shown half is nowhere on this page, so`);
+    console.log(`                          the page never showed this row and nothing was shortened for`);
+    console.log(`                          a reader. Counted in NEITHER column. Paths: ${[...nrPaths].sort().join(', ')}`);
+  }
   console.log(`  REACHABLE            : ${reachable}  — each in a control holding THAT row's remainder`);
   console.log(`  UNREACHABLE (bindable): ${bindUnreach}  — counting only the paths that carry their shown half,`);
   console.log(`                          i.e. the ones an honest fix can currently drive to zero.`);
