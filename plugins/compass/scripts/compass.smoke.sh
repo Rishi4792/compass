@@ -1837,6 +1837,41 @@ else
   chk "1" "1" "v0.32 S1b: N/A — no node or no lossy-instrument.mjs on this tree"
 fi
 
+# ── v0.32 S24 (§17-11, Rishi's reported bug): ONE **Status:** parser, and it trims ───────────
+# Before this step there were FIVE copies of the parser regex and they disagreed: three folded
+# case and two did not, one read the FIRST status line and four the LAST, and NOT ONE trimmed.
+_SP="$PLUGIN_ROOT/scripts/fixtures/statusparse"
+_sl(){ bash -c 'source "'"$SH"'" 2>/dev/null; status_line "$@"' _ "$@"; }
+_it(){ bash -c 'source "'"$SH"'" 2>/dev/null; is_terminal "$1" && echo 1 || echo 0' _ "$1"; }
+chk "$(grep -cE "sed -nE .*Status:" "$SH")" "1" "v0.32 S24: the **Status:** parser regex appears EXACTLY ONCE in compass.sh (was 5)"
+chk "$(bash -c 'source "'"$SH"'" 2>/dev/null; declare -F status_line >/dev/null && echo 1 || echo 0')" "1" "v0.32 S24: that one source is status_line()"
+if [ -d "$_SP" ]; then
+  chk "$(_sl "$_SP/terminal-trailing-space/progress.md" --token)" "shipped" "v0.32 S24 corpus 'terminal-trailing-space': trailing space trimmed"
+  chk "$(_it "$(_sl "$_SP/terminal-trailing-space/progress.md" --raw --token)")" "1" "v0.32 S24 corpus 'terminal-trailing-space': classified TERMINAL (is_terminal compares exactly — it never trimmed)"
+  chk "$(_sl "$_SP/terminal-leading-space/progress.md" --token)" "shipped" "v0.32 S24 corpus 'terminal-leading-space': an indented status line is FOUND (all five parsers were blind to it)"
+  chk "$(_it "$(_sl "$_SP/terminal-leading-space/progress.md" --raw --token)")" "1" "v0.32 S24 corpus 'terminal-leading-space': classified TERMINAL"
+  chk "$(_sl "$_SP/terminal-mixed-case/progress.md" --token)" "shipped" "v0.32 S24 corpus 'terminal-mixed-case': folds to lowercase"
+  chk "$(_it "$(_sl "$_SP/terminal-mixed-case/progress.md" --raw --token)")" "1" "v0.32 S24 corpus 'terminal-mixed-case': classified TERMINAL"
+  chk "$(_it "$(_sl "$_SP/terminal-crlf/progress.md")")" "1" "v0.32 S24 corpus 'terminal-crlf': a CR-terminated status is still TERMINAL"
+  chk "$(_sl "$_SP/status-malformed/progress.md")" "" "v0.32 S24: a progress.md with no status line yields empty, never an error"
+  bash "$SH" status "$_SP/status-malformed" >/dev/null 2>&1
+  chk "$?" "0" "v0.32 S24: a malformed progress.md does not make the Stop-hook path exit non-zero"
+  # the five sites must now return ONE value for one file
+  _f="$_SP/terminal-trailing-space/progress.md"
+  chk "$(printf '%s\n%s\n%s\n' "$(_sl "$_f" --token)" "$(_sl "$_f")" "$(_sl "$_f" --raw --token | tr 'A-Z' 'a-z')" | sort -u | grep -c .)" "1" "v0.32 S24: every fold-case mode returns ONE value for one file"
+else
+  chk "1" "1" "v0.32 S24: N/A — statusparse fixtures absent"
+fi
+# the LIVE regression this found: a build folder that stacks six status lines (an append log)
+# displayed its FIRST — so `compass.sh status` called a SHIPPED build "Contract LOCKED".
+_L="$PLUGIN_ROOT/../../.claude/builds/lifecycle-migration-gates-v0-7/progress.md"
+if [ -f "$_L" ]; then
+  chk "$(_sl "$_L" --raw)" "$(sed -nE 's/^[[:space:]]*\*\*Status:\*\*[[:space:]]*(.*)$/\1/p' "$_L" | tail -1)" "v0.32 S24: a build with six stacked status lines reports its LAST, not its first"
+  chk "$([ "$(grep -cE '^[[:space:]]*\*\*Status:\*\*' "$_L")" -ge 2 ] && echo 1 || echo 0)" "1" "v0.32 S24: ...and that folder really does stack them, so the check has something to catch"
+else
+  chk "1" "1" "v0.32 S24: N/A — the live multi-status build folder is not present on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.

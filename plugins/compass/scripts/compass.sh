@@ -150,12 +150,52 @@ is_terminal() { # <status>
   # in flight, `/compass:go` offered to resume long-finished work, and parallel
   # detection thought 13 builds were running. Found while rendering the v0.28
   # orientation block, which was wrong for exactly this reason.
+  # v0.32.0 S24 (§17-11): it case-folded but NEVER TRIMMED, and the compare below is
+  # exact — so `SHIPPED ` (one trailing space, or a CR from a CRLF file) was not terminal.
   local s t
-  s="$(printf '%s' "${1:-}" | tr 'a-z' 'A-Z')"
+  s="$(printf '%s' "${1:-}" | tr -d '\r' | tr 'a-z' 'A-Z')"
+  s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
   for t in $TERMINAL_STATUSES; do
     [ "$s" = "$(printf '%s' "$t" | tr 'a-z' 'A-Z')" ] && return 0
   done
   return 1
+}
+
+# ── v0.32.0 S24 (§17-11, Rishi's reported bug): the ONE **Status:** parser ────
+# There were FIVE copies of this regex — :198 resolve_status, :1574 cmd_stop_guard,
+# :1696 cmd_status, :2173 is_stage_continuable, :2293 cmd_can_advance — and they
+# DISAGREED WITH EACH OTHER: three folded case and two did not, one read the FIRST
+# status line and four the LAST, two kept the whole rest of the line and three cut at
+# a character class. Not one of them trimmed. So `**Status:** SHIPPED ` (one trailing
+# space) was not equal to `shipped` in any exact compare, and a status line indented
+# by even one space was invisible to all five.
+#
+# One source now; callers pick a MODE and nobody re-writes the regex.
+#   --first  read the FIRST **Status:** line (display)   · default: the LAST (decisions)
+#   --raw    do not fold case (the callers that PRINT it) · default: fold to lowercase
+#   --token  cut at the legacy [A-Za-z()0-9 -] run, so a banner sentence cannot widen
+#            a glob match                                 · default: the whole rest of the line
+#
+# NEVER errors and never exits non-zero — cmd_stop_guard calls it and a Stop hook must
+# never crash. An absent or unreadable file is the empty string, which every caller
+# already treats as unknown.
+status_line() { # <progress.md> [--first] [--raw] [--token]
+  local p="${1:-}" first=0 raw=0 token=0 s=""
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "${1:-}" in --first) first=1 ;; --raw) raw=1 ;; --token) token=1 ;; *) : ;; esac
+    shift || break
+  done
+  [ -n "$p" ] && [ -f "$p" ] || { printf ''; return 0; }
+  s="$(sed -nE 's/^[[:space:]]*\*\*Status:\*\*[[:space:]]*(.*)$/\1/p' "$p" 2>/dev/null || true)"
+  [ -n "$s" ] || { printf ''; return 0; }
+  if [ "$first" = 1 ]; then s="$(printf '%s\n' "$s" | head -n1 || true)"
+  else                      s="$(printf '%s\n' "$s" | tail -n1 || true)"; fi
+  s="$(printf '%s' "$s" | tr -d '\r' || true)"
+  [ "$token" = 0 ] || s="$(printf '%s' "$s" | sed -E 's/^([A-Za-z()0-9 -]*).*/\1/' 2>/dev/null || true)"
+  s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+  [ "$raw" = 1 ] || s="$(printf '%s' "$s" | tr 'A-Z' 'a-z' || true)"
+  printf '%s' "$s"
 }
 
 # ── v0.9.0: session ownership (window/session-scoped Stop hook) ──────────────
@@ -195,7 +235,7 @@ cmd_own() { # <slug> [--session <id>]
 # INDEX can neither miss nor invent a ship contender. Empty → "unknown".
 resolve_status() { # <slug>
   local sr; sr="$(state_root 2>/dev/null || true)"; [ -n "$sr" ] || { printf 'unknown'; return 0; }
-  local s; s="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$1/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+  local s; s="$(status_line "$sr/$1/progress.md" --token)"   # v0.32 S24: one parser, and it trims
   [ -n "$s" ] || s="$(build_status "$1" 2>/dev/null | tr 'A-Z' 'a-z' || true)"
   printf '%s' "${s:-unknown}"
 }
@@ -1571,7 +1611,7 @@ cmd_stop_guard() {
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
     [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
-    status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+    status="$(status_line "$sr/$slug/progress.md" --token)"   # v0.32 S24 (path stays inline: RB-02, never state_root)
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
     case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
     # NOTE (v0.10.0): gate-wait-* are resumable human-gate checkpoints, NOT terminal/mid-build —
@@ -1693,7 +1733,11 @@ cmd_status() { # <build-dir>
   local slug; slug="$(basename "$dir")"
   local p="$dir/progress.md"
   local status stage next total done_ lastpass
-  status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
+  # v0.32.0 S24: the LAST status line, not the first. `lifecycle-migration-gates-v0-7`
+  # stacks SIX of them (an append log, oldest first), so `head -1` made `compass.sh status`
+  # report a SHIPPED build as "Contract LOCKED" — reproduced live before this change.
+  # Every other caller already read the last one; now the display agrees with the decisions.
+  status="$(status_line "$p" --raw)"
   stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   # v0.24.0 (review-plan MAJOR-2): count ANY checkbox, not only '**S…' — numbered/**W-A1 plans
@@ -2115,8 +2159,8 @@ _fire_g2_locked() { # <dir> <slug> <reason>  (under gate lock)
   # write Status banner (replace the **Status:** line, else APPEND it — never silently drop it, RB-03)
   local p="$dir/progress.md" tmp banner
   banner="**Status:** gate-wait-G2 — G2 fired: ${reason}. Resume with /compass:resume ${slug} (choices: ship-despite-miss / relax / keep-trying / abort)."
-  if [ -f "$p" ] && grep -qE '^\*\*Status:\*\*' "$p"; then
-    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
+  if [ -f "$p" ] && grep -qE '^[[:space:]]*\*\*Status:\*\*' "$p"; then   # v0.32 S24: same shape status_line reads
+    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^[[:space:]]*\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
   else
     printf '\n%s\n' "$banner" >> "$p"
   fi
@@ -2143,8 +2187,8 @@ _fire_g1_locked() { # <dir> <slug>  (under gate lock)
   mkdir "$ld/$slug.gate-lock" 2>/dev/null || true            # gate-lock FIRST (shared surface)
   local p="$dir/progress.md" tmp banner
   banner="**Status:** gate-wait-G1 — upfront approval needed. Approve to continue (/compass:resume ${slug}); autonomous spawn is blocked while this gate is held."
-  if [ -f "$p" ] && grep -qE '^\*\*Status:\*\*' "$p"; then
-    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
+  if [ -f "$p" ] && grep -qE '^[[:space:]]*\*\*Status:\*\*' "$p"; then   # v0.32 S24: same shape status_line reads
+    tmp="$(mktemp "${p}.XXXXXX")"; sed -E "s|^[[:space:]]*\*\*Status:\*\*.*|${banner}|" "$p" > "$tmp"; mv -f "$tmp" "$p"
   else printf '\n%s\n' "$banner" >> "$p"; fi
   _chain_append "$dir" "-" "gate-wait-G1"
   return 1
@@ -2170,7 +2214,7 @@ is_stage_continuable() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || return 1
   local slug; slug="$(basename "$dir")"
   # terminal status → not continuable
-  local status; status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z' || true)"
+  local status; status="$(status_line "$dir/progress.md")"   # v0.32 S24 — whole rest: the post-ship glob needs it
   case "$status" in *shipped*|*rolled-back*|*paused*) return 1 ;; esac
   # gate held → not continuable (a human must act)
   [ -d "$(locks_dir 2>/dev/null)/$slug.gate-lock" ] && return 1
@@ -2290,7 +2334,7 @@ cmd_can_advance() { # <build-dir>
   # from a state we can't read), else a missing status string would slip past the gate-wait check.
   [ -f "$dir/progress.md" ] || die "can-advance: NO — progress.md absent (unknown state, fail closed)."
   [ -d "$(locks_dir)/$slug.gate-lock" ] && die "can-advance: NO — gate-lock held (human gate pending)."
-  local status; status="$(sed -nE 's/^\*\*Status:\*\*[[:space:]]*([A-Za-z()0-9 -]+).*/\1/p' "$dir/progress.md" 2>/dev/null | tail -1 || true)"
+  local status; status="$(status_line "$dir/progress.md" --raw --token)"   # v0.32 S24
   case "$status" in *gate-wait-*) die "can-advance: NO — status is '$status' (human gate)." ;; esac
   ok "can-advance: yes."
 }
