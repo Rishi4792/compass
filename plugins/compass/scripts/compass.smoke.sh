@@ -2793,6 +2793,55 @@ if [ -f "$_PA" ] && command -v node >/dev/null 2>&1; then
   rm -rf "$_sc"
 fi
 
+# ── v0.32 S22: a LITERAL is not a MEASUREMENT ────────────────────────────────────────────────
+# §17-7: perf-budget-gate proved a NUMBER WAS WRITTEN and could not tell a measured 200ms from an
+# invented one. Three earlier perf claims in this repo were carried over from a previous build's
+# contract and never run — this build's own contract says so in its perf line.
+# DELIBERATELY NOT A GREP FOR "MEASURED": requiring a word would pass any contract that types six
+# letters, which is the sin this build is named after. It checks ARITHMETIC instead — a real
+# baseline leaves a RUN SERIES, and the derived figure must reconcile with it.
+# GUARD-FIRST, measured before the rule: 31 folders · 12 declare a perf-budget · 9 are explicit N/A
+# · 3 carry a real budget · 0 refused after wiring.
+_pbd="$(mktemp -d)"
+_mkpb() { mkdir -p "$_pbd/$1"; : > "$_pbd/$1/.compass-format"; printf '# c\n\nperf-budget: %s\n' "$2" > "$_pbd/$1/contract.md"; }
+_PBBASE='p95 latency 200 ms; peak-mem 256 MB; cost $0.00 per request; SLO healthy range 25-50s.'
+_mkpb good "25.4 / 25.2 / 25.2s → median 25.2s; $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/good" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S22: a budget whose derived figure reconciles with its run series PASSES (the control)"
+_mkpb noser "$_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/noser" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S22: literals with NO run series behind them are REFUSED — a number nobody ran is a number somebody typed"
+_mkpb word "MEASURED MEASURED MEASURED. $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/word" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S22: writing the word MEASURED three times does NOT satisfy it — this build's own named sin, refused inside its own fix"
+_mkpb recon "25.4 / 25.2 / 25.2s measured; $_PBBASE median 99.9s"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/recon" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S22: a series that reconciles with NOTHING stated is REFUSED — a first version searched the whole line and the median of an odd series IS one of its own members, so the rule matched itself"
+# The unit is required. Without it, "25" inside the SLO range "25-50s" satisfied the rule.
+_mkpb unitless "25.4 / 25.2 / 25.2s runs; p95 latency 200 ms; peak-mem 256 MB; cost $0.00 per request; SLO healthy range 25-50s."
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/unitless" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S22: ...and a bare integer inside an unrelated range does not count as the derived figure — the unit must be adjacent"
+# GUARD-FIRST: unstamped builds N/A-pass the new rule AND say what is not being checked.
+mkdir -p "$_pbd/legacy"; printf '# c\n\nperf-budget: %s\n' "$_PBBASE" > "$_pbd/legacy/contract.md"
+_pbo="$(bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/legacy" 2>&1)"
+chk "$(printf '%s' "$_pbo" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S22: an UNSTAMPED build still passes on literals alone"
+chk "$(printf '%s' "$_pbo" | grep -c 'is NOT checked here')" "1" "v0.32 S22: ...and SAYS the measurement behind those literals was not checked"
+rm -rf "$_pbd"
+# THE WIRING. perf-budget-gate rides the contract seam in cmd_gate; a gate nobody calls is not a gate.
+_pbw="$(mktemp -d)"; mkdir -p "$_pbw/b"; : > "$_pbw/b/.compass-format"
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\nperf-budget: %s\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing.\n' "$_PBBASE" > "$_pbw/b/contract.md"
+printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > "$_pbw/b/receipts.md"
+# THE MESSAGE, NOT THE EXIT CODE. A first version asserted `gate ... contract` exits 1, and it did —
+# but so did the unwired mutant, because other contract-seam gates refuse this stub fixture anyway.
+# That is the ninth instance of the vacuity class in this build, committed inside the assertion
+# meant to prove a wiring. The gate must NAME perf-budget in its refusal, which only the wired rule
+# can produce.
+_pbwo="$(bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_pbw/b" contract 2>&1 || true)"
+# The INNER die fires and exits before cmd_gate's wrapper message is ever printed, so the string to
+# look for is the rule's own words, not "perf-budget-gate FAILED".
+chk "$(printf '%s' "$_pbwo" | grep -c 'no RUN SERIES behind them')" "1" "v0.32 S22: ...and the rule is REACHED THROUGH compass.sh gate — the refusal is the run-series rule's own words, which only the wired rule can produce"
+rm -rf "$_pbw"
+
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
 # block" is not "the copy is fine". GUARD-FIRST (the v0.28 lesson): a contract that PREDATES the

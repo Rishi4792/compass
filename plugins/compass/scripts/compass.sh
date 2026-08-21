@@ -1196,7 +1196,71 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
     || die "perf-budget: declared but no SLO / healthy-range named (its literal range is verified in review) (INV-PERFBUDGET)."
   ! grep -qiE '\b(no|not|without|zero)\b[ -]+(slo|healthy|availability)' "$contract" \
     || die "perf-budget: the SLO/healthy-range is explicitly negated ('no SLO') — declare a real healthy range (INV-PERFBUDGET)."
-  ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range."
+  # ── v0.32.0 S22 — A LITERAL IS NOT A MEASUREMENT ────────────────────────────────────────────
+  # Everything above proves a NUMBER WAS WRITTEN. It cannot tell a measured 200ms from an invented
+  # one, and §17-7 recorded exactly that: three earlier perf claims in this repo were carried over
+  # from a previous build's contract and never run. This contract's own perf line says so — "v1
+  # stated 28.4s and a derived 48.4s ceiling; neither was ever run".
+  #
+  # THIS IS DELIBERATELY NOT A GREP FOR THE WORD "MEASURED". Requiring a word is the sin this build
+  # is named after: it would pass any contract that types six letters. What is checked instead is
+  # ARITHMETIC — the same move S18 makes. A real baseline leaves a RUN SERIES behind it (three or
+  # more observations of one unit), and the figure the bound is derived from must RECONCILE with
+  # that series. You cannot satisfy this by writing a word; you have to supply numbers that agree.
+  #
+  # GUARD-FIRST, measured before the rule was written: 31 build folders · 12 declare a perf-budget
+  # header · 9 of those are an explicit N/A · so 3 carry a real budget, and only builds carrying the
+  # v0.30 `.compass-format` stamp are in scope. Both stamped builds with a real budget reconcile
+  # today (medians 25.2s and 26.18s); the unstamped one N/A-passes and says so.
+  if [ ! -f "$dir/.compass-format" ]; then
+    ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range. The measurement behind those literals is NOT checked here — this build predates the v0.30 stamp, and 27 of this repo's 31 folders are in that state."
+    return 0
+  fi
+  local _pbv
+  _pbv="$(printf '%s' "$pb" | awk '''
+    { line = line " " $0 }
+    END {
+      best_n = 0; s = line
+      # A RUN SERIES: three or more numbers separated by "/", sharing one unit.
+      while (match(s, /[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*[a-zA-Z\xc2\xb5]*/)) {
+        seg = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+        unit = seg; gsub(/[0-9.\/ ]/, "", unit)
+        tmp = seg; gsub(/[a-zA-Z\xc2\xb5]/, "", tmp)
+        n = split(tmp, parts, /\//)
+        if (n < 3) continue
+        for (i = 1; i <= n; i++) { gsub(/ /, "", parts[i]); v[i] = parts[i] + 0 }
+        for (i = 1; i <= n; i++) for (j = i+1; j <= n; j++) if (v[j] < v[i]) { t = v[i]; v[i] = v[j]; v[j] = t }
+        med = (n % 2) ? v[int(n/2)+1] : (v[n/2] + v[n/2+1]) / 2
+        if (n > best_n) { best_n = n; best_med = med; best_unit = unit }
+      }
+      if (best_n == 0) { print "NOSERIES"; exit }
+      # THE DERIVED FIGURE MUST BE STATED OUTSIDE THE SERIES. A first version searched the whole
+      # line, and the median of an odd-length series IS one of its own members — so the rule matched
+      # itself and passed a budget whose stated median was 99.9s against observations of 25.2s. The
+      # series text is removed before looking for the figure it is supposed to support.
+      rest = line
+      s2 = line
+      while (match(s2, /[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*[a-zA-Z\xc2\xb5]*/)) {
+        seg2 = substr(s2, RSTART, RLENGTH); s2 = substr(s2, RSTART + RLENGTH)
+        i2 = index(rest, seg2)
+        if (i2 > 0) rest = substr(rest, 1, i2 - 1) " \xc2\xa7 " substr(rest, i2 + length(seg2))
+      }
+      # THE UNIT IS REQUIRED, and the unit-less alternative is gone. It matched "25" inside the SLO
+      # range "25-50s" and passed a budget claiming a median of 99.9s over observations of 25.2s.
+      # A bare integer appears in almost any sentence; a figure carrying its unit is a claim.
+      for (p = 3; p >= 0; p--) {
+        want = sprintf("%." p "f", best_med); pat = want; gsub(/\./, "\\.", pat)
+        if (rest ~ ("[^0-9.]" pat "[ ]*" best_unit "([^a-zA-Z0-9]|$)")) { printf "OK %d %s%s\n", best_n, want, best_unit; exit }
+      }
+      printf "NORECONCILE %d %s%s\n", best_n, best_med, best_unit
+    }''')"
+  case "$_pbv" in
+    NOSERIES)
+      die "perf-budget: the budget states literals but no RUN SERIES behind them — three or more observations of one unit, e.g. '25.4 / 25.2 / 25.2s'. A number with no runs behind it is a number somebody typed; §17-7 records three such figures in this repo that were carried over from an earlier contract and never run. HARD STOP (INV-PERFBUDGET, S22). This is not satisfied by writing the word MEASURED." ;;
+    NORECONCILE*)
+      die "perf-budget: a run series is present but NOTHING IN THE BUDGET MATCHES IT — $_pbv. The figure a bound is derived from must reconcile with the observations behind it, or the series is decoration. HARD STOP (INV-PERFBUDGET, S22)." ;;
+  esac
+  ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range, and the derived figure RECONCILES with the run series behind it — $(printf '%s' "$_pbv" | awk '{print $3 " from " $2}') observations."
 }
 
 cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
