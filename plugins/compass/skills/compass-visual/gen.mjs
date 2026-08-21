@@ -307,7 +307,7 @@ const rc = (key, fallback) => {
   // the side channel's key no longer matches and that row's control loses half its contents.
   // Carry it across. Deliberately not per call site: `rc()` is the one place the substitution
   // happens, and doing it here covers every caller including future ones.
-  if (out !== fallback) { const up = droppedFor(fallback); if (up) noteDropped(out, up); }
+  if (out !== fallback) { const up = droppedFor(fallback); if (up) noteDropped(out, up); noteOrigin(out, originOf(fallback)); }
   return out;
 };
 // rcList('now', fallback) — the block's plain-language list where it speaks, the contract's own
@@ -483,6 +483,7 @@ function firstPara(body) {
       if (paras.length > 2) {
         lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2, () => paras.slice(2), () => out);
         noteDropped(out, paras.slice(2).join('\n\n'));
+        noteOrigin(out, originKey(body));
       }
       return out;
     }
@@ -493,6 +494,7 @@ function firstPara(body) {
   if (paras.length > 1) {
     lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1, () => paras.slice(1), () => first);
     noteDropped(first, paras.slice(1).join('\n\n'));
+    noteOrigin(first, originKey(body));
   }
   return first;
 }
@@ -1052,7 +1054,10 @@ const firstNonEmpty = (xs) => {
   for (let k = 0; k < xs.length; k++) {
     if (k === i || !xs[k]) continue;
     const up = droppedFor(xs[k]);
-    if (up && out) { noteDropped(out, up); repointShown(xs[k], out, up); }
+    // SAME BODY OR NO TRANSFER. Both origins must be known and equal — an unknown origin (a literal
+    // fallback string) transfers nothing, which is the fail-closed direction.
+    const ok = originOf(xs[k]);
+    if (up && out && ok && ok === originOf(out)) { noteDropped(out, up); repointShown(xs[k], out, up); }
   }
   return out;
 };
@@ -1063,16 +1068,23 @@ const firstNonEmpty = (xs) => {
 // the row it renders is the SELECTED value — found the text sitting in the Proof row's control, and
 // refused it as belonging to somebody else. Seven of the eight remaining unreachable probes, all on
 // one page, were this one bookkeeping gap.
-// The guard matters as much as the fix: a row is re-pointed ONLY when this render produced it AND
-// its dropped text is demonstrably inside the text that moved. Without that, "re-point" is a lever
-// for pointing every row on the page at one control, which is contract §9 cheat 4 with extra steps.
+// WHAT ACTUALLY GUARDS THIS, stated honestly because the first version of this comment did not.
+// It claimed a `r.dir === dir && r.view === view` test was holding the line. An independent review
+// showed that test is UNSATISFIABLE — `dir` and `view` are module constants set once from argv and
+// stamped onto every row by `lossy()`, so the clause rejected nothing on any of the 24 pages. It is
+// deleted rather than left in looking like protection.
+// Two things do the work, and both are in the CALLER: a transfer only happens between candidates
+// read from the same source body (see `originOf` above), and only the rows whose dropped text is
+// demonstrably inside the text that moved are re-pointed. Without the first, this is a lever for
+// aiming every row on the page at one control — measured by that review at +7 REACHABLE from one
+// line, and REACHABLE 220 from three.
 function repointShown(from, to, moved) {
   if (!LOSSY_TRACE) return;
   const norm = (x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim();
   const f = norm(from).slice(0, 60), t = norm(to).slice(0, 60), hay = norm(moved);
   if (!f || !t || f === t || !hay) return;
   for (const r of LOSSY_ROWS) {
-    if (r.dir !== dir || r.view !== view || r.shownProbe !== f) continue;
+    if (r.shownProbe !== f) continue;
     if (!r.probes.length || !r.probes.every((probe) => hay.includes(probe))) continue;
     r.shownProbe = t;
   }
@@ -1086,6 +1098,7 @@ const firstBullet = (body) => {
     const _restB = all.slice(1).map((b) => b.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim());
     lossy('firstBullet', out.length, all.join('\n').length, all.length - 1, () => _restB, () => out);
     noteDropped(out, _restB.join('\n'));
+    noteOrigin(out, originKey(body));
   }
   return out;
 };
@@ -1133,9 +1146,11 @@ const lineMatching = (body, re) => {
       // firstNonEmpty chain, which would have moved text on pages this step is not about.
       const _out = new String(`${first} ${rest.join('; ')}`);
       Object.defineProperty(_out, 'droppedLines', { value: moreText.join('; '), enumerable: false });
+      noteOrigin(_out, originKey(body));
       return _out;
     }
   }
+  noteOrigin(first, originKey(body));
   return first;
 };
 // `touches` lives on the INDEX row, not in contract.md — read it there rather than
@@ -1218,6 +1233,27 @@ function demd(x) {
 // So the dropped half is recorded HERE, keyed by the text that was kept, and `fieldParts` folds it
 // into that row's remainder. One change reaches every call site, and no signature moves.
 const _DROPPED = new Map();
+// ── WHERE A VALUE CAME FROM, so a transfer cannot cross documents ────────────────────────────
+// `firstNonEmpty` moves a discarded candidate's dropped text onto the selected value, on the
+// stated grounds that "it is the same section". An independent review showed that is often false:
+// on the plan map the selected value comes from `plan.md § The approach` and the discarded one from
+// `contract.md § Goal & scope`, so the reader's "What changes → Show the rest" held the contract's
+// NOW/LATER/NEVER ladder — four times over, in raw markdown — under a row that continues none of it.
+// That transfer also fed the anti-dump BUDGET, which sums what a row lost: piling foreign text into
+// a control raised the ceiling meant to reject piling, from 1,461 to 4,341 against a 4,300-char
+// control. A rule that grows its own limit by the thing it is limiting is not a rule.
+// So a value now remembers the BODY it was computed from, and a transfer happens only between two
+// candidates read from the same body. Same section, same document, or no transfer.
+const _ORIGIN = new Map();
+const originKey = (body) => {
+  const b = String(body || '').replace(/\s+/g, ' ').trim();
+  return b ? `${b.length}:${b.slice(0, 60)}` : '';
+};
+function noteOrigin(kept, origin) {
+  const k = String(kept || '').trim().slice(0, 120);
+  if (k && origin) _ORIGIN.set(k, origin);
+}
+function originOf(v) { return _ORIGIN.get(String(v || '').trim().slice(0, 120)) || ''; }
 function noteDropped(shown, rest) {
   const k = String(shown || '').trim().slice(0, 120);
   if (k && rest) _DROPPED.set(k, [_DROPPED.get(k), rest].filter(Boolean).join('\n\n'));

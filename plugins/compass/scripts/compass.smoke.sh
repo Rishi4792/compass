@@ -2138,10 +2138,17 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # `SOURCE UNREACHABLE` were pinned to no value at all: an independent reviewer removed one call
   # site's dropped text (probes 2,215 -> 1,335, unreachable 2,181 -> 1,323), shortened the probe cap
   # and raised SRC_MIN, and the suite stayed green through all three. Every figure is pinned now.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "162" "v0.32 S4b: exactly 162 of those units are probed (a call site quietly dropping its text moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "152" "v0.32 S4b: exactly 152 of those units are probed (a call site quietly dropping its text moves this)"
+  # v0.32.0, from an independent review: the three buckets must ADD UP to the population. They did
+  # not — the not-rendered units were subtracted from `probed` and then described a SECOND time as
+  # "NOT PROBED: shorter than 12 characters", so the printed columns summed to 190 out of 172.
+  # Pinning each bucket AND the total is what stops a unit being quietly moved between them.
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.NOT PROBED[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "2" "v0.32 S4b: exactly 2 units are genuinely too short to probe"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.NOT RENDERED[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "18" "v0.32 S4b: exactly 18 units belong to a row the page never showed"
+  chk "$(( $(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1) + 2 + 18 ))" "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*dropped units[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "v0.32 S4b: probed + too-short + not-rendered EQUALS the dropped-unit population — a bucket cannot absorb a unit without this going red"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S4b: exactly 0 are unreachable on the tracked corpus"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE LINES[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "108" "v0.32 S4b: the SOURCE denominator is exactly 108 lines (raising SRC_MIN to hide lines moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "51" "v0.32 S4b: exactly 51 source lines cannot be found on any page"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "64" "v0.32 S4b: exactly 64 source lines cannot be found on any page — this ROSE from 51 when cross-document transfers stopped, and the rise is the honest reading: those lines were only ever \"findable\" because they had been dumped into an unrelated row\'s disclosure. Rendering them under a row that continues them is follow-up work, not a reason to put the dump back"
   _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
   # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
   # It says FAIL again, and that is the honest state. The PASS this asserted was bought by two
@@ -2170,7 +2177,7 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # POSITIVE CONTROL still printed "an honest fix reaches ZERO" on a tree with no disclosure at all.
   # A conjunction whose SET the thing under test chooses proves nothing. So the CREDIT side is
   # pinned too, and so is how many paths are in scope.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "162" "v0.32 S7b: exactly 162 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "152" "v0.32 S7b: exactly 152 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNBINDABLE PATHS *: *([0-9]+) of ([0-9]+).*/\1 \2/p' | head -1)" "0 13" "v0.32 S7b: ZERO of 13 paths are unbindable — every destroying path now carries its shown half"
   # units too short to probe are reported as UNMEASURED, never folded into either column
   chk "$(printf '%s' "$_rout" | grep -c 'NOT PROBED')" "1" "v0.32 S4: units too short to probe are reported as UNMEASURED, not silently dropped"

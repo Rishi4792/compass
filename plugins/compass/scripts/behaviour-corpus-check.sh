@@ -67,6 +67,27 @@ echo "behaviour-corpus: baseline unreachable = $BASE over the tracked corpus."
 _pinned="$(awk '!/^#/ && NF>=2 {print $1}' "$MAN")"
 [ -n "$_pinned" ] || { echo "behaviour-corpus: ERR - the manifest pins nothing."; exit 2; }
 _gone=""
+# ── THE VERDICT LINE IS A CHECK TOO ──────────────────────────────────────────────────────────
+# v0.32.0, from an independent review. A smoke assertion used to pin `COMPASS-GATE: FAIL` on the
+# honest tree. When the honest tree reached zero and started saying PASS, that assertion was flipped
+# to PASS and the FAIL wording lost its only coverage — justified in the commit message by the claim
+# that "the twelve cheated trees in behaviour-corpus-check.sh each parse this same verdict line".
+# They did not. Every arm here parses a NUMBER. The claim was false, so this makes it true: a tree
+# with unreachable units must SAY FAIL, and a tree with none must SAY PASS. Mutating the gate to
+# print PASS unconditionally now goes red here, which is what "covered" means.
+verdict_check() {
+  _vslug="$1"; _vout="$2"
+  _vu="$(printf '%s' "$_vout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+  case "${_vu:-}" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$_vu" -gt 0 ]; then
+    printf '%s' "$_vout" | grep -q 'COMPASS-GATE: FAIL' || {
+      echo "  FAIL $_vslug - $_vu units are unreachable and the gate did NOT say FAIL in words"; bad=$((bad+1)); }
+  else
+    printf '%s' "$_vout" | grep -q 'COMPASS-GATE: PASS' || {
+      echo "  FAIL $_vslug - nothing is unreachable and the gate did NOT say PASS in words"; bad=$((bad+1)); }
+  fi
+}
+
 for _slug in $_pinned; do
   [ -d "$CORPUS/$_slug" ] || _gone="$_gone $_slug"
 done
@@ -111,6 +132,7 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      verdict_check "$slug" "$out"
       got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure after the cheat (rendered pages: $(printf '%s' "$out" | head -1))"; bad=$((bad+1)); continue ;;
@@ -146,6 +168,7 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      verdict_check "$slug" "$out"
       got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no SOURCE figure after the cheat"; bad=$((bad+1)); continue ;;
@@ -188,6 +211,7 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      verdict_check "$slug" "$out"
       got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure after the cheat"; bad=$((bad+1)); continue ;;
@@ -209,6 +233,7 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      verdict_check "$slug" "$out"
       # Scoped to the BINDABLE paths — the ones that carry their shown half, so a control can be
       # tied to their rows at all. Ten of the thirteen are not wired yet (S7), and asserting zero
       # over paths the check cannot bind would be asserting something no implementation can satisfy,
@@ -238,6 +263,7 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      verdict_check "$slug" "$out"
       got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*REACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no REACHABLE figure after the cheat"; bad=$((bad+1)); continue ;;

@@ -544,7 +544,7 @@ try { rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */
 const result = {
   corpus: corpusRoot, dirs: dirs.length, views: VIEWS,
   pagesRendered: rendered, pagesFailed: failures.length, failures,
-  unitsDropped: unitsSeen, probes: probesTotal, unprobed: Math.max(0, unitsSeen - probesTotal),
+  unitsDropped: unitsSeen, probes: probesTotal, unprobed: Math.max(0, unitsSeen - probesTotal - notRendered),
   reachable, reachableInAControl: inControl, reachableInFlowOnly: inFlowOnly,
   unbindablePaths: [...unbindable].sort(), notRendered, notRenderedPaths: [...nrPaths].sort(),
   unreachable, dumpedIntoAsharedControl: dumped,
@@ -556,8 +556,13 @@ else {
   console.log(`reachable-argument: ${rendered} pages rendered, ${failures.length} failed, over ${dirs.length} build dirs.`);
   console.log(`  dropped units        : ${unitsSeen}`);
   console.log(`  ...probed            : ${probesTotal}`);
-  if (unitsSeen > probesTotal) {
-    console.log(`  ...NOT PROBED        : ${unitsSeen - probesTotal}  — shorter than 12 characters, so not distinctive`);
+  // The NOT RENDERED units are subtracted from `probesTotal` where they are found, so printing
+  // `unitsSeen - probesTotal` here described them a SECOND time, under the wrong reason: on the
+  // tracked corpus that read "NOT PROBED 20 — shorter than 12 characters" when only 2 were short
+  // and the other 18 were the not-rendered ones, already reported on their own line. A reader
+  // adding the columns got 190 out of 172. The three now sum to the population.
+  if (unitsSeen - probesTotal - notRendered > 0) {
+    console.log(`  ...NOT PROBED        : ${unitsSeen - probesTotal - notRendered}  — shorter than 12 characters, so not distinctive`);
     console.log(`                          enough to find on a page without false hits. Reported as`);
     console.log(`                          UNMEASURED, never folded into either column.`);
   }
