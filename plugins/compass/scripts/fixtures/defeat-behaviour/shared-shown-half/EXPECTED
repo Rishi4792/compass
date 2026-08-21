@@ -2,3 +2,4 @@ kind=cheat
 check=reachable-argument-check.sh
 rule=reachable-must-not-hold
 why=The check takes each row's SHOWN half from the generator and uses it for all three of its per-row rules — anti-dump, ownership and budget. One shared string collapses all three at once, so every control can be torn from its row and piled at the page foot while the figure stays at 0.
+open=C-1, the twelfth cheat. Six rules were tried and each measured and rejected; all six are recorded in reachable-argument.mjs. The instrument and the check both run inside the generator process, so a generator that lies about its own trace cannot be caught from inside it. Shipping v0.32 with this named was Rishi decision on 2026-08-21; the fix is an outside-in rewrite (render, then measure with a real HTML parser and the tracked source, no trace) and it is its own contract.

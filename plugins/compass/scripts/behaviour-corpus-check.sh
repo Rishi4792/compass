@@ -26,6 +26,7 @@ command -v node >/dev/null 2>&1 || { echo "behaviour-corpus: ERR - node is not o
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 # entry_sha: identity over the three files that make an entry evidence.
+opencount=0; OPEN_LIST=""
 entry_sha() { cat "$1/apply.sh" "$1/case.sh" "$1/EXPECTED" "$1/REPRODUCTION.md" 2>/dev/null | shasum -a 256 | cut -c1-16; }
 
 # The baseline the cheats are measured against, taken on the UNMODIFIED tree.
@@ -121,6 +122,15 @@ for d in "$CORPUS"/*/; do
   # changed no entry. An entry that names a floor is compared against that number, not against a
   # baseline the mutation can drag down with it.
   floor="$(sed -nE 's/^floor=([0-9]+)$/\1/p' "$d/EXPECTED" | head -1)"
+  # ── KNOWN-OPEN: a defect this build could not close, NAMED rather than deleted ────────────────
+  # Rishi's call, 2026-08-21, on C-1: ship v0.32 with the twelfth cheat recorded as an open defect
+  # and take the outside-in rewrite as its own contract. `open=` is the ONLY way to say that, and it
+  # is deliberately loud: the entry still RUNS, still reports what the cheat actually did, is
+  # re-printed under its own heading at the end of every run, and the count of open entries is
+  # pinned in smoke so a second one is a visible diff rather than a quiet habit. It never turns a
+  # failure into a pass silently — it turns it into a failure with a name and a reason attached.
+  isopen="$(sed -nE 's/^open=(.*)$/\1/p' "$d/EXPECTED" | head -1)"
+  bad_before=$bad
   case "$rule" in
     figure-must-not-fall)
       work="$TMP/$slug"; mkdir -p "$work"
@@ -275,8 +285,22 @@ for d in "$CORPUS"/*/; do
       fi ;;
     *) echo "  FAIL $slug - EXPECTED names no rule this runner knows ('$rule')"; bad=$((bad+1)) ;;
   esac
+  # An entry marked open= is still RUN and still reported exactly as it behaved; what changes is
+  # that its failure is booked against the named open list instead of the failing count.
+  if [ -n "${isopen:-}" ] && [ "$bad" -gt "${bad_before:-0}" ]; then
+    bad=$bad_before
+    opencount=$((opencount+1))
+    OPEN_LIST="$OPEN_LIST  OPEN $slug - $isopen
+"
+  fi
 done
 
-echo "behaviour-corpus: $n entries, $bad failing"
+if [ -n "${OPEN_LIST:-}" ]; then
+  echo ""
+  echo "behaviour-corpus: KNOWN-OPEN DEFECTS — these cheats are NOT defeated. They are recorded,"
+  echo "                  not fixed, and the check below them cannot see them."
+  printf '%s' "$OPEN_LIST"
+fi
+echo "behaviour-corpus: $n entries, $bad failing, $opencount known-open"
 [ "$n" -gt 0 ] || { echo "behaviour-corpus: ERR - zero entries. An empty corpus proves nothing and is never a pass."; exit 2; }
 exit $([ "$bad" -eq 0 ] && echo 0 || echo 1)

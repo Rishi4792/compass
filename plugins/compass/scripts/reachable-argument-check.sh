@@ -43,8 +43,21 @@ n="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:spa
 if [ -z "$n" ]; then
   echo "COMPASS-GATE: ERR — reachable-argument printed no UNREACHABLE figure. Silence is not a pass."; exit 3
 fi
+# ── WHAT THIS GATE CANNOT SEE, printed on EVERY run — passing, failing, either way ───────────
+# Rishi's call, 2026-08-21: ship v0.32 with C-1 named rather than deleted or ground on further.
+# A verdict given without saying what the check is blind to is the exact thing this build exists to
+# stop, so the blindness prints beside the verdict — not in a comment, not in a CHANGELOG only.
+# Above BOTH branches on purpose: a FAIL is just as incomplete a statement as a PASS.
+_bopen="$(grep -c '^open=' "$(dirname "$0")/fixtures/defeat-behaviour"/*/EXPECTED 2>/dev/null | awk -F: '{t+=$2} END{print t+0}')"
+if [ "${_bopen:-0}" -gt 0 ]; then
+  echo "  KNOWN OPEN           : $_bopen cheat(s) in the behaviour corpus are NOT defeated by this"
+  echo "                         check. A generator that lies about its own trace cannot be caught"
+  echo "                         from inside the generator's process. Run behaviour-corpus-check.sh"
+  echo "                         for the named list. This verdict is sound only against the cheats"
+  echo "                         the corpus proves it defeats."
+fi
 if [ "$n" -eq 0 ]; then
-  echo "COMPASS-GATE: PASS — reachable-argument: every dropped unit is reachable on its own page."; exit 0
+echo "COMPASS-GATE: PASS — reachable-argument: every dropped unit is reachable on its own page."; exit 0
 fi
 echo "COMPASS-GATE: FAIL — reachable-argument: $n dropped units cannot be reached by a reader."
 exit 1

@@ -2227,6 +2227,11 @@ if [ -f "$_BCC" ] && command -v node >/dev/null 2>&1 && [ -n "${COMPASS_BEHAVIOU
   # forgot — can an honest fix actually reach the target?
   chk "$([ "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: ([0-9]+) entries.*/\1/p' | head -1)" -ge 8 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 8 entries — five from contract section 9, two found by review, and the honest-fix control"
   chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: [0-9]+ entries, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S5: every cheat is DEFEATED — none lowers the figure without a row being fixed"
+  # The KNOWN-OPEN count is PINNED, not floored. `open=` exists so one measured, argued, named
+  # defect can ship (C-1, on Rishi's call 2026-08-21) — and pinning it at exactly one is what stops
+  # it becoming the way every future cheat gets retired. A second one is a red diff, deliberately.
+  chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: [0-9]+ entries, [0-9]+ failing, ([0-9]+) known-open.*/\1/p' | head -1)" "1" "v0.32 S5: EXACTLY ONE known-open defect (C-1) — a second would be a new decision, not a habit"
+  chk "$(printf '%s' "$_bout" | grep -c 'OPEN shared-shown-half')" "1" "v0.32 S5: ...and it is named in the run's own output, not only in a commit message"
   for _c in rename-marker hide-rows empty-control one-control-per-page css-clip template-stash clip-guard-exhaustion; do
     chk "$(printf '%s' "$_bout" | grep -c "ok   $_c - defeated")" "1" "v0.32 S5: cheat '$_c' is applied and defeated (not merely stored)"
     chk "$([ -s "$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour/$_c/REPRODUCTION.md" ] && echo 1 || echo 0)" "1" "v0.32 S5: ...and carries the reproduction that earned its place"
