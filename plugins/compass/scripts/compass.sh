@@ -2755,6 +2755,45 @@ cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tra
   # LEDGER: ≥1 render line
   grep -qE '^v[0-9]+ · ' "$dir/sketch/LEDGER" 2>/dev/null \
     || { echo "refuse: ledger" >&2; die "sketch-gate: sketch/LEDGER missing or has no 'v<N> · …' render line."; }
+
+  # ── v0.32.0 S21 (§17-3): every artefact the LEDGER NAMES must actually be there ──
+  # Before this, a mockup was checked only when the contract carried a `mockup:` header,
+  # and on the web arm a bare `design-standard:` line satisfied the gate on its own. So a
+  # build that rendered a mock, recorded it in its LEDGER and then DELETED the file still
+  # PASSED, exit 0 — reproduced on a copy of this build before the change. Keying on the
+  # LEDGER's own `file=` rather than on a contract header is what makes it unwaivable.
+  # Two shapes, because the corpus holds both: a real path must exist on disk, and a
+  # `doc#anchor` reference must resolve to a heading in that doc. 9 of the 14 render lines
+  # across the 30 build folders are `contract.md#logic-map`; treating those as paths would
+  # newly refuse 9 historical builds, which contract §12's canary forbids.
+  local _ll _lf _ldoc _lanc _lhead
+  while IFS= read -r _ll; do
+    _lf="$(printf '%s' "$_ll" | sed -nE 's/.*file=([^ ·]+).*/\1/p')"
+    [ -n "$_lf" ] || continue
+    case "$_lf" in
+      *"#"*)
+        _ldoc="${_lf%%#*}"; _lanc="${_lf#*#}"
+        [ -f "$dir/$_ldoc" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '$_ldoc' does not exist."; }
+        # the anchor is stripped to [A-Za-z0-9 _] BEFORE it reaches a regex — an unescaped
+        # variable inside a pattern is a recurring defect class in this file's own gates.
+        _lhead="$(printf '%s' "$_lanc" | tr '-' ' ' | tr -cd 'A-Za-z0-9 _')"
+        [ -n "$_lhead" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '#$_lanc' is not a usable heading anchor."; }
+        grep -qiE "^#+ +$_lhead" "$dir/$_ldoc" \
+          || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '$_ldoc' has no heading for '#$_lanc'."; }
+        ;;
+      *)
+        [ -f "$dir/$_lf" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names artefact '$_lf' but the file is missing — a recorded sketch that is not on disk is not evidence."; }
+        case "$_lf" in
+          *.html)
+            head -1 "$dir/$_lf" 2>/dev/null | grep -q '^<!-- COMPASS-MOCK slug=' \
+              || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the line-1 COMPASS-MOCK marker."; }
+            grep -q 'THROWAWAY WIREFRAME' "$dir/$_lf" 2>/dev/null \
+              || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the visible THROWAWAY banner."; }
+            ;;
+        esac
+        ;;
+    esac
+  done < "$dir/sketch/LEDGER"
   case "$facets" in
     *web*)
       local ok_spec=""
@@ -2768,11 +2807,15 @@ cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tra
       [ -z "$ok_spec" ] && hdr_get "$c" design-standard >/dev/null 2>&1 && ok_spec=1   # decision 6: both paths valid
       [ -n "$ok_spec" ] || { echo "refuse: mockup" >&2; die "sketch-gate: web build needs an ACCEPTED mockup (marker+banner) OR a 'design-standard:' line (decision 6)."; }
       ;;
-    *)
-      awk '/^## Logic Map/{p=1;next} p&&/^## /{p=0} p' "$c" | awk '/^```mermaid/{m=1;next} m&&/^```/{m=0} m' | grep -q -- '-->' \
-        || { echo "refuse: logicmap" >&2; die "sketch-gate: non-web co-construct build needs a '## Logic Map' mermaid fence with ≥1 edge (RD-9 — a pipeline cannot silently skip its logic map)."; }
-      ;;
   esac
+  # ── v0.32.0 S21 (§17-4): the Logic Map check ran in the `*)` arm of the case above, so
+  # ANY build whose Facets line merely CONTAINED the string "web" skipped it entirely —
+  # including three that say "no web surface", because the match is a substring over free
+  # prose. It now runs for both arms. Blast radius measured BEFORE the change: 14 of 30
+  # build folders reach this point and all 14 already carry a Logic Map with at least one
+  # edge, so this refuses none of them (contract §12's canary).
+  awk '/^## Logic Map/{p=1;next} p&&/^## /{p=0} p' "$c" | awk '/^```mermaid/{m=1;next} m&&/^```/{m=0} m' | grep -q -- '-->' \
+    || { echo "refuse: logicmap" >&2; die "sketch-gate: a co-construct build needs a '## Logic Map' mermaid fence with >=1 edge (RD-9 — a build cannot silently skip its logic map)."; }
   # leak tracer — tracked files only, line-1 anchored, state root excluded
   local hits=""
   if git rev-parse --git-dir >/dev/null 2>&1; then

@@ -1872,6 +1872,63 @@ else
   chk "1" "1" "v0.32 S24: N/A — the live multi-status build folder is not present on this tree"
 fi
 
+# ── v0.32 S21 (§17-3 + §17-4): the sketch-gate can now refuse something ──────────────────────
+# It passed 30 of 30 build folders and had never refused anything. Two reasons, one edit:
+# (a) a mockup was checked only when the contract carried a `mockup:` header, and on the web arm
+#     a bare `design-standard:` line satisfied the gate — so deleting the mock changed nothing;
+# (b) the Logic Map check lived in the non-web arm of a `case`, and the arm is chosen by a
+#     SUBSTRING match over the free-prose Facets line, so builds saying "no web surface" took the
+#     web arm and skipped it.
+# The fixture is BUILT AT RUNTIME, not committed: a tracked file carrying the line-1
+# COMPASS-MOCK marker would trip the gate's own leak tracer on every run.
+_SG="$(mktemp -d)"
+mkdir -p "$_SG/base/sketch"
+cat > "$_SG/base/contract.md" <<'SGC'
+# fixture contract — S21
+
+Facets: library + web
+sketch: in-scope — one alternative rendered.
+design-standard: compass-artefact
+intake: co-construct-v1
+
+## Logic Map
+
+```mermaid
+graph TD
+  A[source] --> B[gate]
+```
+
+## End
+SGC
+printf 'v1 · 2026-08-21 · decision=x · alternatives=a,b · picked=a · render=file-only · file=sketch/mock-v1.html\n' > "$_SG/base/sketch/LEDGER"
+printf '<!-- COMPASS-MOCK slug=fixture -->\n<h1>THROWAWAY WIREFRAME</h1>\n' > "$_SG/base/sketch/mock-v1.html"
+bash "$SH" sketch-gate "$_SG/base" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S21: the unmutated sketch fixture still PASSES (the gate did not become a wall)"
+cp -R "$_SG/base" "$_SG/nomock"; rm -f "$_SG/nomock/sketch/mock-v1.html"
+bash "$SH" sketch-gate "$_SG/nomock" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): deleting the artefact the LEDGER NAMES now REFUSES (shipped gate: exit 0)"
+cp -R "$_SG/base" "$_SG/nomarker"; printf '<h1>no marker</h1>\n' > "$_SG/nomarker/sketch/mock-v1.html"
+bash "$SH" sketch-gate "$_SG/nomarker" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): a LEDGER-named mock with no line-1 COMPASS-MOCK marker is REFUSED"
+cp -R "$_SG/base" "$_SG/nobanner"; printf '<!-- COMPASS-MOCK slug=fixture -->\n<h1>quiet</h1>\n' > "$_SG/nobanner/sketch/mock-v1.html"
+bash "$SH" sketch-gate "$_SG/nobanner" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): a LEDGER-named mock with no THROWAWAY banner is REFUSED"
+cp -R "$_SG/base" "$_SG/nolm"; sed -e 's/^  A\[source\] --> B\[gate\]$/  (no edges)/' "$_SG/base/contract.md" > "$_SG/nolm/contract.md"
+bash "$SH" sketch-gate "$_SG/nolm" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-4): a WEB build with no Logic Map edge is REFUSED (the check used to sit in the non-web arm)"
+# the doc#anchor shape: 9 of 14 render lines in the live corpus are `contract.md#logic-map`,
+# so treating every file= as a path would newly refuse 9 historical builds.
+cp -R "$_SG/base" "$_SG/anchor"
+printf 'v1 · 2026-08-21 · decision=x · alternatives=a,b · picked=a · render=file-only · file=contract.md#logic-map\n' > "$_SG/anchor/sketch/LEDGER"
+rm -f "$_SG/anchor/sketch/mock-v1.html"
+bash "$SH" sketch-gate "$_SG/anchor" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S21: a 'contract.md#logic-map' render line resolves to the heading and PASSES (canary: 9 historical builds use this shape)"
+cp -R "$_SG/anchor" "$_SG/anchorbad"
+sed -e 's/^## Logic Map$/## Something Else/' "$_SG/anchor/contract.md" > "$_SG/anchorbad/contract.md"
+bash "$SH" sketch-gate "$_SG/anchorbad" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21: ...and a render line whose anchor resolves to NOTHING is REFUSED"
+rm -rf "$_SG"
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
