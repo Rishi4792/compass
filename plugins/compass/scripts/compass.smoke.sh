@@ -2138,17 +2138,20 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # `SOURCE UNREACHABLE` were pinned to no value at all: an independent reviewer removed one call
   # site's dropped text (probes 2,215 -> 1,335, unreachable 2,181 -> 1,323), shortened the probe cap
   # and raised SRC_MIN, and the suite stayed green through all three. Every figure is pinned now.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "152" "v0.32 S4b: exactly 152 of those units are probed (a call site quietly dropping its text moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "8" "v0.32 S4b: exactly 8 are unreachable on the tracked corpus"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "162" "v0.32 S4b: exactly 162 of those units are probed (a call site quietly dropping its text moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S4b: exactly 0 are unreachable on the tracked corpus"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE LINES[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "108" "v0.32 S4b: the SOURCE denominator is exactly 108 lines (raising SRC_MIN to hide lines moves this)"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "51" "v0.32 S4b: exactly 51 source lines cannot be found on any page"
   _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
   # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
   # It says FAIL again, and that is the honest state. The PASS this asserted was bought by two
   # cancelling bugs an independent reviewer found — glued block elements hiding a whole event in an
-  # exclusion bucket, and a generator-supplied `discarded` flag the check believed. Both are gone,
-  # the real figure is 8, and the gate says so.
-  chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.32 S7f: ...and it says FAIL in words while any dropped unit is still unreachable"
+  # exclusion bucket, and a generator-supplied `discarded` flag the check believed. Both are gone.
+  # The figure was 8 for as long as `firstNonEmpty` moved a discarded candidate's TEXT to the row
+  # that renders it but left the destroying EVENT naming the candidate. It is now 0, so the honest
+  # tree says PASS, and the FAIL wording is exercised where the failing trees are — the twelve
+  # cheated trees in `behaviour-corpus-check.sh`, each of which parses this same verdict line.
+  chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S7f: ...and it says PASS in words once no dropped unit is unreachable"
   # ERR, never a confident zero, when there is nothing to measure
   bash "$_RAC" "$RR22" --corpus "$RR22/no-such-corpus-xyz" >/dev/null 2>&1
   chk "$?" "3" "v0.32 S4: an ABSENT corpus ERRs (exit 3) — a corpus with no pages is not a clean result"
@@ -2161,13 +2164,13 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # weak evidence is reported apart from strong: text merely present elsewhere is NOT disclosure
   chk "$(printf '%s' "$_rout" | grep -c 'each in a control holding THAT row.s remainder')" "1" "v0.32 S4b: only a control holding THAT row's remainder counts as reachable — text merely present elsewhere does not"
   chk "$(printf '%s' "$_rout" | grep -c 'UNBINDABLE PATHS')" "1" "v0.32 S6b: the unbindable count is ALWAYS printed, at zero as well — an absent line is not evidence"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNREACHABLE \(bindable\) *: *([0-9]+).*/\1/p' | head -1)" "8" "v0.32 S7f: exactly 8 remainders remain unreachable on the tracked corpus — the previous ZERO was bought by two cancelling bugs an independent reviewer found, not by the fix"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNREACHABLE \(bindable\) *: *([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S7f: exactly 0 remainders remain unreachable on the tracked corpus — an EARLIER zero was bought by two cancelling bugs, so this one is pinned beside the probed population (162) that makes it mean something"
   # v0.32 S7b (C-3), from the independent review of S6. `UNREACHABLE (bindable)` filters by SITE, so
   # ONE blank shown half poisons a whole path OUT of the figure — and with all three poisoned the
   # POSITIVE CONTROL still printed "an honest fix reaches ZERO" on a tree with no disclosure at all.
   # A conjunction whose SET the thing under test chooses proves nothing. So the CREDIT side is
   # pinned too, and so is how many paths are in scope.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "144" "v0.32 S7b: exactly 144 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "162" "v0.32 S7b: exactly 162 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNBINDABLE PATHS *: *([0-9]+) of ([0-9]+).*/\1 \2/p' | head -1)" "0 13" "v0.32 S7b: ZERO of 13 paths are unbindable — every destroying path now carries its shown half"
   # units too short to probe are reported as UNMEASURED, never folded into either column
   chk "$(printf '%s' "$_rout" | grep -c 'NOT PROBED')" "1" "v0.32 S4: units too short to probe are reported as UNMEASURED, not silently dropped"
