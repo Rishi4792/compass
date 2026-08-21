@@ -274,11 +274,10 @@ cmd_review_disclose_gate() { # <build-dir>
     ok "review-disclose-gate '$slug': N/A — no receipts.md, so there is no review receipt to check."
     return 0
   fi
-  case "$(head -c 400 "$dir/progress.md" 2>/dev/null || true)" in
-    *SHIPPED*|*CLOSED*|*'status=shipped'*)
-      ok "review-disclose-gate '$slug': N/A — this build has shipped; adding the sentence to its receipts now would be back-dating, not disclosure."
-      return 0 ;;
-  esac
+  if _build_finished "$dir/progress.md"; then
+    ok "review-disclose-gate '$slug': N/A — this build's STATUS line says it is finished; adding the sentence to its receipts now would be back-dating, not disclosure."
+    return 0
+  fi
   # ── EACH ROUND DISCLOSES FOR ITSELF ─────────────────────────────────────────────────────────
   # The first version compared two GLOBAL counts, so a round that said nothing passed because
   # another round said it twice. Blocks are split on the receipt heading and each review block is
@@ -287,14 +286,17 @@ cmd_review_disclose_gate() { # <build-dir>
   local blk="" head=""
   while IFS= read -r ln || [ -n "$ln" ]; do
     case "$ln" in
-      '## RECEIPT — '*)
+      '#'*[Rr][Ee][Cc][Ee][Ii][Pp][Tt]*)
+        _st="$(_receipt_stage "$ln")"
+        [ -n "$_st" ] || { blk="$blk
+$ln"; continue; }
         if [ -n "$head" ]; then
           case "$head" in review-*)
             total=$((total+1))
             case "$blk" in *"$COMPASS_DISCLOSE_SENTENCE"*) : ;; *) silent="$silent $head" ;; esac ;;
           esac
         fi
-        head="${ln#'## RECEIPT — '}"; head="${head%% *}"; blk="" ;;
+        head="$_st"; blk="" ;;
       *) blk="$blk
 $ln" ;;
     esac
@@ -314,6 +316,44 @@ $ln" ;;
 }
 
 
+# ── v0.32.0, from an independent review of S16/S17 ─────────────────────────────────────────────
+# TWO SHAPES THAT BOTH NEW GATES GOT WRONG, fixed once, here.
+#
+# 1. "IS THIS BUILD FINISHED" was `case "$(head -c 400 progress.md)" in *SHIPPED*|*CLOSED*)`. That
+#    reads PROSE. A build with `Blockers: none — F-3 was CLOSED in S12` in its opening paragraph —
+#    visibly mid-loop, `wakeups_used: 12/40`, an unticked next step — was told "this build has
+#    shipped, so its loop is over". Compass progress files discuss findings being CLOSED constantly;
+#    this repo's own has the word eight times. It now reads the STATUS LINE's value and nothing else.
+# 2. "IS THERE A RECEIPT FOR STAGE X" was an exact `^## RECEIPT — <stage>`. Six of twelve natural
+#    spellings escaped: an ASCII hyphen instead of an em dash, `###`, `Receipt`, a capitalised
+#    stage, no space around the dash. That is the previous review's finding 3 — the receipt choosing
+#    its own scope — reintroduced in the gate written to answer it.
+_build_finished() { # <progress.md> -> 0 if the STATUS line says finished
+  local f="${1:-}" v
+  [ -f "$f" ] || return 1
+  v="$(LC_ALL=C sed -nE 's/^[[:space:]*_-]*[Ss]tatus[[:space:]*_]*:[[:space:]*]*(.*)$/\1/p' "$f" | head -1)"
+  [ -n "$v" ] || return 1
+  # THE LEADING TOKEN OF THE VALUE, not the whole value. The value is prose too: this build's own
+  # status reads "BUILDING — S17 and S18 shipped, plus all TEN findings…", and matching anywhere in
+  # it declared an actively-building build finished. Leading emoji and punctuation are stripped
+  # first, because "✅ SHIPPED v0.31.0" is a real line in this repo.
+  v="$(printf '%s' "$v" | LC_ALL=C sed -E 's/^[^A-Za-z]*//' | tr 'a-z' 'A-Z')"
+  case "$v" in
+    SHIPPED*|CLOSED*|ABANDONED*|SUPERSEDED*) return 0 ;;
+  esac
+  return 1
+}
+_has_receipt() { # <receipts.md> <stage-alternation>
+  local f="${1:-}" st="${2:-}"
+  [ -f "$f" ] || return 1
+  # ALTERNATION, NOT A BRACKET CLASS. An em dash is multibyte, so `[—–-]` matches individual BYTES
+  # and the trailing `-` forms a range — the first attempt at this made every em-dash heading escape
+  # and only the ASCII hyphen work, which is the opposite of the bug it was fixing.
+  LC_ALL=C grep -qiE "^#{2,4}[[:space:]]*RECEIPT[[:space:]]*(—|–|-)[[:space:]]*($st)([^A-Za-z0-9]|$)" "$f"
+}
+_receipt_stage() { # <heading line> -> the stage word, lowercased, or empty
+  LC_ALL=C printf '%s' "${1:-}" | sed -E 's/^#{2,4}[[:space:]]*[Rr][Ee][Cc][Ee][Ii][Pp][Tt][[:space:]]*(—|–|-)[[:space:]]*/\x01/' | sed -nE 's/^\x01([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z'
+}
 # ── v0.32.0 S17 — ARM THE ENGINE, AND SAY SO WHEN YOU CANNOT ────────────────────────────────────
 # Compass's own `--auto` stalls: it finishes a step, writes a paragraph and waits. The long-build
 # skill is the engine that replaces that continuation, and S16's counter is what BOUNDS it. Arming
@@ -348,7 +388,7 @@ cmd_engine_gate() { # <build-dir>
   fi
   local skilldir
   if ! skilldir="$(_engine_skill_present)"; then
-    ok "engine-gate '$slug': N/A — the long-build skill is not installed on this machine, so there is no engine to arm. NOT a statement that this build is bounded; it runs on Compass's own continuation, which stalls."
+    ok "engine-gate '$slug': N/A — the long-build skill is not installed here, and Compass does not ship it (it is a user skill), so for most installs this gate is inert BY DESIGN and not a misconfiguration. NOT a statement that this build is bounded; without an engine it runs on Compass's own continuation, which stalls."
     return 0
   fi
   # ── SCOPE, in the order the states actually occur ─────────────────────────────────────────
@@ -360,7 +400,7 @@ cmd_engine_gate() { # <build-dir>
   # The seam is the PLAN receipt, not the build receipt: building begins when the plan locks, and
   # the build-stage receipt is not written until the stage ENDS. Keying on it left a build that is
   # visibly mid-build — plan locked, twenty-odd steps committed — reading "has not started looping".
-  if [ ! -f "$dir/receipts.md" ] || ! grep -qE '^## RECEIPT — (plan|build|ship)' "$dir/receipts.md" 2>/dev/null; then
+  if ! _has_receipt "$dir/receipts.md" 'plan|build|ship'; then
     ok "engine-gate '$slug': N/A — the plan is not locked yet, so this build has not started looping. The engine is armed once building begins, not at contract lock."
     return 0
   fi
@@ -375,13 +415,12 @@ cmd_engine_gate() { # <build-dir>
   fi
   # A FINISHED build's loop is over. Demanding it record an engine retroactively would be a gate
   # rewriting history — and two of this repo's four stamped builds shipped before this rule existed.
-  case "$(head -c 400 "$prog" 2>/dev/null || true)" in
-    *SHIPPED*|*CLOSED*|*'status=shipped'*)
-      ok "engine-gate '$slug': N/A — this build has shipped, so its loop is over and there is nothing left to bound. NOT a retroactive claim that it was."
-      return 0 ;;
-  esac
+  if _build_finished "$prog"; then
+    ok "engine-gate '$slug': N/A — this build's STATUS line says it is finished, so its loop is over and there is nothing left to bound. NOT a retroactive claim that it was."
+    return 0
+  fi
   local line; line="$(LC_ALL=C sed -nE 's/^engine:[[:space:]]*(.+)$/\1/p' "$prog" | head -1)"
-  [ -n "$line" ] || die "engine-gate: '$slug' records no 'engine:' line in progress.md. The long-build skill is installed at $skilldir, so the engine is available and its arming is a decision this build must state. HARD STOP (S17)."
+  [ -n "$line" ] || die "engine-gate: '$slug' records no 'engine:' line in progress.md. The long-build skill is installed at $skilldir, so the engine is available and its arming is a decision this build must state. WRITE THIS LINE in progress.md — 'engine: long-build · armed=yes · cap=40 · counter=.compass-wakeups' — and stamp '- [x] engine: long-build armed, cap 40' on a receipt. (An independent reviewer found this gate hard-stopping on a line nothing on the tree told anyone to write; the build skill's receipt template now carries it.) HARD STOP (S17)."
   # BOUNDED, and bounded by a NUMBER. "armed" on its own is the unbounded loop the 2026-04-28
   # runaway was — 1.16B tokens spent re-scheduling. A cap is what makes arming safe to record.
   local cap; cap="$(printf '%s' "$line" | LC_ALL=C sed -nE 's/.*cap=([0-9]+).*/\1/p' | head -1)"

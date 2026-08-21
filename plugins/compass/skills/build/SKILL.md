@@ -82,6 +82,7 @@ file and fails on a disagreement, so a wrong number here is caught, not shipped.
 **EMIT RECEIPT** with real commands/outputs (a bare `[x]` with no command = auto-FAIL via `scan-receipt`):
 ```
 ## RECEIPT — build · <slug> · PASS
+- [x] engine: long-build armed, cap <N> — or `engine: none` with a reason. `compass.sh engine-gate <build-dir>` refuses an armed loop with no cap, and N/A-passes when the skill is not installed (Compass does not ship it).
 - [x] gate: review-plan receipt OK
 - [x] all plan steps checked, each with recorded fresh proof
 - [x] INVARIANT <id>: `<cmd>` → <actual> vs <bound> PASS   (one line PER invariant, none deferred)

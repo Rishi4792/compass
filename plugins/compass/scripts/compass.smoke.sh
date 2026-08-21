@@ -2606,7 +2606,7 @@ _WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
 if [ -f "$_WCT" ]; then
   _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
   chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "16" "v0.32 S16: ...and there are exactly 16 of them — a shrinking test is how coverage leaves quietly"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "34" "v0.32 S16: ...and there are exactly 34 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 when an independent review found 14 defects the first 16 could not see"
 else
   chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
 fi
@@ -2665,14 +2665,21 @@ _eo="$(bash "$_ENG" engine-gate "$_eg/none" 2>&1 || true)"
 _mkeng "$_eg/skillless" "" "$_STAMP"
 _eo2="$(COMPASS_ENGINE_SKILL_DIR=/nonexistent-xyz HOME=/nonexistent-xyz CLAUDE_PROJECT_DIR=/nonexistent-xyz bash "$_ENG" engine-gate "$_eg/skillless" 2>&1 || true)"
 chk "$(printf '%s' "$_eo2" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S17: with NO long-build skill installed the gate N/A-PASSES — it cannot demand a build arm an engine that is not there"
-chk "$(printf '%s' "$_eo2" | grep -c 'not installed on this machine')" "1" "v0.32 S17: ...and SAYS the skill is absent"
+chk "$(printf '%s' "$_eo2" | grep -c 'not installed here, and Compass does not ship it')" "1" "v0.32 S17: ...and SAYS the skill is absent"
 chk "$(printf '%s' "$_eo2" | grep -c 'NOT a statement that this build is bounded')" "1" "v0.32 S17: ...and says explicitly what it is NOT claiming"
 mkdir -p "$_eg/legacy"; printf '# p\n\n**Status:** BUILDING\n' > "$_eg/legacy/progress.md"
 _eo3="$(bash "$_ENG" engine-gate "$_eg/legacy" 2>&1 || true)"
 chk "$(printf '%s' "$_eo3" | grep -c 'predates the engine rule')" "1" "v0.32 S17: a build with no v0.30 stamp N/A-PASSES and says it predates the rule"
 _mkeng "$_eg/shipped" "" "$_STAMP"; printf '# p\n\n**Status:** SHIPPED v0.30.0\n' > "$_eg/shipped/progress.md"
 _eo4="$(bash "$_ENG" engine-gate "$_eg/shipped" 2>&1 || true)"
-chk "$(printf '%s' "$_eo4" | grep -c 'has shipped, so its loop is over')" "1" "v0.32 S17: a SHIPPED build N/A-PASSES — demanding an engine line retroactively would be a gate rewriting history"
+chk "$(printf '%s' "$_eo4" | grep -c 'STATUS line says it is finished')" "1" "v0.32 S17: a SHIPPED build N/A-PASSES — demanding an engine line retroactively would be a gate rewriting history"
+# ...and the word SHIPPED in unrelated PROSE does NOT take an active build out of scope. A status of
+# "BUILDING — S17 and S18 shipped" was reading as finished, on this repo's own build.
+_mkeng "$_eg/prose" "$_ARMED" "$_STAMP"
+printf '# p\n\n**Status:** BUILDING — S17 and S18 shipped; F-3 was CLOSED in S12\nCaps: wakeups_used: 12/40\n%s\n' "$_ARMED" > "$_eg/prose/progress.md"
+_eo5="$(bash "$_ENG" engine-gate "$_eg/prose" 2>&1 || true)"
+chk "$(printf '%s' "$_eo5" | grep -c 'STATUS line says it is finished')" "0" "v0.32 S17: ...and SHIPPED/CLOSED in unrelated PROSE does NOT take an actively-building build out of scope"
+chk "$(printf '%s' "$_eo5" | grep -c 'engine armed and BOUNDED')" "1" "v0.32 S17: ...it is judged on its merits instead"
 rm -rf "$_eg"
 # And this repo's own live builds: the gate must refuse none of them.
 _egn=0; _egf=0
@@ -2682,6 +2689,22 @@ for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
 done
 chk "$([ "$_egn" -ge 5 ] && echo ok || echo "EMPTY:$_egn")" "ok" "v0.32 S17: ...over a NON-EMPTY population of real build folders (this loop reads a gitignored directory, so it can be empty on a clean clone)"
 chk "$_egf" "0" "v0.32 S17: ...and refuses none of them"
+# THE WIRING, which the commit that added this gate did not assert — the very lesson it was written
+# to apply. An independent reviewer neutered only the CALL (keeping the `if type …` guard intact)
+# and NOTHING went red. This goes through compass.sh gate and matches engine-gate's own words.
+_egw="$(mktemp -d)"; mkdir -p "$_egw/b"; : > "$_egw/b/.compass-format"
+printf '# p\n\n**Status:** BUILDING\nCaps: wakeups_used: 3/40\n' > "$_egw/b/progress.md"
+printf '## RECEIPT — plan · x · PASS\n- [x] ok\n' > "$_egw/b/receipts.md"
+_egwo="$(bash "$_ENG" gate "$_egw/b" plan 2>&1 || true)"
+chk "$(printf '%s' "$_egwo" | grep -c "records no 'engine:' line")" "1" "v0.32 S17: engine-gate is REACHED THROUGH compass.sh gate — the refusal is its own words, which only the wired call can produce"
+# ...and the honest control: with the line and the stamp, the same seam passes.
+printf '# p\n\n**Status:** BUILDING\n%s\n' "$_ARMED" > "$_egw/b/progress.md"
+printf '## RECEIPT — plan · x · PASS\n- [x] ok\n%s\n' "$_STAMP" > "$_egw/b/receipts.md"
+_egwp="$(bash "$_ENG" gate "$_egw/b" plan 2>&1 || true)"
+chk "$(printf '%s' "$_egwp" | grep -c "records no 'engine:' line")" "0" "v0.32 S17: ...and a build that DOES arm it passes that same seam (the control)"
+rm -rf "$_egw"
+# The build skill must TELL someone to write the line the gate hard-stops on.
+chk "$(grep -c 'engine: long-build armed' "$PLUGIN_ROOT/skills/build/SKILL.md" || true)" "1" "v0.32 S17: the build skill's receipt template carries the engine line — a gate that hard-stops on a line nothing instructs is a trap"
 
 # ── v0.32 S11b: two holes an independent reviewer opened in the disclosure ────────────────────
 if command -v node >/dev/null 2>&1; then
@@ -2841,6 +2864,40 @@ _pbwo="$(bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_pbw/b" contract 2>&1 || 
 # look for is the rule's own words, not "perf-budget-gate FAILED".
 chk "$(printf '%s' "$_pbwo" | grep -c 'no RUN SERIES behind them')" "1" "v0.32 S22: ...and the rule is REACHED THROUGH compass.sh gate — the refusal is the run-series rule's own words, which only the wired rule can produce"
 rm -rf "$_pbw"
+
+# ── v0.32 S26: ONE RECONCILED STREAM VOCABULARY ──────────────────────────────────────────────
+# §17-10. Three skills declare stream lists and S10's denominator reads all three, so the ids have
+# to be one vocabulary rather than three private ones. What is checked is shape and agreement, not
+# taste: every id kebab-case, unique within its skill, and a concern that appears in more than one
+# skill spelled IDENTICALLY — `secret-leak` is in review-plan and review-build and must match.
+_s26all=""
+for _rv in review-contract review-plan review-build; do
+  _s26="$(bash "$_CS" review-streams "$_rv" 2>/dev/null || true)"
+  _s26n="$(printf '%s' "$_s26" | grep -c . || true)"
+  chk "$([ "${_s26n:-0}" -ge 3 ] && echo ok || echo "EMPTY:${_s26n:-0}")" "ok" "v0.32 S26: $_rv's list parses into a non-empty vocabulary"
+  chk "$(printf '%s' "$_s26" | grep -cvE '^[a-z][a-z0-9]*(-[a-z0-9]+)*$' || true)" "0" "v0.32 S26: ...and every id in it is kebab-case — one vocabulary, not three private ones"
+  chk "$(printf '%s' "$_s26" | sort | uniq -d | grep -c . || true)" "0" "v0.32 S26: ...with no id repeated inside it (a duplicate would inflate the denominator for free)"
+  _s26all="$_s26all
+$_rv $_s26"
+done
+# A shared concern must be spelled the same way in every skill that has it. `secret-leak` is the
+# live case; if it is ever spelled two ways, S10's denominator counts one concern as two streams.
+chk "$(bash "$_CS" review-streams review-plan 2>/dev/null | grep -cx 'secret-leak' || true)" "1" "v0.32 S26: review-plan names the shared concern exactly 'secret-leak'"
+chk "$(bash "$_CS" review-streams review-build 2>/dev/null | grep -cx 'secret-leak' || true)" "1" "v0.32 S26: ...and review-build spells it identically — a concern in two skills under two names is two streams in the denominator and one in reality"
+
+# ── v0.32 S25: the claim and the evidence must agree ─────────────────────────────────────────
+# §17-9. `review-contract`'s anti-fabrication stream cited `session-chain.log` as establishing that
+# a contract was authored by an --auto session. It does not: `check-session-chain` validates that
+# log's SHAPE — seven fields, a known event, a known stage, numeric counters — and never reads who
+# wrote anything. The log is also written by the same party it would police, which is the limit §4
+# states about independence. The citation is removed and the stream now says what it actually does.
+_S25F="$PLUGIN_ROOT/skills/review-contract/SKILL.md"
+chk "$(grep -c 'session-chain.log / receipts show it' "$_S25F" || true)" "0" "v0.32 S25: the false citation is GONE — check-session-chain never established authorship"
+chk "$(grep -c "validates that log's SHAPE" "$_S25F" || true)" "1" "v0.32 S25: ...and the stream states what the command actually checks instead"
+chk "$(grep -c 'Do not cite the chain log as proof of it' "$_S25F" || true)" "1" "v0.32 S25: ...and says plainly not to cite it as proof"
+# The claim has to match the CODE, so this reads the code too: check-session-chain must not read
+# the contract or claim authorship.
+chk "$(sed -n "/^cmd_check_session_chain()/,/^}/p" "$PLUGIN_ROOT/scripts/compass.sh" | grep -c 'contract.md' || true)" "0" "v0.32 S25: ...and check-session-chain genuinely never reads contract.md, which is what makes the correction true rather than merely softer"
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
