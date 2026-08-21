@@ -34,6 +34,10 @@ BASE="$(printf '%s' "$base_out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]
 # The SECOND baseline. Some cheats cannot be judged on the probe figure at all, because they change
 # what there is to probe — see fixtures/defeat-behaviour/hide-rows. Its denominator is the source.
 SBASE="$(printf '%s' "$base_out" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+# The CREDIT side. Every rule until now was "the figure must not FALL", which cannot express a cheat
+# that leaves every figure byte-identical while making all 83 controls unopenable. Found by the
+# independent review of S6, which built exactly that.
+RBASE="$(printf '%s' "$base_out" | sed -nE 's/^[[:space:]]*REACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
 case "${BASE:-}" in
   ''|*[!0-9]*) echo "behaviour-corpus: ERR - no baseline figure from reachable-argument-check. Silence is not a pass."; exit 2 ;;
 esac
@@ -160,6 +164,28 @@ for d in "$CORPUS"/*/; do
         echo "         The gold is a wall, not a target. This is the v0.31 failure, and it is a"
         echo "         blocker on the CHECK, not on the generator."
         bad=$((bad+1))
+      fi ;;
+    reachable-must-not-hold)
+      # A control the check CREDITS must be one a reader can open. This arm watches the credit side:
+      # if a cheat makes every control unopenable, REACHABLE must FALL. Every other rule watches
+      # the debit side and would report this cheat as defeated while crediting 83 controls that do
+      # not exist for a reader.
+      work="$TMP/$slug"; mkdir -p "$work"
+      mkdir -p "$work/plugins/compass/skills/compass-visual" "$work/plugins/compass/scripts"
+      cp -R "$ROOT/plugins/compass/skills/compass-visual/." "$work/plugins/compass/skills/compass-visual/" 2>/dev/null
+      cp -R "$ROOT/plugins/compass/scripts/." "$work/plugins/compass/scripts/" 2>/dev/null
+      if ! bash "$d/apply.sh" "$work" >"$TMP/$slug.apply.log" 2>&1; then
+        echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
+      fi
+      out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*REACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+      case "${got:-}" in
+        ''|*[!0-9]*) echo "  FAIL $slug - the check printed no REACHABLE figure after the cheat"; bad=$((bad+1)); continue ;;
+      esac
+      if [ "$got" -ge "$RBASE" ]; then
+        echo "  FAIL $slug - THE CHEAT WORKS: every control is inside display:none and REACHABLE held $RBASE -> $got"; bad=$((bad+1))
+      else
+        echo "  ok   $slug - defeated: REACHABLE fell $RBASE -> $got once the controls became unopenable"
       fi ;;
     *) echo "  FAIL $slug - EXPECTED names no rule this runner knows ('$rule')"; bad=$((bad+1)) ;;
   esac

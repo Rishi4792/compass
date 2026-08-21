@@ -1342,9 +1342,9 @@ function briefBody() {
   const guardCard = security_.present
     ? bandSection('Guardrails', 'How this gets turned off, undone, and watched.',
         `<ul class="pl">` +
-        `<li><span class="pill now">off</span><span>${txt(fieldParts(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150).shown)}</span>${disclose(fieldParts(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150).rest)}</li>` +
-        `<li><span class="pill now">undo</span><span>${txt(fieldParts(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150).shown)}</span>${disclose(fieldParts(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150).rest)}</li>` +
-        `<li><span class="pill now">watch</span><span>${txt(fieldParts(firstPara(sec('Observability')) || 'observability declared in the contract.', 150).shown)}</span>${disclose(fieldParts(firstPara(sec('Observability')) || 'observability declared in the contract.', 150).rest)}</li>` +
+        (() => { const _p = fieldParts(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150); return `<li><span class="pill now">off</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })() +
+        (() => { const _p = fieldParts(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150); return `<li><span class="pill now">undo</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })() +
+        (() => { const _p = fieldParts(firstPara(sec('Observability')) || 'observability declared in the contract.', 150); return `<li><span class="pill now">watch</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })() +
         `</ul>`)
     : bandNA('Guardrails', 'no Security & data-sensitivity block in this contract — treat the sensitive surface as unclassified, not a cleared N/A');
 

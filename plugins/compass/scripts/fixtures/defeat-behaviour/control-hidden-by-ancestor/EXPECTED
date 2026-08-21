@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=reachable-must-not-hold
+why=A control the check credits must be one a reader can open. controlsFor() measures each <details> from its own substring only, so it never sees a CLIPPED ANCESTOR. Wrapping every control in display:none leaves REACHABLE, UNREACHABLE, UNREACHABLE (bindable) and SOURCE UNREACHABLE byte-identical to the honest build while no reader can open a single control.

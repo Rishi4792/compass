@@ -186,7 +186,39 @@ function normalise(t) {
 // That preceding slice is what ties a control to a row: an honest control sits directly after the
 // shortened text it discloses, and an aggregation sits after everything, with no row's shown text
 // immediately before it.
-function controlsFor(html, clipped) {
+// v0.32 S7b — FIX from the independent review of S6, and it was a CRITICAL. A control used to be
+// judged from its OWN substring, so a CLIPPED ANCESTOR was invisible to it: wrapping every control
+// in `<div style="display:none">` scored exactly the same as leaving them openable, and wrapping
+// the WHOLE PAGE BODY in one `display:none` still credited 66 of 83 remainders as reachable on a
+// page that renders nothing at all.
+// Blank every clipped subtree ONCE over the whole document, keeping byte offsets so `before`
+// windows and control positions still line up, and read the controls out of the blanked copy.
+function visibleHtml(html, clippedIn) {
+  const clipped = clippedIn || clippedClasses(html);
+  const h = html.replace(/<!--[\s\S]*?-->/g, ' ');
+  const chars = h.split('');
+  let skipTag = null, skipDepth = 0, skipFrom = 0;
+  const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  let m;
+  while ((m = re.exec(h)) !== null) {
+    const closing = m[0][1] === '/';
+    const tag = m[1].toLowerCase();
+    const attrs = m[2] || '';
+    const selfClosing = /\/\s*$/.test(attrs) || VOID_TAGS.has(tag);
+    if (skipTag) {
+      if (tag !== skipTag || selfClosing) continue;
+      if (closing) { skipDepth--; if (skipDepth <= 0) { for (let i = skipFrom; i < re.lastIndex; i++) chars[i] = ' '; skipTag = null; skipDepth = 0; } }
+      else skipDepth++;
+      continue;
+    }
+    if (!closing && !selfClosing && isClipped(tag, attrs, clipped)) { skipTag = tag; skipDepth = 1; skipFrom = m.index; }
+  }
+  // an UNCLOSED clipped element swallows the rest — the same fail-CLOSED direction as reachableText
+  if (skipTag) for (let i = skipFrom; i < chars.length; i++) chars[i] = ' ';
+  return chars.join('');
+}
+function controlsFor(rawHtml, clipped) {
+  const html = visibleHtml(rawHtml, clipped);
   const out = [];
   let prevEnd = 0;
   for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) {
@@ -260,7 +292,11 @@ for (const p of pages) {
     // aggregation to satisfy by accident — it would have to reproduce every row's opening line
     // immediately before itself, which is no longer an aggregation.
     const shown = normalise(r.shownProbe || '').slice(0, 30);
-    if (!shown) unbindable.add(r.site);
+    // A shown half needs the SAME minimum distinctiveness a probe does. It had none, so a generator
+    // could pass `() => 'the'`, put nothing beside the row, pile every control at the page foot each
+    // preceded by the word "the", and score byte-identically to an honest build. Found by the
+    // independent review of S6.
+    if (shown.length < 12) unbindable.add(r.site);
     for (const raw of (r.probes || [])) {
       const probe = normalise(raw);
       probesTotal++;
@@ -315,7 +351,7 @@ for (const p of pages) {
         // POSITION is what actually ties a control to its row. The row's SHOWN half must appear in
         // the text immediately before the control. A page that dumps every remainder into one box
         // at the end fails this for every row but at most one, whatever the box's size.
-        if (!shown) { why.push('no shown half: UNBINDABLE'); continue; }
+        if (shown.length < 12) { why.push(`shown half too short (${shown.length} < 12): UNBINDABLE`); continue; }
         if (!ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is not in the ${ctrls[i].before.length} chars before it`); continue; }
         // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
         // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
