@@ -2606,7 +2606,7 @@ _WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
 if [ -f "$_WCT" ]; then
   _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
   chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "34" "v0.32 S16: ...and there are exactly 34 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 when an independent review found 14 defects the first 16 could not see"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "64" "v0.32 S16: ...and there are exactly 64 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 across two independent reviews that found 14 and 11 defects the earlier cases could not see"
 else
   chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
 fi
@@ -2687,8 +2687,16 @@ for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
   [ -d "$_d" ] || continue
   _egn=$((_egn+1)); bash "$_ENG" engine-gate "$_d" >/dev/null 2>&1 || _egf=$((_egf+1))
 done
-chk "$([ "$_egn" -ge 5 ] && echo ok || echo "EMPTY:$_egn")" "ok" "v0.32 S17: ...over a NON-EMPTY population of real build folders (this loop reads a gitignored directory, so it can be empty on a clean clone)"
-chk "$_egf" "0" "v0.32 S17: ...and refuses none of them"
+# `.claude/builds/` is GITIGNORED, so a clean clone has none. This used to assert a non-empty
+# population unconditionally and went RED on every clean clone — the assertion's own message said it
+# could be empty there and it failed anyway. An explicit N/A is the rule this build applies
+# everywhere else; a check that fails for a user who did nothing wrong is a check that gets deleted.
+if [ "$_egn" -eq 0 ]; then
+  chk "1" "1" "v0.32 S17: N/A — no build folders on this tree (.claude/builds is gitignored, so a clean clone has none). NOT a statement that no build is refused."
+else
+  chk "$([ "$_egn" -ge 5 ] && echo ok || echo "ONLY:$_egn")" "ok" "v0.32 S17: ...over a NON-EMPTY population of real build folders"
+  chk "$_egf" "0" "v0.32 S17: ...and refuses none of them"
+fi
 # THE WIRING, which the commit that added this gate did not assert — the very lesson it was written
 # to apply. An independent reviewer neutered only the CALL (keeping the `if type …` guard intact)
 # and NOTHING went red. This goes through compass.sh gate and matches engine-gate's own words.
@@ -2924,6 +2932,44 @@ for _f in reachable-argument.mjs reachable-argument-check.sh page-audit.mjs beha
   chk "$(grep -vE '^[[:space:]]*(#|//)' "$PLUGIN_ROOT/scripts/$_f" | grep -c 'COMPASS_V32_STRICT' || true)" "0" "v0.32 S27: $_f does not READ the kill switch in code, so it cannot be silenced by it"
 done
 chk "$([ "$_v32n" -ge 6 ] && echo ok || echo "ONLY:$_v32n")" "ok" "v0.32 S27: ...over a NON-EMPTY set of measurements (a loop over files that are not there would assert nothing)"
+
+# ── v0.32 S35: §12's CANARY — no historical build newly refused ──────────────────────────────
+# Compass has shipped this mistake before: v0.28's mode-gate armed on a MISSING header and refused
+# 25 of 26 existing builds. §12 makes any historical build a new gate would newly refuse a RELEASE
+# BLOCKER, not a fixture to delete. `canary-gates.sh` runs every gate v0.32 ADDS or CHANGES over
+# every build folder and every lifecycle stage, and it found one: cockpit-gate refused the parked
+# `gate-soundness-v0-32`, which is a no-touch zone — so the GATE was what had to change.
+_CG="$PLUGIN_ROOT/scripts/canary-gates.sh"
+chk "$([ -f "$_CG" ] && echo ok || echo MISSING)" "ok" "v0.32 S35: canary-gates.sh exists — §12's canary needs a run, and a run needs a script"
+if [ -f "$_CG" ]; then
+  # It reads the GITIGNORED .claude/builds/, so on a clean clone there is nothing to canary. That
+  # must ERR, never pass: an empty canary reporting "0 newly refused" is the vacuity class this
+  # build has now found eleven times.
+  _cgt="$(mktemp -d)"; mkdir -p "$_cgt/plugins/compass/scripts"
+  cp "$PLUGIN_ROOT/scripts/compass.sh" "$_cgt/plugins/compass/scripts/" 2>/dev/null
+  bash "$_CG" "$_cgt" >/dev/null 2>&1
+  chk "$?" "2" "v0.32 S35: ...and a tree with NO build folders ERRs (exit 2) rather than reporting zero refusals over zero builds"
+  rm -rf "$_cgt"
+  # A SAMPLE here, the FULL run at release. The complete canary is 374 gate calls and 41.7s — it
+  # took this suite from 39s to 59.1s, past the 50.2s ceiling the contract states. Coverage is MOVED,
+  # not deleted: the sample runs every time, the release runs all of it (S28-S31), and the sample
+  # says in its own output that it is one.
+  # `.claude/builds/` is GITIGNORED, so a clean clone has none and there is nothing to canary. That
+  # must be an explicit N/A here, not a failure and not a silent pass — the same rule this build
+  # applies to every other gate. The canary script itself ERRs on an empty tree, which is what stops
+  # "0 refusals over 0 builds" from ever reading as a clean bill.
+  _cgo="$(bash "$_CG" "$PLUGIN_ROOT/../.." --sample 6 2>&1 || true)"
+  if printf '%s' "$_cgo" | grep -q 'no .claude/builds at\|zero build folders'; then
+    chk "1" "1" "v0.32 S35: N/A — this tree has no build folders to canary (.claude/builds is gitignored, so a clean clone has none). NOT a statement that nothing is newly refused; the release runs the full canary on a tree that has them."
+  else
+  _cgb="$(printf '%s' "$_cgo" | sed -nE 's/^canary-gates: [0-9]+ gate calls over (a SAMPLE of )?([0-9]+).*/\2/p' | head -1)"
+  _cgr="$(printf '%s' "$_cgo" | sed -nE 's/^canary-gates: .* · ([0-9]+) newly refused.*/\1/p' | head -1)"
+  chk "$([ "${_cgb:-0}" -ge 5 ] && echo ok || echo "ONLY:${_cgb:-0}")" "ok" "v0.32 S35: ...over a NON-EMPTY population of real historical builds"
+  chk "$(printf '%s' "$_cgo" | grep -c 'this is NOT the full canary')" "1" "v0.32 S35: ...and a SAMPLE says it is one — the release runs it without --sample, and a sample passed off as the whole thing is the false all-clear this build is about"
+  chk "${_cgr:-none}" "0" "v0.32 S35: ...and NO historical build is newly refused by any gate this build adds"
+  chk "$(printf '%s' "$_cgo" | grep -c 'excluded   :')" "1" "v0.32 S35: ...and what it does NOT run is stated, not quietly dropped — a canary that cannot tell a NEW refusal from a pre-existing one reported 41 problems and hid the one that mattered"
+  fi
+fi
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No

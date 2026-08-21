@@ -2299,6 +2299,16 @@ _stage_end_block() { # <header> <body>
 
 cmd_cockpit_gate() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh cockpit-gate <build-dir>"
+  # GUARD-FIRST, and found by §12's own canary rather than by reading. A build with NO lifecycle
+  # state — no progress.md and no receipts.md — has no stage end to describe, so demanding the four
+  # elements of one is demanding a description of something that has not happened. `gate-soundness-v0-32`
+  # in this repo is exactly that: a parked contract carrying only a carry-forward note and an orient
+  # log. §12 makes any historical build a NEW gate would newly refuse a RELEASE BLOCKER, not a
+  # fixture to delete — and that build is a no-touch zone, so the gate was the thing that had to change.
+  if [ ! -f "$dir/progress.md" ] && [ ! -f "$dir/receipts.md" ]; then
+    ok "cockpit-gate '$(basename "$dir")': N/A — no progress.md and no receipts.md, so this build has no stage end to describe. NOT a statement that a cockpit was printed."
+    return 0
+  fi
   local out; out="$(cmd_cockpit "$dir" 2>&1)" || true
   local missing=""
   # 1. WHAT HAPPENED — the stage strip, with a glyph per stage.
