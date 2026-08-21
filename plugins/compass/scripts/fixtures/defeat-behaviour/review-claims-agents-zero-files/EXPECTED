@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh review-evidence-gate
+rule=behaviour-must-hold
+why=a receipt claiming every stream ran while the agents directory holds zero evidence files was ACCEPTED. Measured on this repo when the gate was written: 31 build folders, 20 receipts carrying a checked "all streams run" line, ONE folder with an agents/ directory. The denominator was the receipt's own claim about itself.

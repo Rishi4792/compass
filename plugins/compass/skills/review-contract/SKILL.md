@@ -23,6 +23,18 @@ Run `compass.sh gate .claude/builds/<slug> contract` (slug from `.claude/builds/
 - Cap without convergence → **no level above the contract → STOP, hand to the USER** with the open questions.
 
 ## Streams (one pass)
+
+<!-- COMPASS-STREAMS:START -->
+`streams: completeness ambiguity testability reconciliation internal-consistency edge-states feasibility-vs-data co-construction-sketch-audit`
+<!-- COMPASS-STREAMS:END -->
+
+<!-- The list above is the DENOMINATOR, and it is machine-read. Contract §4: a stream id is "derived,
+     never a hardcoded letter range" — the [A]..[F] labels below are a reading aid for humans, not the
+     count. `compass.sh review-streams review-contract` prints these ids, and the review-evidence gate
+     requires one evidence file per id at `agents/review-contract-r<round>-<id>.md`. Taking the denominator
+     from the receipt's own claim is what let twenty builds record "all streams run" with zero
+     evidence files on disk. Editing this line changes what the gate demands — that is the point. -->
+
 1. **Completeness** for the chosen facets — every required section substantive (incl. scale, deps, reconciliation, idempotency, rollback, observability; web: auth + tokens + a11y; pipeline: input-contract + determinism + output-schema + reproducibility).
 2. **Ambiguity** — every term defined; name any phrase readable two ways.
 3. **Testability** — every requirement measurable. **A deferred flag on an INVARIANT/acceptance item = CRITICAL.**
@@ -38,6 +50,7 @@ Run the streams; log + apply fixes (surface intent questions, don't guess). One 
 ## RECEIPT — review-contract · <slug> · PASS
 - [x] gate: contract receipt OK (compass.sh gate → PASS)
 - [x] all streams run; ledger updated
+- [x] streams: review-contract r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-contract`, never from this receipt)
 - [x] reconciliation independent+exact: grep `contract.md` → gold=<literal> provenance=<artifact>; tol=<…>
 - [x] 0 open Critical/Major; progress.md = Contract LOCKED
 ```

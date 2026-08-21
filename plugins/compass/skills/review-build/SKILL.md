@@ -35,6 +35,18 @@ The build is done on design ONLY when it is **indistinguishable from the mockup*
 - **Every check must be falsifiable** — it must be able to FAIL if the thing were broken. A check that cannot fail (a tautology, a screenshot-only "looks right", a grep for prose) is deleted, not counted.
 
 ## Streams — fan out as 6 agents (assume each FAILS until proven; each emits one ledger row per check)
+
+<!-- COMPASS-STREAMS:START -->
+`streams: correctness-completeness numbers-data-integrity ux-operability security-rbac-data-leakage secret-leak verification-audit-coverage`
+<!-- COMPASS-STREAMS:END -->
+
+<!-- The list above is the DENOMINATOR, and it is machine-read. Contract §4: a stream id is "derived,
+     never a hardcoded letter range" — the [A]..[F] labels below are a reading aid for humans, not the
+     count. `compass.sh review-streams review-build` prints these ids, and the review-evidence gate
+     requires one evidence file per id at `agents/review-build-r<round>-<id>.md`. Taking the denominator
+     from the receipt's own claim is what let twenty builds record "all streams run" with zero
+     evidence files on disk. Editing this line changes what the gate demands — that is the point. -->
+
 - **[A] Correctness & completeness:** feature failure modes (empty/huge data, concurrency, partial input, permission edges) · completeness vs contract (every requirement built AND demonstrated by a re-run check) · regression (run the repo's own suite). · **test-rigor (v0.22.0, INV-REDGREEN / INV-MUTATION): RE-RUN `compass.sh mutation-check .claude/builds/<slug>`** — a declared `mutation:` recipe MUST bite (a decorative or broken-control recipe blocks CLOSED) — and **re-challenge the `red-green:` evidence** (`compass.sh redgreen-check` + READ the actual test): a present-but-hollow red-green that names no real failing-first assertion is a MAJOR (the build's honor gate passes it; the review does not).
 <!-- EDGERACE:START -->
 - **Boundary/edge + concurrency/TOCTOU method (F-EDGERACE):** run for every build that handles numeric/temporal/index input or a read-modify-write — byte-inert (**N/A**) when the build has **no boundary or read-modify-write surface**:
@@ -118,6 +130,7 @@ a build could declare 999 steps over a 16-checkbox plan and be told it was clean
 Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Rounds 2+: the groups the fixes touched **PLUS the independent [D]/[E]/[F] agents on the fix diff**, + the full regression suite re-run + footer. **Converge only when the final clean round was a genuine verify-the-fixes round** ([D]/[E]/[F] re-attacked the latest fix diff and found nothing) — two consecutive clean rounds, the last a fix-surface re-attack. Then **EMIT RECEIPT** (one line per asserted thing, with command + output):
 ```
 ## RECEIPT — review-build · <slug> · PASS
+- [x] streams: review-build r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-build`, never from this receipt)
 - [x] gate: build receipt OK; all 6 groups run
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface

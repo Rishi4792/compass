@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh review-evidence-gate
+rule=behaviour-must-hold
+why=COULD-NOT-VERIFY was the cheapest verdict a reviewer could write. Contract §8 requires machine evidence of the failed spawn beside it and a HARD BLOCK on closure without one; without that rule "the spawn failed" costs three words and buys a clean round.

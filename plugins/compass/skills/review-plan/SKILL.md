@@ -26,6 +26,18 @@ Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `
 Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped requirement = CRITICAL. **Every INVARIANT → a NON-deferred bound-asserting check** (missing/vague/deferred = CRITICAL).
 
 ## Streams — fan out as 6 agents (each emits ONE ledger row per check it covers; coverage = the checks, not the agent count)
+
+<!-- COMPASS-STREAMS:START -->
+`streams: spec-coverage data-migration interfaces-blast-radius operability security-rbac-cost secret-leak`
+<!-- COMPASS-STREAMS:END -->
+
+<!-- The list above is the DENOMINATOR, and it is machine-read. Contract §4: a stream id is "derived,
+     never a hardcoded letter range" — the [A]..[F] labels below are a reading aid for humans, not the
+     count. `compass.sh review-streams review-plan` prints these ids, and the review-evidence gate
+     requires one evidence file per id at `agents/review-plan-r<round>-<id>.md`. Taking the denominator
+     from the receipt's own claim is what let twenty builds record "all streams run" with zero
+     evidence files on disk. Editing this line changes what the gate demands — that is the point. -->
+
 - **[A] Spec coverage:** traceability (every requirement → step) · INVARIANT-assertion coverage (each → a non-deferred exact-bound check) · test plan (deterministic tests incl. reconciliation, web tokens + a11y, idempotency). · **red-green plan (v0.22.0, INV-REDGREEN): a build that adds a test must plan a RED-first evidence step (the failing test + WHY it fails before the fix) — a plan that only asserts "tests pass" is a finding (re-challenged again at review-build).**
 <!-- EDGERACE:START -->
 - **Boundary/edge + concurrency/TOCTOU method (F-EDGERACE):** run for every build that handles numeric/temporal/index input or a read-modify-write — byte-inert (**N/A**) when the build has **no boundary or read-modify-write surface**:
@@ -79,6 +91,7 @@ Plan delivers the WHOLE contract, nothing it forbids. Drifting step / un-stepped
 Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only the groups the fixes touched, plus the full suite re-run + footer (a confirming round with no new fixes = suite re-run only). Two clean rounds → `progress.md` = `Plan LOCKED`. **EMIT RECEIPT**:
 ```
 ## RECEIPT — review-plan · <slug> · PASS
+- [x] streams: review-plan r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-plan`, never from this receipt)
 - [x] gate: plan receipt OK
 - [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint

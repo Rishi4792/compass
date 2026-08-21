@@ -133,6 +133,98 @@ cwd_slug() {
   case "$br" in compass/*) printf '%s' "${br#compass/}" ;; *) printf '' ;; esac
 }
 
+
+# ── v0.32.0 S10 — THE STREAM LIST IS THE DENOMINATOR, AND IT IS NOT THE RECEIPT'S TO CHOOSE ─────
+# Measured on this repo before the gate was written: 31 build folders, 20 receipts carrying a
+# checked "all streams run; ledger updated" line, and exactly ONE folder with an agents/ directory
+# in it. Twenty reviews recorded that every stream ran, with zero evidence files on disk, and no
+# check could tell the difference — because the only thing anything read was the receipt's own
+# claim about itself.
+# So the denominator moves OUT of the receipt and into the review skill, where it is a machine-read
+# list between COMPASS-STREAMS markers. Contract §4: a stream id is "derived, never a hardcoded
+# letter range". The [A]..[F] labels in those skills are a reading aid; these ids are the count.
+_streams_file() { printf '%s' "$(dirname "${BASH_SOURCE[0]}")/../skills/$1/SKILL.md"; }
+
+cmd_review_streams() { # <review>
+  local rv="${1:-}"
+  case "$rv" in
+    review-contract|review-plan|review-build) ;;
+    *) die "review-streams: usage: review-streams <review-contract|review-plan|review-build>" ;;
+  esac
+  local f; f="$(_streams_file "$rv")"
+  [ -f "$f" ] || die "review-streams: no skill file for '$rv' at $f — the denominator has no source."
+  local line
+  line="$(sed -n '/<!-- COMPASS-STREAMS:START -->/,/<!-- COMPASS-STREAMS:END -->/p' "$f" \
+          | sed -nE 's/^`streams: (.*)`$/\1/p' | head -1)"
+  # An EMPTY list is an ERR, never an empty denominator. "0 of 0 streams present" is the vacuity
+  # class this build keeps finding: an assertion that passes because it is measuring nothing.
+  [ -n "$line" ] || die "review-streams: '$rv' declares no machine-readable stream list between the COMPASS-STREAMS markers. A review with no declared streams has no denominator, and 0 of 0 is not a pass."
+  local n=0 sid
+  for sid in $line; do n=$((n+1)); done
+  [ "$n" -ge 3 ] || die "review-streams: '$rv' declares only $n stream(s). A fan-out of fewer than three is not a fan-out; if that is genuinely intended, it is a contract change, not a list edit."
+  for sid in $line; do printf '%s\n' "$sid"; done
+}
+
+# review-evidence-gate <build-dir> <review> <round>
+# One evidence file per DECLARED stream. Guard-first: a build with no agents/ directory and no
+# `streams:` receipt line predates this format — it N/A-PASSES and SAYS SO, in words, rather than
+# passing silently. It does not escape scrutiny by that route: with no evidence present, S11's
+# disclosure fires and the page and receipt must both say the review was NOT independently verified.
+cmd_review_evidence_gate() {
+  local dir="${1:-}" rv="${2:-}" round="${3:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || die "review-evidence-gate: usage: review-evidence-gate <build-dir> <review> <round>"
+  case "$rv" in review-contract|review-plan|review-build) ;; *) die "review-evidence-gate: '$rv' is not a review skill." ;; esac
+  case "${round:-}" in ''|*[!0-9]*) die "review-evidence-gate: round must be a positive integer, got '${round:-}'." ;; esac
+  local rec="$dir/receipts.md" claim=""
+  [ -f "$rec" ] && claim="$(sed -nE "s/^.*streams: *$rv +r$round +-> *([0-9]+) +of +([0-9]+).*$/\1 \2/p" "$rec" | head -1)"
+  if [ ! -d "$dir/agents" ] && [ -z "$claim" ]; then
+    ok "review-evidence-gate '$(basename "$dir")' $rv r$round: N/A — this round predates per-stream evidence (no agents/ directory and no 'streams:' receipt line), so there is nothing to check and nothing is claimed. NOT a statement that the review was independently verified; INV-DISCLOSE-UNVERIFIED covers that case."
+    return 0
+  fi
+  local declared; declared="$(cmd_review_streams "$rv")" || exit 1
+  local total=0 present=0 missing="" bad="" sid f
+  for sid in $declared; do
+    total=$((total+1)); f="$dir/agents/$rv-r$round-$sid.md"
+    if [ -s "$f" ]; then present=$((present+1)); else missing="$missing $sid"; fi
+  done
+  # The receipt may state a denominator. If it does, it must be the DECLARED one — a receipt that
+  # gets to pick its own denominator can report "1 of 1 streams" and be arithmetically perfect.
+  if [ -n "$claim" ]; then
+    local cnum cden; cnum="${claim%% *}"; cden="${claim##* }"
+    [ "$cden" = "$total" ] || die "review-evidence-gate: the receipt claims a denominator of $cden but $rv declares $total streams. The denominator is the skill's list, never the receipt's own claim."
+    [ "$cnum" = "$present" ] || die "review-evidence-gate: the receipt claims $cnum stream file(s) present but $present are on disk. A receipt is a record, not a source."
+  fi
+  [ -z "$missing" ] || die "review-evidence-gate: $present of $total declared streams have an evidence file. MISSING:$missing — expected at $dir/agents/$rv-r$round-<stream>.md. A review that claims its streams ran leaves one file per stream."
+  # Shape, delegated to the §4 validator, which treats a file missing `nonce` or `target-sha` as
+  # ABSENT rather than as a nearly-good pass.
+  local esc; esc="$(dirname "${BASH_SOURCE[0]}")/evidence-shape-check.sh"
+  if [ -f "$esc" ]; then
+    # Only THIS round's stream files. `evidence-shape-check.sh` validates every .md in a directory,
+    # and agents/ legitimately holds other things (an identity probe, a reviewer's working note) —
+    # handing it the whole directory would fail a round because of a file that is not evidence and
+    # never claimed to be.
+    local _sd; _sd="$(mktemp -d)"
+    for sid in $declared; do cp "$dir/agents/$rv-r$round-$sid.md" "$_sd/" 2>/dev/null || true; done
+    if ! bash "$esc" "$_sd" --expect-streams "$(printf '%s' "$declared" | tr '\n' ',' | sed 's/,$//')" >/dev/null 2>&1; then
+      rm -rf "$_sd"
+      die "review-evidence-gate: one or more evidence files fail contract §4's shape. Run: evidence-shape-check.sh $dir/agents"
+    fi
+    rm -rf "$_sd"
+  fi
+  # COULD-NOT-VERIFY is the honest verdict when a spawn fails — and §8 makes it HARD-BLOCK closure
+  # unless there is MACHINE evidence of the failed spawn beside it. Without that rule it is simply
+  # the cheapest verdict to write.
+  local cnv=0
+  for sid in $declared; do
+    f="$dir/agents/$rv-r$round-$sid.md"
+    grep -qE '^verdict: *COULD-NOT-VERIFY' "$f" 2>/dev/null || continue
+    cnv=$((cnv+1))
+    [ -s "$dir/agents/$rv-r$round-$sid.spawn.log" ] \
+      || die "review-evidence-gate: stream '$sid' records COULD-NOT-VERIFY with no machine evidence of the failed spawn. Expected a non-empty $rv-r$round-$sid.spawn.log beside it. HARD STOP — COULD-NOT-VERIFY must cost more than writing the words."
+  done
+  ok "review-evidence-gate '$(basename "$dir")' $rv r$round: $present of $total declared streams have a well-formed evidence file${cnv:+ · $cnv COULD-NOT-VERIFY, each with its spawn log}. Denominator read from the skill's own stream list, not from the receipt."
+}
+
 # ── INDEX / status ─────────────────────────────────────────────────────────
 # INDEX line: "slug · goal · status=X · ..."  — status field parsed loosely.
 build_status() { # <slug>
@@ -4475,6 +4567,9 @@ main() {
     progress-card)     cmd_progress_card "$@" ;;
     progress-gate)     cmd_progress_gate "$@" ;;
     redfirst-check)    cmd_redfirst_check "$@" ;;
+    review-streams)   cmd_review_streams "$@" ;;
+    review-evidence-gate) cmd_review_evidence_gate "$@" ;;
+
     copy-gate)         cmd_copy_gate "$@" ;;
     gold-gate)         cmd_gold_gate "$@" ;;
     converge-waiver)   cmd_converge_waiver "$@" ;;

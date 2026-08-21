@@ -2251,7 +2251,7 @@ elif [ -f "$_BCC" ]; then
   # disable identity pinning altogether.
   _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
   _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
-  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 14 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 14 entries (ADD-ONLY, so this floor rises and never falls)"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 17 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 17 entries (ADD-ONLY, so this floor rises and never falls)"
   _bmiss=0
   for _e in "$_BD"/*/; do
     # a CHEAT ships apply.sh (it patches the generator); a BEHAVIOUR entry ships case.sh (it builds
@@ -2486,6 +2486,52 @@ if [ -f "$_GEN2" ] && command -v node >/dev/null 2>&1; then
   ' "$_sv" 2>/dev/null)" "0" "v0.32 S7c: and NO control sits inside an <svg>, where it would be illegal"
   rm -rf "$_sv"
 fi
+
+# ── v0.32 S10: THE STREAM LIST IS THE DENOMINATOR ────────────────────────────────────────────
+# Measured before this gate existed: 31 build folders, 20 receipts with a checked "all streams run"
+# line, ONE folder with an agents/ directory. The denominator was the receipt's claim about itself.
+_CS="$PLUGIN_ROOT/scripts/compass.sh"
+for _rv in review-contract review-plan review-build; do
+  _sn="$(bash "$_CS" review-streams "$_rv" 2>/dev/null | grep -c .)"
+  chk "$([ "${_sn:-0}" -ge 3 ] && echo ok || echo "ONLY:${_sn:-0}")" "ok" "v0.32 S10: $_rv declares a machine-readable stream list with at least 3 ids — a denominator of 0 makes '0 of 0 streams' a pass"
+done
+# The counts are PINNED, not floored. A shrinking list silently lowers what the gate demands, which
+# is the same defect as a receipt naming its own denominator, one level up.
+chk "$(bash "$_CS" review-streams review-contract 2>/dev/null | grep -c .)" "8" "v0.32 S10: review-contract declares exactly 8 streams"
+chk "$(bash "$_CS" review-streams review-plan 2>/dev/null | grep -c .)" "6" "v0.32 S10: review-plan declares exactly 6 streams"
+chk "$(bash "$_CS" review-streams review-build 2>/dev/null | grep -c .)" "6" "v0.32 S10: review-build declares exactly 6 streams"
+# ...and the ids are real ids, not the [A]..[F] letters contract §4 forbids as a denominator.
+chk "$(bash "$_CS" review-streams review-build 2>/dev/null | grep -cE '^[A-F]$' || true)" "0" "v0.32 S10: the stream ids are derived names, never a hardcoded letter range (contract §4)"
+# An empty list is an ERR, never an empty denominator.
+_s10d="$(mktemp -d)"; mkdir -p "$_s10d/plugins/compass/scripts" "$_s10d/plugins/compass/skills/review-plan"
+cp "$_CS" "$_s10d/plugins/compass/scripts/" 2>/dev/null
+printf '# stub
+
+## Streams
+
+<!-- COMPASS-STREAMS:START -->
+<!-- COMPASS-STREAMS:END -->
+' > "$_s10d/plugins/compass/skills/review-plan/SKILL.md"
+bash "$_s10d/plugins/compass/scripts/compass.sh" review-streams review-plan >/dev/null 2>&1
+chk "$?" "1" "v0.32 S10: a review skill declaring NO streams is an ERR — 0 of 0 is never a pass"
+rm -rf "$_s10d"
+# GUARD-FIRST: a legacy build (no agents/ dir, no streams: receipt line) N/A-passes AND SAYS SO.
+_s10l="$(mktemp -d)"; printf '# r
+' > "$_s10l/receipts.md"
+_s10o="$(bash "$_CS" review-evidence-gate "$_s10l" review-plan 1 2>&1)"
+chk "$(printf '%s' "$_s10o" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S10: a build predating per-stream evidence N/A-PASSES (30 of this repo's 31 build folders do)"
+chk "$(printf '%s' "$_s10o" | grep -c 'predates per-stream evidence')" "1" "v0.32 S10: ...and SAYS SO in words — a silent pass would read as 'independently verified'"
+chk "$(printf '%s' "$_s10o" | grep -c 'NOT a statement that the review was independently verified')" "1" "v0.32 S10: ...and says explicitly what it is NOT claiming"
+# And the claim-without-files case is refused.
+mkdir -p "$_s10l/agents"
+printf '# r
+
+## RECEIPT — review-plan · t · PASS
+- [x] all streams run; ledger updated
+' > "$_s10l/receipts.md"
+bash "$_CS" review-evidence-gate "$_s10l" review-plan 1 >/dev/null 2>&1
+chk "$?" "1" "v0.32 S10: an agents/ directory with zero evidence files is REFUSED, whatever the receipt says"
+rm -rf "$_s10l"
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
