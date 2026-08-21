@@ -140,6 +140,25 @@ sed -i.bak 's/^v6a · /v6a · /' .claude/builds/INDEX 2>/dev/null; rm -f .claude
 
 # ── v0.9.1: namespaced stage wrappers + always-on gate (single canonical source) ──
 PLUGIN_ROOT="$(cd "$(dirname "$SH")/.." && pwd)"
+
+# ── v0.32 §17-8: the suite must not modify its own TRACKED inputs ────────────────────────────
+# `_orient_log` appends an observability line into the same directory as the artefact it just
+# observed. Six of those logs were committed, so a full suite run left six TRACKED files modified
+# and "is the tree clean?" stopped meaning anything — every later step in this build would have
+# rested on a signal that was already false. Two of them had reached the 500-line rotation cap
+# INSIDE the repository, so past commits were silently rewriting tracked files.
+#
+# The naive guard ("fixtures/ is clean at the end") is wrong: it goes red for anyone with a
+# legitimate half-finished fixture edit, which trains people to ignore it. The invariant is
+# narrower and is about THIS SUITE — take the tracked-fixture state before the run and compare it
+# after. A difference is something the suite did. Pre-existing dirt cancels out.
+# Guard-first N/A-pass: a tarball install with no git still runs the whole suite.
+_v32fx="$PLUGIN_ROOT/scripts/fixtures"
+_v32_fxstate() { # → one line per tracked fixture file that differs from the index/HEAD
+  git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "__nogit__"; return 0; }
+  git -C "$PLUGIN_ROOT" status --porcelain -- "$_v32fx" 2>/dev/null | sort
+}
+_V32_FX_BEFORE="$(_v32_fxstate)"
 xblk(){ awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$1"; }
 GATE="$PLUGIN_ROOT/shared/gate.md"
 STAGES="contract review-contract plan review-plan build review-build ship"
@@ -1782,6 +1801,19 @@ done
 node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_cgf" >/dev/null 2>&1
 chk "$?" "0" "v0.30 INV-COPY-GATE: the same fixture PASSES structurally — proving the copy checks are what caught it"
 
+
+# ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
+# Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
+# before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
+_V32_FX_AFTER="$(_v32_fxstate)"
+if [ "$_V32_FX_BEFORE" = "__nogit__" ]; then
+  chk "1" "1" "v0.32 §17-8: N/A — not a git work tree, so tracked-fixture drift is unmeasurable here"
+else
+  _v32drift="$(comm -13 <(printf '%s\n' "$_V32_FX_BEFORE") <(printf '%s\n' "$_V32_FX_AFTER") | grep -c . || true)"
+  [ -n "$_v32drift" ] || _v32drift=0
+  chk "$_v32drift" "0" "v0.32 §17-8: a full suite run modifies 0 tracked fixture files (was 6)"
+  [ "$_v32drift" = 0 ] || comm -13 <(printf '%s\n' "$_V32_FX_BEFORE") <(printf '%s\n' "$_V32_FX_AFTER") | sed 's/^/    DIRTIED: /'
+fi
 
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null

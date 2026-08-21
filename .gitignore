@@ -11,3 +11,11 @@ LAUNCH-KIT.html
 GTM-PLAN.md
 posts/
 __pycache__/
+
+# v0.32 §17-8 — observability output, never fixture INPUT.
+# `_orient_log` appends a line every time `orient` or `progress-card` runs, into the same
+# directory as the thing it observed. Six of these got committed, so every suite run modified
+# six TRACKED files and "is the tree clean?" stopped being a usable signal. Two had already
+# reached the 500-line rotation cap inside the repository. Nothing reads them (0 references in
+# the suites, the hooks or orient-audit.py) — they are residue, not inputs.
+plugins/compass/scripts/fixtures/**/orient.log
