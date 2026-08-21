@@ -2170,6 +2170,68 @@ else
   chk "1" "1" "v0.32 S5: N/A — no node or no behaviour-corpus-check.sh on this tree"
 fi
 
+# ── v0.32 S20: every recorded RED is RE-RUN, not counted ─────────────────────────────────────
+# `redfirst-check` asks whether a record was machine-produced. It cannot ask whether the record is
+# still TRUE — a fix can be reverted and the row sits there reading like evidence. So each
+# reproduction is a tracked file with a MUTATION that puts the defect back and an ASSERT that must
+# pass on a healthy tree and FAIL on the mutated one.
+#
+# The full re-run costs ~16s and lives OUTSIDE this suite, beside defeat-corpus-check,
+# declared-check and proven-numbers, which are standalone for the same reason. Adding it here would
+# take the suite to ~56s against a baseline of 25.2s and a bound of +25s — it would BREACH this
+# build's own perf budget, and quietly blowing your own budget to look thorough is the sin this
+# build is named for. What IS asserted here is the registry's SHAPE, which is cheap.
+_RFC="$PLUGIN_ROOT/scripts/redfirst-count.sh"
+_RFR="$PLUGIN_ROOT/scripts/fixtures/redfirst/repro"
+if [ -f "$_RFC" ] && [ -d "$_RFR" ]; then
+  _nrep="$(find "$_RFR" -name '*.sh' -type f | wc -l | tr -d ' ')"
+  chk "$([ "$_nrep" -ge 4 ] && echo 1 || echo 0)" "1" "v0.32 S20: the red-first registry is TRACKED and non-empty ($_nrep reproductions), so a clean clone can re-run them"
+  _rbad=0
+  for _rf in "$_RFR"/*.sh; do
+    grep -q '^repro_mutate()' "$_rf" || _rbad=$((_rbad+1))
+    grep -q '^repro_assert()' "$_rf" || _rbad=$((_rbad+1))
+    grep -q '^REPRO_WHAT=' "$_rf" || _rbad=$((_rbad+1))
+  done
+  chk "$_rbad" "0" "v0.32 S20: every reproduction defines a mutation, an assert and what it records"
+  # a registry that cannot fail is the defect this step exists to remove: prove the runner refuses
+  # a reproduction whose assert passes even with the defect put back.
+  _rt="$(mktemp -d)"; mkdir -p "$_rt/plugins/compass/scripts/fixtures/redfirst/repro"
+  cp "$_RFC" "$_rt/plugins/compass/scripts/"
+  printf 'REPRO_ID="FAKE"\nREPRO_WHAT="a reproduction that cannot fail"\nrepro_mutate() { : ; }\nrepro_assert() { return 0; }\n' > "$_rt/plugins/compass/scripts/fixtures/redfirst/repro/fake.sh"
+  bash "$_rt/plugins/compass/scripts/redfirst-count.sh" "$_rt" >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S20: a reproduction that stays GREEN with the defect put back is REFUSED — a record that cannot fail is not evidence"
+  rm -rf "$_rt"
+else
+  chk "1" "1" "v0.32 S20: N/A — no redfirst-count.sh on this tree"
+fi
+
+# ── v0.32 S32: contract §4's evidence-file shape, which no step covered at all ────────────────
+# A schema nothing validates is a paragraph. §4's own rule is the load-bearing one: a file missing
+# `nonce` or `target-sha` is treated as ABSENT, never as a pass — so the round fails for a missing
+# stream instead of a malformed file counting as a review that happened.
+_ESC="$PLUGIN_ROOT/scripts/evidence-shape-check.sh"
+_EFX="$PLUGIN_ROOT/scripts/fixtures/evidence"
+if [ -f "$_ESC" ] && [ -d "$_EFX" ]; then
+  bash "$_ESC" "$_EFX/good" --expect-streams security,perf >/dev/null 2>&1
+  chk "$?" "0" "v0.32 S32: a well-formed evidence set passes and every declared stream resolves"
+  bash "$_ESC" "$_EFX/no-target-sha" --expect-streams security,perf >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S32: a file missing 'target-sha' makes the ROUND FAIL for that stream (§4: absent, not a pass)"
+  chk "$(bash "$_ESC" "$_EFX/no-target-sha" 2>&1 | grep -c 'treated as ABSENT, not as a pass')" "1" "v0.32 S32: ...and it says ABSENT in words, not merely in an exit code"
+  bash "$_ESC" "$_EFX/malformed" --expect-streams security >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S32: a verdict outside CLEAN|FINDINGS|COULD-NOT-VERIFY is malformed, not accepted"
+  # a short nonce is malformed: §4 requires 16+ characters
+  _et="$(mktemp -d)"; sed -e 's/^- nonce: .*/- nonce: short/' "$_EFX/good/review-build-r1-perf.md" > "$_et/x.md"
+  bash "$_ESC" "$_et" >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S32: a nonce shorter than the 16 characters §4 requires is malformed"
+  rm -rf "$_et"
+  # and an EMPTY agents dir is not a pass either — zero files means zero streams reviewed
+  _ee="$(mktemp -d)"; bash "$_ESC" "$_ee" --expect-streams security >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S32: an EMPTY agents directory fails for every expected stream"
+  rm -rf "$_ee"
+else
+  chk "1" "1" "v0.32 S32: N/A — no evidence-shape-check.sh on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
