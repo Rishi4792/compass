@@ -2785,7 +2785,11 @@ cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tra
   # 59.67s on a 20,000-line ledger, over this build's own deterministic perf budget.
   # ONE awk pass now extracts every token; the loop forks nothing per line.
   local _lkind _lf _ldoc _lanc _lhead _lfl
-  while read -r _lkind _lf || [ -n "$_lkind" ]; do
+  # No `|| [ -n "$_lkind" ]` guard here, deliberately: this loop reads AWK's output, and awk always
+  # terminates what it prints. The missing-trailing-newline defect lived in reading the LEDGER
+  # directly, and awk is what fixes it — a guard here would imply a protection it does not provide.
+  # Mutation-checked: removing such a guard changed nothing, which is how it was found to be dead.
+  while read -r _lkind _lf; do
     [ -n "$_lkind" ] || continue
     if [ "$_lkind" = "NOFILE" ]; then
       echo "refuse: ledger-artefact" >&2
