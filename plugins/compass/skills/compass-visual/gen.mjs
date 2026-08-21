@@ -515,11 +515,14 @@ function invariants() {
     // it. The shown half is the summary — what the page actually prints for this row — so the check
     // can tie the control to it. Dropping the command that PROVES an invariant, unmarked, was the
     // largest unmarked destroying path in this file.
+    // The lossy() calls fire AFTER the deferral branch below, not here. `summary` is REPLACED for a
+    // deferred invariant, so recording the shown half at this point recorded text the page never
+    // prints — and the check, correctly, could not find it. Found with `--explain`, which exists
+    // because guessing which rule rejected a probe is how you fix the wrong cause.
     let _dropped = '';
-    if (_invParts.length > 1) {
-      _dropped = 'assert:' + _invParts.slice(1).join(' ');
-      lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1, () => [_invParts.slice(1).join(' ')], () => summary);
-    }
+    let _assertTail = '';
+    let _origSummary = '';
+    if (_invParts.length > 1) _assertTail = _invParts.slice(1).join(' ');
     if (summary && !/[.!?)]$/.test(summary)) summary += '.';
     // A deferred INVARIANT carries a bookkeeping marker ("— original text retained …"); render
     // the deferral plainly instead of leaking the marker as if it were the assertion.
@@ -538,13 +541,20 @@ function invariants() {
       // invariant's own wording was discarded to say it — a partial marker, not a full one.
       // The invariant's ORIGINAL wording, replaced wholesale by the deferral sentence. Carried out
       // the same way; its shown half is the sentence that replaced it.
-      const _origSummary = summary;
-      lossy('invariants.deferredReplaced', 0, summary.length, 1, () => [_origSummary],
-            () => (what ? `Not in this release — ${what}` : 'Not in this release'));
-      _dropped = _dropped ? `${_origSummary}\n\n${_dropped}` : _origSummary;
+      _origSummary = summary;
       summary = what
         ? `Not in this release — ${what}; it ships with the work it governs, in ${defer[1]}.`
         : `Not in this release; it ships with the work it governs, in ${defer[1]}.`;
+    }
+    // Both fire HERE, with the FINAL summary as the shown half — the text the page actually prints
+    // for this row, which is what ties a control to it.
+    if (_origSummary) {
+      lossy('invariants.deferredReplaced', 0, _origSummary.length, 1, () => [_origSummary], () => summary);
+      _dropped = _origSummary;
+    }
+    if (_assertTail) {
+      lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1, () => [_assertTail], () => summary);
+      _dropped = _dropped ? `${_dropped}\n\nassert:${_assertTail}` : `assert:${_assertTail}`;
     }
     rows.push({ name: m[1], summary, dropped: _dropped });
   }
@@ -1026,9 +1036,15 @@ const lineMatching = (body, re) => {
         // cleaned kept string against a '\n'-joined RAW one. Three ways wrong in one call, and it
         // over-reported by exactly the 295 chars S2's independent census disagreed about. Chars
         // dropped is now the dropped lines themselves. Events and units were always right.
-        lossy('lineMatching.cap6', 0, moreChars, more, () => moreText);
+        lossy('lineMatching.cap6', 0, moreChars, more, () => moreText, () => `${first} ${rest.join('; ')}`);
       }
-      return `${first} ${rest.join('; ')}`;
+      // v0.32.0 S7: the dropped lines ride back on the string so the ONE caller can disclose them.
+      // A non-enumerable property keeps every existing `String(...)`, template literal and `.length`
+      // on this return value byte-identical — the alternative was changing a signature used in a
+      // firstNonEmpty chain, which would have moved text on pages this step is not about.
+      const _out = new String(`${first} ${rest.join('; ')}`);
+      Object.defineProperty(_out, 'droppedLines', { value: moreText.join('; '), enumerable: false });
+      return _out;
     }
   }
   return first;
@@ -1234,11 +1250,18 @@ function briefBody() {
     (_goalSents[1] || ''), 'every INVARIANT below passes its command.',
   ];
   const doneMeans = firstNonEmpty(_dmCands);
+  let _doneRest = '';
   if (_dmCands.findIndex((x) => x && String(x).trim()) === 2 && _goalSents.length > 2) {
-    lossy('doneMeans.goalSentence2', String(_goalSents[1]).length, _goalSents.slice(1).join(' ').length, _goalSents.length - 2, () => _goalSents.slice(2));
+    lossy('doneMeans.goalSentence2', String(_goalSents[1]).length, _goalSents.slice(1).join(' ').length, _goalSents.length - 2,
+          () => _goalSents.slice(2), () => doneMeans);
+    _doneRest = _goalSents.slice(2).join(' ');
   }
+  // v0.32.0 S7: hold the lineMatching result DIRECTLY. `firstNonEmpty` ends in `.toString().trim()`,
+  // which builds a fresh primitive and drops the `droppedLines` the helper attached — so the capped
+  // lines never reached the control. Found with `--explain`.
+  const _lmGold = lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i);
   const goldLine = firstNonEmpty([
-    lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i),
+    _lmGold,
     firstBullet(sec('Reconciliation')), 'no reconciliation declared.',
   ]);
   // v0.30 defect 7: the list ended on a dangling separator, which reads as "and more, silently
@@ -1247,10 +1270,12 @@ function briefBody() {
     .replace(/[;,]\s*$/, '').trim();
   const b2 = band2Facts('The facts you need to decide', [
     { k: 'Build what', v: fieldDisclosed(rc('build-what', goal), 150) },
-    { k: 'Done means', v: fieldDisclosed(rc('done-means', doneMeans), 150) },
+    { k: 'Done means', v: (() => { const _p = fieldParts(rc('done-means', doneMeans), 150);
+        return txt(_p.shown) + disclose([_p.rest, _doneRest].filter(Boolean).join('\n\n')); })() },
     { k: 'Proof', v: shareable
         ? 'Reconciliation gold is pinned locally and enforced by the suites; the literal is withheld here.'
-        : fieldDisclosed(rc('proof', goldLine), 150) },
+        : (() => { const _p = fieldParts(rc('proof', goldLine), 150);
+            return txt(_p.shown) + disclose([_p.rest, (_lmGold && _lmGold.droppedLines) || ''].filter(Boolean).join('\n\n')); })() },
     { k: 'Blast radius', v: fieldDisclosed(rc('blast-radius', blast), 150) },
   ]);
 
@@ -2166,10 +2191,17 @@ function releaseCard() {
       // P13. NOT ENUMERATED IN SECTION 9, and it lands on the one chip whose whole job is to
       // disclose what is still open: only the FIRST unchecked receipt line becomes the reason.
       const _whyAll = blk.match(/^- \[ \][^\n]*/gm) || [];
-      if (_whyAll.length > 1) lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1, () => _whyAll.slice(1));
       const why = (_whyAll[0] || '').replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
       const _w = fieldParts(why, 120);
-      return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(_w.shown)}</span>${disclose(_w.rest, 'Show the rest of the reason')}`;
+      // v0.32.0 S7: the chip named ONE open finding on the page whose whole job is to disclose what
+      // is still open. The others join this chip's own control, and the shown half is what the chip
+      // actually prints, so the control can be tied to it.
+      if (_whyAll.length > 1) {
+        lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1,
+              () => _whyAll.slice(1), () => _w.shown);
+      }
+      const _wRest = [_w.rest, _whyAll.slice(1).map((l) => l.replace(/^- \[ \]\s*/, '').replace(/\*/g, '')).join('\n')].filter(Boolean).join('\n\n');
+      return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(_w.shown)}</span>${disclose(_wRest, 'Show every open finding')}`;
     })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nC(nowItems.length)} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
   </div>
   <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>

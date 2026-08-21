@@ -40,6 +40,8 @@ const argv = process.argv.slice(2);
 const root = argv[0] && !argv[0].startsWith('--') ? resolve(argv[0]) : '';
 const asJson = argv.includes('--json');
 const cIdx = argv.indexOf('--corpus');
+const eIdx = argv.indexOf('--explain');
+const explainSite = eIdx >= 0 ? argv[eIdx + 1] : '';
 if (!root) { console.error('usage: node reachable-argument.mjs <repo-root> [--json] [--corpus <dir>]'); process.exit(2); }
 
 const GEN = join(root, 'plugins/compass/skills/compass-visual/gen.mjs');
@@ -302,15 +304,19 @@ for (const p of pages) {
       // A floor as well as a ceiling: one row's control may hold what SEVERAL paths dropped from
       // that row, so sizing it against a single event's characters was too tight.
       const budget = Math.min(Math.max((r.charsDropped || probe.length) * 1.5 + 400, 800), 2000);
+      // `--explain <site>` says WHY a probe was refused, gate by gate. Added because one probe of
+      // seven refused to move through three targeted fixes, and guessing which rule rejected it is
+      // how you write a fourth fix for the wrong cause.
+      const why = [];
       let ci = -1;
       for (let i = 0; i < ctrls.length; i++) {
-        if (!ctrls[i].text.includes(probe)) continue;
-        if (ctrls[i].text.length > budget) continue;          // far larger than this row's remainder
+        if (!ctrls[i].text.includes(probe)) { why.push(`c${i}: does not contain the remainder`); continue; }
+        if (ctrls[i].text.length > budget) { why.push(`c${i}: ${ctrls[i].text.length} chars vs budget ${Math.round(budget)}`); continue; }
         // POSITION is what actually ties a control to its row. The row's SHOWN half must appear in
         // the text immediately before the control. A page that dumps every remainder into one box
         // at the end fails this for every row but at most one, whatever the box's size.
-        if (!shown) continue;                                 // see the note below: fail CLOSED
-        if (!ctrls[i].before.includes(shown)) continue;
+        if (!shown) { why.push('no shown half: UNBINDABLE'); continue; }
+        if (!ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is not in the ${ctrls[i].before.length} chars before it`); continue; }
         // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
         // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
         // and the honest fix puts everything that row lost into ONE control. Keying by event made
@@ -318,6 +324,13 @@ for (const p of pages) {
         // share one, which is the property cheat 4 attacks.
         const owner = claimed.get(i);
         if (owner === undefined || owner === shown) { ci = i; claimed.set(i, shown); break; }
+      }
+      if (explainSite && r.site === explainSite && ci < 0) {
+        console.error(`explain [${p.dir}/${p.view}] ${r.site} ev=${r.ev}`);
+        console.error(`  shown : ${JSON.stringify(shown)}`);
+        console.error(`  probe : ${JSON.stringify(probe.slice(0, 70))}`);
+        console.error(`  controls on the page: ${ctrls.length}`);
+        for (const w of why.slice(0, 8)) console.error(`    ${w}`);
       }
       evShown.set(r.ev, shown);
       if (ci >= 0) { const m = evPerCtrl.get(ci) || new Map(); m.set(r.ev, probe); evPerCtrl.set(ci, m); }
