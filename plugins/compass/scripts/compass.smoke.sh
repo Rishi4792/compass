@@ -1950,6 +1950,75 @@ bash "$SH" sketch-gate "$_SG/anchorbad" >/dev/null 2>&1
 chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21: ...and a render line whose anchor resolves to NOTHING is REFUSED"
 rm -rf "$_SG"
 
+# ── v0.32 S19 + S31: the three fabricated numbers on the pages, each with a check that FAILS ─
+# Written after mutation testing showed that reverting every one of these four fixes left the
+# suite at 731/0. A fix with no failing test behind it is the defect this build is named for.
+_GEN="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
+if [ -f "$_GEN" ] && command -v node >/dev/null 2>&1; then
+  _FB="$(mktemp -d)"; mkdir -p "$_FB/b"
+  cat > "$_FB/b/contract.md" <<'FBC'
+# Contract — fabnum
+
+facets: library
+schema-touching: no
+
+## Goal & scope
+**Goal:** prove the three fabricated numbers are gone. This fixture has no version suffix in its title, so the version chip has nothing to read.
+
+### NOW
+1. One scope item.
+
+## Acceptance & INVARIANTs
+| Invariant | What it asserts | Evidence |
+| --- | --- | --- |
+| **INV-TABLE-A** | invariants written as a TABLE are counted | the brief lists this row |
+| **INV-TABLE-B** | and so is the second one | the brief lists this row too |
+FBC
+  cat > "$_FB/b/plan.md" <<'FBP'
+# Plan — fabnum
+- [ ] **S1** nothing started — VERIFY: the page must not claim a step is running.
+- [ ] **S2** also not started — VERIFY: same.
+- [ ] **S3** also not started — VERIFY: same.
+FBP
+  printf '# fabnum\n\n**Status:** draft\n' > "$_FB/b/progress.md"
+  # S19 §17-6 — a TABLE of invariants must be read, not reported as none
+  node "$_GEN" "$_FB/b" brief --out "$_FB/brief.html" >/dev/null 2>&1
+  # NB: `grep -c ... || echo 0` prints "0\n0" on a no-match — grep -c already emits 0 AND exits 1.
+  # That is a check whose failure text is unreadable, so `|| true` throughout below.
+  chk "$(grep -c 'INV-TABLE-A' "$_FB/brief.html" 2>/dev/null || true)" "1" "v0.32 S19 (§17-6): invariants written as a TABLE are read (the panel said 'pins no INVARIANTs' while the header said 12)"
+  chk "$(grep -c 'pins no INVARIANTs' "$_FB/brief.html" 2>/dev/null || true)" "0" "v0.32 S19 (§17-6): ...so the page does not also claim the contract pins none"
+  # S19 §17-12 — a title with no version must not be reported as v1
+  _txt(){ sed -e 's/<[^>]*>//g' -e 's/&nbsp;/ /g' "$1" 2>/dev/null; }
+  # A NEGATIVE form of this check ("does not say v1") stayed green when the fix was reverted,
+  # because the version is the LAST chip and the pattern demanded a trailing separator. Asserting
+  # the value POSITIVELY is what makes it fail.
+  # flatten to ONE line first: sed is line-oriented, so without this every other line of the page
+  # also survives the strip and the comparison is against the whole file.
+  _vchip="$(tr '\n' ' ' < "$_FB/brief.html" | sed -e 's/.*<div class="b-id">//' -e 's|</div>.*||' -e 's/<[^>]*>//g' -e 's/&nbsp;/ /g' | awk -F'·' '{gsub(/^[ \t]+|[ \t]+$/,"",$NF); print $NF}')"
+  chk "$_vchip" "contract version not stated" "v0.32 S19 (§17-12): a contract whose title carries no version SAYS SO — it is not reported as v1"
+  # S31 — an all-unstarted plan must not claim a step is running
+  node "$_GEN" "$_FB/b" plan-map --out "$_FB/pm.html" >/dev/null 2>&1
+  chk "$(_txt "$_FB/pm.html" | grep -cE '[0-9]+ running' || true)" "0" "v0.32 S31: a plan with nothing started claims NO step is running (was hardcoded to 1)"
+  # S31 — a REAL in-progress marker must be counted, and the count must match it
+  cp -R "$_FB/b" "$_FB/c"
+  printf '# Plan — fabnum\n- [x] **S1** done — VERIFY: ran.\n- [~] **S2** in flight — VERIFY: pending.\n- [~] **S3** in flight — VERIFY: pending.\n- [ ] **S4** not started — VERIFY: pending.\n' > "$_FB/c/plan.md"
+  node "$_GEN" "$_FB/c" plan-map --out "$_FB/pm2.html" >/dev/null 2>&1
+  chk "$(_txt "$_FB/pm2.html" | grep -oE '[0-9]+ running' | head -1)" "2 running" "v0.32 S31: ...and two steps marked in flight are reported as two, not as one"
+  # S19 §17-6 — a DECLARED number that contradicts the computed one is REFUSED, not printed
+  cp -R "$_FB/b" "$_FB/d"
+  printf '# fabnum\n\n**Status:** draft\n\n```compass-artefact-data\n{ "invariants.total": 99 }\n```\n' > "$_FB/d/progress.md"
+  node "$_GEN" "$_FB/d" brief --out "$_FB/bad.html" >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S19 (§17-6): a declared number contradicting the computed one is REFUSED (it used to win silently)"
+  # ...and an AGREEING declared number still renders, so the refusal is not a wall
+  cp -R "$_FB/b" "$_FB/e"
+  printf '# fabnum\n\n**Status:** draft\n\n```compass-artefact-data\n{ "invariants.total": 2 }\n```\n' > "$_FB/e/progress.md"
+  node "$_GEN" "$_FB/e" brief --out "$_FB/ok.html" >/dev/null 2>&1
+  chk "$?" "0" "v0.32 S19 (§17-6): ...and a declared number that AGREES still renders (the refusal is not a wall)"
+  rm -rf "$_FB"
+else
+  chk "1" "1" "v0.32 S19 + S31: N/A — no node or no gen.mjs on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
