@@ -2571,6 +2571,29 @@ bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 
 chk "$?" "1" "v0.32 S11: a per-stream-format receipt that says nothing about independence is REFUSED"
 rm -rf "$_s11l"
 
+# ── v0.32 S16: THE WAKEUP COUNTER — the only part of v0.32 whose blast radius leaves the repo ──
+# It lives in the UserPromptSubmit hook, registered "matcher": "*", so once v0.32 is published it
+# runs on every prompt in every project where Compass is installed. Its own test file drives the
+# REAL hook with real payloads from real directories; this wires that file into the suite so it
+# cannot rot unnoticed, and pins the case count so a silently-shrinking test is a visible diff.
+_WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
+if [ -f "$_WCT" ]; then
+  _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "16" "v0.32 S16: ...and there are exactly 16 of them — a shrinking test is how coverage leaves quietly"
+else
+  chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
+fi
+# The counter must sit ABOVE the matcher's fast path. Below it, a `/long-build continue` wakeup —
+# which names no /compass front door — never reaches the counter, the cap never trips, and the loop
+# is unbounded. That is worse than having no counter, so the ORDER is pinned, not just the presence.
+_HK="$PLUGIN_ROOT/hooks/orient-hook.sh"
+chk "$([ "$(grep -n 'S16 — THE WAKEUP COUNTER' "$_HK" | head -1 | cut -d: -f1)" -lt "$(grep -n 'FAST PATH: the only work done' "$_HK" | head -1 | cut -d: -f1)" ] && echo above || echo BELOW)" "above" "v0.32 S16: the counter sits ABOVE the matcher's fast path — below it, a /long-build wakeup never reaches it and the cap never trips"
+# INV-ORIENT-INERT still holds: the hook must never exit non-zero, on any path.
+# The "hook never exits 2" rule is NOT re-asserted here. v0.28's INV-ORIENT-DELIVERED already does
+# it and catches the same planted mutation (verified in this turn: planting a real `exit 2` reddens
+# both). A second assertion for the same property is noise that looks like coverage.
+
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
 # block" is not "the copy is fine". GUARD-FIRST (the v0.28 lesson): a contract that PREDATES the
