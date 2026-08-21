@@ -221,13 +221,46 @@ function visibleHtml(html, clippedIn) {
   if (skipTag) for (let i = skipFrom; i < chars.length; i++) chars[i] = ' ';
   return chars.join('');
 }
+// The innermost element ENCLOSING an offset: scan once, keeping a stack of open elements. This is
+// what "this row's control" means in the only place it is decidable — the document. An honest
+// control is emitted INSIDE its row (a <li>, a <td>, the <div> beside a <p>); a pile at the page
+// foot has the body as its parent, and no string the generator nominates can change that.
+function enclosingRange(html, at) {
+  const stack = [];
+  const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m.index >= at) break;
+    const closing = m[0][1] === '/';
+    const tag = m[1].toLowerCase();
+    const attrs = m[2] || '';
+    if (VOID_TAGS.has(tag) || /\/\s*$/.test(attrs)) continue;
+    if (closing) { for (let k = stack.length - 1; k >= 0; k--) if (stack[k].tag === tag) { stack.length = k; break; } }
+    else stack.push({ tag, start: m.index });
+  }
+  if (!stack.length) return null;
+  const top = stack[stack.length - 1];
+  // find where that element closes, counting nesting
+  const re2 = new RegExp(`<\\/?${top.tag}\\b[^>]*>`, 'gi');
+  re2.lastIndex = top.start;
+  let depth = 0, m2;
+  while ((m2 = re2.exec(html)) !== null) {
+    if (m2[0][1] === '/') { depth--; if (depth <= 0) return { start: top.start, end: re2.lastIndex, tag: top.tag }; }
+    else depth++;
+  }
+  return { start: top.start, end: html.length, tag: top.tag };
+}
 function controlsFor(rawHtml, clipped) {
   const html = visibleHtml(rawHtml, clipped);
   const out = [];
   let prevEnd = 0;
   for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) {
     const before = reachableText(html.slice(prevEnd, m.index), clipped);
-    out.push({ start: m.index, text: reachableText(m[0], clipped), before: before.slice(-600) });
+    const encl = enclosingRange(html, m.index);
+    out.push({ start: m.index, text: reachableText(m[0], clipped), before: before.slice(-600),
+               // the text of the element this control lives INSIDE, minus the control itself
+               parentText: encl ? reachableText(html.slice(encl.start, encl.end).replace(m[0], ' '), clipped) : '',
+               parentTag: encl ? encl.tag : '' });
     prevEnd = m.index + m[0].length;
   }
   return out;
@@ -298,22 +331,31 @@ for (const p of pages) {
   // count, from the PAGE, how many controls each candidate shown half sits before, and refuse to
   // bind on one that is not unique. Fail CLOSED: an event whose identity cannot be established is
   // unreachable, never credited on a maybe.
-  // ── OPEN DEFECT, NOT FIXED. Recorded here because a comment naming a hole is worth more than a
-  // rule that does not close it. An independent reviewer (C-1) hands every destroying event the
-  // SAME shown half; ownership, the anti-dump count and the budget all key on that one string, so
-  // 25 per-row controls collapse into 8 piles at the page foot under one label and this check
-  // scores it BETTER than honest — REACHABLE 144 -> 162, unreachable unmoved at 8.
+  // ── C-1, CLOSED BY DOM CONTAINMENT — and the three wrong turns are kept, because they are the
+  // reason the fourth is right.
+  // An independent reviewer handed every destroying event the SAME shown half. Ownership, the
+  // anti-dump count and the budget all keyed on that one string, so 25 per-row controls collapsed
+  // into 8 piles at the page foot under one label and this check scored it BETTER than honest —
+  // REACHABLE 144 -> 162, with the unreachable figure unmoved at 8.
   //
-  // TWO FIXES TRIED AND BOTH REJECTED, with the measurement:
-  //   * require the shown half to be UNIQUE on the page — too blunt: honest rows legitimately
-  //     share a 30-character opening, and it cost 80 honest probes (REACHABLE 144 -> 64).
-  //   * cap the events one control may serve — it cannot see the defect: the corpus averages about
-  //     three destroying events per PAGE, so a cap of six never fires while the controls are still
-  //     displaced. Displacement is the harm; event count is not a proxy for it.
+  // THREE FIXES TRIED AND REJECTED, each with its measurement:
+  //   1. require the shown half to be UNIQUE on the page — too blunt. Honest rows legitimately
+  //      share a 30-character opening: REACHABLE 144 -> 64 on a tree with nothing wrong with it.
+  //   2. cap the events one control may serve — cannot see the defect. The corpus averages about
+  //      three destroying events per PAGE, so a cap of six never fires while every control is still
+  //      displaced. Displacement is the harm; event count is not a proxy for it.
+  //   3. refuse controls that share their preceding text — worse than both. Adjacent honest
+  //      controls in a list share a `</li><li>` preamble, so honest fell to 80 while the cheat
+  //      still scored 152.
+  // All three were built on the generator's own string, or on a proxy for displacement. The
+  // structural read that followed: no rule built on a generator-supplied string can outrank the
+  // generator's choice of it.
   //
-  // The real problem is structural: row identity is a string the GENERATOR supplies, and no rule
-  // built on that string can outrank the generator's choice of it. The fix has to derive identity
-  // from the page. `fixtures/defeat-behaviour/shared-shown-half/` is the standing red test.
+  // WHAT WORKS is the one thing the DOCUMENT decides: a control belongs to the row it is INSIDE.
+  // Measured on the tracked corpus — honest, 25 controls, every parent a <div> carrying that row's
+  // own text; cheat, 8 controls, parent tag EMPTY because the body is their parent. The rule is in
+  // the claim loop below. Honest is unchanged at 144 / 8; the cheat goes to REACHABLE 0.
+  // `fixtures/defeat-behaviour/shared-shown-half/` is the standing test.
   // how much THIS ROW lost in total, across every destroying path that touched it
   const rowChars = new Map();
   for (const r of rows) {
@@ -412,7 +454,15 @@ for (const p of pages) {
         // at the end fails this for every row but at most one, whatever the box's size.
         if (shown.length < 12) { why.push(`shown half too short (${shown.length} < 12): UNBINDABLE`); continue; }
 
-        if (!ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is not in the ${ctrls[i].before.length} chars before it`); continue; }
+        // A control belongs to the row it is INSIDE. Measured on the tracked corpus: an honest
+        // build's 25 controls all sit inside a <div> carrying that row's own text; the twelfth
+        // cheat's 8 piles have NO enclosing element at all — the body is their parent. That is
+        // page-derived and no string the generator nominates can change it.
+        // Three earlier attempts are recorded below with their measurements; all three were built
+        // on the generator's own string or on proxies for displacement, and all three were wrong.
+        if (!ctrls[i].parentTag) { why.push(`c${i}: no enclosing element — its parent is the page body, so it is a pile, not a row's control`); continue; }
+        if (!ctrls[i].parentText.includes(shown) && !ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is neither inside the element holding this control nor immediately before it`); continue; }
+
         // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
         // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
         // and the honest fix puts everything that row lost into ONE control. Keying by event made
