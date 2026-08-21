@@ -2607,7 +2607,7 @@ _WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
 if [ -f "$_WCT" ]; then
   _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
   chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "69" "v0.32 S16: ...and there are exactly 69 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 across two independent reviews that found 14 and 11 defects the earlier cases could not see"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "75" "v0.32 S16: ...and there are exactly 75 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 -> 75 across THREE independent reviews that found 14, 11 and 13 defects the earlier cases could not see — the third being that the counter never fired in this repo at all, because every fixture path came from mktemp and had no spaces in it"
 else
   chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
 fi
@@ -2846,6 +2846,20 @@ chk "$?" "1" "v0.32 S22: literals with NO run series behind them are REFUSED —
 _mkpb word "MEASURED MEASURED MEASURED. $_PBBASE"
 bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/word" >/dev/null 2>&1
 chk "$?" "1" "v0.32 S22: writing the word MEASURED three times does NOT satisfy it — this build's own named sin, refused inside its own fix"
+# HONEST BUDGETS MUST STILL PASS. A gate that refuses correct work is the one that gets switched
+# off, and an independent reviewer showed this rule hard-stopping four ordinary ones: a slash-form
+# DATE parsed as a run series, a quoted EXAMPLE series (the one the gate error text tells you to
+# write) blocked the build, and "Suite: 951 / 0 / 38.6s" was read as three runs of the same thing.
+# A run series is three measurements of ONE thing, so its values cluster and carry a unit.
+_mkpb hd1 "25.4 / 25.2 / 25.2s -> median 25.2s; Measured 2026/08/21. $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/hd1" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S22: a slash-form DATE in the budget is not a run series — writing the measurement date the ordinary way must not block a build"
+_mkpb hd2 "25.4 / 25.2 / 25.2s -> median 25.2s; Suite: 951 / 0 / 38.6s. $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/hd2" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S22: ...and three unrelated numbers that do not cluster are not a run series either"
+_mkpb hd3 "25.4 / 25.2 / 25.2s -> median 25.2s; versions 1.2 / 3.4 / 5.6. $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/hd3" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S22: ...and a unit-less triple is not one — a measurement carries its unit"
 _mkpb recon "25.4 / 25.2 / 25.2s measured; $_PBBASE median 99.9s"
 bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/recon" >/dev/null 2>&1
 chk "$?" "1" "v0.32 S22: a series that reconciles with NOTHING stated is REFUSED — a first version searched the whole line and the median of an odd series IS one of its own members, so the rule matched itself"
@@ -2976,6 +2990,14 @@ if [ -f "$_CG" ]; then
   _cgb="$(printf '%s' "$_cgo" | sed -nE 's/^canary-gates: [0-9]+ gate calls over (a SAMPLE of )?([0-9]+).*/\2/p' | head -1)"
   _cgr="$(printf '%s' "$_cgo" | sed -nE 's/^canary-gates: .* · ([0-9]+) newly refused.*/\1/p' | head -1)"
   chk "$([ "${_cgb:-0}" -ge 5 ] && echo ok || echo "ONLY:${_cgb:-0}")" "ok" "v0.32 S35: ...over a NON-EMPTY population of real historical builds"
+  # THE POSITIVE CONTROL. An independent reviewer deleted all three `refused` increments and this
+  # suite stayed green: "0 newly refused" was asserted over a population where nothing refuses.
+  _cgs="$(bash "$_CG" "$PLUGIN_ROOT/../.." --self-check 2>&1 || true)"
+  chk "$(printf '%s' "$_cgs" | grep -c 'self-check PASSED')" "1" "v0.32 S35: ...and the canary CATCHES a planted refusing build, so its zero is a measurement and not a shape"
+  # ...and the sample must include every stamped build: alphabetical order put BOTH .compass-format
+  # folders outside it, and those are the only ones the new rules grade. The refusal this canary
+  # found on its first run was in one of them.
+  chk "$(printf '%s' "$_cgo" | grep -c 'every .compass-format build first')" "1" "v0.32 S35: ...and the sample takes every stamped build first, not the same six alphabetically"
   chk "$(printf '%s' "$_cgo" | grep -c 'this is NOT the full canary')" "1" "v0.32 S35: ...and a SAMPLE says it is one — the release runs it without --sample, and a sample passed off as the whole thing is the false all-clear this build is about"
   chk "${_cgr:-none}" "0" "v0.32 S35: ...and NO historical build is newly refused by any gate this build adds"
   chk "$(printf '%s' "$_cgo" | grep -c 'excluded   :')" "1" "v0.32 S35: ...and what it does NOT run is stated, not quietly dropped — a canary that cannot tell a NEW refusal from a pre-existing one reported 41 problems and hid the one that mattered"
@@ -3011,6 +3033,52 @@ if [ -d "$_SB" ] && command -v node >/dev/null 2>&1; then
   #    IN PROGRESS/OUTSTANDING open · DONE/NOTED unreadable.
   chk "$(_sbtxt "$_sbt/list-edges.html" | grep -oE '[0-9]+ closed, [0-9]+ still open, [0-9]+ whose status' | head -1)" "3 closed, 4 still open, 2 whose status" "v0.32 S34: the buckets are contract §7's enumerated lists — WONTFIX/REFUTED/DUPLICATE settled, CARRIED/PARTIAL/IN PROGRESS/OUTSTANDING open, DONE/NOTED unreadable"
   rm -rf "$_sbt"
+fi
+
+# ── v0.32 S8: the COLD-READ harness ──────────────────────────────────────────────────────────
+# The harness picks the rows, not the readers. A cold reader told "see if you can finish a few rows"
+# picks rows that read easily — and a row the page did not shorten renders no control at all, so it
+# is trivially finishable. Two lazy readers choosing freely would pass a page on which NOTHING is
+# reachable. The candidates therefore come from the rows the page ACTUALLY SHORTENED.
+# The READERS run out of band, in minutes, on §9's split budget. Nothing here claims to have read.
+_CR="$PLUGIN_ROOT/scripts/cold-read.sh"
+chk "$([ -f "$_CR" ] && echo ok || echo MISSING)" "ok" "v0.32 S8: cold-read.sh exists"
+if [ -f "$_CR" ] && command -v node >/dev/null 2>&1; then
+  _cro="$(bash "$_CR" --self-check "$PLUGIN_ROOT/../.." 2>&1 || true)"
+  chk "$(printf '%s' "$_cro" | grep -c 'self-check PASSED')" "1" "v0.32 S8: its control pair passes — a readable page offers candidate rows and a KNOWN-UNREADABLE one offers none"
+  # The population is stated, so "0 candidates on both" can never read as a pass.
+  chk "$(printf '%s' "$_cro" | grep -cE 'readable control offers [0-9]+ candidate rows' || true)" "1" "v0.32 S8: ...and it STATES how many candidates the readable control offered — a harness that finds none passes every page ever written"
+  chk "$(printf '%s' "$_cro" | grep -c 'does NOT prove')" "1" "v0.32 S8: ...and it says what it does NOT prove: nobody read anything, because the readers run out of band"
+  # THE NEGATIVE CONTROL. Asserting "self-check PASSED" cannot detect a self-check that always
+  # passes — two mutations proved exactly that, and neither reddened this suite. So the self-check
+  # is run against a tree whose GENERATOR emits no disclosure controls at all: every row is still
+  # shortened, nothing is reachable, and the harness must refuse it.
+  _crn="$(mktemp -d)"
+  mkdir -p "$_crn/plugins/compass/skills" "$_crn/plugins/compass/scripts"
+  cp -R "$PLUGIN_ROOT/skills/compass-visual" "$_crn/plugins/compass/skills/" 2>/dev/null
+  cp -R "$PLUGIN_ROOT/scripts/." "$_crn/plugins/compass/scripts/" 2>/dev/null
+  python3 - "$_crn/plugins/compass/skills/compass-visual/gen.mjs" <<'PYEOF' >/dev/null 2>&1
+import io,sys
+p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
+o="""function disclose(rest, label = 'Show the rest') {
+  if (!rest) return '';"""
+assert s.count(o)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(o, o + "\n  return '';"))
+PYEOF
+  _cron="$(bash "$_crn/plugins/compass/scripts/cold-read.sh" --self-check "$_crn" 2>&1 || true)"
+  chk "$(printf '%s' "$_cron" | grep -c 'self-check PASSED')" "0" "v0.32 S8: ...and the self-check REFUSES a tree whose generator emits no controls at all — without this, a self-check that always passes would satisfy every assertion above"
+  chk "$(printf '%s' "$_cron" | grep -cE 'self-check FAILED|UNMEASURED')" "1" "v0.32 S8: ...and says which way it refused"
+  rm -rf "$_crn"
+  # And it emits real packets for a real build: two independent readers plus a grader.
+  _crd="$(mktemp -d)"
+  bash "$_CR" "$PLUGIN_ROOT/../../.claude/builds/artefacts-from-data-v0-31" --emit "$_crd" >/dev/null 2>&1 || true
+  if [ -d "$PLUGIN_ROOT/../../.claude/builds/artefacts-from-data-v0-31" ]; then
+    chk "$(ls "$_crd" 2>/dev/null | wc -l | tr -d ' ')" "4" "v0.32 S8: ...and it emits page.html plus TWO reader packets and a grader — two readings, independent, and a grader who never sees the contract"
+    chk "$(grep -c 'may not substitute other rows' "$_crd/reader-1.md" 2>/dev/null || true)" "1" "v0.32 S8: ...and the packet forbids substituting rows, which is the whole point of the harness choosing them"
+  else
+    chk "1" "1" "v0.32 S8: N/A — the emit fixture build is not on this tree (.claude/builds is gitignored)"
+  fi
+  rm -rf "$_crd"
 fi
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────

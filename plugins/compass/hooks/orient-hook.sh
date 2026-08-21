@@ -56,19 +56,40 @@ case "$payload" in
       *'/long-build'*|*'/Long-build'*|*'/LONG-BUILD'*) : ;;
       *) _wk_after="" ;;
     esac
-    # The state path the wakeup template carries. Fork-free.
-    _wk_dir=""
+    # ── THE BUILD, RESOLVED THE ONLY WAY THAT SURVIVES A REAL PATH ────────────────────────────
+    # Version three trimmed the path head at the last SPACE to strip the prose in front of it. This
+    # repo lives at "/Users/rishi/Desktop/Claude Code Projects/compass", so the head became
+    # "Projects/compass" and the counter NEVER FIRED HERE — measured: zero counter files after a
+    # real wakeup, on the machine the feature was built on. A third independent review found it.
+    #
+    # So nothing is guessed from whitespace. The ROOT comes from the payload's `cwd` field, which is
+    # a JSON string with a known delimiter, and only the SLUG comes from the prompt — anchored on
+    # the wakeup template's own "State:" marker, so a path mentioned anywhere else (a "Never touch:"
+    # zone, for instance) cannot claim the count. The resolved directory must then sit UNDER that
+    # root: the previous version happily appended outside the project via "..".
+    _wk_root=""
+    case "$payload" in
+      *'"cwd"'*)
+        _wk_c="${payload#*'"cwd"'}"; _wk_c="${_wk_c#*:}"; _wk_c="${_wk_c#*\"}"; _wk_root="${_wk_c%%\"*}" ;;
+    esac
+    [ -n "$_wk_root" ] && [ -d "$_wk_root" ] || _wk_root="$PWD"
+    _wk_dir=""; _wk_slugraw=""
     case "$_wk_after" in
-      *'/.claude/builds/'*)
-        _wk_tail="${_wk_after#*/.claude/builds/}"
-        _wk_slugraw="${_wk_tail%%/*}"
-        _wk_head="${_wk_after%%/.claude/builds/*}"
-        # The path starts at the last quote, space or newline before it.
-        _wk_head="${_wk_head##*\"}"; _wk_head="${_wk_head##* }"; _wk_head="${_wk_head##*$'\n'}"
-        [ -n "$_wk_head" ] && [ -n "$_wk_slugraw" ] \
-          && _wk_dir="$_wk_head/.claude/builds/$_wk_slugraw"
+      *'State:'*'/.claude/builds/'*)
+        _wk_st="${_wk_after#*State:}"
+        case "$_wk_st" in
+          */.claude/builds/*)
+            _wk_t="${_wk_st#*/.claude/builds/}"
+            _wk_slugraw="${_wk_t%%/*}"
+            ;;
+        esac
         ;;
     esac
+    if [ -n "$_wk_slugraw" ] && [ -d "$_wk_root/.claude/builds/$_wk_slugraw" ]; then
+      # CONTAINMENT: no "..", no absolute escape. The slug is one path segment or it is nothing.
+      case "$_wk_slugraw" in *..*|/*|*/*) _wk_slugraw="" ;; esac
+      [ -n "$_wk_slugraw" ] && _wk_dir="$_wk_root/.claude/builds/$_wk_slugraw"
+    fi
     if [ -n "$_wk_dir" ] && [ -f "$_wk_dir/progress.md" ]; then
       _wk_msg=""
       _wk_b="$_wk_dir/"

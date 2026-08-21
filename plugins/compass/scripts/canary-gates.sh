@@ -25,6 +25,8 @@ while [ $# -gt 0 ]; do
     # deleted: the suite runs a sample every time and the RELEASE runs all of it. A sample says so
     # in its own output, so nobody can read it as the complete canary.
     --sample) SAMPLE="${2:-6}"; shift 2 ;;
+    --builds) BUILDS_OVERRIDE="${2:-}"; export BUILDS_OVERRIDE; shift 2 ;;
+    --self-check) SELFCHECK=1; shift ;;
     *) shift ;;
   esac
 done
@@ -47,14 +49,50 @@ GATES="engine-gate review-disclose-gate cockpit-gate stage-end-gate perf-budget-
 EXCLUDED="progress-gate(pre-existing) copy-gate(takes-a-file,run-separately-below)"
 STAGES="contract plan build review-contract review-plan review-build ship"
 
-BUILDS="$ROOT/.claude/builds"
+# ── THE POSITIVE CONTROL ──────────────────────────────────────────────────────────────────────
+# `--self-check` plants a build that MUST be refused and requires this script to catch it. Without
+# it, an independent reviewer deleted all three `refused=$((refused+1))` lines and the suite stayed
+# green: "0 newly refused" was being asserted over a population where nothing refuses, which is the
+# 0-out-of-0 shape this build has now named thirteen times.
+if [ "${SELFCHECK:-0}" = 1 ]; then
+  _sc="$(mktemp -d)"
+  mkdir -p "$_sc/.claude/builds/planted-refuser"
+  : > "$_sc/.claude/builds/planted-refuser/.compass-format"
+  # A stamped build with a perf-budget carrying literals and NO run series behind them: S22 refuses
+  # exactly this, so if the canary reports zero the canary is blind.
+  printf '# c\n\nperf-budget: p95 latency 200 ms; peak-mem 256 MB; cost $0.00 per request; SLO healthy range 25-50s.\n' > "$_sc/.claude/builds/planted-refuser/contract.md"
+  mkdir -p "$_sc/.claude/builds/ordinary"
+  printf '# o\n\n**Status:** BUILDING\n' > "$_sc/.claude/builds/ordinary/progress.md"
+  _sco="$(BUILDS_OVERRIDE="$_sc/.claude/builds" "$0" "$ROOT" --builds "$_sc/.claude/builds" 2>&1 || true)"
+  _scn="$(printf '%s' "$_sco" | sed -nE 's/^canary-gates: .* · ([0-9]+) newly refused.*/\1/p' | head -1)"
+  if [ "${_scn:-0}" -lt 1 ]; then
+    echo "canary-gates: SELF-CHECK FAILED — a build planted to be refused was reported as 0 newly refused. The canary cannot see a refusal, so its zero means nothing."
+    exit 1
+  fi
+  echo "canary-gates: self-check PASSED — a planted refusing build is caught (${_scn} refusal(s)), so a zero from this script is a measurement rather than a shape."
+  rm -rf "$_sc"
+  exit 0
+fi
+
+BUILDS="${BUILDS_OVERRIDE:-$ROOT/.claude/builds}"
 [ -d "$BUILDS" ] || { echo "canary-gates: no .claude/builds at $BUILDS — nothing to canary. That is an ERR, not a pass: this directory is gitignored, so an empty run on a clean clone would otherwise read as 'nothing newly refused'."; exit 2; }
 n_b=0; for d in "$BUILDS"/*/; do [ -d "$d" ] && n_b=$((n_b+1)); done
 [ "$n_b" -gt 0 ] || { echo "canary-gates: ERR - zero build folders. An empty canary proves nothing."; exit 2; }
 
+# A SAMPLE THAT ALWAYS TAKES THE SAME SIX IS NOT A SAMPLE. Alphabetical order put both
+# `.compass-format` builds — the ONLY folders the new perf rule actually grades — outside it, so a
+# refusal in either could never be seen by the suite. Worse, the refusal this canary found on its
+# first run was in one of them. Every STAMPED build is always included; the rest fill the quota.
+# NEWLINE-SEPARATED, NOT SPACE-SEPARATED. This repo lives under "Claude Code Projects", so a
+# space-joined list word-splits every path: the canary ran 2 gate calls instead of 374. That is the
+# defect that had just been found in the hook, committed again minutes later in another file.
+_ordf="$(mktemp)"
+for d in "$BUILDS"/*/; do [ -d "$d" ] && [ -f "$d/.compass-format" ] && printf '%s\n' "$d"; done > "$_ordf"
+for d in "$BUILDS"/*/; do [ -d "$d" ] && [ ! -f "$d/.compass-format" ] && printf '%s\n' "$d"; done >> "$_ordf"
+
 out=""; refused=0; calls=0; seen=0
-for d in "$BUILDS"/*/; do
-  [ -d "$d" ] || continue
+while IFS= read -r d; do
+  [ -n "$d" ] && [ -d "$d" ] || continue
   seen=$((seen+1))
   [ "$SAMPLE" -gt 0 ] && [ "$seen" -gt "$SAMPLE" ] && continue
   slug="$(basename "$d")"
@@ -78,7 +116,8 @@ for d in "$BUILDS"/*/; do
   REFUSED $slug · gate/$st · $(printf '%s' "$msg" | head -1 | cut -c1-140)" ;;
     esac
   done
-done
+done < "$_ordf"
+rm -f "$_ordf"
 
 # copy-gate over real FILES — the argument it actually takes. Every reader-copy block on the tree.
 cg_n=0; cg_bad=0
@@ -95,7 +134,7 @@ done
 
 _scope="all $n_b build folders"
 if [ "$SAMPLE" -gt 0 ] && [ "$SAMPLE" -lt "$n_b" ]; then
-  _scope="a SAMPLE of $SAMPLE of $n_b build folders — this is NOT the full canary; the release must run it without --sample"
+  _scope="a SAMPLE of $SAMPLE of $n_b build folders (every .compass-format build first, since those are the only ones the new rules grade) — this is NOT the full canary; the release must run it without --sample"
 fi
 report="canary-gates: $calls gate calls over $_scope · $refused newly refused
   gates run  : $GATES

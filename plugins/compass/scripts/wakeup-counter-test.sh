@@ -396,6 +396,48 @@ done
 # ended up unbounded in the first place.
 chk "$(grep -vE '^[[:space:]]*#' "$HOOK" | grep -c 'auto-mode' || true)" "0" "§13/S38: ...and no CODE path in the hook reads .auto-mode, so the counter cannot quietly become auto-only"
 
+# ── 21. A PATH WITH SPACES IN IT — the one that made this feature dead on arrival ─────────────
+# Version three trimmed the path head at the last SPACE. This repo lives at
+# "/Users/rishi/Desktop/Claude Code Projects/compass", so the head became "Projects/compass" and
+# the counter NEVER FIRED HERE — zero counter files after a real wakeup, on the machine the feature
+# was built on. Every fixture used `mktemp -d`, which has no spaces, so 69 cases could not see it.
+# THE FIXTURE-SHAPE RULE, again: vary the shape you never varied.
+_sp="$T/Claude Code Projects/repo"
+mkdir -p "$_sp/.claude/builds/spaced"
+printf '# s\n\n**Status:** BUILDING\n' > "$_sp/.claude/builds/spaced/progress.md"
+fire "$_sp" "$(wakepay "$_sp" spaced)" >/dev/null
+chk "$([ -s "$_sp/.claude/builds/spaced/.compass-wakeups" ] && echo counted || echo DEAD)" "counted" "a project path containing SPACES is counted — this repo's own path has two, and the counter never once fired here"
+# ...and one with several spaces and an apostrophe, because real paths have those too.
+_sp2="$T/My Docs/Rishi's Work/proj"
+mkdir -p "$_sp2/.claude/builds/b"
+printf '# s\n\n**Status:** BUILDING\n' > "$_sp2/.claude/builds/b/progress.md"
+fire "$_sp2" "$(wakepay "$_sp2" b)" >/dev/null
+chk "$([ -s "$_sp2/.claude/builds/b/.compass-wakeups" ] && echo counted || echo DEAD)" "counted" "...and so is a path with several spaces and an apostrophe"
+
+# ── 22. THE FIRST PATH IN THE PROMPT MUST NOT WIN ─────────────────────────────────────────────
+# The wakeup prompt names OTHER build paths — the standing order's "Never touch:" list is one. The
+# previous parse took the first `/.claude/builds/` it saw, so a no-touch zone got the count and the
+# real loop went uncounted forever. The path is anchored on the template's own "State:" marker now.
+mkdir -p "$T/dec/.claude/builds/notouch" "$T/dec/.claude/builds/live"
+printf '# n\n\n**Status:** BUILDING\n' > "$T/dec/.claude/builds/notouch/progress.md"
+printf '# l\n\n**Status:** BUILDING\n' > "$T/dec/.claude/builds/live/progress.md"
+fire "$T/dec" "$(printf '{"cwd":"%s","prompt":"/long-build continue — live. Never touch: %s/.claude/builds/notouch/ . State: %s/.claude/builds/live/progress.md — read it FIRST."}' "$T/dec" "$T/dec" "$T/dec")" >/dev/null
+chk "$([ -e "$T/dec/.claude/builds/notouch/.compass-wakeups" ] && echo COUNTED || echo untouched)" "untouched" "a build named in a 'Never touch:' clause is NOT counted — the first path in the prompt used to win"
+chk "$([ -s "$T/dec/.claude/builds/live/.compass-wakeups" ] && echo counted || echo MISSED)" "counted" "...and the build the State: line names IS (the control)"
+
+# ── 23. CONTAINMENT, AND WHERE THE ROOT COMES FROM ────────────────────────────────────────────
+# The previous version appended OUTSIDE the project through "..", and its "never read cwd" comment
+# held only while Claude Code emitted cwd before prompt. The root is the cwd field; the slug is one
+# path segment or nothing.
+mkdir -p "$T/proj/.claude/builds/b" "$T/outside/.claude/builds/target"
+printf '# b\n\n**Status:** BUILDING\n' > "$T/proj/.claude/builds/b/progress.md"
+printf '# t\n\n**Status:** BUILDING\n' > "$T/outside/.claude/builds/target/progress.md"
+fire "$T/proj" "$(printf '{"cwd":"%s","prompt":"/long-build continue. State: %s/../outside/.claude/builds/target/progress.md"}' "$T/proj" "$T/proj")" >/dev/null
+chk "$([ -e "$T/outside/.claude/builds/target/.compass-wakeups" ] && echo ESCAPED || echo contained)" "contained" "a state path climbing out of the project with .. writes NOTHING outside it"
+# ...and a prompt with no /long-build marker cannot be counted just because cwd carries a path.
+fire "$T/proj" "$(printf '{"prompt":"what is the weather","cwd":"%s/.claude/builds/b/progress.md"}' "$T/proj")" >/dev/null
+chk "$([ -e "$T/proj/.claude/builds/b/.compass-wakeups" ] && echo COUNTED || echo silent)" "silent" "a non-wakeup prompt is not counted however cwd is written or ordered"
+
 # ── 9. PERF: the cost paid by every unrelated prompt on the machine ───────────────────────────
 # The budget in the plan is <=10 ms over the measured 5.3 ms fast path, for a prompt in a
 # NON-Compass directory. Timed over 20 runs so one scheduling blip cannot decide it.

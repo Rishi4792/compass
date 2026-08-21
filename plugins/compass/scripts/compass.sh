@@ -1259,7 +1259,15 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
   _pbv="$(printf '%s' "$pb" | awk '''
     { line = line " " $0 }
     END {
-      best_n = 0; s = line
+      # QUOTED SPANS ARE EXAMPLES, NOT MEASUREMENTS. This gate’s own error text tells an author to
+      # write a sample series, and quoting that sample then blocked the build. Both quote characters
+      # are built with sprintf, because a literal apostrophe here would close the awk program itself —
+      # which is exactly what the first attempt at this comment did.
+      _sq = sprintf("%c", 39); _bt = sprintf("%c", 96)
+      scan = line
+      gsub(_sq "[^" _sq "]*" _sq, " ", scan)
+      gsub(_bt "[^" _bt "]*" _bt, " ", scan)
+      best_n = 0; s = scan
       # A RUN SERIES: three or more numbers separated by "/", sharing one unit.
       while (match(s, /[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*\/[ ]*[0-9]+(\.[0-9]+)?[ ]*[a-zA-Z\xc2\xb5]*/)) {
         seg = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
@@ -1268,6 +1276,16 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
         n = split(tmp, parts, /\//)
         if (n < 3) continue
         for (i = 1; i <= n; i++) { gsub(/ /, "", parts[i]); v[i] = parts[i] + 0 }
+        # A RUN SERIES IS THREE MEASUREMENTS OF THE SAME THING, so its values CLUSTER. Without that,
+        # an independent reviewer showed the rule hard-stopping honest budgets: a date written the
+        # ordinary way ("Measured 2026/08/21") parsed as a series with median 21, and so did
+        # "Suite: 951 / 0 / 38.6s" and a quoted EXAMPLE series — the very one the gate error text
+        # tells you to write. A gate that refuses correct work is the one that gets switched off.
+        lo = v[1]; hi = v[1]
+        for (i = 2; i <= n; i++) { if (v[i] < lo) lo = v[i]; if (v[i] > hi) hi = v[i] }
+        if (lo <= 0) continue                       # a zero cannot be one of three runs of anything
+        if (hi / lo > 3) continue                   # 2026/08/21 is a date; 951/0/38.6 is not a series
+        if (unit == "") continue                    # and a series with no unit is not a measurement
         for (i = 1; i <= n; i++) for (j = i+1; j <= n; j++) if (v[j] < v[i]) { t = v[i]; v[i] = v[j]; v[j] = t }
         med = (n % 2) ? v[int(n/2)+1] : (v[n/2] + v[n/2+1]) / 2
         # EVERY series, not just the longest. Checking one meant a budget could carry a real
@@ -1298,10 +1316,19 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
           want = sprintf("%." p "f", MED[k]); pat = want; gsub(/\./, "\\.", pat)
           if (rest ~ ("[^0-9.]" pat "[ ]*" UNIT[k] "([^a-zA-Z0-9]|$)")) { found = 1; lastwant = want; break }
         }
-        if (found) okc++
+        # A parenthesised ternary inside a concatenation is not portable awk — it was a syntax
+        # error on this machine, and the gate then refused two honest budgets with no message at all.
+        if (found) {
+          okc++
+          if (SEEN == "") { SEEN = want UNIT[k] } else { SEEN = SEEN ", " want UNIT[k] }
+        }
         else { printf "NORECONCILE %d %s%s\n", CNT[k], MED[k], UNIT[k]; exit }
       }
-      printf "OK %d %s%s\n", best_n, lastwant, best_unit
+      # EVERY series, named. Reporting one of them picked whichever was checked last, and on this
+      # this repo own contract that was the SUPERSEDED over-ceiling figure: the gate announced 59.1s
+      # as the reconciled measurement when the current one is 38.6s. A gate that reports an
+      # arbitrary one of several true numbers is the shape this whole build is about.
+      printf "OK %d %s\n", okc, SEEN
     }''')"
   case "$_pbv" in
     NOSERIES)
@@ -1309,7 +1336,9 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
     NORECONCILE*)
       die "perf-budget: a run series is present but NOTHING IN THE BUDGET MATCHES IT — $_pbv. The figure a bound is derived from must reconcile with the observations behind it, or the series is decoration. HARD STOP (INV-PERFBUDGET, S22)." ;;
   esac
-  ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range, and the derived figure RECONCILES with the run series behind it — $(printf '%s' "$_pbv" | awk '{print $3 " from " $2}') observations."
+  _pbn="$(printf '%s' "$_pbv" | awk '{print $2}')"
+  _pbl="$(printf '%s' "$_pbv" | awk '{ $1=""; $2=""; sub(/^  */, ""); print }')"
+  ok "perf-budget: latency + memory + cost named with numeric literals + SLO/healthy-range, and EVERY run series behind it reconciles — ${_pbn} series: ${_pbl}."
 }
 
 cmd_expand_contract_gate() { # <slug|build-dir> — a declared migration is phased expand/contract with an old-code probe recipe (item 2, INV-EXPAND-CONTRACT)
