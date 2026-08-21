@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh stage-end-gate
+rule=behaviour-must-hold
+why=a stage end recording no ask at all was ACCEPTED — the next step must be asked, or the receipt must say why it was not

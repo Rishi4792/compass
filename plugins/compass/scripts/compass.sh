@@ -1794,6 +1794,76 @@ _cockpit_glyph() { case "${1:-}" in shipped) printf '✓' ;; in-flight|in-review
 # v0.32.0 S15 — INV-PLAIN-TERMINAL's own check. The invariant said the stage-end block carries four
 # elements and NOTHING asserted it; the options element was missing on every build in every mode.
 # A rule with no check is a sentence.
+# v0.32.0 S12 + S13 — the stage-end contract, checked instead of hoped for.
+#
+# Contract §7 says two things about the end of every stage: the COCKPIT prints (in every mode, no
+# exception), and the next step is ASKED via AskUserQuestion — unless the mode is auto, in which
+# case the receipt carries `asked=no · reason=auto-mode` so every un-asked stage stays visible
+# forever. Neither had a check. Measured before this: 5 of 30 receipt files carry any `asked=` at
+# all, and all five are the mode choice at lock time, not a stage end.
+#
+# GUARD-FIRST, and the honest shape of it. Receipts are written by the SKILLS, not by this script,
+# so no existing receipt can carry a stamp that did not exist when it was written. Enforcing
+# retroactively would refuse all 30 builds — the v0.28 defect. So this gate checks every block that
+# CARRIES a `stage-end:` line and REPORTS, in words and with a count, every block that does not.
+# An unstated N/A is a rule quietly retired; a stated one is a migration in progress.
+cmd_stage_end_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh stage-end-gate <build-dir>"
+  local r="$dir/receipts.md"
+  [ -f "$r" ] || { ok "stage-end-gate: N/A — no receipts.md in '$(basename "$dir")' yet."; return 0; }
+  local blocks=0 stamped=0 legacy=0 bad=""
+  local hdr="" body="" line stage
+  # walk the file block by block: a header line starts a new receipt.
+  while IFS= read -r line; do
+    case "$line" in
+      '## RECEIPT — '*)
+        if [ -n "$hdr" ]; then _stage_end_block "$hdr" "$body" || bad="$bad
+    $_SE_WHY"; case "$_SE_KIND" in stamped) stamped=$((stamped+1)) ;; legacy) legacy=$((legacy+1)) ;; esac; fi
+        hdr="$line"; body=""; blocks=$((blocks+1)) ;;
+      *) body="$body
+$line" ;;
+    esac
+  done < "$r"
+  if [ -n "$hdr" ]; then _stage_end_block "$hdr" "$body" || bad="$bad
+    $_SE_WHY"; case "$_SE_KIND" in stamped) stamped=$((stamped+1)) ;; legacy) legacy=$((legacy+1)) ;; esac; fi
+
+  if [ -n "$bad" ]; then
+    echo "refuse: stage-end" >&2
+    die "stage-end-gate: $(printf '%s' "$bad" | grep -c .) receipt block(s) carry a stage-end stamp that does not hold:$bad
+  Contract §7 — at every stage end the cockpit prints, and the next step is ASKED unless the mode is
+  auto, in which case the receipt says so."
+  fi
+  if [ "$legacy" -gt 0 ]; then
+    ok "stage-end-gate: $stamped of $blocks blocks carry a stage-end stamp and all hold. $legacy predate the stamp and are NOT checked — stated, not passed silently."
+  else
+    ok "stage-end-gate: all $stamped of $blocks receipt blocks carry a stage-end stamp and every one holds."
+  fi
+}
+
+# Returns 0 when the block is acceptable. Sets _SE_KIND=stamped|legacy and, on failure, _SE_WHY.
+_stage_end_block() { # <header> <body>
+  local h="${1:-}" b="${2:-}"
+  _SE_KIND=legacy; _SE_WHY=""
+  local se; se="$(printf '%s' "$b" | LC_ALL=C grep -m1 -E '^[-* ]*\[?[x ]?\]?[[:space:]]*stage-end:' || true)"
+  [ -n "$se" ] || return 0                      # no stamp: legacy, reported by the caller
+  _SE_KIND=stamped
+  local name; name="$(printf '%s' "$h" | sed -E 's/^## RECEIPT — ([^ ·]+).*/\1/')"
+  # 1. the COCKPIT printed — in EVERY mode, no exception (contract §7).
+  case "$se" in *cockpit=printed*) : ;; *)
+    _SE_WHY="$name: the stamp does not say cockpit=printed. The cockpit prints at every stage end in every mode."; return 1 ;;
+  esac
+  # 2. the ASK. Either it was asked, or the mode was auto AND the stamp says so.
+  case "$se" in
+    *asked=yes*) : ;;
+    *asked=no*)
+      case "$se" in *reason=auto-mode*) : ;; *)
+        _SE_WHY="$name: asked=no with no 'reason=auto-mode'. An un-asked stage end must say WHY, or it is just an un-asked stage end."; return 1 ;;
+      esac ;;
+    *) _SE_WHY="$name: the stamp records no 'asked=' at all."; return 1 ;;
+  esac
+  return 0
+}
+
 cmd_cockpit_gate() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh cockpit-gate <build-dir>"
   local out; out="$(cmd_cockpit "$dir" 2>&1)" || true
@@ -4464,6 +4534,7 @@ main() {
     intake-phase)      cmd_intake_phase "$@" ;;
     sketch-gate)       cmd_sketch_gate "$@" ;;
     cockpit-gate)      cmd_cockpit_gate "$@" ;;
+    stage-end-gate)    cmd_stage_end_gate "$@" ;;
     restore-point)     cmd_restore_point "$@" ;;
     config-parity)     cmd_config_parity "$@" ;;
     schema-pin-gate)   cmd_schema_pin_gate "$@" ;;

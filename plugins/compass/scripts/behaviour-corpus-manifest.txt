@@ -1,8 +1,6 @@
-# v0.32 behaviour-corpus identity pin. Each line: slug, sha256[:16] of (apply.sh + EXPECTED + REPRODUCTION.md).
+# v0.32 behaviour-corpus identity pin. Each line: slug, sha256[:16] of (apply.sh|case.sh + EXPECTED + REPRODUCTION.md).
 # Entries are ADD-ONLY. A removed slug fails; a hollowed-out entry fails on its checksum.
-# RE-PINNED 2026-08-21 (S7e): four cheats were rewritten to patch disclose() instead of appending
-# beside it, because the fix gave every row an honest control and appending became additive noise.
-# The old pins CAUGHT those edits, which is the manifest doing exactly its job.
+auto-advance-unstamped  1d64b25c2aa09609
 clip-guard-exhaustion  bc31951dea598ccf
 control-hidden-by-ancestor  502e6e5e6303b30f
 control-padded-with-the-page  0936a87da51f12f2
@@ -13,4 +11,6 @@ hide-rows  19ca24d8829d23ec
 honest-fix-reaches-zero  be09587561703b4e
 one-control-per-page  70420e40233f085c
 rename-marker  45e0c881596a155c
+stage-end-no-cockpit  e1827f73768ac935
+stage-end-no-question  2e1528f3022a04fd
 template-stash  28970b90138f9e5d

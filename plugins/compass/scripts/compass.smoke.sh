@@ -2209,10 +2209,13 @@ elif [ -f "$_BCC" ]; then
   # disable identity pinning altogether.
   _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
   _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
-  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 11 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 11 entries (ADD-ONLY, so this floor rises and never falls)"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 14 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 14 entries (ADD-ONLY, so this floor rises and never falls)"
   _bmiss=0
   for _e in "$_BD"/*/; do
-    for _f in apply.sh EXPECTED REPRODUCTION.md; do [ -s "$_e/$_f" ] || _bmiss=$((_bmiss+1)); done
+    # a CHEAT ships apply.sh (it patches the generator); a BEHAVIOUR entry ships case.sh (it builds
+    # a fixture and runs a gate). Both ship their reproduction and both are pinned.
+    _r=apply.sh; grep -q '^kind=behaviour' "$_e/EXPECTED" 2>/dev/null && _r=case.sh
+    for _f in "$_r" EXPECTED REPRODUCTION.md; do [ -s "$_e/$_f" ] || _bmiss=$((_bmiss+1)); done
     grep -q "^$(basename "$_e")  " "$_BM" 2>/dev/null || _bmiss=$((_bmiss+1))
   done
   chk "$_bmiss" "0" "v0.32 S5: every entry carries its reproduction AND is pinned in the manifest"
@@ -2231,9 +2234,10 @@ elif [ -f "$_BCC" ]; then
   # and the runner reported "defeated" — an entry proving nothing while looking green.
   _bna=0
   for _e in "$_BD"/*/; do
-    # `kind=control` entries deliberately patch NOTHING (see honest-fix-reaches-zero), so there is
-    # no anchor for them to assert. Every CHEAT must assert that its patch landed.
-    grep -q '^kind=control' "$_e/EXPECTED" 2>/dev/null && continue
+    # `kind=control` patches NOTHING by design (honest-fix-reaches-zero), and `kind=behaviour`
+    # patches nothing either — it builds a fixture and runs a gate, and asserts BOTH directions
+    # inside its own case.sh. Only a CHEAT has a patch that could silently fail to land.
+    grep -qE '^kind=(control|behaviour)' "$_e/EXPECTED" 2>/dev/null && continue
     grep -qE '^assert |assert s\.count|assert n > 0' "$_e/apply.sh" 2>/dev/null || _bna=$((_bna+1))
   done
   chk "$_bna" "0" "v0.32 S5b: every cheat ASSERTS that its patch landed, so none can silently no-op and still report 'defeated'"
@@ -2461,6 +2465,33 @@ rm -rf "$_S15M"
 # the plain-words half N/A-passes when the walkthrough skill is absent, AND says that it did
 chk "$(CLAUDE_CONFIG_DIR=/nonexistent-xyz bash "$SH" cockpit-gate "$_S15" 2>&1 | grep -c 'Plain-words half N/A')" "1" "v0.32 S15: with /feynman-walkthrough absent the plain-words half N/A-passes AND says so"
 rm -rf "$(dirname "$_S15")"
+
+# ── v0.32 S12 + S13: the stage-end contract, checked instead of hoped for ────────────────────
+# Contract §7 says two things about the end of every stage — the cockpit prints in EVERY mode, and
+# the next step is ASKED unless the mode is auto, in which case the receipt says `asked=no ·
+# reason=auto-mode` so an un-asked stage stays visible forever. Neither had a check. Measured
+# before: 5 of 30 receipt files carry any `asked=` at all, and all five are the mode choice at LOCK
+# time, not a stage end. This build committed the defect against itself (plan step S13).
+_SE="$(mktemp -d)"
+mkdir -p "$_SE/ok" "$_SE/nocock" "$_SE/noask" "$_SE/unstamped" "$_SE/legacy"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] stage-end: cockpit=printed · asked=yes · answer=continue\n' > "$_SE/ok/receipts.md"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] stage-end: asked=yes · answer=continue\n' > "$_SE/nocock/receipts.md"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] stage-end: cockpit=printed\n' > "$_SE/noask/receipts.md"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] stage-end: cockpit=printed · asked=no\n' > "$_SE/unstamped/receipts.md"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] a legacy line with no stamp at all\n' > "$_SE/legacy/receipts.md"
+printf '# r\n\n## RECEIPT — build · t · PASS\n- [x] stage-end: cockpit=printed · asked=no · reason=auto-mode\n' > "$_SE/ok/auto.md"
+bash "$SH" stage-end-gate "$_SE/ok" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S12/S13: a well-formed stage-end stamp PASSES (without this the checks below pass for free)"
+bash "$SH" stage-end-gate "$_SE/nocock" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S12: a stage end that does not say cockpit=printed is REFUSED — §7 requires it in every mode, no exception"
+bash "$SH" stage-end-gate "$_SE/noask" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S13: a stage end recording no ask at all is REFUSED"
+bash "$SH" stage-end-gate "$_SE/unstamped" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S13: asked=no with no reason=auto-mode is REFUSED — an un-asked stage that does not say why is just an un-asked stage"
+bash "$SH" stage-end-gate "$_SE/legacy" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S12/S13: a receipt predating the stamp N/A-passes (guard-first — receipts are written by the SKILLS, so none could carry a stamp that did not exist)"
+chk "$(bash "$SH" stage-end-gate "$_SE/legacy" 2>&1 | grep -c 'predate the stamp and are NOT checked')" "1" "v0.32 S12/S13: ...and it SAYS how many are unchecked — an unstated N/A is a rule quietly retired"
+rm -rf "$_SE"
 
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken

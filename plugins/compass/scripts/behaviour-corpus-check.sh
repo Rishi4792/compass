@@ -26,7 +26,7 @@ command -v node >/dev/null 2>&1 || { echo "behaviour-corpus: ERR - node is not o
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 # entry_sha: identity over the three files that make an entry evidence.
-entry_sha() { cat "$1/apply.sh" "$1/EXPECTED" "$1/REPRODUCTION.md" 2>/dev/null | shasum -a 256 | cut -c1-16; }
+entry_sha() { cat "$1/apply.sh" "$1/case.sh" "$1/EXPECTED" "$1/REPRODUCTION.md" 2>/dev/null | shasum -a 256 | cut -c1-16; }
 
 # The baseline the cheats are measured against, taken on the UNMODIFIED tree.
 base_out="$(bash "$HERE/reachable-argument-check.sh" "$ROOT" --corpus "$FXCORP" 2>&1)"
@@ -81,7 +81,11 @@ n=0; bad=0
 for d in "$CORPUS"/*/; do
   [ -d "$d" ] || continue
   slug="$(basename "$d")"; n=$((n+1))
-  for f in apply.sh EXPECTED REPRODUCTION.md; do
+  # A CHEAT ships an apply.sh (it patches the generator). A BEHAVIOUR entry ships a case.sh (it
+  # builds a fixture and runs a gate). Both ship their reproduction; neither may ship neither.
+  _kind="$(sed -nE 's/^kind=(.*)$/\1/p' "$d/EXPECTED" 2>/dev/null | head -1)"
+  _runner=apply.sh; [ "$_kind" = "behaviour" ] && _runner=case.sh
+  for f in "$_runner" EXPECTED REPRODUCTION.md; do
     [ -s "$d/$f" ] || { echo "  FAIL $slug - $f is missing or empty; an entry without its reproduction is not evidence"; bad=$((bad+1)); continue 2; }
   done
   if [ -f "$MAN" ]; then
@@ -160,6 +164,15 @@ for d in "$CORPUS"/*/; do
         echo "         baseline it also had little room to show, so this is the weaker form of the proof)"
       else
         echo "  ok   $slug - defeated: source-unreachable $SBASE -> $got (the cheat made it WORSE, which is the strong form)"
+      fi ;;
+    behaviour-must-hold)
+      # A gate BEHAVIOUR, not a cheat against the reachability check. The entry's own case.sh
+      # asserts both directions — the accepting fixture passes AND the offending one is refused —
+      # so a gate that refuses everything cannot satisfy it.
+      if out="$(bash "$d/case.sh" "$ROOT" 2>&1)"; then
+        echo "  ok   $slug - the behaviour holds: the good case passes and the offending one is refused"
+      else
+        echo "  FAIL $slug - $out"; bad=$((bad+1))
       fi ;;
     figure-must-not-change)
       # Renaming a marker HIDES NOTHING, so the figure must not move at all — neither down (the

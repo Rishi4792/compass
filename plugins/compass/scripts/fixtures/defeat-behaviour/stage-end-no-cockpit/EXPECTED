@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh stage-end-gate
+rule=behaviour-must-hold
+why=a stage end that does not say the cockpit printed was ACCEPTED — contract §7 requires it in every mode, no exception

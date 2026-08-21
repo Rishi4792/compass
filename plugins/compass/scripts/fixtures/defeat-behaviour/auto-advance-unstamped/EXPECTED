@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh stage-end-gate
+rule=behaviour-must-hold
+why=an UN-ASKED stage end with no reason=auto-mode was ACCEPTED — an un-asked stage that does not say why is just an un-asked stage
