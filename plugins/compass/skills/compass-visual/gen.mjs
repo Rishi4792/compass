@@ -103,11 +103,10 @@ if (LOSSY_TRACE) {
   // exactly the pages that went wrong.
   process.on('exit', () => {
     try {
-      // Stamped at FLUSH time, because whether a value was selected is only known after the page
-      // has been built — the counter fires long before `firstNonEmpty` chooses.
-      for (const r of LOSSY_ROWS) {
-        if (r.shownProbe && _DISCARDED.has(_dkey(r.shownProbe))) r.discarded = true;
-      }
+      // The `discarded` stamp that stood here is GONE (independent review, 2026-08-21). It let the
+      // generator tell the check which of its own losses to ignore, and the check believed it:
+      // setting it unconditionally took the live figure 134 -> 10 with the gate still saying PASS.
+      // A measurement must not accept the measured thing's opinion about what to exclude.
       appendFileSync(LOSSY_TRACE, LOSSY_ROWS.map((r) => JSON.stringify(r)).join('\n') + (LOSSY_ROWS.length ? '\n' : ''));
     } catch { /* never let instrumentation break a render */ }
   });
@@ -1042,12 +1041,20 @@ function flowCaption(own) {
 // counter for a value nobody will ever render. Seven such events on the fixture corpus. They are
 // not a defect a reader can feel — there is no row — so they are MARKED, not counted, and the
 // check reports them in their own bucket exactly as it does a field the page never showed.
-const _DISCARDED = new Set();
-const _dkey = (v) => String(v || '').trim().slice(0, 120);
 const firstNonEmpty = (xs) => {
   const i = xs.findIndex((x) => x && String(x).trim());
-  for (let k = 0; k < xs.length; k++) if (k !== i && xs[k]) _DISCARDED.add(_dkey(xs[k]));
-  return (i >= 0 ? xs[i] : '').toString().trim();
+  const out = (i >= 0 ? xs[i] : '').toString().trim();
+  // A DISCARDED candidate may still have destroyed text on its way to being computed — `firstBullet`
+  // drops the rest of a list before `firstNonEmpty` decides it is not the one to show. That loss
+  // belongs to the ROW the reader actually sees here, because it is the same section, so it moves
+  // to the selected value. Without this its remainder was keyed to a string that is never rendered
+  // and seven probes counted unreachable while their text sat in no control at all.
+  for (let k = 0; k < xs.length; k++) {
+    if (k === i || !xs[k]) continue;
+    const up = droppedFor(xs[k]);
+    if (up && out) noteDropped(out, up);
+  }
+  return out;
 };
 const firstBullet = (body) => {
   const all = String(body || '').split('\n').filter((l) => /^\s*-\s+\S/.test(l));
@@ -1207,6 +1214,11 @@ function fieldText(v, max = 150) { return fieldParts(v, max).shown; }
 // <span>. Callers in phrasing contexts render it as a SIBLING after the element; see each site.
 function disclose(rest, label = 'Show the rest') {
   if (!rest) return '';
+  // A label is TEXT. `nC()` and `nF()` return MARKUP (a provenance span), and this function escapes
+  // its label — so passing one printed `Show the &lt;span data-prov=&quot;counted&quot;&gt;115…`
+  // to the reader on 30 pages. Strip any tags rather than escaping them into view; a caller that
+  // wants a number in a label wants the number.
+  label = String(label).replace(/<[^>]*>/g, '');
   return `<details class="rest"><summary>${esc(label)}</summary><div class="rest-body">${txt(rest)}</div></details>`;
 }
 // The one-liner for the common case: a field in a flow context, shown short with its remainder
@@ -2187,9 +2199,20 @@ function reviewArtefact() {
   const _hiddenRows = rows.filter((r) => !shown.includes(r))
     .map((r) => Object.values(r).filter((v) => typeof v === 'string').join(' '));
   if (hiddenN > 0) {
-    const _lastShown = shown.length
-      ? Object.values(shown[shown.length - 1]).filter((v) => typeof v === 'string').join(' ') : '';
-    lossy('closedRows.slice', 0, 0, hiddenN, () => _hiddenRows, () => _lastShown);
+    // The shown half must be the text a reader meets IMMEDIATELY BEFORE this control. The last
+    // shown ROW is not that: it has its own control sitting between it and this one, so the
+    // positional test could never find it and all ten hidden rows counted unreachable while their
+    // text sat in a control on the page. The row that owns this control is the "+N not shown" row,
+    // and its own heading is what precedes it.
+    const _lastShown = `${hiddenN} closed finding${hiddenN === 1 ? '' : 's'}`;
+    // REAL char figures, not zeros. Reporting 0 here was defensible when the unit was "a row" — but
+    // the CHECK budgets a row's control against the characters that row lost, so a zero collapsed
+    // the budget to a floor of 580 while the honest control legitimately holds 7,948 characters,
+    // and the check then refused the very disclosure this step added. Found by an independent
+    // reviewer. The unit reported is still rows; the characters are reported too, because another
+    // part of the system needs them and guessing zero is not "not guessing".
+    const _hiddenChars = _hiddenRows.join('\n\n').length;
+    lossy('closedRows.slice', 0, _hiddenChars, hiddenN, () => _hiddenRows, () => _lastShown);
   }
   const list = shown.map((r) => {
     const cls = sev(r);
@@ -2211,7 +2234,7 @@ function reviewArtefact() {
       `<div><div class="b-ttl">${nC(hiddenN)} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
       `<div class="b-det">Everything not marked closed is listed above — that is the complete set of what still needs you. The full record is review-ledger.md.</div></div>` +
       `<div class="verify"><b>note</b>all ${nF('findings.total', rows.length)} are counted in the totals${
-        disclose(_hiddenRows.join('\n\n'), `Show the ${nC(hiddenN)} not listed above`)}</div></div>`
+        disclose(_hiddenRows.join('\n\n'), `Show the ${hiddenN} not listed above`)}</div></div>`
     : '';
   // The title carries provenance markers, so it is rendered by the caller and passed raw.
   const b4 = bandSection(

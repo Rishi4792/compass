@@ -131,7 +131,11 @@ function reachableText(html, clippedIn) {
   const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
   let m;
   while ((m = re.exec(h)) !== null) {
-    if (!skipTag) out += h.slice(last, m.index);
+    // A SEPARATOR between elements. Without it `</div><div class="b-det">` glued two blocks into
+    // `c 24the renderer…`, so a row's recorded shown half was "nowhere on this page" and the whole
+    // event was excluded from both columns — ten hidden ledger rows on the fixture corpus alone.
+    // A browser renders those divs on separate lines; the check must read them the same way.
+    if (!skipTag) out += h.slice(last, m.index) + ' ';
     last = re.lastIndex;
     const closing = m[0][1] === '/';
     const tag = m[1].toLowerCase();
@@ -316,11 +320,16 @@ for (const p of pages) {
       // The escape hatch is closed by the SOURCE measure: hide a row's shown half to make it "not
       // rendered" and its source lines stop being findable, which raises SOURCE UNREACHABLE.
       if (shown && shown.length >= 20 && !text.includes(shown)) { notRendered++; nrPaths.add(r.site); probesTotal--; b.probes--; continue; }
-      // DISCARDED: the generator computed this value and `firstNonEmpty` then chose a different
-      // candidate, so it was never rendered. A JS array literal evaluates every candidate, so the
-      // destroying counter fires for text nobody will see. There is no row, so there is nothing a
-      // reader cannot finish. Counted in NEITHER column, and named, like NOT RENDERED.
-      if (r.discarded) { notRendered++; nrPaths.add(r.site + ' (computed then discarded)'); probesTotal--; b.probes--; continue; }
+      // DELETED, 2026-08-21, on an independent review. This bucket trusted a `discarded` flag the
+      // GENERATOR wrote — the thing under test telling the check what to ignore. Two things were
+      // wrong with it. It was FORGEABLE: setting it unconditionally took the live figure 134 -> 10
+      // with the gate still reporting PASS. And it was WRONG: on the tracked corpus it fired on
+      // exactly one event whose kept text WAS on the page and whose dropped text was there too,
+      // so its own premise — "there is no row" — was false for the only case it had.
+      //
+      // Nothing replaces it, deliberately. A value that really was computed and thrown away has no
+      // shown half on the page, which is what NOT RENDERED already tests — from the PAGE, not from
+      // the generator's word for it.
       // v0.32 S6b: ONE control speaks for ONE event, and an event is credited only if it CLAIMS a
       // control of its own. The earlier version fell back to a control another event already owned,
       // which let contract §9's cheat 4 — every remainder dumped into one control — credit 8 probes

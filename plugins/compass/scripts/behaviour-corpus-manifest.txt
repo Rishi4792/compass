@@ -2,9 +2,9 @@
 # Entries are ADD-ONLY. A removed slug fails; a hollowed-out entry fails on its checksum.
 auto-advance-unstamped  1d64b25c2aa09609
 clip-guard-exhaustion  bc31951dea598ccf
-control-hidden-by-ancestor  502e6e5e6303b30f
+control-hidden-by-ancestor  c944f71803ea4cec
 control-padded-with-the-page  0936a87da51f12f2
-controls-piled-at-the-foot  4f3c20d819310f86
+controls-piled-at-the-foot  4ff0a7f5e11f7a49
 css-clip  9c51779d4b3c54d6
 empty-control  03e59356871bbe89
 hide-rows  19ca24d8829d23ec
