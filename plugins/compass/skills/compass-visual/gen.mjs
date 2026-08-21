@@ -22,7 +22,7 @@
 // The first line of every generated asset is `<!doctype html>` — NEVER a `<!-- COMPASS-MOCK` marker.
 // ============================================================================================
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractReaderCopy, parseReaderCopy } from '../../scripts/reader-copy.mjs';
 
@@ -41,6 +41,37 @@ if (!dir || !VIEWS.includes(view || '')) {
   console.error(`usage: node gen.mjs <build-dir> <${VIEWS.join('|')}> [--shareable] [--out <file>]`);
   process.exit(2);
 }
+
+// ── v0.32 lossy instrumentation — INERT unless COMPASS_LOSSY_TRACE is set ─────────────────────
+// The lesson this build was raised on: a count derived by grepping rendered output silently
+// misses every path whose output the grep cannot match. Three headline figures were published
+// this way (340, then 340 again, then 717) and every one was wrong — the first missed an entire
+// destroying path because its count sits inside markup a text search cannot see.
+//
+// So the count is taken HERE, at the return statement that destroys the text. A path cannot hide
+// from a counter placed inside it. Cost when the env var is unset: one falsy check per call, no
+// allocation and no I/O, so the shipped generator is unchanged in behaviour and effectively in
+// speed. It is deliberately NOT a separate re-implementation of the parsing rules — a second
+// implementation drifts from the first, and then two numbers disagree with no way to say which
+// is right.
+const LOSSY_TRACE = process.env.COMPASS_LOSSY_TRACE || '';
+const LOSSY_ROWS = [];
+function lossy(site, keptChars, fullChars, unitsDropped) {
+  if (!LOSSY_TRACE) return;
+  LOSSY_ROWS.push({ site, view, dir, keptChars, fullChars,
+                    charsDropped: Math.max(0, fullChars - keptChars), unitsDropped });
+}
+if (LOSSY_TRACE) {
+  // Flush on exit so an early process.exit (usage 2, leak gate 3, sentinel 5) still reports what
+  // it destroyed before it stopped. A trace that only survives the happy path would under-count
+  // exactly the pages that went wrong.
+  process.on('exit', () => {
+    try {
+      appendFileSync(LOSSY_TRACE, LOSSY_ROWS.map((r) => JSON.stringify(r)).join('\n') + (LOSSY_ROWS.length ? '\n' : ''));
+    } catch { /* never let instrumentation break a render */ }
+  });
+}
+
 const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : '');
 const contract = read('contract.md');
 if (!contract) { console.error(`gen: no contract.md in ${dir}`); process.exit(2); }
@@ -378,8 +409,17 @@ function firstPara(body) {
       .filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l))
       .map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/\s*\|\s*/g, ' — ').trim())
       .filter(Boolean);
-    if (rest.length) return `${first} ${rest.join('; ')}`;
+    if (rest.length) {
+      // P7a. The colon-label path consumed paragraphs one and two; anything past those is gone.
+      const out = `${first} ${rest.join('; ')}`;
+      if (paras.length > 2) lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2);
+      return out;
+    }
   }
+  // P7b. The ordinary path returns paragraph one and drops every other paragraph in the section,
+  // printing nothing at all to say so. One of the three paths that leave no trace — which is why
+  // no amount of searching a rendered page could ever have found it.
+  if (paras.length > 1) lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1);
   return first;
 }
 // ── render a FULL section body as paragraphs (blank-line separated; lines joined by <br>) — used on the
@@ -839,8 +879,12 @@ function flowCaption(own) {
 }
 const firstNonEmpty = (xs) => (xs.find((x) => x && String(x).trim()) || '').toString().trim();
 const firstBullet = (body) => {
-  const m = String(body || '').split('\n').find((l) => /^\s*-\s+\S/.test(l));
-  return m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
+  const all = String(body || '').split('\n').filter((l) => /^\s*-\s+\S/.test(l));
+  const m = all[0];
+  const out = m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
+  // P8. Returns bullet one and drops the rest of the list silently — no marker, no count.
+  if (all.length > 1) lossy('firstBullet', out.length, all.join('\n').length, all.length - 1);
+  return out;
 };
 const lineMatching = (body, re) => {
   const lines = String(body || '').split('\n');
@@ -861,7 +905,21 @@ const lineMatching = (body, re) => {
       if (/^#/.test(lines[j])) break;
       rest.push(t);
     }
-    if (rest.length) return `${first} ${rest.join('; ')}`;
+    if (rest.length) {
+      // P9. NOT ENUMERATED IN CONTRACT SECTION 9. The loop above stops at six collected lines
+      // (`rest.length < 6`), so a label with more than six content lines loses the remainder with
+      // no marker. Found by instrumenting the producer, exactly as the durable lesson says: the
+      // enumeration in the contract was itself derived from reading, and reading missed one.
+      let more = 0;
+      for (let j = i + 1 + rest.length; j < lines.length; j++) {
+        if (/^#/.test(lines[j])) break;
+        if (clean(lines[j]).trim()) more++;
+      }
+      if (rest.length >= 6 && more > 0) {
+        lossy('lineMatching.cap6', rest.join('; ').length, lines.slice(i).join('\n').length, more);
+      }
+      return `${first} ${rest.join('; ')}`;
+    }
   }
   return first;
 };
@@ -940,7 +998,12 @@ function fieldText(v, max = 150) {
       kept.push(part); n += part.length + 2;
     }
     const hidden = parts.length - kept.length;
-    return kept.join('; ') + (hidden > 0 ? ` — and ${nCt(hidden)} more` : '');
+    const joined = kept.join('; ');
+    // P1. THE PATH THE FIRST TWO GOLD FIGURES MISSED. `nCt()` wraps the count in a
+    // `<span data-prov="counted">`, so a plain text search of the rendered page returns 0 for this
+    // path and reports it as absent rather than as unmeasured.
+    if (hidden > 0) lossy('fieldText:and-N-more', joined.length, full.length, hidden);
+    return joined + (hidden > 0 ? ` — and ${nCt(hidden)} more` : '');
   }
   // Prefer a sentence boundary, so a shortened field ends where a thought ends. A bare ellipsis
   // is still a cut — the artefact gate is right to flag it — so when there is no clean boundary,
@@ -953,10 +1016,16 @@ function fieldText(v, max = 150) {
   const sentence = full.slice(0, max + 60).match(/^[\s\S]*?[.!?](?=\s)/);
   if (sentence && sentence[0].length >= max * 0.5) {
     const kept = sentence[0].trim();
+    // P2. Contract section 9 calls this "the (continues) path", singular. It is two separate return
+    // statements — this one and P3 below — that happen to print the same word. Counted apart,
+    // because a figure that fuses two code paths is how the earlier ones went wrong.
+    if (kept.length < full.trim().length) lossy('fieldText:continues-sentence', kept.length, full.trim().length, 1);
     return kept.length < full.trim().length ? `${kept} (continues)` : kept;
   }
   const cut = splitLead(full, max);
   const lead = cut.lead.replace(/[;,]\s*$/, '');
+  // P3. The second half of section 9's single "(continues) path".
+  if (cut.rest) lossy('fieldText:continues-hardcut', lead.length, full.length, 1);
   return cut.rest ? `${lead} (continues)` : lead;
 }
 
@@ -1354,7 +1423,12 @@ function planMap() {
   const secOrNA = (title, purpose, names, naReason) => {
     const body = firstNonEmpty(names.map((n) => psecGet(n)));
     if (!body) return bandNA(title, naReason);
-    const items = bullets(body, /^-\s+/).slice(0, 8);
+    const allItems = bullets(body, /^-\s+/);
+    // P4. Drops every bullet past the eighth and prints nothing to say so.
+    if (allItems.length > 8) {
+      lossy('bullets.slice8', allItems.slice(0, 8).join('').length, allItems.join('').length, allItems.length - 8);
+    }
+    const items = allItems.slice(0, 8);
     const inner = items.length
       ? `<ul class="pl">${items.map((i) => `<li><span class="pill now">·</span><span>${txt(fieldText(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190))}</span></li>`).join('')}</ul>`
       : `<p class="b-det">${txt(fieldText(firstPara(body), 400))}</p>`;
@@ -1792,6 +1866,9 @@ function reviewArtefact() {
   const CLOSED_SHOWN = Math.max(0, 24 - notClosed.length);
   const shown = [...notClosed, ...closedRows.slice(0, CLOSED_SHOWN)];
   const hiddenN = rows.length - shown.length;
+  // P5. Drops WHOLE ledger rows. The unit here is a row, not a character, which is why the
+  // char figures are reported as 0 rather than guessed at.
+  if (hiddenN > 0) lossy('closedRows.slice', 0, 0, hiddenN);
   const list = shown.map((r) => {
     const cls = sev(r);
     // THREE labels, matching band 2's three counts. A status that is stated but recognised by
@@ -1854,6 +1931,8 @@ function releaseCard() {
   const numbered = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
   const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => fieldText(String(t), 140));
+  // P6. Drops scope items past the sixth.
+  if (nowItems.length > 6) lossy('nowItems.slice6', 0, 0, nowItems.length - 6);
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
     + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more</li>` : '');
   const facet = hdr('facets') || 'library';
