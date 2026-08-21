@@ -1864,15 +1864,34 @@ if [ -d "$_SP" ]; then
 else
   chk "1" "1" "v0.32 S24: N/A — statusparse fixtures absent"
 fi
-# the LIVE regression this found: a build folder that stacks six status lines (an append log)
-# displayed its FIRST — so `compass.sh status` called a SHIPPED build "Contract LOCKED".
-_L="$PLUGIN_ROOT/../../.claude/builds/lifecycle-migration-gates-v0-7/progress.md"
-if [ -f "$_L" ]; then
-  chk "$(_sl "$_L" --raw)" "$(sed -nE 's/^[[:space:]]*\*\*Status:\*\*[[:space:]]*(.*)$/\1/p' "$_L" | tail -1)" "v0.32 S24: a build with six stacked status lines reports its LAST, not its first"
-  chk "$([ "$(grep -cE '^[[:space:]]*\*\*Status:\*\*' "$_L")" -ge 2 ] && echo 1 || echo 0)" "1" "v0.32 S24: ...and that folder really does stack them, so the check has something to catch"
-else
-  chk "1" "1" "v0.32 S24: N/A — the live multi-status build folder is not present on this tree"
+# ── v0.32 S24b: the three findings the INDEPENDENT reviewer of S24 raised about its TESTS ────
+# It reverted each half of the fix and watched the suite stay green. Three assertions below exist
+# because of that, and each was mutation-proven to go RED when its own half is reverted.
+#
+# MAJOR-5 first: the checks above lean on a TRACKED fixture, but the multi-status case leaned on a
+# GITIGNORED build folder, so on a clean clone (`git ls-files .claude/builds` -> 0) it silently
+# N/A-passed. `multi-status` and `bold-status` are tracked, so a clean clone tests them for real.
+if [ -d "$_SP/multi-status" ]; then
+  # MAJOR-3: this runs cmd_status END TO END. The earlier form called status_line directly, so
+  # reverting the CALL SITE back to --first cost nothing and the suite stayed at 713/0.
+  chk "$(bash "$SH" status "$_SP/multi-status" 2>/dev/null | sed -n 's/^Status:  //p' | head -1)" "SHIPPED — v0.7.0 live (commit dd59a24)" "v0.32 S24b: cmd_status on a 5-status-line build reports its LAST status (MAJOR-3: the call site is now tested, not just the helper)"
+  chk "$(grep -cE '^[[:space:]]*\*\*Status:\*\*' "$_SP/multi-status/progress.md")" "5" "v0.32 S24b: ...and the fixture really stacks five of them, so that check has something to catch"
 fi
+if [ -d "$_SP/bold-status" ]; then
+  # MAJOR-1: a REAL regression S24 shipped. `**Status:** **SHIPPED (...)**` — the token mode could
+  # not see past the leading `**`, returned empty, the stale-INDEX fallback fired, and a SHIPPED
+  # build was advertised as a ship contender. Emphasis is decoration and is now stripped.
+  chk "$(_sl "$_SP/bold-status/progress.md" --token | cut -c1-7)" "shipped" "v0.32 S24b (MAJOR-1): a status written in **bold** still reads as shipped, not as empty"
+  chk "$(_it "$(_sl "$_SP/bold-status/progress.md" --raw --token | sed -E 's/ .*//')")" "1" "v0.32 S24b (MAJOR-1): ...and it classifies TERMINAL, so it is not offered as a ship contender"
+fi
+# MAJOR-2: is_terminal's OWN trim, exercised with dirty input that status_line never cleaned.
+# Every earlier assertion fed it a value status_line had already trimmed, so reverting is_terminal
+# to its shipped form left the suite byte-identical at 712/1 — a fix with no test behind it.
+chk "$(_it 'SHIPPED ')" "1" "v0.32 S24b (MAJOR-2): is_terminal trims a TRAILING space itself (fed raw, not via status_line)"
+chk "$(_it ' SHIPPED')" "1" "v0.32 S24b (MAJOR-2): is_terminal trims a LEADING space itself"
+chk "$(_it "$(printf 'SHIPPED\r')")" "1" "v0.32 S24b (MAJOR-2): is_terminal strips a CR itself"
+chk "$(_it "$(printf '\tCLOSED\t')")" "1" "v0.32 S24b (MAJOR-2): is_terminal trims TABS itself"
+chk "$(_it 'draft ')" "0" "v0.32 S24b (MAJOR-2): ...and still says NO to a non-terminal status (the trim did not make it permissive)"
 
 # ── v0.32 S21 (§17-3 + §17-4): the sketch-gate can now refuse something ──────────────────────
 # It passed 30 of 30 build folders and had never refused anything. Two reasons, one edit:

@@ -192,6 +192,15 @@ status_line() { # <progress.md> [--first] [--raw] [--token]
   if [ "$first" = 1 ]; then s="$(printf '%s\n' "$s" | head -n1 || true)"
   else                      s="$(printf '%s\n' "$s" | tail -n1 || true)"; fi
   s="$(printf '%s' "$s" | tr -d '\r' || true)"
+  # v0.32.0 S24b — REGRESSION FOUND BY THE INDEPENDENT REVIEWER OF S24, and it was real.
+  # A status may be written in markdown emphasis: `**Status:** **SHIPPED (post-ship …)**`. The old
+  # character class could not see past the leading `**`, but because a SPACE is in that class it
+  # backtracked and returned a single space — junk, yet non-empty, which happened to suppress the
+  # stale-INDEX fallback. The rewrite correctly returned empty, the fallback then fired, and
+  # `perf-fmea-method-v0-20-p2` — a build whose own progress.md says SHIPPED — was advertised as a
+  # SHIP CONTENDER. Emphasis is decoration, never part of the status, so it is stripped here for
+  # every mode. That makes the value more correct than either previous version, not just different.
+  s="$(printf '%s' "$s" | sed -E 's/^[*_`[:space:]]+//; s/[*_`[:space:]]+$//' 2>/dev/null || true)"
   [ "$token" = 0 ] || s="$(printf '%s' "$s" | sed -E 's/^([A-Za-z()0-9 -]*).*/\1/' 2>/dev/null || true)"
   s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
   [ "$raw" = 1 ] || s="$(printf '%s' "$s" | tr 'A-Z' 'a-z' || true)"

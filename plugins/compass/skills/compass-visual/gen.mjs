@@ -213,7 +213,22 @@ const ARTEFACT_DATA = (() => {
 function nF(field, fallback) {
   if (ARTEFACT_DATA && Object.prototype.hasOwnProperty.call(ARTEFACT_DATA, field)) {
     const v = ARTEFACT_DATA[field];
-    if (typeof v === 'number' && Number.isFinite(v)) return nD(v, field);
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      // v0.32.0 S19 (§17-6). A DECLARED number used to win SILENTLY over the computed one, so the
+      // Brief's header could read "12 invariants" while the panel directly below it read "this
+      // contract pins no INVARIANTs" — one page, one set, two answers. Observed live on this
+      // build's own Brief. The page cannot know which figure is right, so it now refuses to print
+      // either rather than picking one and looking certain.
+      // Measured BEFORE this became a refusal, over all 30 build folders x 4 views: exactly ONE
+      // build disagreed (this one), so no historical build is newly refused.
+      if (typeof fallback === 'number' && Number.isFinite(fallback) && v !== fallback) {
+        console.error(`gen: '${field}' disagrees with itself — the compass-artefact-data block ` +
+          `declares ${v}, this page computes ${fallback}. Fix whichever is wrong (the block lives ` +
+          `in progress.md). A page may not state a number it contradicts elsewhere on itself.`);
+        process.exit(4);
+      }
+      return nD(v, field);
+    }
     console.error(`gen: compass-artefact-data field ${field} is not a finite number`);
     process.exit(4);
   }
@@ -439,7 +454,13 @@ function invariants() {
   const body = sec('INVARIANT') || sec('Acceptance');
   const rows = [];
   for (const l of body.split('\n')) {
-    const m = l.match(/^-\s+\*\*(INV-[A-Za-z0-9][A-Za-z0-9-]*)[^*]*\*\*:?\s*(.*)$/);
+    // v0.32.0 S19 (§17-6): TWO shapes, not one. A contract may write its invariants as bullets
+    // OR as a table, and this parser only knew bullets — so a contract with a 12-row invariant
+    // table rendered "this contract pins no INVARIANTs" in the panel while the header, fed from
+    // the DECLARED artefact-data block, said 12. Same page, same contract, two answers.
+    // Observed live on this build's own Brief; it is §17 entry 6.
+    const m = l.match(/^-\s+\*\*(INV-[A-Za-z0-9][A-Za-z0-9-]*)[^*]*\*\*:?\s*(.*)$/)
+           || l.match(/^\|\s*\*\*(INV-[A-Za-z0-9][A-Za-z0-9-]*)[^*]*\*\*\s*\|\s*([^|]*)/);
     if (!m) continue;
     // drop ONLY the "→ *assert:*" recipe tail — NOT every internal arrow, or binding text is lost
     // (INV-COMMSCAN's "→ CRITICAL", INV-SUITES' full "→ 0 … → PASS" chain, INV-NO-LEAK) (R3-M2).
@@ -1070,7 +1091,17 @@ function briefBody() {
   const sc = scope();
   const security_ = security();
   const facets = hdr('Facets') || hdr('facets') || 'library';
-  const version = (title.match(/·\s*(v[\d.]+)\s*$/) || [, 'v1'])[1];
+  // v0.32.0 S19 (§17-12). The fallback here was a hardcoded 'v1', so EVERY Brief whose title
+  // carries no version suffix told its reader the contract was v1 — including the Brief published
+  // for v2, v3 and v4 of this build, which is the very page the gold is read from. A version the
+  // page cannot derive is now SAID to be underivable rather than invented.
+  const version = (() => {
+    const t = title.match(/·\s*(v[\d.]+)\s*$/);
+    if (t) return t[1];
+    const d = contract.match(/^Ships as v[\d.]+\s*\(\*\*(v[\d.]+)\*\*/m);
+    if (d) return d[1];
+    return 'contract version not stated';
+  })();
   const doneSentence = fieldText(goal, 120);
   // v0.30: the reader-copy block now covers the scope ladder too. It previously covered only the
   // four decision cards, so the ladder rendered contract prose verbatim — which is where the cold
@@ -1236,7 +1267,18 @@ function cockpit() {
   const plan = read('plan.md');
   const receipts = read('receipts.md');
   const ledger = read('review-ledger.md');
-  const status = (progress.match(/\*\*Status:\*\*\s*(.+)/) || [, '—'])[1].trim();
+  // v0.32.0 S24b, found by the independent reviewer of S24: this is a SIXTH **Status:** parser,
+  // and unifying the five in compass.sh left it behind. It was unanchored and took the FIRST
+  // match, so on a build folder that stacks its status lines (an append log — one in the live
+  // corpus has six) the page Rishi actually looks at reported a SHIPPED build as
+  // "Contract LOCKED". It now reads the LAST line, at the start of a line, and strips the
+  // markdown emphasis a status may be written in (`**SHIPPED (post-ship …)**`).
+  const status = (() => {
+    const all = progress.match(/^[ \t]*\*\*Status:\*\*[ \t]*(.+)$/gm) || [];
+    if (!all.length) return '—';
+    const last = all[all.length - 1].replace(/^[ \t]*\*\*Status:\*\*[ \t]*/, '');
+    return last.replace(/^[*_`\s]+/, '').replace(/[*_`\s]+$/, '').trim() || '—';
+  })();
   const stage = (progress.match(/\*\*Stage:\*\*\s*(.+)/) || [, '—'])[1].trim();
   const next = (progress.match(/\*\*Next:\*\*\s*(.+)/) || [, '—'])[1].trim();
   const done = (plan.match(/^\s*- \[x\]/gim) || []).length;
@@ -1319,7 +1361,9 @@ function planMap() {
   const steps = [];
   let cur = null;
   for (const ln of plan.split('\n')) {
-    const m = ln.match(/^\s*-\s*\[([ x])\]\s*(.+)$/);
+    // v0.32.0 S31: `[~]` joins the alphabet. It is what this project's own progress files already
+    // use for a step in flight, and without it the running count below had nothing real to read.
+    const m = ln.match(/^\s*-\s*\[([ x~])\]\s*(.+)$/);
     if (m) {
       const raw = m[2].replace(/\*\*/g, '').replace(/`/g, '');
       // SUB-STEP labels are part of the plan's own numbering: `4a`, `7b`, `25b`. Matching only
@@ -1360,7 +1404,7 @@ function planMap() {
       if (iv && /[A-Za-z0-9`]/.test(iv[1])) { inlineVerify = iv[1].trim(); body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
       else if (iv) { body = body.slice(0, iv.index).replace(/[\s—·]+$/, ''); }
       const { lead, rest } = splitLead(body, 74);
-      cur = { n: num, title: lead, detail: rest, verify: inlineVerify, done: m[1] === 'x' };
+      cur = { n: num, title: lead, detail: rest, verify: inlineVerify, done: m[1] === 'x', running: m[1] === '~' };
       steps.push(cur);
       continue;
     }
@@ -1397,12 +1441,19 @@ function planMap() {
   }
   const done = steps.filter((s2) => s2.done).length;
   const total = steps.length;
-  const running = total > done ? 1 : 0;
+  // v0.32.0 S31 (pulled in by Rishi at the plan gate, 2026-08-20). This was `total > done ? 1 : 0`
+  // — a literal wearing a measurement's clothes. Every plan Compass has ever rendered claimed that
+  // EXACTLY ONE step was running, including plans where nothing had been started at all. It is now
+  // the count of steps a person actually marked in flight, and when nobody marked one the page
+  // says nothing about running rather than inventing a one.
+  const running = steps.filter((s2) => s2.running).length;
 
   const b1 = band1Decision('Decide', 'Approve this plan?', [
     `<b>${txt(slug)}</b>`,
     `<b>${nF('steps.total', total)}</b> step${total === 1 ? '' : 's'}`,
-    `${nF('steps.done', done)} done · ${nC(running)} running · ${nC(Math.max(0, total - done - running))} to go`,
+    running
+      ? `${nF('steps.done', done)} done · ${nC(running)} running · ${nC(Math.max(0, total - done - running))} to go`
+      : `${nF('steps.done', done)} done · ${nC(Math.max(0, total - done))} to go`,
   ]);
 
   const b2 = band2Facts('The facts you need to decide', [
