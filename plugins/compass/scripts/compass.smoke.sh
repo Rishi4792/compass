@@ -1346,7 +1346,8 @@ printf '<p class="lede">This release ships the rebuilt artefact layer so you can
 node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3d/lede.html" --copy >/dev/null 2>&1
 chk "$?" "1" "v0.30 R3-14: a hard slice in a paragraph is caught (the Release Card has no v fields)"
 # R3-09/R3-10 covered above with the insight-gate block; R3-22/23 — load-bearing files tracked
-for _f in scripts/reader-copy.mjs scripts/fixtures/portable/variants.txt scripts/fixtures/lockphrase.txt; do
+for _f in scripts/reader-copy.mjs scripts/fixtures/portable/variants.txt scripts/fixtures/lockphrase.txt \
+          scripts/fixtures/svg-labels/long-boxes/contract.md; do
   git -C "$PLUGIN_ROOT" ls-files --error-unmatch "$_f" >/dev/null 2>&1
   chk "$?" "0" "v0.30 R3-22/23: $_f is tracked (an untracked gate vanishes on a fresh clone)"
 done
@@ -2385,12 +2386,32 @@ fi
 # " (continues)" AFTER its cap, so a 34-character budget produced a 46-character string. And the
 # whole diagram emitted ONE control for ALL its boxes, which is the aggregation §9 cheat 4 names.
 # Measured across all 120 live pages: longest sub-label 68 -> 34, labels over the cap 27 -> 0.
+# v0.32.0 M-1 — all three of these assertions were VACUOUS. They ran over the tracked corpus, whose
+# six contracts carry only short mermaid node labels, so the diagram emitted ZERO sub-labels: the
+# first scored 0 over 0, and the other two compared 0 against 0. They would have passed against a
+# generator with the sub-label code deleted. `fixtures/svg-labels/long-boxes` exists to give them
+# something to measure — five sub-labels, four of them shortened — and it is deliberately NOT in
+# the tracked corpus, because adding a seventh build there would move every pinned reachability
+# figure. The VACUITY GUARD below is the part that matters: it fails if the population is ever
+# empty again, so this class of defect cannot come back quietly.
 if [ -f "$_GEN2" ] && command -v node >/dev/null 2>&1; then
   _sv="$(mktemp -d)"
-  for _d in "$PLUGIN_ROOT/scripts/fixtures/corpus"/*/; do
+  for _d in "$PLUGIN_ROOT/scripts/fixtures/corpus"/*/ "$PLUGIN_ROOT/scripts/fixtures/svg-labels"/*/; do
     [ -f "$_d/contract.md" ] || continue
     node "$_GEN2" "$_d" brief --out "$_sv/$(basename "$_d").html" >/dev/null 2>&1 || true
   done
+  # VACUITY GUARD, before any of the three. An assertion over an empty set is not a passing
+  # assertion, it is an absent one.
+  chk "$(node -e '
+    const fs=require("fs"), path=require("path");
+    let subs=0, rows=0;
+    for (const f of fs.readdirSync(process.argv[1])) {
+      const s=fs.readFileSync(path.join(process.argv[1],f),"utf8");
+      subs += (s.match(/<text[^>]*font-size="11"[^>]*>/g)||[]).length;
+      rows += (s.match(/class="svg-label-row"/g)||[]).length;
+    }
+    process.stdout.write(subs >= 4 && rows >= 4 ? "ok" : `EMPTY(subs=${subs},rows=${rows})`);
+  ' "$_sv" 2>/dev/null)" "ok" "v0.32 M-1: the three SVG sub-label assertions below have a NON-EMPTY population to measure — they scored 0 over 0 on the tracked corpus alone and would have passed with the code deleted"
   chk "$(node -e '
     const fs=require("fs"), path=require("path");
     let over=0, n=0;
