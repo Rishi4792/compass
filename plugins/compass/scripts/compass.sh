@@ -1008,7 +1008,7 @@ cmd_gold_numbers_gate() { # <slug|build-dir> — every number a page states is a
     local blk st sd bt bd
     blk="$(awk '/^ {0,3}`{3,}compass-artefact-data[ \t]*\r?$/{f=1;next} f&&/^ {0,3}`{3,}[ \t]*\r?$/{exit} f{print}' "$dir_res"/*.md 2>/dev/null)"
     if [ -n "$blk" ]; then
-      st="$(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX]\]/ { n++ } END { print n+0 }' "$dir_res/plan.md")"
+      st="$(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX~]\]/ { n++ } END { print n+0 }' "$dir_res/plan.md")"
       sd="$(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[xX]\]/ { n++ } END { print n+0 }' "$dir_res/plan.md")"
       bt="$(printf '%s' "$blk" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const b=JSON.parse(s);console.log(b["steps.total"]??"")}catch(e){console.log("")}})')"
       bd="$(printf '%s' "$blk" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const b=JSON.parse(s);console.log(b["steps.done"]??"")}catch(e){console.log("")}})')"
@@ -1751,7 +1751,7 @@ cmd_status() { # <build-dir>
   next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   # v0.24.0 (review-plan MAJOR-2): count ANY checkbox, not only '**S…' — numbered/**W-A1 plans
   # (v0.22/v0.23/this build) previously read 0/0. head -1 defends the grep-c "0\n0" tail.
-  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  total="$(grep -cE '^[[:space:]]*- \[[ x~]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
   done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
   lastpass="$( { grep -E '^## RECEIPT —' "$dir/receipts.md" 2>/dev/null | grep -i 'PASS' | tail -1 | sed -E 's/^## RECEIPT — //'; } || true)"
   echo "── Compass status: $slug ───────────────────────────"
@@ -1847,7 +1847,7 @@ cmd_cockpit() { # <build-dir>  — the pushed clarity surface (INV-COCKPIT/PUSH-
   echo "  $line"
   # step k/n + next (git-free; fixed checkbox regex)
   local total done_ next
-  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  total="$(grep -cE '^[[:space:]]*- \[[ x~]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
   done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
   next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$p" 2>/dev/null | head -1)"
   printf '  ▲ %s' "${cur:-done — all stages ✓}"
@@ -3434,7 +3434,7 @@ _orient_where_block() { # <build-dir>
     else strip="$strip$label ○  "; fi
   done
   local total done_ next goal
-  total="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  total="$(grep -cE '^[[:space:]]*- \[[ x~]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
   done_="$(grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
   next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | head -1)"
   goal="$(LC_ALL=C grep -F "$slug · " "$(dirname "$dir")/INDEX" 2>/dev/null | head -1 | LC_ALL=C sed -E 's/^[^·]+· ([^·]+) ·.*/\1/')"
@@ -3466,7 +3466,7 @@ _orient_multi_block() { # <state-root>
     [ -n "$slug" ] || continue
     local st tot dn; st=""
     for s in $LIFECYCLE; do if stage_pass "$sr/$slug" "$s"; then :; else st="$s"; break; fi; done
-    tot="$(grep -cE '^[[:space:]]*- \[[ x]\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; tot="${tot:-0}"
+    tot="$(grep -cE '^[[:space:]]*- \[[ x~]\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; tot="${tot:-0}"
     dn="$(grep -cE '^[[:space:]]*- \[x\] ' "$sr/$slug/plan.md" 2>/dev/null || true)"; dn="${dn:-0}"
     printf '  · %s — %s · step %s/%s\n' "$slug" "${st:-done}" "$dn" "$tot"
   done < <(_orient_active_rows "$sr")
@@ -3509,7 +3509,7 @@ cmd_progress_card() { # <build-dir>
     else
       if [ "$cur" = "0" ]; then states[$n]="running"; cur=$n; else states[$n]="pending"; fi
     fi
-  done < <(LC_ALL=C grep -E '^[[:space:]]*- \[[ x]\] ' "$plan" 2>/dev/null)
+  done < <(LC_ALL=C grep -E '^[[:space:]]*- \[[ x~]\] ' "$plan" 2>/dev/null)
   [ "$n" -gt 0 ] || { printf '── Plan · %s ───────────────────────────────────\n  (plan.md has no steps yet)\n────────────────────────────────────────────────────────\n' "$slug"; return 0; }
   local shown_cur="${cur:-$n}"; [ "$shown_cur" = "0" ] && shown_cur="$n"
   printf '── Plan · %s · step %s of %s ─────────────────────\n' "$slug" "$shown_cur" "$n"
@@ -3616,7 +3616,7 @@ cmd_rail() { # <build-dir> [--artefact <view>] [--url <url>] [--local <path>]
   local seg=""
   if [ -f "$dir/plan.md" ]; then
     local tot done_
-    tot="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null | head -1)"; tot="${tot:-0}"
+    tot="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x~]\] ' "$dir/plan.md" 2>/dev/null | head -1)"; tot="${tot:-0}"
     done_="$(LC_ALL=C grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null | head -1)"; done_="${done_:-0}"
     [ "${tot:-0}" -gt 0 ] 2>/dev/null && seg=" · step ${done_}/${tot}"
   fi
@@ -3718,7 +3718,7 @@ cmd_artefact_audit() { # <build-dir>
     case "$(basename "$f")" in
       plan-map.html) src="$d/plan.md"
                      extra="--bands"
-                     [ -f "$d/plan.md" ] && extra="$extra --steps $(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX]\]/ { n++ } END { print n+0 }' "$d/plan.md")" ;;
+                     [ -f "$d/plan.md" ] && extra="$extra --steps $(awk '/^[[:space:]]*```/ { f = !f; next } !f && /^[[:space:]]*- \[[ xX~]\]/ { n++ } END { print n+0 }' "$d/plan.md")" ;;
       # NOT --steps: the review page renders FINDINGS, not plan steps, so handing it the plan's count
       # asserts the wrong thing (it reported "body renders 43, --steps was given as 16"). Mine, from
       # copying the plan-map's invocation without checking what the page counts.
@@ -4249,7 +4249,7 @@ cmd_statusline() { # [<build-dir>]
   local slug cur="" total done_ next
   slug="$(basename "$dir")"
   for s in $LIFECYCLE; do if stage_pass "$dir" "$s"; then :; else cur="$s"; break; fi; done
-  total="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
+  total="$(LC_ALL=C grep -cE '^[[:space:]]*- \[[ x~]\] ' "$dir/plan.md" 2>/dev/null || true)"; total="${total:-0}"
   done_="$(LC_ALL=C grep -cE '^[[:space:]]*- \[x\] ' "$dir/plan.md" 2>/dev/null || true)"; done_="${done_:-0}"
   next="$(LC_ALL=C sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$dir/progress.md" 2>/dev/null | head -1 | cut -c1-40)"
   printf '%s · %s · step %s/%s · %s · %s\n' "$slug" "${cur:-done}" "$done_" "$total" "$(_orient_mode "$dir")" "${next:-—}"

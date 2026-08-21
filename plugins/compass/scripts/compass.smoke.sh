@@ -1815,17 +1815,52 @@ _v32li="$PLUGIN_ROOT/scripts/lossy-instrument.mjs"
 _v32corpus="$PLUGIN_ROOT/scripts/fixtures/corpus"
 if [ -f "$_v32li" ] && command -v node >/dev/null 2>&1; then
   _v32out="$(node "$_v32li" "$RR22" --corpus "$_v32corpus" --json 2>/dev/null || true)"
-  for _p in fieldText:and-N-more fieldText:continues-sentence fieldText:continues-hardcut \
-            closedRows.slice bullets.slice8 nowItems.slice6 firstPara firstBullet lineMatching.cap6 \
-            invariants.assertTail invariants.deferredReplaced doneMeans.goalSentence2 \
-            waiverReason.firstOnly; do
-    chk "$(printf '%s' "$_v32out" | node -e '
+  # v0.32 S1c — QUANTITIES, not just "it fires". An independent reviewer showed that asserting
+  # `events > 0` leaves every number free: four mutations moved the published headline (chars
+  # 375,761 -> 376,062; units 2,259 -> 2,039; events 1,111 -> 1,429) and the suite stayed 738/0.
+  # One of those mutations was this build's OWN headline correction — the cap6 char fix — which had
+  # no test behind it at all. Each path now pins events AND units over the TRACKED corpus, so any
+  # change to what the instrument counts has to be a deliberate edit to these numbers.
+  # Format: <path> <events> <units>
+  while read -r _p _we _wu; do
+    [ -n "$_p" ] || continue
+    _got="$(printf '%s' "$_v32out" | node -e '
       let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
-        try{ const j=JSON.parse(s); const k=process.argv[1];
-             process.stdout.write((j.paths&&j.paths[k]&&j.paths[k].events>0)?"1":"0"); }
-        catch{ process.stdout.write("0"); }
-      });' "$_p" 2>/dev/null)" "1" "v0.32 S1b: destroying path '$_p' fires on the tracked corpus"
-  done
+        try{ const j=JSON.parse(s); const k=process.argv[1]; const v=j.paths&&j.paths[k];
+             process.stdout.write(v?`${v.events} ${v.unitsDropped}`:"0 0"); }
+        catch{ process.stdout.write("0 0"); }
+      });' "$_p" 2>/dev/null)"
+    chk "$_got" "$_we $_wu" "v0.32 S1c: '$_p' drops exactly $_we events / $_wu units on the tracked corpus"
+  done <<'PATHS'
+fieldText:and-N-more 10 59
+fieldText:continues-sentence 2 2
+fieldText:continues-hardcut 24 24
+closedRows.slice 1 10
+bullets.slice8 1 4
+nowItems.slice6 1 3
+firstPara 12 38
+firstBullet 3 10
+lineMatching.cap6 1 2
+invariants.assertTail 16 16
+invariants.deferredReplaced 2 2
+doneMeans.goalSentence2 1 2
+waiverReason.firstOnly 1 2
+PATHS
+  # chars are pinned only where the two independent censuses AGREED. `lineMatching.cap6` is the one
+  # path whose char figure this build corrected (it counted the label line and the six KEPT lines as
+  # dropped), so it is pinned here specifically: reverting that correction must go red.
+  chk "$(printf '%s' "$_v32out" | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      try{ const j=JSON.parse(s); const v=j.paths&&j.paths["lineMatching.cap6"];
+           process.stdout.write(v?String(v.charsDropped):"none"); }
+      catch{ process.stdout.write("none"); }
+    });' 2>/dev/null)" "107" "v0.32 S1c: lineMatching.cap6 drops exactly 107 chars — the figure this build corrected, now pinned"
+  chk "$(printf '%s' "$_v32out" | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      try{ const j=JSON.parse(s); let e=0,u=0; for (const k of Object.keys(j.paths||{})) { e+=j.paths[k].events||0; u+=j.paths[k].unitsDropped||0; }
+           process.stdout.write(`${e} ${u} ${Object.keys(j.paths||{}).length}`); }
+      catch{ process.stdout.write("err"); }
+    });' 2>/dev/null)" "75 174 13" "v0.32 S1c: the tracked corpus totals 75 events / 174 units across exactly 13 paths (a 14th path appearing is a deliberate edit, never a surprise)"
   chk "$(printf '%s' "$_v32out" | node -e '
     let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
       try{ const j=JSON.parse(s); process.stdout.write(j.pagesFailed===0&&j.pagesRendered>0?"1":"0"); }
@@ -2056,6 +2091,30 @@ FBP
   rm -rf "$_FB"
 else
   chk "1" "1" "v0.32 S19 + S31: N/A — no node or no gen.mjs on this tree"
+fi
+
+# ── v0.32 S31b: every LIVE counter that reads plan checkboxes must give ONE answer ───────────
+# S31 taught the plan-map parser a new marker, `- [~]`, and left `compass.sh` (9 sites) on `[ x]`.
+# Same plan.md, two different totals — the self-contradiction §17-6 is about, introduced by the fix
+# for a different fabricated number. Found by an independent reviewer.
+# It named a THIRD counter, gen.mjs's `cockpit()`. That one is UNREACHABLE: `VIEWS` does not list
+# `cockpit`, and gen.mjs validates against VIEWS before dispatching, so the `else` branch holding it
+# can never run. Widened anyway (dead code that disagrees is still a trap for the next reader) and
+# recorded as a §17 candidate rather than asserted here — a check on unreachable code proves nothing.
+if [ -f "$_GEN" ] && command -v node >/dev/null 2>&1; then
+  _TL="$(mktemp -d)"
+  printf '# Plan\n- [x] **S1** done — VERIFY: ran.\n- [~] **S2** in flight — VERIFY: pending.\n- [ ] **S3** not started — VERIFY: pending.\n' > "$_TL/plan.md"
+  printf '# t\n\n**Status:** build\n**Stage:** build\n**Next:** S2\n' > "$_TL/progress.md"
+  printf '# Contract — t\n\nfacets: library\n\n## Goal & scope\n**Goal:** x.\n\n### NOW\n1. one\n' > "$_TL/contract.md"
+  _c1="$(bash "$SH" status "$_TL" 2>/dev/null | sed -n 's/^Steps:  *//p' | sed -E 's#^([0-9]+)/([0-9]+).*#\1 \2#')"
+  node "$_GEN" "$_TL" plan-map --out "$_TL/pm.html" >/dev/null 2>&1
+  _c2="$(sed -e 's/<[^>]*>//g' -e 's/&nbsp;/ /g' "$_TL/pm.html" 2>/dev/null | grep -oE '[0-9]+ steps +· +[0-9]+ done' | head -1 | sed -E 's#^([0-9]+) steps +· +([0-9]+) done#\2 \1#')"
+  chk "$_c1" "1 3" "v0.32 S31b: compass.sh counts a '[~]' step in the TOTAL (1 done of 3)"
+  chk "$_c2" "1 3" "v0.32 S31b: ...and gen.mjs's plan-map gives the SAME answer for the same plan.md"
+  chk "$(printf '%s\n%s\n' "$_c1" "$_c2" | sort -u | grep -c .)" "1" "v0.32 S31b: two independent readers of one plan.md return ONE answer"
+  # and the marker must not be counted as DONE — a step in flight is not a finished step
+  chk "$(sed -e 's/<[^>]*>//g' -e 's/&nbsp;/ /g' "$_TL/pm.html" 2>/dev/null | grep -oE '[0-9]+ running' | head -1)" "1 running" "v0.32 S31b: a '[~]' step counts as RUNNING, never as done"
+  rm -rf "$_TL"
 fi
 
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────

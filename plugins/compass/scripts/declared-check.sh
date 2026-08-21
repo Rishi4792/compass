@@ -39,7 +39,23 @@ for d in "$FX"/*/; do
   [ -n "$blk" ] || { echo "  FAIL $slug — carries no data block, so it exercises nothing"; fail=1; continue; }
   printf '%s' "$blk" > "$TMP/block.json"
 
-  node "$G" "$d" plan-map --out "$TMP/p.html" >/dev/null 2>&1 || { echo "  FAIL $slug — did not render"; fail=1; continue; }
+  # v0.32.0 S19b: the generator now REFUSES to render a page whose DECLARED number contradicts what
+  # it computes. For `lying` that refusal IS the catch — earlier and harder than the auditor's — so
+  # assert it here rather than reading a refusal as a broken fixture. For any other slug a refusal
+  # is still a failure.
+  if ! node "$G" "$d" plan-map --out "$TMP/p.html" >/dev/null 2>"$TMP/generr.txt"; then
+    if [ "$slug" = "lying" ] && grep -q 'disagrees with itself' "$TMP/generr.txt"; then
+      want_st="$(boxes "$d/plan.md")"
+      got_st="$(BLK="$TMP/block.json" node -e 'try{const b=JSON.parse(require("fs").readFileSync(process.env.BLK,"utf8"));console.log(b["steps.total"]??"")}catch(e){console.log("")}')"
+      if [ -n "$got_st" ] && [ "$got_st" != "$want_st" ]; then
+        echo "  ok   $slug — caught AT RENDER: the block declares steps.total=$got_st over a $want_st-step plan, and the generator refused to draw the page"
+      else
+        echo "  FAIL $slug — refused, but not for the declared-vs-computed reason this fixture exists to prove"; fail=1
+      fi
+      continue
+    fi
+    echo "  FAIL $slug — did not render"; fail=1; continue
+  fi
   cat "$d"/*.md > "$TMP/src.txt" 2>/dev/null
 
   read -r um mm bg nb us ns ml bp fb < <(PAGE="$TMP/p.html" BLOCK="$TMP/block.json" AUD="$AUD" SRC="$TMP/src.txt" node -e '
@@ -83,6 +99,38 @@ import(pathToFileURL(process.env.AUD).href).then(m=>{
     *) echo "  ok   $slug — rendered (unmarked=$um mismatch=$mm bogus=$bg)" ;;
   esac
 done
+
+# ── v0.32.0 S19b: the auditor's `mismatch` counter must keep a REAL witness ───────────────────
+# Round 7 found that counter had never scored a real page; `lying` became its witness. The generator
+# now refuses to render `lying` at all — a stronger control, but one that would leave the auditor
+# untested again, and the auditor is the defence for pages the generator did NOT produce: an older
+# version, or one edited by hand. So take a page the REAL generator made, corrupt ONE declared
+# number in it, and require the auditor to catch it.
+if node "$G" "$FX/honest" plan-map --out "$TMP/h.html" >/dev/null 2>&1; then
+  awk '/^ {0,3}`{3,}compass-artefact-data[ \t]*\r?$/{f=1;next} f&&/^ {0,3}`{3,}[ \t]*\r?$/{exit} f{print}' "$FX/honest"/*.md > "$TMP/hblock.json" 2>/dev/null
+  sed -e 's/data-prov="declared">3</data-prov="declared">77</' "$TMP/h.html" > "$TMP/tampered.html"
+  if cmp -s "$TMP/h.html" "$TMP/tampered.html"; then
+    echo "  FAIL witness — the tamper changed nothing, so this check proves nothing"; fail=1
+  else
+    cat "$FX/honest"/*.md > "$TMP/hsrc.txt" 2>/dev/null
+    _mm="$(PAGE="$TMP/tampered.html" BLOCK="$TMP/hblock.json" AUD="$AUD" SRC="$TMP/hsrc.txt" node -e '
+const {pathToFileURL}=require("node:url");
+import(pathToFileURL(process.env.AUD).href).then(m=>{
+  const fs=require("fs");
+  let b=null; try{ b=JSON.parse(fs.readFileSync(process.env.BLOCK,"utf8")); }catch(_){}
+  let src=""; try{ src=fs.readFileSync(process.env.SRC,"utf8"); }catch(_){}
+  const r=m.scorePage(fs.readFileSync(process.env.PAGE,"utf8"),"new",b,null,src);
+  console.log(r.mismatch);
+});' 2>/dev/null)"
+    case "${_mm:-}" in
+      ""|*[!0-9]*) echo "  ERR  witness — the auditor returned nothing"; fail=1 ;;
+      0)           echo "  FAIL witness — a page stating 77 where its block declares 3 was NOT caught by the auditor"; fail=1 ;;
+      *)           echo "  ok   witness — the auditor catches a real generated page whose declared number was altered to 77 (mismatch=$_mm)" ;;
+    esac
+  fi
+else
+  echo "  FAIL witness — the honest fixture did not render, so the auditor has no real page to score"; fail=1
+fi
 
 WANT=3
 [ "$n" -eq "$WANT" ] || { echo "declared: $n fixtures, expected $WANT — a case may be added, never quietly dropped"; fail=1; }

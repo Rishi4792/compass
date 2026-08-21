@@ -221,7 +221,13 @@ function nF(field, fallback) {
       // either rather than picking one and looking certain.
       // Measured BEFORE this became a refusal, over all 30 build folders x 4 views: exactly ONE
       // build disagreed (this one), so no historical build is newly refused.
-      if (typeof fallback === 'number' && Number.isFinite(fallback) && v !== fallback) {
+      // v0.32.0 S19b, after an independent reviewer showed the first form turned a WRONG page into
+      // a DEAD one. A computed 0 does not mean "there are none" — it means THIS PARSER COULD NOT
+      // READ THEM, which is a different statement and must not be treated as a contradiction.
+      // Refuse only when the page computed a real, non-zero figure that disagrees; when it computed
+      // nothing, render and DISCLOSE that it could not read them (see the invariant card below).
+      // That is this contract's own doctrine: where you cannot verify, disclose.
+      if (typeof fallback === 'number' && Number.isFinite(fallback) && fallback > 0 && v !== fallback) {
         console.error(`gen: '${field}' disagrees with itself — the compass-artefact-data block ` +
           `declares ${v}, this page computes ${fallback}. Fix whichever is wrong (the block lives ` +
           `in progress.md). A page may not state a number it contradicts elsewhere on itself.`);
@@ -1171,7 +1177,13 @@ function briefBody() {
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
         inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${txt(fieldText(i.summary, 150))}</td></tr>`).join('') + `</table>`)
-    : bandNA('The promises that can\u2019t break', 'this contract pins no INVARIANTs');
+    : (ARTEFACT_DATA && Number.isFinite(ARTEFACT_DATA['invariants.total']) && ARTEFACT_DATA['invariants.total'] > 0
+        // v0.32.0 S19b: "pins no INVARIANTs" is a CLAIM, and it was false on any contract whose
+        // invariant shape this parser does not know — it printed it beside a header stating a
+        // declared count of 12. Saying what actually happened is both true and more useful.
+        ? bandNA('The promises that can\u2019t break',
+            `this contract declares ${ARTEFACT_DATA['invariants.total']}, and this page could not read them \u2014 they are written in a shape the renderer does not parse, so they are not shown here rather than silently reported as none`)
+        : bandNA('The promises that can\u2019t break', 'this contract pins no INVARIANTs'));
 
   // ── restored behaviour (R2-M1 rule: a behavioural guard is re-expressed, never retired) ──
   // The rewrite initially dropped all of this and turned 9 asserts red. Each protects a
@@ -1281,8 +1293,11 @@ function cockpit() {
   })();
   const stage = (progress.match(/\*\*Stage:\*\*\s*(.+)/) || [, '—'])[1].trim();
   const next = (progress.match(/\*\*Next:\*\*\s*(.+)/) || [, '—'])[1].trim();
+  // v0.32.0 S31b: `total` must count a step marked IN FLIGHT too, or the cockpit's denominator
+  // disagrees with the plan-map's — the same self-contradiction §17-6 is about, introduced by the
+  // very change that added `[~]`. Found by an independent reviewer: three counters, three answers.
   const done = (plan.match(/^\s*- \[x\]/gim) || []).length;
-  const total = (plan.match(/^\s*- \[[ x]\]/gim) || []).length;
+  const total = (plan.match(/^\s*- \[[ x~]\]/gim) || []).length;
   const stages = ['contract', 'review-contract', 'plan', 'review-plan', 'build', 'review-build', 'ship'];
   const passed = new Set();
   for (const m of receipts.matchAll(/RECEIPT\s+[—-]\s+([a-z-]+)\s+·[^\n]*·\s*PASS/gi)) passed.add(m[1].toLowerCase());
@@ -1361,8 +1376,13 @@ function planMap() {
   const steps = [];
   let cur = null;
   for (const ln of plan.split('\n')) {
-    // v0.32.0 S31: `[~]` joins the alphabet. It is what this project's own progress files already
-    // use for a step in flight, and without it the running count below had nothing real to read.
+    // v0.32.0 S31: `[~]` joins the alphabet, because the running count below needs something real
+    // to read. CORRECTION (S31b, from an independent reviewer): the first version of this comment
+    // said `[~]` is "what this project's own progress files already use". That is true of the
+    // GITIGNORED progress.md files and false of every TRACKED file — `git grep -F '[~]'` finds only
+    // the test written for this change. The marker is therefore NEW, and the three counters that
+    // read plan checkboxes (here, `compass.sh`, and `cockpit()`) were widened together, because a
+    // marker only one of them knows is a self-contradiction of exactly the §17-6 kind.
     const m = ln.match(/^\s*-\s*\[([ x~])\]\s*(.+)$/);
     if (m) {
       const raw = m[2].replace(/\*\*/g, '').replace(/`/g, '');
@@ -1442,10 +1462,14 @@ function planMap() {
   const done = steps.filter((s2) => s2.done).length;
   const total = steps.length;
   // v0.32.0 S31 (pulled in by Rishi at the plan gate, 2026-08-20). This was `total > done ? 1 : 0`
-  // — a literal wearing a measurement's clothes. Every plan Compass has ever rendered claimed that
-  // EXACTLY ONE step was running, including plans where nothing had been started at all. It is now
-  // the count of steps a person actually marked in flight, and when nobody marked one the page
-  // says nothing about running rather than inventing a one.
+  // — a literal wearing a measurement's clothes: every plan with ANY unfinished step claimed that
+  // EXACTLY ONE of them was running, including plans where nothing had been started at all.
+  // CORRECTION (S31b, from an independent reviewer): my first wording said "every plan Compass has
+  // ever rendered". Measured over the 30 rendered plans, it is SEVEN — the other 23 are complete,
+  // so `total > done` is false and they correctly said 0. The defect is real and narrower than I
+  // wrote it, and the number is stated here rather than the claim left standing.
+  // It is now the count of steps a person actually marked in flight, and when nobody marked one
+  // the page says nothing about running rather than inventing a one.
   const running = steps.filter((s2) => s2.running).length;
 
   const b1 = band1Decision('Decide', 'Approve this plan?', [
