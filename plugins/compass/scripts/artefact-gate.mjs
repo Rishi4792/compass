@@ -373,6 +373,23 @@ if (argv.includes('--copy')) {
   }
 }
 
+// ── v0.32.0 S11, INV-DISCLOSE-UNVERIFIED — the PAGE half ──────────────────────────────────────
+// Contract §4: proving independence is impossible in this environment and Compass has stopped
+// claiming it can, so every review page carries the disclosure. This refuses one that does not.
+// The branch a page took is RECORDED either way (`review-disclosure` vs `review-disclosure-na`),
+// because a rule that silently skips is indistinguishable from a rule that passed — and this build
+// has already found four assertions scoring over an empty set.
+{
+  const isReview = /Compass\s*(?:·|&middot;|&#183;)\s*Review/i.test(html);
+  const said = /this review was NOT independently verified/i.test(html);
+  if (isReview) {
+    check('review-disclosure', said,
+      'a review page must say "this review was NOT independently verified" — contract §4 deleted the claim that independence can be proven here, and a page that stays silent reads as though it was');
+  } else {
+    pass.push('review-disclosure-na');
+  }
+}
+
 if (argv.includes('--json')) {
   console.log(JSON.stringify({ file, pass, fails }, null, 2));
 } else if (fails.length) {

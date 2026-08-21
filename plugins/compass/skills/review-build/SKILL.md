@@ -131,6 +131,7 @@ Round 1: all 6 groups → ledger + fixes; re-validate by RE-RUNNING commands. Ro
 ```
 ## RECEIPT — review-build · <slug> · PASS
 - [x] streams: review-build r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-build`, never from this receipt)
+- [x] this review was NOT independently verified — independence cannot be proven in this environment (contract §4); the same sentence is printed on the review page
 - [x] gate: build receipt OK; all 6 groups run
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint
 - [x] EDGERACE: boundary checklist + concurrency/TOCTOU applied (losing interleaving named, guard asserted), or N/A — no boundary or read-modify-write surface

@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh review-disclose-gate + artefact-gate.mjs
+rule=behaviour-must-hold
+why=a review that says nothing about whether it was independently verified reads exactly like one that was. Contract §4 deleted the claim that independence can be proven in this environment; INV-DISCLOSE-UNVERIFIED replaces it with a sentence that must appear on the page AND in the receipt. Silence was the default and nothing refused it.

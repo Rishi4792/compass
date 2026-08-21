@@ -51,6 +51,7 @@ Run the streams; log + apply fixes (surface intent questions, don't guess). One 
 - [x] gate: contract receipt OK (compass.sh gate → PASS)
 - [x] all streams run; ledger updated
 - [x] streams: review-contract r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-contract`, never from this receipt)
+- [x] this review was NOT independently verified — independence cannot be proven in this environment (contract §4); the same sentence is printed on the review page
 - [x] reconciliation independent+exact: grep `contract.md` → gold=<literal> provenance=<artifact>; tol=<…>
 - [x] 0 open Critical/Major; progress.md = Contract LOCKED
 ```

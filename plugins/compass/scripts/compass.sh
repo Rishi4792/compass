@@ -225,6 +225,51 @@ cmd_review_evidence_gate() {
   ok "review-evidence-gate '$(basename "$dir")' $rv r$round: $present of $total declared streams have a well-formed evidence file${cnv:+ · $cnv COULD-NOT-VERIFY, each with its spawn log}. Denominator read from the skill's own stream list, not from the receipt."
 }
 
+
+# ── v0.32.0 S11, INV-DISCLOSE-UNVERIFIED — the receipt half ─────────────────────────────────────
+# Contract §4, after Rishi's decision: proving independence is impossible in this environment, so
+# §8's "independence positively established" branch is UNREACHABLE by design and the disclosure is
+# unconditional. What this gate refuses is a review receipt that stays SILENT about it.
+# The page half lives in gen.mjs (`unverifiedBanner`), styled as a red-ruled block at the top of the
+# review page rather than muted small print — two cold readers walked past the previous treatment,
+# and moving it changed nothing, because a reader skips by style before position matters.
+# GUARD-FIRST: 20 of this repo's 31 build folders carry a review receipt written before this rule.
+# A receipt with no `streams:` line predates the format, N/A-PASSES, and SAYS SO.
+COMPASS_DISCLOSE_SENTENCE='this review was NOT independently verified'
+
+cmd_review_disclose_gate() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || die "review-disclose-gate: usage: review-disclose-gate <build-dir>"
+  local rec="$dir/receipts.md"
+  if [ ! -f "$rec" ]; then
+    ok "review-disclose-gate '$(basename "$dir")': N/A — no receipts.md, so there is no review receipt to check. NOT a statement that any review was independently verified."
+    return 0
+  fi
+  # In scope only where the new format is used. Matching on the `streams:` line rather than on the
+  # word "review" keeps the 20 pre-format receipts out without letting a NEW one opt out: the review
+  # skills emit both lines from one template, and smoke pins that they do.
+  local n_stream n_disc
+  n_stream="$(grep -cE '^-? *\[x\] *streams: *review-(contract|plan|build) ' "$rec" 2>/dev/null || true)"
+  n_stream="${n_stream:-0}"
+  if [ "$n_stream" -eq 0 ]; then
+    ok "review-disclose-gate '$(basename "$dir")': N/A — this receipt predates the per-stream format (no 'streams:' line), so the disclosure rule does not reach it. NOT a statement that the review was independently verified; the page still carries the banner."
+    return 0
+  fi
+  n_disc="$(grep -cF "$COMPASS_DISCLOSE_SENTENCE" "$rec" 2>/dev/null || true)"
+  n_disc="${n_disc:-0}"
+  # ONE rule, not two. A separate "at least one disclosure" check stood here and could never fire:
+  # n_stream is >= 1 by the time we reach this line, so "n_disc >= n_stream" already implies it.
+  # A branch that cannot fire looks like protection and is not, which is this build's own subject —
+  # so the two are merged and the message covers both shapes.
+  if [ "$n_disc" -lt "$n_stream" ]; then
+    if [ "$n_disc" -eq 0 ]; then
+      die "review-disclose-gate: the receipt records $n_stream review round(s) in the per-stream format and never says \"$COMPASS_DISCLOSE_SENTENCE\". Contract §4 deleted the claim that independence can be proven here; a receipt that stays silent reads as though it was. HARD STOP (INV-DISCLOSE-UNVERIFIED)."
+    fi
+    die "review-disclose-gate: $n_stream review round(s) recorded but only $n_disc disclosure line(s). Each round discloses for itself; one line cannot speak for a round written later. HARD STOP (INV-DISCLOSE-UNVERIFIED)."
+  fi
+  ok "review-disclose-gate '$(basename "$dir")': $n_disc disclosure line(s) for $n_stream recorded review round(s). The page carries the same sentence (gen.mjs unverifiedBanner)."
+}
+
 # ── INDEX / status ─────────────────────────────────────────────────────────
 # INDEX line: "slug · goal · status=X · ..."  — status field parsed loosely.
 build_status() { # <slug>
@@ -4568,6 +4613,7 @@ main() {
     progress-gate)     cmd_progress_gate "$@" ;;
     redfirst-check)    cmd_redfirst_check "$@" ;;
     review-streams)   cmd_review_streams "$@" ;;
+    review-disclose-gate) cmd_review_disclose_gate "$@" ;;
     review-evidence-gate) cmd_review_evidence_gate "$@" ;;
 
     copy-gate)         cmd_copy_gate "$@" ;;

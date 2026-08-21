@@ -788,6 +788,11 @@ const HOUSE_CSS = `
   .cv-body .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
     padding:4px 12px;border-radius:99px;color:var(--greenFg);background:var(--greenBg)}
   .cv-body .badge.warn{color:var(--amberFg);background:var(--amberBg)}
+  /* v0.32 S11 — the disclosure a reader cannot skip. Body-sized, bold lead, red rule down the
+     left. The previous treatment was muted small print and two cold readers walked past it. */
+  .cv-body .unver{margin:0 0 14px;padding:11px 14px;border-left:4px solid var(--redFg);
+    background:var(--redBg);color:var(--ink);font-size:13.5px;line-height:1.5;border-radius:0 6px 6px 0}
+  .cv-body .unver b{color:var(--redFg)}
   .cv-body table{width:100%;border-collapse:collapse;margin-top:6px}
   .cv-body th{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--kicker);
     text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -2159,6 +2164,32 @@ function parseLedger(text) {
   return out;
 }
 
+// ── v0.32.0 S11, INV-DISCLOSE-UNVERIFIED ──────────────────────────────────────────────────────
+// Contract §4, after Rishi's decision: PROVING INDEPENDENCE IS IMPOSSIBLE HERE, AND COMPASS WILL
+// STOP CLAIMING IT CAN. A reviewer subagent's capabilities are a strict subset of its caller's —
+// same user, same process — so a caller that can do everything the reviewer can, can impersonate
+// it perfectly. That was demonstrated, not argued: a reviewer forged a subagent transcript pair
+// and back-dated it in four shell lines with zero Agent calls.
+// So the "independence positively established" branch of §8's decision flow is UNREACHABLE by
+// design, and this banner is unconditional. It is not decoration: it carries a real number that
+// moves — how many per-stream evidence files are actually on record — so it cannot be read as
+// boilerplate, and a round with none says so in a different sentence than a round with six.
+// STYLING IS THE POINT. Two cold readers skipped the previous disclosure and moving it changed
+// nothing, because a reader skips by STYLE before position matters. This is a red-bordered block
+// at the top of the page in body-sized text, not a muted footnote at the bottom.
+function unverifiedBanner() {
+  let n = 0;
+  try {
+    n = readdirSync(join(dir, 'agents'))
+      .filter((f) => /^review-(contract|plan|build)-r\d+-.+\.md$/.test(f)).length;
+  } catch { n = 0; }
+  const detail = n > 0
+    ? `${n} per-stream reviewer evidence file${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'} on record. That shows the streams left a report \u2014 it does not show who wrote it, and Compass cannot.`
+    : 'No per-stream reviewer evidence files are on record at all, so there is nothing here even showing the streams ran.';
+  return `<div class="unver"><b>This review was NOT independently verified.</b> ${txt(detail)} `
+    + `Independence cannot be proven in this environment and Compass has stopped claiming otherwise `
+    + `(contract \u00a74).</div>`;
+}
 function reviewArtefact() {
   const led = read('review-ledger.md');
   const rows = parseLedger(led);
@@ -2308,7 +2339,7 @@ function reviewArtefact() {
       : unreadable
       ? '<div class="b-na"><b>Unreadable</b> — review-ledger.md has content, but no findings could be parsed from it. Read the file directly.</div>'
       : (list + moreRow) || '<div class="b-na"><b>N/A</b> — no ledger rows yet</div>', true);
-  return { body: `<section class="cv-body"><div class="wrap"><div class="kicker">Compass · Review</div>${b1}${b2}${b3}${b4}<div class="foot">Generated from review-ledger.md by compass-visual · a pure function of the build's state.</div></div></section>`, extra: _pillCss };
+  return { body: `<section class="cv-body"><div class="wrap"><div class="kicker">Compass · Review</div>${unverifiedBanner()}${b1}${b2}${b3}${b4}<div class="foot">Generated from review-ledger.md by compass-visual · a pure function of the build's state.</div></div></section>`, extra: _pillCss };
 }
 
 function releaseCard() {

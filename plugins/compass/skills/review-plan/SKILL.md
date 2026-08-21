@@ -92,6 +92,7 @@ Round 1: all 6 groups → ledger + fixes applied to `plan.md`. Rounds 2+: only t
 ```
 ## RECEIPT — review-plan · <slug> · PASS
 - [x] streams: review-plan r<round> -> <present> of <declared> (denominator from `compass.sh review-streams review-plan`, never from this receipt)
+- [x] this review was NOT independently verified — independence cannot be proven in this environment (contract §4); the same sentence is printed on the review page
 - [x] gate: plan receipt OK
 - [x] all 6 groups run; every INVARIANT → non-deferred bound-asserting check
 - [x] RBACSTRIDE: role×resource matrix asserted vs contract + IDOR probed (403/empty), or N/A — no new view/endpoint

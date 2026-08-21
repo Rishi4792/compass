@@ -2251,7 +2251,7 @@ elif [ -f "$_BCC" ]; then
   # disable identity pinning altogether.
   _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
   _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
-  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 17 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 17 entries (ADD-ONLY, so this floor rises and never falls)"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 18 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 18 entries (ADD-ONLY, so this floor rises and never falls)"
   _bmiss=0
   for _e in "$_BD"/*/; do
     # a CHEAT ships apply.sh (it patches the generator); a BEHAVIOUR entry ships case.sh (it builds
@@ -2532,6 +2532,44 @@ printf '# r
 bash "$_CS" review-evidence-gate "$_s10l" review-plan 1 >/dev/null 2>&1
 chk "$?" "1" "v0.32 S10: an agents/ directory with zero evidence files is REFUSED, whatever the receipt says"
 rm -rf "$_s10l"
+
+# ── v0.32 S11: INV-DISCLOSE-UNVERIFIED — the page AND the receipt ────────────────────────────
+# Contract §4 deleted the claim that independence can be proven in this environment, so §8's
+# "independence positively established" branch is unreachable by design and the disclosure is
+# unconditional. What is checked is that nothing stays SILENT about it.
+for _rv in review-contract review-plan review-build; do
+  chk "$(grep -cF 'this review was NOT independently verified' "$PLUGIN_ROOT/skills/$_rv/SKILL.md" || true)" "1" "v0.32 S11: $_rv's receipt template carries the disclosure — a new review inherits it from the template, not from remembering"
+done
+if command -v node >/dev/null 2>&1; then
+  _s11="$(mktemp -d)"; mkdir -p "$_s11/b"
+  printf '# Contract — d · v1\n\nfacets: library\n\n## Goal & scope\n**Goal:** a fixture.\n\n## Acceptance & INVARIANTs\n- **INV-X:** a thing. → *assert:* it holds.\n' > "$_s11/b/contract.md"
+  printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | Maj | OPEN |\n' > "$_s11/b/review-ledger.md"
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_s11/b" review --out "$_s11/r.html" >/dev/null 2>&1
+  # VACUITY GUARD first: an assertion about a page that was never written is an assertion about nothing.
+  chk "$([ -s "$_s11/r.html" ] && echo ok || echo MISSING)" "ok" "v0.32 S11: ...and there IS a rendered review page to check the disclosure on"
+  chk "$(grep -ci 'this review was NOT independently verified' "$_s11/r.html" || true)" "1" "v0.32 S11: the rendered review page carries the disclosure sentence"
+  # It must be styled as something a reader does not skip — two cold readers walked past the muted
+  # version, and moving it changed nothing, because a reader skips by style before position matters.
+  chk "$(grep -c 'class="unver"' "$_s11/r.html" || true)" "1" "v0.32 S11: ...in the banner class, not as muted small print at the foot"
+  _s11j="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_s11/r.html" --json 2>/dev/null || true)"
+  chk "$(printf '%s' "$_s11j" | grep -c '"review-disclosure"' || true)" "1" "v0.32 S11: artefact-gate RECORDS the disclosure rule passing on a review page"
+  sed 's/This review was NOT independently verified\.//' "$_s11/r.html" > "$_s11/silent.html"
+  _s11k="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_s11/silent.html" --json 2>/dev/null || true)"
+  chk "$(printf '%s' "$_s11k" | grep -c 'review-disclosure — ' || true)" "1" "v0.32 S11: ...and REFUSES a review page with the sentence stripped out"
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_s11/b" plan-map --out "$_s11/p.html" >/dev/null 2>&1
+  _s11m="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_s11/p.html" --json 2>/dev/null || true)"
+  chk "$(printf '%s' "$_s11m" | grep -c '"review-disclosure-na"' || true)" "1" "v0.32 S11: a NON-review page RECORDS the rule as N/A — a silent skip is indistinguishable from a pass"
+  rm -rf "$_s11"
+fi
+# GUARD-FIRST: 20 of this repo's 31 build folders carry a pre-format review receipt.
+_s11l="$(mktemp -d)"; printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] all streams run; ledger updated\n' > "$_s11l/receipts.md"
+_s11o="$(bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" 2>&1)"
+chk "$(printf '%s' "$_s11o" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S11: a receipt predating the per-stream format N/A-PASSES"
+chk "$(printf '%s' "$_s11o" | grep -c 'predates the per-stream format')" "1" "v0.32 S11: ...and SAYS SO, because a silent pass there reads as a clean bill"
+printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] streams: review-plan r1 -> 6 of 6\n' > "$_s11l/receipts.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S11: a per-stream-format receipt that says nothing about independence is REFUSED"
+rm -rf "$_s11l"
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
