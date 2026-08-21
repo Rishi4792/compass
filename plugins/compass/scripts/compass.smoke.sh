@@ -1816,7 +1816,9 @@ _v32corpus="$PLUGIN_ROOT/scripts/fixtures/corpus"
 if [ -f "$_v32li" ] && command -v node >/dev/null 2>&1; then
   _v32out="$(node "$_v32li" "$RR22" --corpus "$_v32corpus" --json 2>/dev/null || true)"
   for _p in fieldText:and-N-more fieldText:continues-sentence fieldText:continues-hardcut \
-            closedRows.slice bullets.slice8 nowItems.slice6 firstPara firstBullet lineMatching.cap6; do
+            closedRows.slice bullets.slice8 nowItems.slice6 firstPara firstBullet lineMatching.cap6 \
+            invariants.assertTail invariants.deferredReplaced doneMeans.goalSentence2 \
+            waiverReason.firstOnly; do
     chk "$(printf '%s' "$_v32out" | node -e '
       let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
         try{ const j=JSON.parse(s); const k=process.argv[1];

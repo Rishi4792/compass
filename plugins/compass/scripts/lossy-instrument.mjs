@@ -93,6 +93,14 @@ const S9 = {
   'firstPara':                   'section 9 — firstPara()',
   'firstBullet':                 'section 9 — firstBullet()',
   'lineMatching.cap6':           'NOT IN SECTION 9 — found by instrumenting the producer',
+  // v0.32 S1-REOPEN. Four more paths, none in section 9 and none in this instrument's first
+  // version. They were found by S2 — an independent census that read gen.mjs itself and never
+  // touched this file — which is exactly the disagreement step S2 exists to produce. Between
+  // them they destroy 235 more events than the first nine paths saw.
+  'invariants.assertTail':       'NOT IN SECTION 9 — the command that proves each invariant, split off unmarked',
+  'invariants.deferredReplaced': 'NOT IN SECTION 9 — a deferred invariant\'s own wording replaced wholesale',
+  'doneMeans.goalSentence2':     'NOT IN SECTION 9 — "Done means" falls back to goal sentence two; 3+ vanish',
+  'waiverReason.firstOnly':      'NOT IN SECTION 9 — the un-converged chip names only the first open finding',
 };
 
 const byPath = {};

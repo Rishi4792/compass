@@ -443,7 +443,12 @@ function invariants() {
     if (!m) continue;
     // drop ONLY the "→ *assert:*" recipe tail — NOT every internal arrow, or binding text is lost
     // (INV-COMMSCAN's "→ CRITICAL", INV-SUITES' full "→ 0 … → PASS" chain, INV-NO-LEAK) (R3-M2).
-    let summary = m[2].split(/→\s*\*?\s*assert/i)[0].replace(/\*/g, '').replace(/[:\s]+$/, '').trim();
+    // P10. NOT ENUMERATED IN CONTRACT SECTION 9, found by S2's independent census. This is the
+    // largest UNMARKED destroying path in the file by event count: the command that PROVES each
+    // invariant is split off here and reaches no rendered page, with nothing saying it was removed.
+    const _invParts = m[2].split(/→\s*\*?\s*assert/i);
+    let summary = _invParts[0].replace(/\*/g, '').replace(/[:\s]+$/, '').trim();
+    if (_invParts.length > 1) lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1);
     if (summary && !/[.!?)]$/.test(summary)) summary += '.';
     // A deferred INVARIANT carries a bookkeeping marker ("— original text retained …"); render
     // the deferral plainly instead of leaking the marker as if it were the assertion.
@@ -458,6 +463,9 @@ function invariants() {
       const what = kept ? kept[1].replace(/[.\s]+$/, '') : '';
       // ONE sentence, not two: a shared closing sentence is itself a repeated 40-char line, and
       // the copy gate counts sentences, not rows. Folding the clause in keeps each row unique.
+      // P11. NOT ENUMERATED IN SECTION 9. The page says "Not in this release" but never says the
+      // invariant's own wording was discarded to say it — a partial marker, not a full one.
+      lossy('invariants.deferredReplaced', 0, summary.length, 1);
       summary = what
         ? `Not in this release — ${what}; it ships with the work it governs, in ${defer[1]}.`
         : `Not in this release; it ships with the work it governs, in ${defer[1]}.`;
@@ -910,13 +918,19 @@ const lineMatching = (body, re) => {
       // (`rest.length < 6`), so a label with more than six content lines loses the remainder with
       // no marker. Found by instrumenting the producer, exactly as the durable lesson says: the
       // enumeration in the contract was itself derived from reading, and reading missed one.
-      let more = 0;
+      let more = 0, moreChars = 0;
       for (let j = i + 1 + rest.length; j < lines.length; j++) {
         if (/^#/.test(lines[j])) break;
-        if (clean(lines[j]).trim()) more++;
+        const _c = clean(lines[j]).trim();
+        if (_c) { more++; moreChars += _c.length; }
       }
       if (rest.length >= 6 && more > 0) {
-        lossy('lineMatching.cap6', rest.join('; ').length, lines.slice(i).join('\n').length, more);
+        // v0.32 S1-REOPEN. The `full` argument was `lines.slice(i).join('\n').length`, which counts
+        // the LABEL LINE and the six KEPT lines as if they were dropped, and compares a '; '-joined
+        // cleaned kept string against a '\n'-joined RAW one. Three ways wrong in one call, and it
+        // over-reported by exactly the 295 chars S2's independent census disagreed about. Chars
+        // dropped is now the dropped lines themselves. Events and units were always right.
+        lossy('lineMatching.cap6', 0, moreChars, more);
       }
       return `${first} ${rest.join('; ')}`;
     }
@@ -1071,10 +1085,20 @@ function briefBody() {
 
   // Each fact must answer a DIFFERENT question — a card that repeats its neighbour wastes
   // the one row a reader actually scans.
-  const doneMeans = firstNonEmpty([
+  // P12. NOT ENUMERATED IN SECTION 9. When a contract has no `## Done` section and no acceptance
+  // bullet, the Brief's "Done means" card is goal SENTENCE TWO — and sentences three onward are
+  // dropped with no marker. Candidates are materialised so the counter can tell whether this
+  // fallback was the one actually SELECTED; counting it unconditionally would over-report on every
+  // brief, since a JS array literal evaluates all of its elements either way.
+  const _goalSents = goal.split(/(?<=[.!?])\s/);
+  const _dmCands = [
     firstBullet(sec('Acceptance & INVARIANTs')), firstPara(sec('Done')),
-    (goal.split(/(?<=[.!?])\s/)[1] || ''), 'every INVARIANT below passes its command.',
-  ]);
+    (_goalSents[1] || ''), 'every INVARIANT below passes its command.',
+  ];
+  const doneMeans = firstNonEmpty(_dmCands);
+  if (_dmCands.findIndex((x) => x && String(x).trim()) === 2 && _goalSents.length > 2) {
+    lossy('doneMeans.goalSentence2', String(_goalSents[1]).length, _goalSents.slice(1).join(' ').length, _goalSents.length - 2);
+  }
   const goldLine = firstNonEmpty([
     lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i),
     firstBullet(sec('Reconciliation')), 'no reconciliation declared.',
@@ -1956,7 +1980,11 @@ function releaseCard() {
       const blk = (rb.split(/^## RECEIPT — review-build/m).pop() || '');
       const m = blk.match(/^- \[x\] converge-waiver: user-signed[^\n]*/m);
       if (!m || !/ACCEPTED WITH OPEN FINDINGS/.test(rb)) return '';
-      const why = (blk.match(/^- \[ \][^\n]*/m) || [''])[0].replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
+      // P13. NOT ENUMERATED IN SECTION 9, and it lands on the one chip whose whole job is to
+      // disclose what is still open: only the FIRST unchecked receipt line becomes the reason.
+      const _whyAll = blk.match(/^- \[ \][^\n]*/gm) || [];
+      if (_whyAll.length > 1) lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1);
+      const why = (_whyAll[0] || '').replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
       return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(fieldText(why, 120))}</span>`;
     })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nC(nowItems.length)} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
   </div>
