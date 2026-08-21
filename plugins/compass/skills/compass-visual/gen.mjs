@@ -2224,12 +2224,21 @@ function reviewArtefact() {
   // rendering as OPEN. A status that is stated but recognised by neither list is its own third
   // state — band 2 used to describe those rows as "states no status" while band 4 labelled them
   // OPEN, so the two bands of one page contradicted each other on five builds.
-  const CLOSED  = /(^|\b)(FIXED|RESOLVED|CLOSED|DONE|ACCEPTED|NOTED|WAIVED|OK|N\/A)\b/i;
-  const OPENISH = /^\s*\**\s*(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|FLAGGED|NEW|WONTFIX|WON'T[\s-]?FIX)\b/i;
+  // ── v0.32.0 S34 — THE BUCKETS ARE CONTRACT §7's, NOT THIS FILE'S ─────────────────────────────
+  // §7 enumerates all three lists and says PREFIX match. This file had grown its own, and they
+  // disagreed in both directions: it counted DONE / NOTED / WAIVED / OK as settled (§7 lists none
+  // of them, so they are UNREADABLE), and it counted WONTFIX as OPEN while §7 lists it as SETTLED.
+  // It also had no REFUTED, DUPLICATE, CARRIED, FUTURE, PARTIAL, OUTSTANDING or IN PROGRESS at all.
+  // A page cannot enumerate its own buckets and then report them as the contract's.
+  const CLOSED  = /^\s*\**\s*(FIXED|RESOLVED|CLOSED|ACCEPTED|REFUTED|N\/A|WONTFIX|WON'T[\s-]?FIX|DUPLICATE)/i;
+  const OPENISH = /^\s*\**\s*(OPEN|CARRIED|FUTURE|DEFERRED|PARTIAL|OUTSTANDING|PENDING|IN[\s-]?PROGRESS|TODO)/i;
   // An open-ish word ANYWHERE in the status, not only at the start. "m4 FIXED …; rest OPEN." was
   // read as closed and the row vanished from a list captioned as the complete set of what still
   // needs you. When a status says both, the honest reading is the one that keeps it visible.
-  const OPEN_ANYWHERE = /(^|\b)(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|FLAGGED|WONTFIX|WON'T[\s-]?FIX)\b/i;
+  // WONTFIX is deliberately NOT here: §7 lists it as SETTLED, and having it in both places made a
+  // settled row read as open. The rest keep the anywhere-match, because "m4 FIXED …; rest OPEN."
+  // was read as closed and the row vanished from a list captioned as the complete set.
+  const OPEN_ANYWHERE = /(^|\b)(OPEN|NOT[\s-]?FIXED|NOT[\s-]?CLOSED|UNFIXED|PENDING|TODO|DEFERRED|CARRIED|OUTSTANDING|IN[\s-]?PROGRESS)\b/i;
   const isClosed = (r) => r.status != null && r.status.trim() !== '' && !OPEN_ANYWHERE.test(r.status) && CLOSED.test(r.status);
   const isOpen   = (r) => r.status != null && (OPENISH.test(r.status) || OPEN_ANYWHERE.test(r.status));
   const isUnclear = (r) => !isClosed(r) && !isOpen(r);
@@ -2271,7 +2280,10 @@ function reviewArtefact() {
     { k: 'Where it came from', v: 'review-ledger.md.' },
   ] : [
     { k: 'How many', v: `${nF('findings.total', rows.length)} findings — ${nF('findings.critical', nCrit)} critical, ${nF('findings.major', nMaj)} major.` },
-    { k: 'How many closed', v: `${nF('findings.closed', fixed)} closed, ${nF('findings.open', open)} still open${unstated ? `, ${nC(unstated)} whose status this page could not read` : ''}.` },
+    // §7: "when any row is unreadable, states the honest RANGE". A single settled figure over a
+    // ledger with rows nobody could classify states a certainty the page does not have — the
+    // unreadable rows are settled or open and this page cannot tell which, so it says both bounds.
+    { k: 'How many closed', v: `${nF('findings.closed', fixed)} closed, ${nF('findings.open', open)} still open${unstated ? `, ${nC(unstated)} whose status this page could not read — so the honest range is ${nC(fixed)}\u2013${nC(fixed + unstated)} closed and ${nC(open)}\u2013${nC(open + unstated)} open, not a single figure` : ''}.` },
     { k: 'What that means', v: open ? 'Something was found and not fixed. Read the open rows before accepting.'
         : unstated ? 'Nothing is recorded as open, but some rows state no status — those are unresolved on the page, not resolved.'
         : 'Every finding was fixed and re-checked. Nothing is waiting on you.' },

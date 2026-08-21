@@ -1356,7 +1356,8 @@ node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r3d/lede.html" --copy >/dev/nul
 chk "$?" "1" "v0.30 R3-14: a hard slice in a paragraph is caught (the Release Card has no v fields)"
 # R3-09/R3-10 covered above with the insight-gate block; R3-22/23 — load-bearing files tracked
 for _f in scripts/reader-copy.mjs scripts/fixtures/portable/variants.txt scripts/fixtures/lockphrase.txt \
-          scripts/fixtures/svg-labels/long-boxes/contract.md; do
+          scripts/fixtures/svg-labels/long-boxes/contract.md \
+          scripts/fixtures/status-buckets/list-edges/review-ledger.md; do
   git -C "$PLUGIN_ROOT" ls-files --error-unmatch "$_f" >/dev/null 2>&1
   chk "$?" "0" "v0.30 R3-22/23: $_f is tracked (an untracked gate vanishes on a fresh clone)"
 done
@@ -2979,6 +2980,37 @@ if [ -f "$_CG" ]; then
   chk "${_cgr:-none}" "0" "v0.32 S35: ...and NO historical build is newly refused by any gate this build adds"
   chk "$(printf '%s' "$_cgo" | grep -c 'excluded   :')" "1" "v0.32 S35: ...and what it does NOT run is stated, not quietly dropped — a canary that cannot tell a NEW refusal from a pre-existing one reported 41 problems and hid the one that mattered"
   fi
+fi
+
+# ── v0.32 S34: §7's FALSE-CERTAINTY RULE ─────────────────────────────────────────────────────
+# §7 enumerates all three buckets and says PREFIX match, and gen.mjs had grown its own lists that
+# disagreed in BOTH directions: DONE / NOTED / WAIVED / OK counted as settled (§7 lists none of
+# them, so they are UNREADABLE), and WONTFIX counted as OPEN while §7 lists it as SETTLED.
+# The pinned corpus cannot exercise any of this — 39 rows over 2 builds, zero unreadable, and the
+# two lists agree on all 39. That is the fixture-shape problem this build keeps meeting, so the
+# cases get their own fixtures and the pinned reachability figures are left alone.
+_SB="$PLUGIN_ROOT/scripts/fixtures/status-buckets"
+if [ -d "$_SB" ] && command -v node >/dev/null 2>&1; then
+  _sbt="$(mktemp -d)"; _sbn=0
+  for _f in all-settled one-open one-unreadable list-edges; do
+    [ -d "$_SB/$_f" ] || continue
+    node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_SB/$_f" review --out "$_sbt/$_f.html" >/dev/null 2>&1
+    [ -s "$_sbt/$_f.html" ] && _sbn=$((_sbn+1))
+  done
+  chk "$_sbn" "4" "v0.32 S34: all four status-bucket fixtures render — the assertions below are about pages, so there had better be four"
+  _sbtxt() { sed -e 's/<[^>]*>/ /g' "$1" | tr -s ' \n' ' '; }
+  # 1. The all-clear is printed ONLY when every row is settled. Without this control, "never print
+  #    the all-clear" would be satisfied by never printing it at all.
+  chk "$(_sbtxt "$_sbt/all-settled.html" | grep -c 'Every finding was fixed and re-checked')" "1" "v0.32 S34: a ledger whose rows are ALL settled DOES print the all-clear (the control)"
+  chk "$(_sbtxt "$_sbt/one-open.html" | grep -c 'Every finding was fixed and re-checked')" "0" "v0.32 S34: one OPEN row and the all-clear is not printed"
+  chk "$(_sbtxt "$_sbt/one-unreadable.html" | grep -c 'Every finding was fixed and re-checked')" "0" "v0.32 S34: one UNREADABLE row and the all-clear is not printed either — unreadable is never folded into settled"
+  # 2. The RANGE, which §7 requires whenever any row is unreadable.
+  chk "$(_sbtxt "$_sbt/one-unreadable.html" | grep -c 'the honest range is')" "1" "v0.32 S34: ...and the page states the honest RANGE, because a single settled figure claims a certainty it does not have"
+  chk "$(_sbtxt "$_sbt/one-open.html" | grep -c 'the honest range is')" "0" "v0.32 S34: ...and does NOT state a range when every row is classifiable (the control — a range printed always is not a range)"
+  # 3. §7's LISTS, both directions, on one page: WONTFIX/REFUTED/DUPLICATE settled · CARRIED/PARTIAL/
+  #    IN PROGRESS/OUTSTANDING open · DONE/NOTED unreadable.
+  chk "$(_sbtxt "$_sbt/list-edges.html" | grep -oE '[0-9]+ closed, [0-9]+ still open, [0-9]+ whose status' | head -1)" "3 closed, 4 still open, 2 whose status" "v0.32 S34: the buckets are contract §7's enumerated lists — WONTFIX/REFUTED/DUPLICATE settled, CARRIED/PARTIAL/IN PROGRESS/OUTSTANDING open, DONE/NOTED unreadable"
+  rm -rf "$_sbt"
 fi
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
