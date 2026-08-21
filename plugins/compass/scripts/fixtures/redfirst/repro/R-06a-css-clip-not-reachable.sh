@@ -4,8 +4,12 @@ repro_mutate() {
   python3 - "$1/plugins/compass/scripts/reachable-argument.mjs" <<'PY'
 import io,sys
 p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
+# v0.32 S7b: clip detection now runs in TWO places — `reachableText` (what a reader can read) and
+# `visibleHtml` (which controls exist at all, added after a reviewer wrapped every control in
+# display:none and no figure moved). Disabling ONE leaves the other defending, so the reproduction
+# must disable BOTH or it stops isolating the thing it records.
 o="  const clipped = clippedIn || clippedClasses(html);"
-assert s.count(o)==1, "R-06a anchor moved"
+assert s.count(o)==2, "R-06a: expected 2 clip-detection sites, found %d" % s.count(o)
 io.open(p,'w',encoding='utf-8').write(s.replace(o,"  const clipped = new Set();"))
 PY
 }
