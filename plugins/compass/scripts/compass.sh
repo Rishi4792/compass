@@ -1791,6 +1791,44 @@ _crow_slug()   { printf '%s' "$1" | sed -E 's/^[[:space:]]+contract:[[:space:]]*
 _crow_status() { printf '%s' "$1" | sed -nE 's/.*· status=([a-z-]+).*/\1/p'; }
 _cockpit_glyph() { case "${1:-}" in shipped) printf '✓' ;; in-flight|in-review*) printf '◉' ;; *) printf '○' ;; esac; }
 
+# v0.32.0 S15 — INV-PLAIN-TERMINAL's own check. The invariant said the stage-end block carries four
+# elements and NOTHING asserted it; the options element was missing on every build in every mode.
+# A rule with no check is a sentence.
+cmd_cockpit_gate() { # <build-dir>
+  local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh cockpit-gate <build-dir>"
+  local out; out="$(cmd_cockpit "$dir" 2>&1)" || true
+  local missing=""
+  # 1. WHAT HAPPENED — the stage strip, with a glyph per stage.
+  printf '%s' "$out" | grep -q '^BUILD · ' || missing="$missing what-happened(the-stage-strip)"
+  # 2. WHERE YOU ARE — the ▲ marker.
+  printf '%s' "$out" | grep -q '▲ ' || missing="$missing where-you-are"
+  # 3. WHAT IS NEXT.
+  printf '%s' "$out" | grep -qE 'next:|all stages ✓' || missing="$missing what-is-next"
+  # 4. THE OPTIONS — and each must name a real command, not a category.
+  if printf '%s' "$out" | grep -q '▸ you can:'; then
+    printf '%s' "$out" | grep -q '/compass:go' || missing="$missing options(names-no-command)"
+  else
+    missing="$missing the-options"
+  fi
+  [ -z "$missing" ] || { echo "refuse: cockpit-element" >&2
+    die "cockpit-gate: the stage-end block is missing:$missing
+  Contract §7 — a stage-end block states what happened, where you are, what is next, and the options."; }
+  # The PLAIN-WORDS half needs the walkthrough skill to define a term where it is used. When that
+  # skill is absent the check N/A-passes AND SAYS SO — an unstated N/A is how a rule stops being
+  # enforced without anyone deciding to stop enforcing it.
+  # BOTH locations. `feynman-walkthrough` is a USER-level skill, not bundled in this plugin, so
+  # looking only inside the plugin would report N/A on every machine that HAS it — a permanent N/A
+  # is a rule quietly retired, which is the shape this build exists to catch.
+  local fey_p fey_u
+  fey_p="$(dirname "${BASH_SOURCE[0]}")/../skills/feynman-walkthrough"
+  fey_u="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/feynman-walkthrough"
+  if [ ! -d "$fey_p" ] && [ ! -d "$fey_u" ]; then
+    ok "cockpit-gate: all four elements present. Plain-words half N/A — /feynman-walkthrough is not installed on this tree, so no term-definition check ran. Stated, not skipped silently."
+    return 0
+  fi
+  ok "cockpit-gate: all four elements present (what happened · where you are · what is next · the options)."
+}
+
 cmd_cockpit() { # <build-dir>  — the pushed clarity surface (INV-COCKPIT/PUSH-STAGE/PUSH-RESUME)
   local dir="${1:-}"; [ -n "$dir" ] || die "usage: compass.sh cockpit <build-dir>"
   [ -d "$dir" ] || die "no such build dir: $dir"
@@ -1854,6 +1892,18 @@ cmd_cockpit() { # <build-dir>  — the pushed clarity surface (INV-COCKPIT/PUSH-
   [ "${total:-0}" -gt 0 ] 2>/dev/null && printf ' · step %s/%s' "${done_:-0}" "$total"
   [ -n "${next:-}" ] && printf ' · next: %s' "$next"
   printf '\n'
+  # ── v0.32.0 S15 (INV-PLAIN-TERMINAL) — THE FOURTH ELEMENT ──────────────────────────────────
+  # Contract §7: a stage-end block states what happened, WHERE YOU ARE, what is next, AND THE
+  # OPTIONS. Three of the four were here. The options were not, on any build, in any mode — so the
+  # surface that exists to tell a person what they can do never told them.
+  # Concrete commands, not a category: "your options" that names no command is the same defect one
+  # level up.
+  local _optslug="$slug"
+  printf '  ▸ you can:  '
+  printf 'continue → /compass:go'
+  printf '  ·  see where this stands → compass.sh status %s' "$dir"
+  printf '  ·  pick it up later → /compass:resume %s' "$_optslug"
+  printf '  ·  stop here — nothing is lost, the state is on disk\n'
   echo "────────────────────────────────────────────────────"
 }
 
@@ -4013,7 +4063,24 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
   if body="$(node "$rc_ex" --extract "$f" 2>/dev/null)"; then rcx=0; else rcx=$?; fi
   case "$rcx" in
     0) : ;;
-    3) ok "copy-gate: N/A — no compass-reader-copy block in $(basename "$f")."; return 0 ;;
+    3) # v0.32.0 S14 (§17 / contract §7). An ABSENT reader-copy block was an N/A-PASS, so on 27 of
+       # 30 contracts this gate printed a pass for a file it had not read one word of. "No block"
+       # is not "the copy is fine"; it is "there is no copy", and the rule exists because a reader
+       # met six words of insider shorthand in a row on a page nothing was checking.
+       #
+       # GUARD-FIRST, which is the v0.28 lesson: a gate that refuses 25 of 26 existing builds is a
+       # defect, not a standard. A contract that PREDATES this format N/A-passes AND SAYS SO. The
+       # marker is the `compass-format:` line `compass.sh new-build` writes. Measured over all 30
+       # build folders before the change: the three carrying that line are EXACTLY the three
+       # carrying a block, so this refuses none of them.
+       if grep -qE '^compass-format:' "$f" 2>/dev/null; then
+         echo "refuse: reader-copy" >&2
+         die "copy-gate: '$(basename "$f")' declares a compass-format but carries NO compass-reader-copy block.
+  A contract written to this format states its own reader copy; without it there is nothing to check
+  and this gate would be reporting a pass on an unread file."
+       fi
+       ok "copy-gate: N/A — '$(basename "$f")' predates the reader-copy format (it carries no 'compass-format:' line), so there is no block to check. Stated rather than passed silently."
+       return 0 ;;
     *) # malformed: a fence the author wrote that the parser cannot read. Reporting N/A here is how
        # an indented or 4-backtick block went unpoliced while the gate printed a pass.
        die "copy-gate: $(basename "$f") has a compass-reader-copy block that cannot be parsed:
@@ -4396,6 +4463,7 @@ main() {
     intake-gate)       cmd_intake_gate "$@" ;;
     intake-phase)      cmd_intake_phase "$@" ;;
     sketch-gate)       cmd_sketch_gate "$@" ;;
+    cockpit-gate)      cmd_cockpit_gate "$@" ;;
     restore-point)     cmd_restore_point "$@" ;;
     config-parity)     cmd_config_parity "$@" ;;
     schema-pin-gate)   cmd_schema_pin_gate "$@" ;;

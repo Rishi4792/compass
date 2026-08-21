@@ -2421,6 +2421,47 @@ if [ -f "$_GEN2" ] && command -v node >/dev/null 2>&1; then
   rm -rf "$_sv"
 fi
 
+# ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
+# So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
+# block" is not "the copy is fine". GUARD-FIRST (the v0.28 lesson): a contract that PREDATES the
+# format N/A-passes and SAYS SO. Measured before the change: the three contracts carrying a
+# `compass-format:` line are EXACTLY the three carrying a block, so this refuses none of them.
+_S14="$(mktemp -d)"
+printf '# Contract — t\n\ncompass-format: v0.30\n\n## Goal\nA thing.\n' > "$_S14/new.md"
+printf '# Contract — t\n\n## Goal\nA thing.\n' > "$_S14/old.md"
+bash "$SH" copy-gate "$_S14/new.md" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S14: a contract declaring a compass-format but carrying NO reader-copy block is REFUSED (it used to N/A-pass)"
+bash "$SH" copy-gate "$_S14/old.md" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S14: a contract that predates the format N/A-passes (guard-first — it would otherwise refuse 27 of 30 builds)"
+chk "$(bash "$SH" copy-gate "$_S14/old.md" 2>&1 | grep -c 'predates the reader-copy format')" "1" "v0.32 S14: ...and it SAYS why in words — an unstated N/A is a rule quietly retired"
+rm -rf "$_S14"
+
+# ── v0.32 S15 (INV-PLAIN-TERMINAL): the stage-end block carries all FOUR elements ─────────────
+# The invariant named four and NOTHING asserted them; the fourth — the options — was missing on
+# every build in every mode, so the surface that exists to tell a person what they can do never did.
+_S15="$(mktemp -d)/b"; mkdir -p "$_S15"
+printf '# t — progress\n\n**Status:** build\n**Stage:** build\n**Next:** S1 do the thing\n' > "$_S15/progress.md"
+printf '# Contract — t\n\nfacets: library\n' > "$_S15/contract.md"
+printf '# Plan\n- [x] **S1** a — VERIFY: ran.\n- [ ] **S2** b — VERIFY: pending.\n' > "$_S15/plan.md"
+_ck="$(bash "$SH" cockpit "$_S15" 2>&1)"
+chk "$(printf '%s' "$_ck" | grep -c '^BUILD · ')" "1" "v0.32 S15: element 1 of 4 — what happened (the stage strip)"
+chk "$(printf '%s' "$_ck" | grep -c '▲ ')" "1" "v0.32 S15: element 2 of 4 — where you are"
+chk "$([ "$(printf '%s' "$_ck" | grep -cE 'next:|all stages ✓')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.32 S15: element 3 of 4 — what is next"
+chk "$(printf '%s' "$_ck" | grep -c '▸ you can:')" "1" "v0.32 S15: element 4 of 4 — THE OPTIONS, which were absent on every build in every mode"
+chk "$(printf '%s' "$_ck" | grep -c '/compass:go')" "1" "v0.32 S15: ...and the options name a real COMMAND, not a category"
+bash "$SH" cockpit-gate "$_S15" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S15: cockpit-gate passes a block that carries all four"
+# it must REFUSE one that does not — proven by removing the element, not by assuming
+_S15M="$(mktemp -d)"; mkdir -p "$_S15M/scripts"
+sed -e "s|printf '  ▸ you can:  '|printf ''|" "$SH" > "$_S15M/scripts/compass.sh"
+cp -R "$(dirname "$SH")/fixtures" "$_S15M/scripts/" 2>/dev/null
+bash "$_S15M/scripts/compass.sh" cockpit-gate "$_S15" >/dev/null 2>&1
+chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S15: ...and REFUSES one with the options removed — the check can fail"
+rm -rf "$_S15M"
+# the plain-words half N/A-passes when the walkthrough skill is absent, AND says that it did
+chk "$(CLAUDE_CONFIG_DIR=/nonexistent-xyz bash "$SH" cockpit-gate "$_S15" 2>&1 | grep -c 'Plain-words half N/A')" "1" "v0.32 S15: with /feynman-walkthrough absent the plain-words half N/A-passes AND says so"
+rm -rf "$(dirname "$_S15")"
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
