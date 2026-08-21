@@ -1034,6 +1034,13 @@ mksk() { # <build-dir> <facets>
   mkdir -p "$1/sketch"
   printf '%s\n' "**Facets:** $2" '**deploy:** in scope — x' '**intake:** co-construct-v1' > "$1/contract.md"
   printf 'v1 · t · decision=layout · alternatives=A,B · picked=A · render=local · file=sketch/mock-v1.html\n' > "$1/sketch/LEDGER"
+  # v0.32.0 S21: the LEDGER names this artefact, so it must EXIST. Before S21 the `file=` field was
+  # decorative and every fixture below named a file that was never created — which is precisely the
+  # lie S21 refuses (§17-3: a build could record a mock, delete it, and still pass). The fixtures
+  # encoded the old broken assumption; they are corrected here rather than the check weakened.
+  # Each test's INTENT is unchanged: sk-none still reaches the mockup check, sk-pipe still reaches
+  # the Logic Map check, and sk-web's banner test still refuses with reason code `mockup`.
+  printf '<!-- COMPASS-MOCK slug=%s v=1 throwaway=true -->\n<div>THROWAWAY WIREFRAME — critique structure, not polish</div>\n' "$(basename "$1")" > "$1/sketch/mock-v1.html"
   printf '\n## RECEIPT — contract · fix · PASS\n- [x] done\n' > "$1/receipts.md"
 }
 # legacy N/A + escape N/A
@@ -1045,11 +1052,17 @@ SE="$SKR/sk-esc"; mksk "$SE" web; printf 'sketch: out-of-scope — tiny copy twe
 SW="$SKR/sk-web"; mksk "$SW" web
 printf '<!-- COMPASS-MOCK slug=sk-web v=1 throwaway=true -->\n<div>THROWAWAY WIREFRAME — critique structure, not polish</div>\n' > "$SW/sketch/mock-v1.html"
 printf 'mockup: sketch/mock-v1.html (ACCEPTED v1)\n' >> "$SW/contract.md"
+# v0.32.0 S21 (§17-4): the Logic Map check used to sit in the NON-WEB arm of the case, so a web
+# build never reached it. It now runs on both arms, and these two fixtures exercise the MOCKUP and
+# DESIGN-STANDARD paths — not the absence of a logic map — so they get one. The "no Logic Map is
+# refused" case is still asserted, by sk-pipe below, which deliberately has none.
+printf '\n## Logic Map\n```mermaid\nflowchart LR\n  a --> b\n```\n' >> "$SW/contract.md"
 ( cd "$SKR" && bash "$SH" sketch-gate sk-web ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: web + accepted mockup (line-1 marker + banner) → PASS"
 sed -i.bak 's/THROWAWAY WIREFRAME[^<]*//' "$SW/sketch/mock-v1.html"; rm -f "$SW/sketch/mock-v1.html.bak"
 ERR="$(cd "$SKR" && bash "$SH" sketch-gate sk-web 2>&1 >/dev/null)"; chk "$(printf '%s' "$ERR" | grep -c 'refuse: mockup')" "1" "INV-SKETCH refuse: banner stripped from the mockup"
 # web: design-standard path (decision 6)
 SD="$SKR/sk-std"; mksk "$SD" web; printf 'design-standard: rk-house-style\n' >> "$SD/contract.md"
+printf '\n## Logic Map\n```mermaid\nflowchart LR\n  a --> b\n```\n' >> "$SD/contract.md"
 ( cd "$SKR" && bash "$SH" sketch-gate sk-std ) >/dev/null 2>&1; chk "$?" "0" "INV-SKETCH: web + named design-standard (no mockup) → PASS (decision 6 both paths)"
 # web: neither
 SN="$SKR/sk-none"; mksk "$SN" web

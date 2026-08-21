@@ -2794,10 +2794,13 @@ cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tra
         [ -f "$dir/$_lf" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names artefact '$_lf' but the file is missing — a recorded sketch that is not on disk is not evidence."; }
         case "$_lf" in
           *.html)
+            # reason code stays `mockup`: a LEDGER-named .html failing the marker or the banner is
+            # the SAME defect the web arm already refused under that name, and callers and the
+            # selftest both key on it. Only a MISSING artefact is a new class.
             head -1 "$dir/$_lf" 2>/dev/null | grep -q '^<!-- COMPASS-MOCK slug=' \
-              || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the line-1 COMPASS-MOCK marker."; }
+              || { echo "refuse: mockup" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the line-1 COMPASS-MOCK marker."; }
             grep -q 'THROWAWAY WIREFRAME' "$dir/$_lf" 2>/dev/null \
-              || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the visible THROWAWAY banner."; }
+              || { echo "refuse: mockup" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the visible THROWAWAY banner."; }
             ;;
         esac
         ;;
