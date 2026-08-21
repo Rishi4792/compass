@@ -1285,10 +1285,19 @@ printf 'INV-1 value=8 target=0 RED\nINV-2 value=8 target=0 RED\n' > "$_r2d/rf/re
 bash "$PLUGIN_ROOT/scripts/compass.sh" redfirst-check "$_r2d/rf" >/dev/null 2>&1
 chk "$?" "1" "v0.30 R3-R2-9: evidence with no assert-invariants provenance header is refused"
 # R2-14 — the count claim, three ways past a case-sensitive digits-only regex
+# v0.32.0 M-1b, from an independent review. This asserted an EXIT CODE, and the stub page fails
+# four unrelated structural rules (band-detail-last, logic-block-present, logic-block-real,
+# no-mid-field-cut) — so a page carrying NO count claim at all exits 1 identically. Three assertions
+# measuring nothing about counts. The `--source` file was gitignored too, so it did not exist on a
+# clean clone. Now: a TRACKED source, and the gate must NAME the count rule for the guilty page and
+# must NOT name it for an innocent one that is otherwise byte-for-byte the same shape.
+_r2src="$PLUGIN_ROOT/scripts/fixtures/corpus/long-ledger/contract.md"
+printf '<html><body><p>covers the invariants here</p></body></html>' > "$_r2d/innocent.html"
+_r2neg="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r2d/innocent.html" --copy --source "$_r2src" 2>&1 | grep -c 'claimed-count-matches' || true)"
+chk "$_r2neg" "0" "v0.32 M-1b: a page making NO count claim is not accused of a false count — the control that shows the three assertions below are about counts"
 for _v in "11 INVARIANTs" "eleven invariants" "11 invariant checks"; do
   printf '<html><body><p>covers %s here</p></body></html>' "$_v" > "$_r2d/c.html"
-  node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r2d/c.html" --copy --source "$PLUGIN_ROOT/../../.claude/builds/artefact-clarity-rebuild-v0-30/contract.md" >/dev/null 2>&1
-  chk "$?" "1" "v0.30 R3-R2-14: a false count written as '$_v' is caught"
+  chk "$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_r2d/c.html" --copy --source "$_r2src" 2>&1 | grep -c 'claimed-count-matches' || true)" "1" "v0.30 R3-R2-14: a false count written as '$_v' is caught BY NAME"
 done
 # R2-16 — INV-5 must search the WHOLE plugin, not a hand-listed subset
 _inv="$_r2d/inv"; mkdir -p "$_inv/plugins"; cp -R "$PLUGIN_ROOT" "$_inv/plugins/compass" 2>/dev/null
@@ -1514,11 +1523,19 @@ psays "$_r2v/gb.html" 'selftest_passed = 349'
 chk "$?" "0" "v0.30 v11-R2-M3: a colon-terminated label keeps its content (the gold figures were dropped)"
 # R2-C4 — the Release Card must never advertise "0 changes"
 _zc=0
-for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
+# v0.32.0 M-1b, from an independent review. This loop read `.claude/builds/*/`, which is
+# GITIGNORED — so on a clean clone the glob matched nothing, the body never ran, and `_zc` was 0 by
+# construction. The assertion has been comparing 0 to 0 since it was written, in a check whose own
+# premise is "11 Release Cards did this". It now reads the TRACKED fixture corpus, and counts what
+# it rendered so an empty population is a failure rather than a pass.
+_r2n=0
+for _d in "$PLUGIN_ROOT/scripts/fixtures/corpus"/*/; do
   [ -f "$_d/contract.md" ] || continue
   node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_d" release-card --out "$_r2v/rc.html" >/dev/null 2>&1 || continue
+  _r2n=$((_r2n+1))
   psays "$_r2v/rc.html" '0 changes' && _zc=$((_zc+1))
 done
+chk "$([ "$_r2n" -ge 5 ] && echo ok || echo "EMPTY($_r2n)")" "ok" "v0.32 M-1b: ...and it rendered a Release Card to look at — this loop read a gitignored directory and scored 0 out of 0 on every clean clone"
 chk "$_zc" "0" "v0.30 v11-R2-C4: no Release Card says '0 changes' (11 did, one under a lede saying 'Five changes')"
 rm -rf "$_r2v"
 
@@ -1702,8 +1719,13 @@ chk "$?" "0" "v0.30 INV-A11Y: every token pair meets its contrast target in BOTH
 # The --html mode: contrast-check's own header says a token file "cannot show a bad pairing that
 # gen.mjs composes", and until now every caller passed the token file alone — the gate ran in the
 # weaker of its two modes, which is the mode its author documented as insufficient.
+# v0.32.0 M-1b: this rendered from `.claude/builds/`, which is gitignored. On a clean clone gen.mjs
+# exited 2 with "no contract.md", no page was written, and `--html` on a missing file fell back to
+# exactly the token-only mode the comment above calls insufficient. Render from a TRACKED fixture
+# and refuse to run the check at all unless a page actually exists.
 _ccd="$(mktemp -d)"
-node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$PLUGIN_ROOT/../../.claude/builds/artefact-clarity-rebuild-v0-30" brief-body --out "$_ccd/p.html" >/dev/null 2>&1
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$PLUGIN_ROOT/scripts/fixtures/corpus/long-ledger" brief-body --out "$_ccd/p.html" >/dev/null 2>&1
+chk "$([ -s "$_ccd/p.html" ] && echo ok || echo MISSING)" "ok" "v0.32 M-1b: ...and there IS a generated page to check the contrast against"
 node "$PLUGIN_ROOT/scripts/contrast-check.mjs" "$PLUGIN_ROOT/skills/compass-visual/themes/compass-artefact.json" --html "$_ccd/p.html" >/dev/null 2>&1
 chk "$?" "0" "v0.30 INV-A11Y: contrast checked against the GENERATED page, not the token file alone"
 rm -rf "$_ccd"
