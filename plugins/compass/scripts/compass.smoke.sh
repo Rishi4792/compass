@@ -2251,7 +2251,7 @@ elif [ -f "$_BCC" ]; then
   # disable identity pinning altogether.
   _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
   _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
-  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 18 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 18 entries (ADD-ONLY, so this floor rises and never falls)"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 19 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 19 entries (ADD-ONLY, so this floor rises and never falls)"
   _bmiss=0
   for _e in "$_BD"/*/; do
     # a CHEAT ships apply.sh (it patches the generator); a BEHAVIOUR entry ships case.sh (it builds
@@ -2898,6 +2898,32 @@ chk "$(grep -c 'Do not cite the chain log as proof of it' "$_S25F" || true)" "1"
 # The claim has to match the CODE, so this reads the code too: check-session-chain must not read
 # the contract or claim authorship.
 chk "$(sed -n "/^cmd_check_session_chain()/,/^}/p" "$PLUGIN_ROOT/scripts/compass.sh" | grep -c 'contract.md' || true)" "0" "v0.32 S25: ...and check-session-chain genuinely never reads contract.md, which is what makes the correction true rather than merely softer"
+
+# ── v0.32 S27: the kill switch, §12 ──────────────────────────────────────────────────────────
+# §12 documents COMPASS_V32_STRICT and then constrains it: "the flag may disable reporting gates,
+# but never the measurement the build is graded on, and closure is REFUSED while the flag is off."
+# Before this step the flag was read by NOTHING — zero references across all nine v0.32 checks,
+# except two comments saying it is deliberately not read. Both halves of §12 were unbacked.
+_v32d="$(mktemp -d)"; mkdir -p "$_v32d/b"; printf '# c\n' > "$_v32d/b/contract.md"
+_v32off="$(COMPASS_V32_STRICT=0 bash "$PLUGIN_ROOT/scripts/compass.sh" close "$_v32d/b" smoke-v32 2>&1 || true)"
+_v32on="$(bash "$PLUGIN_ROOT/scripts/compass.sh" close "$_v32d/b" smoke-v32 2>&1 || true)"
+chk "$(printf '%s' "$_v32off" | grep -c 'COMPASS_V32_STRICT is off')" "1" "v0.32 S27: closure is REFUSED while the kill switch is off, for the flag's OWN reason"
+chk "$(printf '%s' "$_v32off" | grep -c '§12')" "1" "v0.32 S27: ...and the refusal names §12, so a reader can tell it from any other refusal"
+chk "$(printf '%s' "$_v32off" | grep -c 'v32-strict=off')" "1" "v0.32 S27: ...and names the receipt stamp §12 requires"
+chk "$(printf '%s' "$_v32on" | grep -c 'COMPASS_V32_STRICT is off')" "0" "v0.32 S27: ...and with the flag ON that refusal does NOT appear — the guard is a switch, not a wall (the control)"
+_v32ab="$(COMPASS_V32_STRICT=0 bash "$PLUGIN_ROOT/scripts/compass.sh" close "$_v32d/b" smoke-v32 --abandon 2>&1 || true)"
+chk "$(printf '%s' "$_v32ab" | grep -c 'ABANDONED')" "1" "v0.32 S27: --abandon is still allowed with the flag off — cancelling claims nothing about a build, and blocking it would only strand it"
+rm -rf "$_v32d"
+# THE HALF §12 WAS WRITTEN FOR: the flag must never reach a measurement. Asserted about the CODE,
+# which is what makes it a fact rather than an intention. Round 2 of the contract review found a
+# design where the flag returned every new gate to an N/A-pass, including the one measuring the gold.
+_v32n=0
+for _f in reachable-argument.mjs reachable-argument-check.sh page-audit.mjs behaviour-corpus-check.sh evidence-shape-check.sh declared-check.sh defeat-corpus-check.sh redfirst-count.sh; do
+  [ -f "$PLUGIN_ROOT/scripts/$_f" ] || continue
+  _v32n=$((_v32n+1))
+  chk "$(grep -vE '^[[:space:]]*(#|//)' "$PLUGIN_ROOT/scripts/$_f" | grep -c 'COMPASS_V32_STRICT' || true)" "0" "v0.32 S27: $_f does not READ the kill switch in code, so it cannot be silenced by it"
+done
+chk "$([ "$_v32n" -ge 6 ] && echo ok || echo "ONLY:$_v32n")" "ok" "v0.32 S27: ...over a NON-EMPTY set of measurements (a loop over files that are not there would assert nothing)"
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No

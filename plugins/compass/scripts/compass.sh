@@ -1755,13 +1755,44 @@ set_index_status() { # <slug> <status>  — update the status= token on the slug
   sed -i.bak -E "/^${esc}[ ]/ s/status=[A-Za-z-]+/status=$2/" "$idx" 2>/dev/null && rm -f "$idx.bak" || true
 }
 
+# ── v0.32.0 S27 — THE KILL SWITCH, §12 ─────────────────────────────────────────────────────────
+# `COMPASS_V32_STRICT` is documented in §12 with a default of ON and a one-command disable. Round 2
+# of the contract review found the flag as first designed reintroduced the exact defect §12 exists
+# to remove: it returned EVERY new gate to an N/A-pass, including the one that measures the gold, so
+# one environment variable made every promise in the contract read green.
+#
+# The correction, in §12's own words: "the flag may disable reporting gates, but never the
+# measurement the build is graded on, and closure is REFUSED while the flag is off."
+#
+# Before this step NOTHING read the flag — measured over all nine v0.32 checks, zero references
+# except two comments saying it is deliberately not read. A kill switch that no code consults is a
+# paragraph, and so is the promise about what it cannot do. Both halves are now real:
+#   · closure is refused while it is off (here), and
+#   · smoke asserts NO v0.32 measurement reads it, which is what makes "it cannot silence the
+#     measurement" a fact about the code rather than an intention.
+_v32_strict_off() {
+  case "${COMPASS_V32_STRICT:-1}" in 0|off|OFF|false|FALSE|no|NO) return 0 ;; esac
+  return 1
+}
 cmd_close() { # <build-dir> <slug> [--abandon]
   local dir="$1" slug="$2" mode="${3:-}"
   if [ "$mode" = "--abandon" ]; then
     set_index_status "$slug" ROLLED-BACK
     ( cmd_dora_record "$dir" ROLLED-BACK ) >/dev/null 2>&1 || true   # v0.23: DORA record, additive — subshell so an internal die can't abort the close
-    ok "build '$slug' ABANDONED → status ROLLED-BACK (lifecycle-audit skipped); clearing state."
+    if _v32_strict_off; then
+      ok "build '$slug' ABANDONED → status ROLLED-BACK (lifecycle-audit skipped); clearing state. NOTE: COMPASS_V32_STRICT was OFF for this session (v32-strict=off) — abandoning claims nothing about the build, which is why it is allowed while closing is not."
+    else
+      ok "build '$slug' ABANDONED → status ROLLED-BACK (lifecycle-audit skipped); clearing state."
+    fi
   else
+    # §12: closure is REFUSED while the kill switch is off. A build closed with the strict checks
+    # disabled would carry a CLOSED status earned under weaker rules than the ones it is recorded
+    # against — which is the "one environment variable makes every promise read green" failure the
+    # section exists to stop. `--abandon` is deliberately still allowed above: cancelling a build
+    # claims nothing about it, and blocking the cancel would only strand it.
+    if _v32_strict_off; then
+      die "close: COMPASS_V32_STRICT is off, so this build's strict checks are disabled and closure is REFUSED (contract §12). Stamp 'v32-strict=off' on the receipt if this session genuinely ran with it off, then re-run with the flag ON — a CLOSED status must be earned under the rules it is recorded against. To cancel instead: compass.sh close '$dir' '$slug' --abandon"
+    fi
     # Terminal-status guard (v0.7.0): a normal close must pass the CLOSED lifecycle audit.
     cmd_lifecycle_audit "$dir" CLOSED >/dev/null 2>&1 || die "close: lifecycle-audit CLOSED failed — refusing to close an incomplete build. Inspect: compass.sh lifecycle-audit '$dir' CLOSED   (or cancel it: compass.sh close '$dir' '$slug' --abandon)."
     set_index_status "$slug" CLOSED

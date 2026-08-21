@@ -1,0 +1,4 @@
+kind=behaviour
+check=compass.sh close + the v0.32 measurements
+rule=behaviour-must-hold
+why=contract §12's kill switch had NO implementation at all. Measured over all nine v0.32 checks before this entry: zero references to COMPASS_V32_STRICT except two comments saying it is deliberately not read. So "the flag may disable reporting gates, but never the measurement, and closure is REFUSED while it is off" was a paragraph — one environment variable was documented as able to make every promise in the contract read green, and nothing stopped it because nothing implemented it either way.

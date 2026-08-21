@@ -7,6 +7,7 @@ control-padded-with-the-page  0936a87da51f12f2
 controls-piled-at-the-foot  4ff0a7f5e11f7a49
 css-clip  9c51779d4b3c54d6
 empty-control  03e59356871bbe89
+flag-off-still-closes  7cf99adf3ab1e58c
 hide-rows  19ca24d8829d23ec
 honest-fix-reaches-zero  be09587561703b4e
 one-control-per-page  70420e40233f085c
