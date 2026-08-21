@@ -2501,7 +2501,16 @@ chk "$(bash "$_CS" review-streams review-contract 2>/dev/null | grep -c .)" "8" 
 chk "$(bash "$_CS" review-streams review-plan 2>/dev/null | grep -c .)" "6" "v0.32 S10: review-plan declares exactly 6 streams"
 chk "$(bash "$_CS" review-streams review-build 2>/dev/null | grep -c .)" "6" "v0.32 S10: review-build declares exactly 6 streams"
 # ...and the ids are real ids, not the [A]..[F] letters contract §4 forbids as a denominator.
-chk "$(bash "$_CS" review-streams review-build 2>/dev/null | grep -cE '^[A-F]$' || true)" "0" "v0.32 S10: the stream ids are derived names, never a hardcoded letter range (contract §4)"
+# An independent reviewer showed the first version of this scored 0 over 0: deleting review-build's
+# list entirely made `review-streams` fail, print nothing, and the grep still counted 0 = PASS. It
+# also only ever checked review-build. Now: all three skills, and the count of ids is asserted
+# NON-ZERO in the same breath as the count of letters is asserted zero.
+for _rv in review-contract review-plan review-build; do
+  _ids="$(bash "$_CS" review-streams "$_rv" 2>/dev/null || true)"
+  _tot="$(printf '%s' "$_ids" | grep -c . || true)"
+  _ltr="$(printf '%s' "$_ids" | grep -cE '^[A-F]$' || true)"
+  chk "$([ "${_tot:-0}" -ge 3 ] && [ "${_ltr:-0}" -eq 0 ] && echo ok || echo "tot=${_tot:-0} letters=${_ltr:-0}")" "ok" "v0.32 S10: $_rv's ids are derived NAMES over a non-empty list, never the [A]..[F] letter range contract §4 forbids"
+done
 # An empty list is an ERR, never an empty denominator.
 _s10d="$(mktemp -d)"; mkdir -p "$_s10d/plugins/compass/scripts" "$_s10d/plugins/compass/skills/review-plan"
 cp "$_CS" "$_s10d/plugins/compass/scripts/" 2>/dev/null
@@ -2561,14 +2570,31 @@ if command -v node >/dev/null 2>&1; then
   chk "$(printf '%s' "$_s11m" | grep -c '"review-disclosure-na"' || true)" "1" "v0.32 S11: a NON-review page RECORDS the rule as N/A — a silent skip is indistinguishable from a pass"
   rm -rf "$_s11"
 fi
-# GUARD-FIRST: 20 of this repo's 31 build folders carry a pre-format review receipt.
+# GUARD-FIRST, re-measured after an independent reviewer showed the first figure was wrong: 30 of
+# this repo's 31 build folders carry a review receipt (the earlier note said 20, which was the count
+# of files containing the looser string "all streams run"). SCOPE is now the v0.30 `.compass-format`
+# stamp, NOT a line in the receipt — the reviewer showed five of seven natural ways to write the
+# `streams:` line took the rule out of scope, including backticks, which the skill's own template
+# uses on that very line. Scope decided by the thing being judged is the defect S10 exists to fix.
 _s11l="$(mktemp -d)"; printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] all streams run; ledger updated\n' > "$_s11l/receipts.md"
 _s11o="$(bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" 2>&1)"
-chk "$(printf '%s' "$_s11o" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S11: a receipt predating the per-stream format N/A-PASSES"
-chk "$(printf '%s' "$_s11o" | grep -c 'predates the per-stream format')" "1" "v0.32 S11: ...and SAYS SO, because a silent pass there reads as a clean bill"
-printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] streams: review-plan r1 -> 6 of 6\n' > "$_s11l/receipts.md"
+chk "$(printf '%s' "$_s11o" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S11: an UNSTAMPED build N/A-PASSES"
+chk "$(printf '%s' "$_s11o" | grep -c 'predates the rule')" "1" "v0.32 S11: ...and SAYS SO, because a silent pass there reads as a clean bill"
+# STAMPED and silent -> refused, however the streams line is written (or whether it is written).
+: > "$_s11l/.compass-format"
+for _w in '- [x] streams: review-plan r1 -> 6 of 6' '- [x] streams: `review-plan` r1 -> 6 of 6' '- **streams:** review-plan r1 -> 6 of 6' '- [x] all streams run; ledger updated'; do
+  printf '# r\n\n## RECEIPT — review-plan · t · PASS\n%s\n' "$_w" > "$_s11l/receipts.md"
+  bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 2>&1
+  chk "$?" "1" "v0.32 S11: a stamped review round that says nothing about independence is REFUSED — however its streams line is written"
+done
+# EACH ROUND DISCLOSES FOR ITSELF: round 1 saying it twice does not cover round 2.
+printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] this review was NOT independently verified\n- [x] this review was NOT independently verified\n\n## RECEIPT — review-build · t · PASS\n- [x] all streams run\n' > "$_s11l/receipts.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 2>&1
-chk "$?" "1" "v0.32 S11: a per-stream-format receipt that says nothing about independence is REFUSED"
+chk "$?" "1" "v0.32 S11: one round saying it TWICE does not cover a second round that says nothing — two global counts passed this"
+# ...and the honest version passes, or every refusal above is free.
+printf '# r\n\n## RECEIPT — review-plan · t · PASS\n- [x] this review was NOT independently verified\n\n## RECEIPT — review-build · t · PASS\n- [x] this review was NOT independently verified\n' > "$_s11l/receipts.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S11: two rounds that each disclose in their OWN block PASS (the control)"
 rm -rf "$_s11l"
 
 # ── v0.32 S16: THE WAKEUP COUNTER — the only part of v0.32 whose blast radius leaves the repo ──
@@ -2593,6 +2619,125 @@ chk "$([ "$(grep -n 'S16 — THE WAKEUP COUNTER' "$_HK" | head -1 | cut -d: -f1)
 # The "hook never exits 2" rule is NOT re-asserted here. v0.28's INV-ORIENT-DELIVERED already does
 # it and catches the same planted mutation (verified in this turn: planting a real `exit 2` reddens
 # both). A second assertion for the same property is noise that looks like coverage.
+
+# ── v0.32 S17: ARM THE ENGINE, AND SAY SO WHEN YOU CANNOT ────────────────────────────────────
+# Compass's own --auto stalls; the long-build skill is the engine that replaces that continuation
+# and S16's counter is what BOUNDS it. Arming it is a build decision, so it lives in progress.md
+# AND on the receipt. GUARD-FIRST, measured before the gate was written: 31 build folders, 4 with
+# the v0.30 stamp, 0 with an engine line — and after wiring, 31 pass / 0 refused.
+_ENG="$PLUGIN_ROOT/scripts/compass.sh"
+_eg="$(mktemp -d)"
+_mkeng() { # <dir> <progress-extra> <receipt-extra>
+  mkdir -p "$1"; : > "$1/.compass-format"
+  printf '# p\n\n**Status:** BUILDING\n%s\n' "$2" > "$1/progress.md"
+  printf '# r\n\n## RECEIPT — build · t · PASS\n%s\n' "$3" > "$1/receipts.md"
+}
+_ARMED='engine: long-build · armed=yes · cap=40 · counter=.compass-wakeups'
+_STAMP='- [x] engine: long-build armed, cap 40'
+# CONTROL FIRST — the gate must be able to PASS, or every refusal below proves nothing.
+_mkeng "$_eg/ok" "$_ARMED" "$_STAMP"
+bash "$_ENG" engine-gate "$_eg/ok" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S17: a build that arms the engine with a cap, in progress.md AND on the receipt, PASSES (the control — without it every refusal below is free)"
+# ...and the SAME fixture in auto mode passes identically: the rule is 'by default in auto AND
+# human-gated modes', so the two must not diverge.
+cp -R "$_eg/ok" "$_eg/okauto"; : > "$_eg/okauto/.auto-mode"
+bash "$_ENG" engine-gate "$_eg/okauto" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S17: ...and identically in AUTO mode — the engine is armed by default in both, not only where a human is watching"
+# no engine line at all
+_mkeng "$_eg/none" "" "$_STAMP"
+bash "$_ENG" engine-gate "$_eg/none" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S17: an active stamped build that records NO engine line is REFUSED"
+# armed but unbounded — the 2026-04-28 runaway shape
+_mkeng "$_eg/nocap" 'engine: long-build · armed=yes' "$_STAMP"
+bash "$_ENG" engine-gate "$_eg/nocap" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S17: 'armed' with no cap=N is REFUSED — an armed loop with no bound is the failure this exists to prevent"
+# in progress.md but never on the receipt
+_mkeng "$_eg/norec" "$_ARMED" '- [x] something else'
+bash "$_ENG" engine-gate "$_eg/norec" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S17: recorded in progress.md but never stamped on a receipt is REFUSED — progress.md is rewritten, the receipt is what survives"
+# the loop ran past its own bound
+_mkeng "$_eg/over" 'engine: long-build · armed=yes · cap=3' "$_STAMP"
+printf '1 t 0 x\n2 t 0 x\n7 t 0 x\n' > "$_eg/over/.compass-wakeups"
+bash "$_ENG" engine-gate "$_eg/over" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S17: a counter past the stated cap is REFUSED — the bound has to bite, not just be written down"
+# N/A branches, each of which must SAY which case it is: a bare PASS reads as 'armed'.
+_eo="$(bash "$_ENG" engine-gate "$_eg/none" 2>&1 || true)"
+_mkeng "$_eg/skillless" "" "$_STAMP"
+_eo2="$(COMPASS_ENGINE_SKILL_DIR=/nonexistent-xyz HOME=/nonexistent-xyz CLAUDE_PROJECT_DIR=/nonexistent-xyz bash "$_ENG" engine-gate "$_eg/skillless" 2>&1 || true)"
+chk "$(printf '%s' "$_eo2" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S17: with NO long-build skill installed the gate N/A-PASSES — it cannot demand a build arm an engine that is not there"
+chk "$(printf '%s' "$_eo2" | grep -c 'not installed on this machine')" "1" "v0.32 S17: ...and SAYS the skill is absent"
+chk "$(printf '%s' "$_eo2" | grep -c 'NOT a statement that this build is bounded')" "1" "v0.32 S17: ...and says explicitly what it is NOT claiming"
+mkdir -p "$_eg/legacy"; printf '# p\n\n**Status:** BUILDING\n' > "$_eg/legacy/progress.md"
+_eo3="$(bash "$_ENG" engine-gate "$_eg/legacy" 2>&1 || true)"
+chk "$(printf '%s' "$_eo3" | grep -c 'predates the engine rule')" "1" "v0.32 S17: a build with no v0.30 stamp N/A-PASSES and says it predates the rule"
+_mkeng "$_eg/shipped" "" "$_STAMP"; printf '# p\n\n**Status:** SHIPPED v0.30.0\n' > "$_eg/shipped/progress.md"
+_eo4="$(bash "$_ENG" engine-gate "$_eg/shipped" 2>&1 || true)"
+chk "$(printf '%s' "$_eo4" | grep -c 'has shipped, so its loop is over')" "1" "v0.32 S17: a SHIPPED build N/A-PASSES — demanding an engine line retroactively would be a gate rewriting history"
+rm -rf "$_eg"
+# And this repo's own live builds: the gate must refuse none of them.
+_egn=0; _egf=0
+for _d in "$PLUGIN_ROOT/../../.claude/builds"/*/; do
+  [ -d "$_d" ] || continue
+  _egn=$((_egn+1)); bash "$_ENG" engine-gate "$_d" >/dev/null 2>&1 || _egf=$((_egf+1))
+done
+chk "$([ "$_egn" -ge 5 ] && echo ok || echo "EMPTY:$_egn")" "ok" "v0.32 S17: ...over a NON-EMPTY population of real build folders (this loop reads a gitignored directory, so it can be empty on a clean clone)"
+chk "$_egf" "0" "v0.32 S17: ...and refuses none of them"
+
+# ── v0.32 S11b: two holes an independent reviewer opened in the disclosure ────────────────────
+if command -v node >/dev/null 2>&1; then
+  _s11b="$(mktemp -d)"; mkdir -p "$_s11b/b/agents"
+  printf '# Contract — d · v1\n\nfacets: library\n\n## Goal & scope\n**Goal:** a fixture.\n\n## Acceptance & INVARIANTs\n- **INV-X:** a thing. → *assert:* it holds.\n' > "$_s11b/b/contract.md"
+  printf '| Issue ID | Sev | Status |\n|---|---|---|\n| A-1 | Maj | OPEN |\n' > "$_s11b/b/review-ledger.md"
+  # (1) THE NUMBER WAS INFLATABLE WITH `touch`. Three files each holding the letter "x" made the
+  # banner say "3 evidence files are on record" about three files evidence-shape-check calls ABSENT.
+  for _f in s1 s2 s3; do printf 'x\n' > "$_s11b/b/agents/review-plan-r1-$_f.md"; done
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_s11b/b" review --out "$_s11b/junk.html" >/dev/null 2>&1
+  chk "$([ -s "$_s11b/junk.html" ] && echo ok || echo MISSING)" "ok" "v0.32 S11b: ...and a page was rendered to check it on"
+  chk "$(grep -c 'No per-stream reviewer evidence files are on record' "$_s11b/junk.html" || true)" "1" "v0.32 S11b: three malformed evidence files count as ZERO on the banner — contract §4 calls a file with no nonce/target-sha ABSENT, and the banner now agrees with the checker"
+  # ...and well-formed ones DO count, or the rule above is just 'always say none'.
+  for _f in s1 s2 s3; do printf 'nonce: n7f3a91c4e2b8d605x\nstream: %s\nreview: review-plan\nround: 1\ntarget-sha: 8e1fc84\nverdict: CLEAN\n' "$_f" > "$_s11b/b/agents/review-plan-r1-$_f.md"; done
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_s11b/b" review --out "$_s11b/good.html" >/dev/null 2>&1
+  chk "$(grep -c 'per-stream reviewer evidence files are on record' "$_s11b/good.html" || true)" "1" "v0.32 S11b: ...and three WELL-FORMED files do count (the control — without it 'always report none' would pass)"
+  # (2) THE PAGE DECIDED WHETHER THE RULE APPLIED TO IT. Renaming the kicker in the same edit that
+  # strips the sentence made artefact-gate record a PASS for a review page that says nothing.
+  sed -e 's/This review was NOT independently verified\.//' -e 's/Compass · Review/Compass · Findings/' "$_s11b/good.html" > "$_s11b/dodge.html"
+  _s11bj="$(node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_s11b/dodge.html" --json 2>/dev/null || true)"
+  chk "$(printf '%s' "$_s11bj" | grep -c '"review-disclosure-na"' || true)" "0" "v0.32 S11b: renaming the kicker does NOT take a review page out of the rule — the view is stamped in a machine field the page cannot edit away"
+  chk "$(printf '%s' "$_s11bj" | grep -c 'review-disclosure — ' || true)" "1" "v0.32 S11b: ...it is refused by name instead"
+  chk "$(grep -c 'name="compass-view" content="review"' "$_s11b/good.html" || true)" "1" "v0.32 S11b: ...and that machine field is actually emitted"
+  rm -rf "$_s11b"
+fi
+
+# ── v0.32 S10/S11c: A GATE NOBODY RUNS IS NOT A GATE ─────────────────────────────────────────
+# An independent reviewer's first and worst finding: neither review gate was invoked by any skill,
+# by cmd_gate, or by any hook — the only callers on the whole tree were the corpus fixtures and this
+# suite. Two steps built to replace the honour system left it exactly where it was. This repo has
+# made the same mistake before; the note beside gold-numbers-gate reads "the gold checks existed and
+# NOTHING CALLED THEM". So the WIRING is asserted, through `compass.sh gate` and nothing else.
+_wg="$(mktemp -d)"; mkdir -p "$_wg/b/agents"; : > "$_wg/b/.compass-format"
+printf '# p\n\n**Status:** BUILDING\nengine: long-build · armed=yes · cap=40\n' > "$_wg/b/progress.md"
+_wgrec() { printf '## RECEIPT — plan · x · PASS\n- [x] ok\n- [x] engine: long-build armed, cap 40\n\n## RECEIPT — review-plan · x · PASS\n%s\n' "$1" > "$_wg/b/receipts.md"; }
+# the honest control FIRST — the seam must be able to pass, or every refusal below is free
+for _s in $(bash "$PLUGIN_ROOT/scripts/compass.sh" review-streams review-plan 2>/dev/null); do
+  printf 'nonce: n7f3a91c4e2b8d605x\nstream: %s\nreview: review-plan\nround: 1\ntarget-sha: 8e1fc84\nverdict: CLEAN\n' "$_s" > "$_wg/b/agents/review-plan-r1-$_s.md"
+done
+_wgn="$(bash "$PLUGIN_ROOT/scripts/compass.sh" review-streams review-plan 2>/dev/null | grep -c .)"
+_wgrec "- [x] streams: review-plan r1 -> $_wgn of $_wgn
+- [x] this review was NOT independently verified"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_wg/b" review-plan >/dev/null 2>&1
+chk "$?" "0" "v0.32 S10/S11c: an honest review round PASSES through compass.sh gate (the control)"
+# ...now break the evidence. Only the WIRED evidence gate can catch this at the gate seam.
+rm -f "$_wg/b/agents"/review-plan-r1-*.md
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_wg/b" review-plan >/dev/null 2>&1
+chk "$?" "1" "v0.32 S10/S11c: a round CLAIMED with zero evidence files is refused BY compass.sh gate — not merely by a subcommand nothing calls"
+# ...and restore the evidence, then remove the disclosure.
+for _s in $(bash "$PLUGIN_ROOT/scripts/compass.sh" review-streams review-plan 2>/dev/null); do
+  printf 'nonce: n7f3a91c4e2b8d605x\nstream: %s\nreview: review-plan\nround: 1\ntarget-sha: 8e1fc84\nverdict: CLEAN\n' "$_s" > "$_wg/b/agents/review-plan-r1-$_s.md"
+done
+_wgrec "- [x] streams: review-plan r1 -> $_wgn of $_wgn"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_wg/b" review-plan >/dev/null 2>&1
+chk "$?" "1" "v0.32 S10/S11c: a review round that says nothing about independence is refused BY compass.sh gate"
+rm -rf "$_wg"
 
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No

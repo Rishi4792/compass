@@ -380,7 +380,15 @@ if (argv.includes('--copy')) {
 // because a rule that silently skips is indistinguishable from a rule that passed — and this build
 // has already found four assertions scoring over an empty set.
 {
-  const isReview = /Compass\s*(?:·|&middot;|&#183;)\s*Review/i.test(html);
+  // THE VIEW, not the kicker. This matched the display string "Compass · Review", so renaming the
+  // kicker to "Compass · Findings" in the same edit that strips the disclosure made this record a
+  // PASS for a review page that says nothing — found by an independent reviewer. The page does not
+  // get to decide whether the rule applies to it. The kicker is kept as a FALLBACK so a page from an
+  // older generator, which has no meta field, is still judged rather than waved through.
+  const _mv = (html.match(/<meta[^>]*name=["']compass-view["'][^>]*content=["']([^"']*)["']/i) || [])[1];
+  const isReview = _mv !== undefined
+    ? _mv.toLowerCase() === 'review'
+    : /Compass\s*(?:·|&middot;|&#183;)\s*Review/i.test(html);
   const said = /this review was NOT independently verified/i.test(html);
   if (isReview) {
     check('review-disclosure', said,

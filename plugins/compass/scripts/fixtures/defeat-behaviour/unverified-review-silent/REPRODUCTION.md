@@ -16,7 +16,7 @@ whether it was independently verified read exactly like one that was.
 1. a per-stream-format receipt carrying the sentence → PASSES;
 2. the same receipt without it → REFUSED;
 3. a receipt predating the format → N/A-PASSES **and says so**, including what it is not claiming.
-   20 of this repo's 31 build folders are in that state; a silent pass there reads as a clean bill;
+   30 of this repo's 31 build folders carry a review receipt and 27 are in that state; a silent pass there reads as a clean bill;
 4. two recorded rounds with one disclosure line → REFUSED. One sentence cannot speak for a round
    written after it.
 

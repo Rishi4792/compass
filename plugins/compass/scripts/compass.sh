@@ -135,8 +135,9 @@ cwd_slug() {
 
 
 # ── v0.32.0 S10 — THE STREAM LIST IS THE DENOMINATOR, AND IT IS NOT THE RECEIPT'S TO CHOOSE ─────
-# Measured on this repo before the gate was written: 31 build folders, 20 receipts carrying a
-# checked "all streams run; ledger updated" line, and exactly ONE folder with an agents/ directory
+# Measured on this repo before the gate was written: 31 build folders, 20 receipts carrying an
+# "all streams run" line — the exact literal "all streams run; ledger updated" is in 7 of them, a
+# correction an independent reviewer forced — and exactly ONE folder with an agents/ directory
 # in it. Twenty reviews recorded that every stream ran, with zero evidence files on disk, and no
 # check could tell the difference — because the only thing anything read was the receipt's own
 # claim about itself.
@@ -159,10 +160,24 @@ cmd_review_streams() { # <review>
   # An EMPTY list is an ERR, never an empty denominator. "0 of 0 streams present" is the vacuity
   # class this build keeps finding: an assertion that passes because it is measuring nothing.
   [ -n "$line" ] || die "review-streams: '$rv' declares no machine-readable stream list between the COMPASS-STREAMS markers. A review with no declared streams has no denominator, and 0 of 0 is not a pass."
-  local n=0 sid
-  for sid in $line; do n=$((n+1)); done
+  # PATHNAME EXPANSION OFF. An independent reviewer put `*` in the list and the declared count
+  # became whatever the current directory held — 3 in an empty dir, 29 in scripts/, 14 at the repo
+  # root. The denominator that "is not the receipt's to choose" was the shell's to choose.
+  # VALIDATE EVERYTHING, THEN PRINT. A first version checked inside the printing loop, so a list
+  # with a bad id in the middle emitted the ids before it and then died — a caller reading stdout
+  # got a partial denominator, which is worse than none.
+  local n=0 sid bad=""
+  set -f
+  for sid in $line; do
+    n=$((n+1))
+    case "$sid" in *'*'*|*'?'*|*'['*|*']'*) bad="$sid" ;; esac
+  done
+  set +f
+  [ -z "$bad" ] || die "review-streams: '$rv' declares a stream id containing a glob character ('$bad'). A stream id is a name, not a pattern — an unquoted one made the declared count depend on the current directory (3 in an empty dir, 29 in scripts/, 14 at the repo root)."
   [ "$n" -ge 3 ] || die "review-streams: '$rv' declares only $n stream(s). A fan-out of fewer than three is not a fan-out; if that is genuinely intended, it is a contract change, not a list edit."
+  set -f
   for sid in $line; do printf '%s\n' "$sid"; done
+  set +f
 }
 
 # review-evidence-gate <build-dir> <review> <round>
@@ -222,7 +237,7 @@ cmd_review_evidence_gate() {
     [ -s "$dir/agents/$rv-r$round-$sid.spawn.log" ] \
       || die "review-evidence-gate: stream '$sid' records COULD-NOT-VERIFY with no machine evidence of the failed spawn. Expected a non-empty $rv-r$round-$sid.spawn.log beside it. HARD STOP — COULD-NOT-VERIFY must cost more than writing the words."
   done
-  ok "review-evidence-gate '$(basename "$dir")' $rv r$round: $present of $total declared streams have a well-formed evidence file${cnv:+ · $cnv COULD-NOT-VERIFY, each with its spawn log}. Denominator read from the skill's own stream list, not from the receipt."
+  ok "review-evidence-gate '$(basename "$dir")' $rv r$round: $present of $total declared streams have a well-formed evidence file$( [ "$cnv" -gt 0 ] && printf ' · %s COULD-NOT-VERIFY, each with its spawn log' "$cnv" ). Denominator read from the skill's own stream list, not from the receipt."
 }
 
 
@@ -233,41 +248,159 @@ cmd_review_evidence_gate() {
 # The page half lives in gen.mjs (`unverifiedBanner`), styled as a red-ruled block at the top of the
 # review page rather than muted small print — two cold readers walked past the previous treatment,
 # and moving it changed nothing, because a reader skips by style before position matters.
-# GUARD-FIRST: 20 of this repo's 31 build folders carry a review receipt written before this rule.
-# A receipt with no `streams:` line predates the format, N/A-PASSES, and SAYS SO.
+# GUARD-FIRST, re-measured after an independent reviewer showed the first figure was wrong: 30 of
+# this repo's 31 build folders carry a review receipt, and the earlier note said 20. (20 was the
+# count of files containing the looser string "all streams run"; the exact literal it quoted appears
+# in 7.) A wrong number in the comment justifying a guard is this build's own subject.
 COMPASS_DISCLOSE_SENTENCE='this review was NOT independently verified'
 
 cmd_review_disclose_gate() { # <build-dir>
   local dir="${1:-}"
   [ -n "$dir" ] && [ -d "$dir" ] || die "review-disclose-gate: usage: review-disclose-gate <build-dir>"
+  local slug; slug="$(basename "$dir")"
+  # ── SCOPE IS NOT THE RECEIPT'S TO CHOOSE ────────────────────────────────────────────────────
+  # The first version keyed scope on a `streams:` line in the receipt, and an independent reviewer
+  # showed five of seven natural ways to write that line took the rule out of scope — including
+  # backticks, which the skill's own template uses on that very line. The gate then said, about a
+  # brand-new receipt, "this receipt predates the per-stream format". That is S10's own defect —
+  # "the denominator was the receipt's own claim about itself" — reintroduced one level up.
+  # The discriminator is now the v0.30 `.compass-format` stamp, which the review stage cannot author.
+  if [ ! -f "$dir/.compass-format" ]; then
+    ok "review-disclose-gate '$slug': N/A — no .compass-format stamp, so this build predates the rule. 30 of this repo's 31 build folders carry a review receipt and 27 are in this state. NOT a statement that any review was independently verified."
+    return 0
+  fi
   local rec="$dir/receipts.md"
   if [ ! -f "$rec" ]; then
-    ok "review-disclose-gate '$(basename "$dir")': N/A — no receipts.md, so there is no review receipt to check. NOT a statement that any review was independently verified."
+    ok "review-disclose-gate '$slug': N/A — no receipts.md, so there is no review receipt to check."
     return 0
   fi
-  # In scope only where the new format is used. Matching on the `streams:` line rather than on the
-  # word "review" keeps the 20 pre-format receipts out without letting a NEW one opt out: the review
-  # skills emit both lines from one template, and smoke pins that they do.
-  local n_stream n_disc
-  n_stream="$(grep -cE '^-? *\[x\] *streams: *review-(contract|plan|build) ' "$rec" 2>/dev/null || true)"
-  n_stream="${n_stream:-0}"
-  if [ "$n_stream" -eq 0 ]; then
-    ok "review-disclose-gate '$(basename "$dir")': N/A — this receipt predates the per-stream format (no 'streams:' line), so the disclosure rule does not reach it. NOT a statement that the review was independently verified; the page still carries the banner."
+  case "$(head -c 400 "$dir/progress.md" 2>/dev/null || true)" in
+    *SHIPPED*|*CLOSED*|*'status=shipped'*)
+      ok "review-disclose-gate '$slug': N/A — this build has shipped; adding the sentence to its receipts now would be back-dating, not disclosure."
+      return 0 ;;
+  esac
+  # ── EACH ROUND DISCLOSES FOR ITSELF ─────────────────────────────────────────────────────────
+  # The first version compared two GLOBAL counts, so a round that said nothing passed because
+  # another round said it twice. Blocks are split on the receipt heading and each review block is
+  # checked in its own right.
+  local silent="" total=0
+  local blk="" head=""
+  while IFS= read -r ln || [ -n "$ln" ]; do
+    case "$ln" in
+      '## RECEIPT — '*)
+        if [ -n "$head" ]; then
+          case "$head" in review-*)
+            total=$((total+1))
+            case "$blk" in *"$COMPASS_DISCLOSE_SENTENCE"*) : ;; *) silent="$silent $head" ;; esac ;;
+          esac
+        fi
+        head="${ln#'## RECEIPT — '}"; head="${head%% *}"; blk="" ;;
+      *) blk="$blk
+$ln" ;;
+    esac
+  done < "$rec"
+  if [ -n "$head" ]; then
+    case "$head" in review-*)
+      total=$((total+1))
+      case "$blk" in *"$COMPASS_DISCLOSE_SENTENCE"*) : ;; *) silent="$silent $head" ;; esac ;;
+    esac
+  fi
+  if [ "$total" -eq 0 ]; then
+    ok "review-disclose-gate '$slug': N/A — no review receipt block on a stamped, unshipped build. Nothing is claimed about independence because no review is recorded."
     return 0
   fi
-  n_disc="$(grep -cF "$COMPASS_DISCLOSE_SENTENCE" "$rec" 2>/dev/null || true)"
-  n_disc="${n_disc:-0}"
-  # ONE rule, not two. A separate "at least one disclosure" check stood here and could never fire:
-  # n_stream is >= 1 by the time we reach this line, so "n_disc >= n_stream" already implies it.
-  # A branch that cannot fire looks like protection and is not, which is this build's own subject —
-  # so the two are merged and the message covers both shapes.
-  if [ "$n_disc" -lt "$n_stream" ]; then
-    if [ "$n_disc" -eq 0 ]; then
-      die "review-disclose-gate: the receipt records $n_stream review round(s) in the per-stream format and never says \"$COMPASS_DISCLOSE_SENTENCE\". Contract §4 deleted the claim that independence can be proven here; a receipt that stays silent reads as though it was. HARD STOP (INV-DISCLOSE-UNVERIFIED)."
-    fi
-    die "review-disclose-gate: $n_stream review round(s) recorded but only $n_disc disclosure line(s). Each round discloses for itself; one line cannot speak for a round written later. HARD STOP (INV-DISCLOSE-UNVERIFIED)."
+  [ -z "$silent" ] || die "review-disclose-gate: $total review round(s) recorded and these say nothing about independence:$silent. Contract §4 deleted the claim that independence can be proven here; a round that stays silent reads as though it was verified. Each round discloses for ITSELF — one line elsewhere in the file does not speak for it. HARD STOP (INV-DISCLOSE-UNVERIFIED)."
+  ok "review-disclose-gate '$slug': all $total recorded review round(s) disclose in their own block. The page carries the same sentence (gen.mjs unverifiedBanner)."
+}
+
+
+# ── v0.32.0 S17 — ARM THE ENGINE, AND SAY SO WHEN YOU CANNOT ────────────────────────────────────
+# Compass's own `--auto` stalls: it finishes a step, writes a paragraph and waits. The long-build
+# skill is the engine that replaces that continuation, and S16's counter is what BOUNDS it. Arming
+# it is therefore a build-level decision that belongs in progress.md and on the receipt, in both
+# auto and human-gated modes — a loop nobody recorded is a loop nobody can audit or stop.
+#
+# GUARD-FIRST, measured on this repo before the gate was written: 31 build folders, 4 carrying the
+# v0.30 `.compass-format` stamp, 0 with an `engine:` line. So the gate arms on the STAMP — the same
+# discriminator mode-gate uses — and the other 27 N/A-pass and say so.
+#
+# AND IT N/A-PASSES WHEN THE SKILL IS ABSENT. You cannot arm an engine that is not installed, and
+# refusing a build for that would be a gate demanding the user install something to pass. It says
+# which case it is, in words, because "PASS" alone reads as "armed" and it is not.
+_engine_skill_present() {
+  local d
+  for d in "${COMPASS_ENGINE_SKILL_DIR:-}" \
+           "${CLAUDE_PROJECT_DIR:-$PWD}/.claude/skills/long-build" \
+           "$HOME/.claude/skills/long-build"; do
+    [ -n "$d" ] || continue
+    [ -f "$d/SKILL.md" ] && { printf '%s' "$d"; return 0; }
+  done
+  return 1
+}
+
+cmd_engine_gate() { # <build-dir>
+  local dir="${1:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || die "engine-gate: usage: engine-gate <build-dir>"
+  local slug; slug="$(basename "$dir")"
+  if [ ! -f "$dir/.compass-format" ]; then
+    ok "engine-gate '$slug': N/A — no .compass-format stamp, so this build predates the engine rule (27 of this repo's 31 build folders do). NOT a statement that a loop is armed or bounded."
+    return 0
   fi
-  ok "review-disclose-gate '$(basename "$dir")': $n_disc disclosure line(s) for $n_stream recorded review round(s). The page carries the same sentence (gen.mjs unverifiedBanner)."
+  local skilldir
+  if ! skilldir="$(_engine_skill_present)"; then
+    ok "engine-gate '$slug': N/A — the long-build skill is not installed on this machine, so there is no engine to arm. NOT a statement that this build is bounded; it runs on Compass's own continuation, which stalls."
+    return 0
+  fi
+  # ── SCOPE, in the order the states actually occur ─────────────────────────────────────────
+  # The engine is armed at the BUILD stage, so the seam is a BUILD receipt. Two guard-first misses
+  # in a row taught this: measuring the 31 folders on disk said 31 pass / 0 refused, and a
+  # brand-new build still went red — because a build is a SEQUENCE OF STATES and only its last one
+  # is on disk. A contract-stage receipt is not build work, and this test has to come before any
+  # progress.md test, because a build at contract lock has receipts and no progress.md yet.
+  # The seam is the PLAN receipt, not the build receipt: building begins when the plan locks, and
+  # the build-stage receipt is not written until the stage ENDS. Keying on it left a build that is
+  # visibly mid-build — plan locked, twenty-odd steps committed — reading "has not started looping".
+  if [ ! -f "$dir/receipts.md" ] || ! grep -qE '^## RECEIPT — (plan|build|ship)' "$dir/receipts.md" 2>/dev/null; then
+    ok "engine-gate '$slug': N/A — the plan is not locked yet, so this build has not started looping. The engine is armed once building begins, not at contract lock."
+    return 0
+  fi
+  local prog="$dir/progress.md"
+  # No progress.md, no loop. The engine exists to BOUND a long-build loop and progress.md is that
+  # loop's state, so a build without one is not looping — it is being driven a step at a time by a
+  # human. Dying here made engine-gate refuse a legitimate v0.30 post-ship fixture, which is a gate
+  # reaching outside its own remit.
+  if [ ! -f "$prog" ]; then
+    ok "engine-gate '$slug': N/A — no progress.md, so there is no loop state to bound. NOT a statement that a loop is armed."
+    return 0
+  fi
+  # A FINISHED build's loop is over. Demanding it record an engine retroactively would be a gate
+  # rewriting history — and two of this repo's four stamped builds shipped before this rule existed.
+  case "$(head -c 400 "$prog" 2>/dev/null || true)" in
+    *SHIPPED*|*CLOSED*|*'status=shipped'*)
+      ok "engine-gate '$slug': N/A — this build has shipped, so its loop is over and there is nothing left to bound. NOT a retroactive claim that it was."
+      return 0 ;;
+  esac
+  local line; line="$(LC_ALL=C sed -nE 's/^engine:[[:space:]]*(.+)$/\1/p' "$prog" | head -1)"
+  [ -n "$line" ] || die "engine-gate: '$slug' records no 'engine:' line in progress.md. The long-build skill is installed at $skilldir, so the engine is available and its arming is a decision this build must state. HARD STOP (S17)."
+  # BOUNDED, and bounded by a NUMBER. "armed" on its own is the unbounded loop the 2026-04-28
+  # runaway was — 1.16B tokens spent re-scheduling. A cap is what makes arming safe to record.
+  local cap; cap="$(printf '%s' "$line" | LC_ALL=C sed -nE 's/.*cap=([0-9]+).*/\1/p' | head -1)"
+  case "${cap:-}" in
+    ''|*[!0-9]*) die "engine-gate: '$slug' arms the engine but states no cap=<N>. An armed loop with no bound is the failure this gate exists to prevent. HARD STOP (S17)." ;;
+  esac
+  [ "$cap" -ge 1 ] || die "engine-gate: '$slug' states cap=$cap. A cap below 1 arms nothing."
+  # The receipt must carry it too. progress.md is working state and gets rewritten; the receipt is
+  # the record. One without the other is half a record.
+  local rec="$dir/receipts.md"
+  [ -f "$rec" ] && grep -qE '^-? *\[x\] *engine: ' "$rec" \
+    || die "engine-gate: '$slug' records the engine in progress.md but never stamps it on a receipt. progress.md is working state and is rewritten; the receipt is what survives. HARD STOP (S17)."
+  # And if S16's counter exists, it must not already be past the cap.
+  local ctr="$dir/.compass-wakeups" n=0
+  if [ -f "$ctr" ]; then
+    n="$(LC_ALL=C awk '{ if ($1+0 > m) m = $1+0 } END { print m+0 }' "$ctr" 2>/dev/null || printf '0')"
+    [ "$n" -le "$cap" ] || die "engine-gate: '$slug' is at wakeup $n against a stated cap of $cap. The loop ran past its own bound. HARD STOP (S17)."
+  fi
+  ok "engine-gate '$slug': engine armed and BOUNDED — cap=$cap, counter at $n, recorded in progress.md and stamped on a receipt. Skill found at $skilldir."
 }
 
 # ── INDEX / status ─────────────────────────────────────────────────────────
@@ -757,6 +890,35 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_mode_gate >/dev/null 2>&1; then
       cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
     fi
+  fi
+
+  # v0.32.0 S17 — a gate nobody runs is not a gate, so the engine check rides the same seam as
+  # mode-gate. It N/A-passes a legacy dir, a parked one, a shipped one, and a machine with no
+  # long-build skill installed, so wiring it here refuses nothing that was passing before.
+  if type cmd_engine_gate >/dev/null 2>&1; then
+      cmd_engine_gate "$dir" >/dev/null || die "gate: engine-gate FAILED for '$dir' (see stderr)."
+  fi
+  # ── v0.32.0 S10/S11 — A GATE NOBODY RUNS IS NOT A GATE ────────────────────────────────────
+  # An independent reviewer's first finding: neither review gate was invoked by any skill, by
+  # cmd_gate, or by any hook. The only callers on the whole tree were the corpus fixtures and the
+  # smoke suite. Two steps built to replace the honour system left it exactly where it was — one
+  # extra template line a model is trusted to type. They ride this seam now.
+  # Blast radius measured before wiring: review-disclose-gate over all 31 build folders = 31 pass,
+  # 0 refused; review-evidence-gate likewise, because both N/A-pass legacy, shipped and unstarted
+  # builds and say which case it is.
+  if type cmd_review_disclose_gate >/dev/null 2>&1; then
+      cmd_review_disclose_gate "$dir" >/dev/null || die "gate: review-disclose-gate FAILED for '$dir' (see stderr)."
+  fi
+  # And every round the receipt CLAIMS must have the evidence it claims. The rounds come from the
+  # receipt, but what they are checked against does not — that is the whole point of S10.
+  if type cmd_review_evidence_gate >/dev/null 2>&1 && [ -f "$dir/receipts.md" ]; then
+      while IFS=' ' read -r _rv _rd; do
+        [ -n "$_rv" ] && [ -n "$_rd" ] || continue
+        cmd_review_evidence_gate "$dir" "$_rv" "$_rd" >/dev/null \
+          || die "gate: review-evidence-gate FAILED for '$dir' $_rv r$_rd (see stderr)."
+      done <<EOF_STREAMS
+$(LC_ALL=C sed -nE 's/^[-* ]*\[[xX ]\] *streams: *.?(review-(contract|plan|build)).? +r([0-9]+).*/\1 \3/p' "$dir/receipts.md" 2>/dev/null | sort -u)
+EOF_STREAMS
   fi
   # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED, checked when the work is
   # handed on as DONE. It was wired to the CONTRACT seam, which cannot work: evidence of a
@@ -4613,6 +4775,7 @@ main() {
     progress-gate)     cmd_progress_gate "$@" ;;
     redfirst-check)    cmd_redfirst_check "$@" ;;
     review-streams)   cmd_review_streams "$@" ;;
+    engine-gate)      cmd_engine_gate "$@" ;;
     review-disclose-gate) cmd_review_disclose_gate "$@" ;;
     review-evidence-gate) cmd_review_evidence_gate "$@" ;;
 

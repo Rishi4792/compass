@@ -2178,10 +2178,19 @@ function parseLedger(text) {
 // nothing, because a reader skips by STYLE before position matters. This is a red-bordered block
 // at the top of the page in body-sized text, not a muted footnote at the bottom.
 function unverifiedBanner() {
+  // WELL-FORMED files only. An independent reviewer created three files each containing the single
+  // letter "x" and the banner reported "3 per-stream reviewer evidence files are on record" about
+  // three files this project's own `evidence-shape-check.sh` calls ABSENT. A number meant to stop
+  // the sentence reading as boilerplate was inflatable with `touch`. Contract §4's own rule — a file
+  // missing `nonce` or `target-sha` is treated as ABSENT, not as a pass — is applied here too.
   let n = 0;
   try {
-    n = readdirSync(join(dir, 'agents'))
-      .filter((f) => /^review-(contract|plan|build)-r\d+-.+\.md$/.test(f)).length;
+    for (const f of readdirSync(join(dir, 'agents'))) {
+      if (!/^review-(contract|plan|build)-r\d+-.+\.md$/.test(f)) continue;
+      let body = '';
+      try { body = readFileSync(join(dir, 'agents', f), 'utf8'); } catch { continue; }
+      if (/^\s*[-*]?\s*\**nonce\**\s*:\s*\S/mi.test(body) && /^\s*[-*]?\s*\**target-sha\**\s*:\s*\S/mi.test(body)) n++;
+    }
   } catch { n = 0; }
   const detail = n > 0
     ? `${n} per-stream reviewer evidence file${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'} on record. That shows the streams left a report \u2014 it does not show who wrote it, and Compass cannot.`
@@ -2427,6 +2436,11 @@ function releaseCard() {
 // of it — inside the body. One file, two destinations: it must be a fragment.
 // Line 1 is now `<title>`; the leak tracer's real property is that line 1 is NEVER a
 // `<!-- COMPASS-MOCK` marker, and that still holds.
+// v0.32.0, from an independent review: `artefact-gate` decided a page was a review page by matching
+// the KICKER TEXT ("Compass · Review"). Renaming the kicker to "Compass · Findings" in the same edit
+// that strips the disclosure made the gate record a PASS for a review page that says nothing. The
+// page must not get to decide whether the rule applies to it, so the VIEW is stamped in a machine
+// field the generator writes from its own argv and no display edit touches.
 function page(styleBlocks, bodyMarkup) {
   // CR-15. `title` is contract.md's first heading, so using it for every view named the Review page,
   // the Plan Map and the Release Card all "Contract — <slug>" — in the browser tab and, because that
@@ -2437,7 +2451,7 @@ function page(styleBlocks, bodyMarkup) {
   const VIEW_NAME = { brief: 'Contract', 'brief-body': 'Contract', 'plan-map': 'Plan',
                       review: 'Review', 'release-card': 'Release' };
   const pageName = VIEW_NAME[view] ? `${VIEW_NAME[view]} — ${slug}` : title;
-  return `<title>${esc(demd(pageName))} · compass-visual</title>
+  return `<meta name="compass-view" content="${esc(String(view || ''))}">\n<title>${esc(demd(pageName))} · compass-visual</title>
 <style>${styleBlocks}</style>
 ${bodyMarkup}
 `;
