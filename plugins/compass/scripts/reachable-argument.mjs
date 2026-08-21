@@ -180,9 +180,18 @@ function normalise(t) {
 }
 
 // Which disclosure control, if any, holds a given probe — so cheat 4 can be caught.
+// Each control, with the reachable text that PRECEDES it — back to the end of the previous control.
+// That preceding slice is what ties a control to a row: an honest control sits directly after the
+// shortened text it discloses, and an aggregation sits after everything, with no row's shown text
+// immediately before it.
 function controlsFor(html, clipped) {
   const out = [];
-  for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) out.push({ start: m.index, text: reachableText(m[0], clipped) });
+  let prevEnd = 0;
+  for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) {
+    const before = reachableText(html.slice(prevEnd, m.index), clipped);
+    out.push({ start: m.index, text: reachableText(m[0], clipped), before: before.slice(-600) });
+    prevEnd = m.index + m[0].length;
+  }
   return out;
 }
 
@@ -203,6 +212,7 @@ for (const d of dirs) {
 }
 
 let probesTotal = 0, unreachable = 0, reachable = 0, dumped = 0, unitsSeen = 0, inControl = 0, inFlowOnly = 0;
+const unbindable = new Set();
 // ── the SECOND measure, and the reason it exists ─────────────────────────────────────────────
 // The probe measure above is keyed to what the generator REPORTS dropping. That denominator moves:
 // hide a whole ledger row and the field truncations inside it never happen, so the count FALLS
@@ -245,25 +255,71 @@ for (const p of pages) {
       const b = (byPath[r.site] ||= { probes: 0, reachable: 0, unreachable: 0 });
       b.probes++;
       if (probe.length < 12) { placed.push({ r, probe, ci: -1, inFlow: false, b }); continue; }
+      // v0.32 S6b: ONE control speaks for ONE event, and an event is credited only if it CLAIMS a
+      // control of its own. The earlier version fell back to a control another event already owned,
+      // which let contract §9's cheat 4 — every remainder dumped into one control — credit 8 probes
+      // it should not have (76 -> 68 on the fixture corpus, with nothing fixed). No fallback now:
+      // no free control containing this remainder means this row has no control of its own.
+      // A control is this ROW's control only if it is PROPORTIONATE to the one remainder it holds.
+      // Text-matching alone cannot tell an honest control from a dump — the dump contains every
+      // remainder, so it matches every probe. But the trace already carries how many characters
+      // THIS event dropped, and a control holding one row's remainder is about that long, while a
+      // control holding seventy of them is not. That is contract §9's cheat 4 measured rather than
+      // asserted, and it needs no new data and no label the generator could forge.
+      // ONE objective test, and it needs no label the generator could forge. A control that speaks
+      // for ONE row is about as long as that row's remainder — the trace already records how many
+      // characters this event dropped. A control holding every remainder on the page is not, and
+      // the hard ceiling matters as much as the ratio: an event that dropped 9,000 characters would
+      // otherwise licence a 13,000-character dump. No realistic single row needs 2,000.
+      //
+      // Said plainly, because it is a limit and not a triumph: this cannot PROVE a control belongs
+      // to its row. Proving that needs the row's own position, which would mean carrying the SHOWN
+      // text through the trace as well. What it does is make an aggregation measurably different
+      // from a disclosure, which is what contract §9's cheat 4 is about.
+      // FAIL CLOSED when a path does not carry its shown half. Without it there is no way to tie a
+      // control to a row, and crediting one anyway is precisely how the dump cheat kept winning:
+      // ten of the thirteen paths are not wired yet (that is S7), and their probes were matching
+      // the dump and passing on size alone. A path that cannot be bound is reported as UNBINDABLE
+      // and counted UNREACHABLE — never credited on a maybe.
+      const shown = normalise(r.shownProbe || '');
+      if (!shown) unbindable.add(r.site);
+      const budget = Math.min((r.charsDropped || probe.length) * 1.5 + 400, 2000);
       let ci = -1;
       for (let i = 0; i < ctrls.length; i++) {
         if (!ctrls[i].text.includes(probe)) continue;
+        if (ctrls[i].text.length > budget) continue;          // far larger than this row's remainder
+        // POSITION is what actually ties a control to its row. The row's SHOWN half must appear in
+        // the text immediately before the control. A page that dumps every remainder into one box
+        // at the end fails this for every row but at most one, whatever the box's size.
+        if (!shown) continue;                                 // see the note below: fail CLOSED
+        if (!ctrls[i].before.includes(shown)) continue;
         const owner = claimed.get(i);
         if (owner === undefined || owner === r.ev) { ci = i; claimed.set(i, r.ev); break; }
-        if (ci < 0) ci = i;                        // fall back to a shared one only if nothing free
       }
-      if (ci >= 0) { const set = evPerCtrl.get(ci) || new Set(); set.add(r.ev); evPerCtrl.set(ci, set); }
+      if (ci >= 0) { const m = evPerCtrl.get(ci) || new Map(); m.set(r.ev, probe); evPerCtrl.set(ci, m); }
       placed.push({ r, probe, ci, inFlow: text.includes(probe), b });
     }
   }
+  // v0.32 S6: a control holding several events is only a DUMP if those events' remainders are
+  // genuinely different text. One remainder frequently CONTAINS another — a field's dropped tail and
+  // a paragraph dropped from the same section overlap by construction — and treating that as a dump
+  // punished honest per-row controls, which is how the first migration made the figure go UP.
+  // Overlap (one probe a substring of another) is the honest case; two remainders that share
+  // nothing are an aggregation, which is contract §9's cheat 4 and still caught.
+  // With exclusive claiming, a control can only ever hold ONE event, so the dump case is now
+  // expressed by what a dump cannot do: give every row a control of its own.
+  const isDump = (ci) => (evPerCtrl.get(ci) || new Map()).size > 1;
   for (const q of placed) {
-    if (q.ci >= 0 && (evPerCtrl.get(q.ci) || new Set()).size === 1) { reachable++; inControl++; q.b.reachable++; continue; }
+    if (q.ci >= 0 && !isDump(q.ci)) { reachable++; inControl++; q.b.reachable++; continue; }
     if (q.ci >= 0) { unreachable++; dumped++; q.b.unreachable++; continue; }
-    // Found in ordinary flow, NOT in a disclosure control. Weaker evidence, reported apart: on an
-    // UNFIXED generator it usually means the same words happen to appear in another card, not that
-    // this row's remainder was disclosed. Folding it in would flatter the number in the one
-    // direction that matters.
-    if (q.inFlow) { reachable++; inFlowOnly++; q.b.reachable++; continue; }
+    // v0.32 S6b — PRESENT SOMEWHERE IS NOT REACHABLE FOR THIS ROW, and counting it as reachable
+    // was a hole big enough to drive contract §9's cheat 4 straight through: dumping every
+    // remainder into one control puts all of them into the page's flow text, and 65 of 170 probes
+    // were then credited as "reachable" with the figure going to 0 and the gate reporting PASS.
+    // A row's remainder is reachable when THAT ROW has a control holding it. Text that merely
+    // appears elsewhere on the page is counted UNREACHABLE and reported on its own line, because
+    // it is real information — a reader might stumble on it — but it is not disclosure.
+    if (q.inFlow) { unreachable++; inFlowOnly++; q.b.unreachable++; continue; }
     unreachable++; q.b.unreachable++;
     if (examples.length < 5) examples.push({ dir: p.dir, view: p.view, site: q.r.site, probe: q.probe.slice(0, 70) });
   }
@@ -311,6 +367,7 @@ const result = {
   pagesRendered: rendered, pagesFailed: failures.length, failures,
   unitsDropped: unitsSeen, probes: probesTotal, unprobed: Math.max(0, unitsSeen - probesTotal),
   reachable, reachableInAControl: inControl, reachableInFlowOnly: inFlowOnly,
+  unbindablePaths: [...unbindable].sort(),
   unreachable, dumpedIntoAsharedControl: dumped,
   sourceLines: srcLines, sourceReachable: srcReachable, sourceUnreachable: srcUnreachable,
   byPath, examples,
@@ -325,12 +382,21 @@ else {
     console.log(`                          enough to find on a page without false hits. Reported as`);
     console.log(`                          UNMEASURED, never folded into either column.`);
   }
-  console.log(`  reachable            : ${reachable}  (${inControl} in a per-row disclosure control, ${inFlowOnly} merely present elsewhere in the flow)`);
-  if (inFlowOnly && !inControl) {
-    console.log(`                          NOTE: none of these sits in a disclosure control. On an`);
-    console.log(`                          unfixed generator that is usually coincidence - the same`);
-    console.log(`                          words appearing in another card - not a reader being given`);
-    console.log(`                          this row's remainder. The honest range is ${unreachable} to ${unreachable + inFlowOnly}.`);
+  const bindUnreach = Object.keys(byPath).filter((k) => !unbindable.has(k)).reduce((a, k) => a + byPath[k].unreachable, 0);
+  console.log(`  REACHABLE            : ${reachable}  — each in a control holding THAT row's remainder`);
+  console.log(`  UNREACHABLE (bindable): ${bindUnreach}  — counting only the paths that carry their shown half,`);
+  console.log(`                          i.e. the ones an honest fix can currently drive to zero.`);
+  if (unbindable.size) {
+    console.log(`  UNBINDABLE PATHS      : ${unbindable.size} of ${Object.keys(byPath).length} — ${[...unbindable].sort().join(', ')}`);
+    console.log(`                          These do not carry the shown half yet, so no control can be`);
+    console.log(`                          tied to their rows. Counted UNREACHABLE, never credited on`);
+    console.log(`                          a maybe. Wiring them is step S7.`);
+  }
+  if (inFlowOnly) {
+    console.log(`  ...merely present     : ${inFlowOnly}  — the words appear somewhere on the page but not in`);
+    console.log(`                          a control for this row. Counted UNREACHABLE: presence is`);
+    console.log(`                          not reachability, and crediting it let a page dump every`);
+    console.log(`                          remainder into one box and score a perfect zero.`);
   }
   console.log(`  UNREACHABLE          : ${unreachable}${dumped ? `  (${dumped} of them sat in a control shared by several rows)` : ''}`);
   console.log(`  SOURCE LINES         : ${srcLines} distinctive lines in the corpus's own markdown`);

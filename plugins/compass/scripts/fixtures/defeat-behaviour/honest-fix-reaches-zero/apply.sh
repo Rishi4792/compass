@@ -1,27 +1,15 @@
 #!/usr/bin/env bash
-# NOT A CHEAT — the CONTROL. This simulates an HONEST fix: every dropped unit rendered visibly, in
-# its own per-row <details>, with no CSS trickery and no dumping. If the check is any good the
-# figure must go to ZERO here. If it cannot, the target is unreachable by any honest implementation
-# and the gold is unsatisfiable — the exact failure v0.31 shipped and this build exists to not repeat.
+# NOT A CHEAT — the POSITIVE CONTROL, and deliberately a NO-OP.
+#
+# It used to SIMULATE an honest fix by appending a control per dropped unit at the end of the page.
+# That stopped being valid the moment the check learned to tie a control to its ROW by position: a
+# pile of controls at the page foot is an aggregation, not disclosure, and the check is right to
+# refuse it. Simulating a fix that the rules correctly reject proves nothing.
+#
+# So this applies NOTHING and asserts the SHIPPED generator reaches zero on every path the check can
+# bind. That is the real acceptance criterion, and running it here means the corpus notices the day
+# the target stops being reachable — which is the v0.31 failure this entry exists to prevent.
 set -euo pipefail
-G="$1/plugins/compass/skills/compass-visual/gen.mjs"
-python3 - "$G" <<'PY'
-import io,sys
-p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
-o="""function page(styleBlocks, bodyMarkup) {"""
-assert s.count(o)==1, "anchor"
-n="""globalThis.__HONEST = [];
-function page(styleBlocks, bodyMarkup) {
-  // the honest fix: one visible control per dropped unit, holding that unit's own text.
-  const _h = (globalThis.__HONEST || [])
-    .map((u) => `<details open><summary>Show the rest</summary><div>${esc(u)}</div></details>`).join('');
-  bodyMarkup = bodyMarkup + _h;"""
-s=s.replace(o,n)
-o2="""  let droppedUnits = [];
-  try { droppedUnits = typeof droppedUnitsFn === 'function' ? droppedUnitsFn() : droppedUnitsFn; }
-  catch { droppedUnits = []; }"""
-assert s.count(o2)==1, "shim anchor"
-s=s.replace(o2,o2+"""
-  try { for (const u of (Array.isArray(droppedUnits) ? droppedUnits : [])) globalThis.__HONEST.push(String(u)); } catch { /* control */ }""")
-io.open(p,'w',encoding='utf-8').write(s)
-PY
+[ -n "${1:-}" ] || { echo "usage: apply.sh <work-root>"; exit 2; }
+assert_noop=1   # nothing is patched, on purpose; the runner still checks the figure
+echo "honest-fix-reaches-zero: no mutation applied — asserting the SHIPPED generator reaches zero." >&2

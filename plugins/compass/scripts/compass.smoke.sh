@@ -1834,7 +1834,7 @@ if [ -f "$_v32li" ] && command -v node >/dev/null 2>&1; then
   done <<'PATHS'
 fieldText:and-N-more 10 59
 fieldText:continues-sentence 2 2
-fieldText:continues-hardcut 24 24
+fieldText:continues-hardcut 22 22
 closedRows.slice 1 10
 bullets.slice8 1 4
 nowItems.slice6 1 3
@@ -1860,7 +1860,7 @@ PATHS
       try{ const j=JSON.parse(s); let e=0,u=0; for (const k of Object.keys(j.paths||{})) { e+=j.paths[k].events||0; u+=j.paths[k].unitsDropped||0; }
            process.stdout.write(`${e} ${u} ${Object.keys(j.paths||{}).length}`); }
       catch{ process.stdout.write("err"); }
-    });' 2>/dev/null)" "75 174 13" "v0.32 S1c: the tracked corpus totals 75 events / 174 units across exactly 13 paths (a 14th path appearing is a deliberate edit, never a surprise)"
+    });' 2>/dev/null)" "73 172 13" "v0.32 S1c: the tracked corpus totals 73 events / 172 units across exactly 13 paths (a 14th path appearing is a deliberate edit, never a surprise)"
   chk "$(printf '%s' "$_v32out" | node -e '
     let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
       try{ const j=JSON.parse(s); process.stdout.write(j.pagesFailed===0&&j.pagesRendered>0?"1":"0"); }
@@ -2126,15 +2126,15 @@ _RAC="$PLUGIN_ROOT/scripts/reachable-argument-check.sh"
 _RCORP="$PLUGIN_ROOT/scripts/fixtures/corpus"
 if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   _rout="$(bash "$_RAC" "$RR22" --corpus "$_RCORP" 2>&1)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*dropped units[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "174" "v0.32 S4: the check sees every dropped unit the instrument counts (174 on the tracked corpus)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*dropped units[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "172" "v0.32 S4: the check sees every dropped unit the instrument counts (172 on the tracked corpus)"
   # v0.32 S4b (M-4). ONLY `dropped units` was pinned, so `probed`, `UNREACHABLE` and
   # `SOURCE UNREACHABLE` were pinned to no value at all: an independent reviewer removed one call
   # site's dropped text (probes 2,215 -> 1,335, unreachable 2,181 -> 1,323), shortened the probe cap
   # and raised SRC_MIN, and the suite stayed green through all three. Every figure is pinned now.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "172" "v0.32 S4b: exactly 172 of those units are probed (a call site quietly dropping its text moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "153" "v0.32 S4b: exactly 153 are unreachable on the tracked corpus"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "170" "v0.32 S4b: exactly 170 of those units are probed (a call site quietly dropping its text moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "87" "v0.32 S4b: exactly 87 are unreachable on the tracked corpus"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE LINES[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "108" "v0.32 S4b: the SOURCE denominator is exactly 108 lines (raising SRC_MIN to hide lines moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "86" "v0.32 S4b: exactly 86 source lines cannot be found on any page"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "82" "v0.32 S4b: exactly 82 source lines cannot be found on any page"
   _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
   # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
   chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.32 S4: ...and it says FAIL in words, not only in an exit code"
@@ -2148,7 +2148,9 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # and the flag is not read at all, so it CANNOT
   chk "$(grep -c 'process.env.COMPASS_V32_STRICT' "$PLUGIN_ROOT/scripts/reachable-argument.mjs" || true)" "0" "v0.32 S4: ...because the measurement never reads that variable"
   # weak evidence is reported apart from strong: text merely present elsewhere is NOT disclosure
-  chk "$(printf '%s' "$_rout" | grep -c 'in a per-row disclosure control')" "1" "v0.32 S4: 'reachable' is split into a per-row control vs merely present elsewhere, so the number cannot flatter itself"
+  chk "$(printf '%s' "$_rout" | grep -c 'each in a control holding THAT row.s remainder')" "1" "v0.32 S4b: only a control holding THAT row's remainder counts as reachable — text merely present elsewhere does not"
+  chk "$(printf '%s' "$_rout" | grep -c 'UNBINDABLE PATHS')" "1" "v0.32 S6b: paths that cannot be tied to a row are NAMED and counted unreachable, never credited on a maybe"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNREACHABLE \(bindable\) *: *([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S6: every fieldText remainder is now in its own row's control — 0 unreachable on every bindable path"
   # units too short to probe are reported as UNMEASURED, never folded into either column
   chk "$(printf '%s' "$_rout" | grep -c 'NOT PROBED')" "1" "v0.32 S4: units too short to probe are reported as UNMEASURED, not silently dropped"
 else
@@ -2215,7 +2217,12 @@ elif [ -f "$_BCC" ]; then
   # so against a tree whose markers had moved it printed "renamed 0 marker occurrences", exited 0,
   # and the runner reported "defeated" — an entry proving nothing while looking green.
   _bna=0
-  for _e in "$_BD"/*/; do grep -qE '^assert |assert s\.count|assert n > 0' "$_e/apply.sh" 2>/dev/null || _bna=$((_bna+1)); done
+  for _e in "$_BD"/*/; do
+    # `kind=control` entries deliberately patch NOTHING (see honest-fix-reaches-zero), so there is
+    # no anchor for them to assert. Every CHEAT must assert that its patch landed.
+    grep -q '^kind=control' "$_e/EXPECTED" 2>/dev/null && continue
+    grep -qE '^assert |assert s\.count|assert n > 0' "$_e/apply.sh" 2>/dev/null || _bna=$((_bna+1))
+  done
   chk "$_bna" "0" "v0.32 S5b: every cheat ASSERTS that its patch landed, so none can silently no-op and still report 'defeated'"
 else
   chk "1" "1" "v0.32 S5: N/A — no node or no behaviour-corpus-check.sh on this tree"

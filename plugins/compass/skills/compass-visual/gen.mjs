@@ -56,7 +56,7 @@ if (!dir || !VIEWS.includes(view || '')) {
 // is right.
 const LOSSY_TRACE = process.env.COMPASS_LOSSY_TRACE || '';
 const LOSSY_ROWS = [];
-function lossy(site, keptChars, fullChars, unitsDropped, droppedUnitsFn) {
+function lossy(site, keptChars, fullChars, unitsDropped, droppedUnitsFn, shownFn) {
   if (!LOSSY_TRACE) return;
   // The dropped text arrives as a THUNK, never a value. Passing it eagerly meant every render
   // computed it whether or not anything was tracing — which cost time on the shipped path and,
@@ -79,8 +79,19 @@ function lossy(site, keptChars, fullChars, unitsDropped, droppedUnitsFn) {
   // `ev` identifies ONE destroying event — one row's field. It is what lets the check enforce the
   // per-row rule: a disclosure control holding the remainders of many rows at once is a dump, not a
   // control, and contract section 9 lists that as cheat 4.
+  // v0.32.0 S6b — the SHOWN half, so a control can be tied to the ROW it belongs to.
+  // Everything before this tied them by TEXT alone, and text cannot do it: a control holding every
+  // remainder on the page contains each row's text too, so it matched every row. Size could not
+  // separate them either — on a small page a dump is small. What does separate them is POSITION:
+  // an honest control sits immediately after the shortened text it belongs to, and an aggregation
+  // sits after everything. That needs the shown half, and here it is.
+  let shownProbe = '';
+  try {
+    const sh = typeof shownFn === 'function' ? shownFn() : shownFn;
+    shownProbe = String(sh == null ? '' : sh).replace(/\s+/g, ' ').trim().slice(0, 120);
+  } catch { shownProbe = ''; }
   LOSSY_ROWS.push({ ev: LOSSY_ROWS.length, site, view, dir, keptChars, fullChars,
-                    charsDropped: Math.max(0, fullChars - keptChars), unitsDropped, probes });
+                    charsDropped: Math.max(0, fullChars - keptChars), unitsDropped, probes, shownProbe });
 }
 if (LOSSY_TRACE) {
   // Flush on exit so an early process.exit (usage 2, leak gate 3, sentinel 5) still reports what
@@ -624,6 +635,13 @@ const DARK_VARS = Object.entries(THEME._dark || {})
   .map(([k, v]) => `--${k}:${v};`)
   .join(' ');
 const HOUSE_CSS = `
+  /* v0.32.0 S6 — the disclosure control. NO line-clamp, NO ellipsis, NO max-height: clipped text is
+     not reachable text, and this build's own check strips clipped subtrees before it looks. */
+  .rest{margin-top:6px}
+  .rest>summary{cursor:pointer;font-size:11px;color:var(--mut2);list-style:revert}
+  .rest>summary:hover{color:var(--ink)}
+  .rest .rest-body{margin-top:4px;font-size:12px;line-height:1.5;color:var(--ink);white-space:pre-wrap}
+
   /* v0.30: all three theme states, defined at TOKEN level only. Components are styled through
      the tokens and never inside a media or [data-theme] block — a colour whose only definition
      sits behind [data-theme] never applies in the un-stamped "system" state, which is the
@@ -841,13 +859,21 @@ function logicBlock(graph, ariaLead) {
   const vw = PAD * 2 + MAXCOL * W + (MAXCOL - 1) * GX;
   const vh = PAD * 2 + rows * H + (rows - 1) * GY;
 
+  const _svgRest = [];
   const boxes = ids.map((id) => {
     const p = pos.get(id);
     const { lead, rest } = splitLead(graph.nodes.get(id), 30);
     const t1 = `<text x="${p.x + W / 2}" y="${p.y + (rest ? 22 : 31)}" text-anchor="middle" fill="${THEME.ink}" font-weight="600" font-size="12.5">${txt(lead)}</text>`;
     // A sub-label is a deliberate second line, not an accident: same colour family, clearly
     // smaller, and set on its own baseline. The old treatment read as a rendering fault.
-    const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 39}" text-anchor="middle" fill="${THEME.mut}" font-size="11" font-style="italic">${txt(fieldText(rest, 34))}</text>` : '';
+    // v0.32.0 S6, the one call site with no generic answer. A `<details>` is illegal inside an
+    // `<svg>`, and NOT shortening overflows a fixed-width box — which is contract §9's own css-clip
+    // cheat wearing a different hat. So: shorten to what fits, keep the full text in the node's
+    // accessible name (the aria-label below already carries it), AND emit it in a reachable element
+    // OUTSIDE the svg. All three, because any two of them still leave a sighted reader short.
+    const _sub = fieldParts(rest, 34);
+    if (_sub.rest) _svgRest.push(`${lead} — ${rest}`);
+    const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 39}" text-anchor="middle" fill="${THEME.mut}" font-size="11" font-style="italic">${txt(_sub.shown)}</text>` : '';
     return `<rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="${THEME.surface}" stroke="${THEME.line}"/>${t1}${t2}`;
   }).join('');
 
@@ -882,7 +908,12 @@ function logicBlock(graph, ariaLead) {
     `<defs>` +
     `<marker id="arN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.mut}"/></marker>` +
     `<marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.redFg}"/></marker>` +
-    `</defs>${arrows}${boxes}</svg>`;
+    `</defs>${arrows}${boxes}</svg>` +
+    // OUTSIDE the svg, where a control is legal and a reader can actually open it.
+    (_svgRest.length
+      ? `<details class="rest"><summary>Show each box's full label</summary><div class="rest-body">${
+          _svgRest.map((t) => `<div>${txt(t)}</div>`).join('')}</div></details>`
+      : '');
 }
 
 // A finding's own lifecycle. The review page captioned its diagram "How a finding travels: raised,
@@ -1048,9 +1079,37 @@ function demd(x) {
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
-function fieldText(v, max = 150) {
+// v0.32.0 S6 — `fieldText` used to return a STRING, so a caller had no way to render the half it
+// dropped. `fieldParts` is the same function with the same rules, returning BOTH halves; the old
+// name is kept as a thin wrapper returning `shown`, so every call site that has not been migrated
+// yet behaves byte-for-byte as before and the migration can be proven one site at a time.
+//
+// Why not just return markup from here. `fieldText` has 22 call sites and NINETEEN of them wrap the
+// result in an escaping helper, so a returned `<details>` renders as literal angle brackets on 120
+// pages. And EIGHT of those contexts cannot legally hold one at all — an SVG `<text>`, a `<p>`,
+// several `<span>`s. The shape has to change, not the string.
+function fieldText(v, max = 150) { return fieldParts(v, max).shown; }
+
+// v0.32.0 S6 — THE DISCLOSURE CONTROL. One per shortened field, holding THAT field's own remainder.
+// Not a marker: contract §9's cheats 3 and 4 are an empty control and one control per page, so it
+// must contain this row's text and no other row's. Deliberately plain CSS — no line-clamp, no
+// ellipsis, no max-height — because `reachable-argument.mjs` strips clipped subtrees before it
+// looks, and rightly: text present but clipped is not text a person can reach.
+// `<details>` is FLOW content. It is legal inside <td>, <li> and <div>, and ILLEGAL inside <p> and
+// <span>. Callers in phrasing contexts render it as a SIBLING after the element; see each site.
+function disclose(rest, label = 'Show the rest') {
+  if (!rest) return '';
+  return `<details class="rest"><summary>${esc(label)}</summary><div class="rest-body">${txt(rest)}</div></details>`;
+}
+// The one-liner for the common case: a field in a flow context, shown short with its remainder
+// reachable directly beneath it.
+function fieldDisclosed(v, max = 150, label = 'Show the rest') {
+  const p = fieldParts(v, max);
+  return txt(p.shown) + disclose(p.rest, label);
+}
+function fieldParts(v, max = 150) {
   const full = demd(String(v || '').trim());
-  if (full.length <= max) return full.replace(/[;,]\s*$/, '');
+  if (full.length <= max) return { shown: full.replace(/[;,]\s*$/, ''), rest: '' };
   const parts = full.split(/;\s*/).filter(Boolean);
   if (parts.length > 1) {
     const kept = [];
@@ -1064,8 +1123,9 @@ function fieldText(v, max = 150) {
     // P1. THE PATH THE FIRST TWO GOLD FIGURES MISSED. `nCt()` wraps the count in a
     // `<span data-prov="counted">`, so a plain text search of the rendered page returns 0 for this
     // path and reports it as absent rather than as unmeasured.
-    if (hidden > 0) lossy('fieldText:and-N-more', joined.length, full.length, hidden, () => parts.slice(kept.length));
-    return joined + (hidden > 0 ? ` — and ${nCt(hidden)} more` : '');
+    if (hidden > 0) lossy('fieldText:and-N-more', joined.length, full.length, hidden, () => parts.slice(kept.length), () => joined);
+    return { shown: joined + (hidden > 0 ? ` — and ${nCt(hidden)} more` : ''),
+             rest: hidden > 0 ? parts.slice(kept.length).join('; ') : '' };
   }
   // Prefer a sentence boundary, so a shortened field ends where a thought ends. A bare ellipsis
   // is still a cut — the artefact gate is right to flag it — so when there is no clean boundary,
@@ -1081,14 +1141,15 @@ function fieldText(v, max = 150) {
     // P2. Contract section 9 calls this "the (continues) path", singular. It is two separate return
     // statements — this one and P3 below — that happen to print the same word. Counted apart,
     // because a figure that fuses two code paths is how the earlier ones went wrong.
-    if (kept.length < full.trim().length) lossy('fieldText:continues-sentence', kept.length, full.trim().length, 1, () => [full.trim().slice(kept.length)]);
-    return kept.length < full.trim().length ? `${kept} (continues)` : kept;
+    if (kept.length < full.trim().length) lossy('fieldText:continues-sentence', kept.length, full.trim().length, 1, () => [full.trim().slice(kept.length)], () => kept);
+    return { shown: kept.length < full.trim().length ? `${kept} (continues)` : kept,
+             rest: kept.length < full.trim().length ? full.trim().slice(kept.length).trim() : '' };
   }
   const cut = splitLead(full, max);
   const lead = cut.lead.replace(/[;,]\s*$/, '');
   // P3. The second half of section 9's single "(continues) path".
-  if (cut.rest) lossy('fieldText:continues-hardcut', lead.length, full.length, 1, () => [cut.rest]);
-  return cut.rest ? `${lead} (continues)` : lead;
+  if (cut.rest) lossy('fieldText:continues-hardcut', lead.length, full.length, 1, () => [cut.rest], () => lead);
+  return { shown: cut.rest ? `${lead} (continues)` : lead, rest: cut.rest || '' };
 }
 
 function splitLead(text, softMax = 92) {
@@ -1129,7 +1190,9 @@ function briefBody() {
     if (d) return d[1];
     return 'contract version not stated';
   })();
-  const doneSentence = fieldText(goal, 120);
+  // v0.32.0 S6 (§17-14): `const doneSentence = fieldText(goal, 120)` stood here, assigned and
+  // never read — a truncation running on every Brief with its result discarded. Found by S2's
+  // independent census. Deleted rather than left as a comment about itself.
   // v0.30: the reader-copy block now covers the scope ladder too. It previously covered only the
   // four decision cards, so the ladder rendered contract prose verbatim — which is where the cold
   // reader hit six words of insider shorthand in a row and got nothing from it.
@@ -1166,12 +1229,12 @@ function briefBody() {
   const blast = String(firstNonEmpty([touches, indexTouches(), 'declared in the plan.']))
     .replace(/[;,]\s*$/, '').trim();
   const b2 = band2Facts('The facts you need to decide', [
-    { k: 'Build what', v: txt(fieldText(rc('build-what', goal), 150)) },
-    { k: 'Done means', v: txt(fieldText(rc('done-means', doneMeans), 150)) },
+    { k: 'Build what', v: fieldDisclosed(rc('build-what', goal), 150) },
+    { k: 'Done means', v: fieldDisclosed(rc('done-means', doneMeans), 150) },
     { k: 'Proof', v: shareable
         ? 'Reconciliation gold is pinned locally and enforced by the suites; the literal is withheld here.'
-        : txt(fieldText(rc('proof', goldLine), 150)) },
-    { k: 'Blast radius', v: txt(fieldText(rc('blast-radius', blast), 150)) },
+        : fieldDisclosed(rc('proof', goldLine), 150) },
+    { k: 'Blast radius', v: fieldDisclosed(rc('blast-radius', blast), 150) },
   ]);
 
   const b3 = band3Flow(
@@ -1197,7 +1260,7 @@ function briefBody() {
   const invCard = inv.length
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
-        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${txt(fieldText(i.summary, 150))}</td></tr>`).join('') + `</table>`)
+        inv.map((i) => `<tr><td class="k">${txt(i.name)}</td><td>${fieldDisclosed(i.summary, 150)}</td></tr>`).join('') + `</table>`)
     : (ARTEFACT_DATA && Number.isFinite(ARTEFACT_DATA['invariants.total']) && ARTEFACT_DATA['invariants.total'] > 0
         // v0.32.0 S19b: "pins no INVARIANTs" is a CLAIM, and it was false on any contract whose
         // invariant shape this parser does not know — it printed it beside a header stating a
@@ -1234,9 +1297,9 @@ function briefBody() {
   const guardCard = security_.present
     ? bandSection('Guardrails', 'How this gets turned off, undone, and watched.',
         `<ul class="pl">` +
-        `<li><span class="pill now">off</span><span>${txt(fieldText(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150))}</span></li>` +
-        `<li><span class="pill now">undo</span><span>${txt(fieldText(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150))}</span></li>` +
-        `<li><span class="pill now">watch</span><span>${txt(fieldText(firstPara(sec('Observability')) || 'observability declared in the contract.', 150))}</span></li>` +
+        `<li><span class="pill now">off</span><span>${txt(fieldParts(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150).shown)}</span>${disclose(fieldParts(hdr('Flag') || firstPara(sec('Rollout & kill-switch')) || 'kill-switch declared in the contract.', 150).rest)}</li>` +
+        `<li><span class="pill now">undo</span><span>${txt(fieldParts(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150).shown)}</span>${disclose(fieldParts(firstPara(sec('Rollback')) || 'rollback declared in the contract.', 150).rest)}</li>` +
+        `<li><span class="pill now">watch</span><span>${txt(fieldParts(firstPara(sec('Observability')) || 'observability declared in the contract.', 150).shown)}</span>${disclose(fieldParts(firstPara(sec('Observability')) || 'observability declared in the contract.', 150).rest)}</li>` +
         `</ul>`)
     : bandNA('Guardrails', 'no Security & data-sensitivity block in this contract — treat the sensitive surface as unclassified, not a cleared N/A');
 
@@ -1506,16 +1569,16 @@ function planMap() {
     // you need to decide" — on the page asking "Approve this plan?" — rendered as a blank box, and
     // the gate could not see it because an empty string trips no rule. Widen the chain, then say
     // plainly that the plan does not state it.
-    { k: 'What changes', v: txt(fieldText(firstNonEmpty([
+    { k: 'What changes', v: fieldDisclosed(firstNonEmpty([
         firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
         firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
         firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
         steps.length ? `${nC(steps.length)} steps, beginning: ${txt(steps[0].title)}` : '',
         'not stated in this plan — read plan.md before approving',
-      ]), 150)) },
+      ]), 150) },
     { k: "How it's proven", v: `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}` },
-    { k: 'What it touches', v: txt(fieldText(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150)) },
-    { k: 'Rollback', v: txt(fieldText(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150)) },
+    { k: 'What it touches', v: fieldDisclosed(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150) },
+    { k: 'Rollback', v: fieldDisclosed(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150) },
   ]);
 
   const b3 = band3Flow(logicBlockFor('plan'),
@@ -1550,8 +1613,8 @@ function planMap() {
     }
     const items = allItems.slice(0, 8);
     const inner = items.length
-      ? `<ul class="pl">${items.map((i) => `<li><span class="pill now">·</span><span>${txt(fieldText(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190))}</span></li>`).join('')}</ul>`
-      : `<p class="b-det">${txt(fieldText(firstPara(body), 400))}</p>`;
+      ? `<ul class="pl">${items.map((i) => (() => { const _p = fieldParts(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190); return `<li><span class="pill now">·</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })()).join('')}</ul>`
+      : (() => { const _p = fieldParts(firstPara(body), 400); return `<p class="b-det">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })();
     return bandSection(title, purpose, inner);
   };
   const b5 = secOrNA('The approach', 'What we\u2019re doing, and what we deliberately rejected.',
@@ -2001,9 +2064,9 @@ function reviewArtefact() {
       : isOpen(r) ? 'OPEN'
       : `? ${r.status.split(/\s+/)[0].toLowerCase()}`;
     return `<div class="b-step"><div class="b-num"><span class="pill ${cls === 'crit' ? 'never' : cls === 'maj' ? 'later' : 'now'}">${cls}</span></div>` +
-      `<div><div class="b-ttl">${txt(fieldText(r.id + (r.dupN ? ` (${r.dupN})` : ''), 90))}</div>` +
-      `<div class="b-det">${txt(fieldText(r.title || r.text || '', 190))}</div></div>` +
-      `<div class="verify"><b>${txt(label)}</b>${txt(fieldText(r.status || 'not stated in the ledger', 90))}</div></div>`;
+      `<div><div class="b-ttl">${fieldDisclosed(r.id + (r.dupN ? ` (${r.dupN})` : ''), 90)}</div>` +
+      `<div class="b-det">${fieldDisclosed(r.title || r.text || '', 190)}</div></div>` +
+      `<div class="verify"><b>${txt(label)}</b>${fieldDisclosed(r.status || 'not stated in the ledger', 90)}</div></div>`;
   }).join('');
   const moreRow = hiddenN > 0
     ? `<div class="b-step"><div class="b-num"><span class="pill now">+${nC(hiddenN)}</span></div>` +
@@ -2051,10 +2114,13 @@ function releaseCard() {
   const nowBlock = (contractFields.match(/###\s*NOW[^\n]*\n([\s\S]*?)(?=\n###|\n##\s|$)/i) || [, ''])[1];
   const numbered = nowBlock.split('\n').filter((l) => /^\s*\d+\.\s/.test(l))
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
-  const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => fieldText(String(t), 140));
+  // v0.32.0 S6: keep BOTH halves per item, so each <li> can disclose its own remainder. The
+  // shortened text still feeds every downstream count, so nothing else moves.
+  const nowParts = (ladderNow.length ? ladderNow : numbered).map((t) => fieldParts(String(t), 140));
+  const nowItems = nowParts.map((p) => p.shown);
   // P6. Drops scope items past the sixth.
   if (nowItems.length > 6) lossy('nowItems.slice6', 0, 0, nowItems.length - 6, () => nowItems.slice(6));
-  const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
+  const items = nowParts.slice(0, 6).map((p) => `<li>${txt(p.shown)}${disclose(p.rest)}</li>`).join('')
     + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more</li>` : '');
   const facet = hdr('facets') || 'library';
   // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo
@@ -2065,7 +2131,7 @@ function releaseCard() {
   <div class="card vr-hero"><div class="kicker">Shipped</div>
     <h1>${txt(slug)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
-    ${goal ? `<p class="lede">${txt(fieldText(String(rc('build-what', goal)), 400))}</p>` : ''}
+    ${goal ? (() => { const _p = fieldParts(String(rc('build-what', goal)), 400); return `<p class="lede">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })() : ''}
   </div>
   ${items ? `<div class="card"><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
   <div class="card"><div class="kicker">Proof &amp; rollback</div>
@@ -2082,7 +2148,8 @@ function releaseCard() {
       const _whyAll = blk.match(/^- \[ \][^\n]*/gm) || [];
       if (_whyAll.length > 1) lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1, () => _whyAll.slice(1));
       const why = (_whyAll[0] || '').replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
-      return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(fieldText(why, 120))}</span>`;
+      const _w = fieldParts(why, 120);
+      return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(_w.shown)}</span>${disclose(_w.rest, 'Show the rest of the reason')}`;
     })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nC(nowItems.length)} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
   </div>
   <div class="foot">Generated from contract.md by compass-visual · a pure function of the build's state.</div>

@@ -145,12 +145,16 @@ for d in "$CORPUS"/*/; do
         echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
       fi
       out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
-      got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+      # Scoped to the BINDABLE paths — the ones that carry their shown half, so a control can be
+      # tied to their rows at all. Ten of the thirteen are not wired yet (S7), and asserting zero
+      # over paths the check cannot bind would be asserting something no implementation can satisfy,
+      # which is the v0.31 failure in a new costume. The scope widens on its own as S7 lands.
+      got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE \(bindable\)[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
       case "${got:-}" in
-        ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure for the honest fix"; bad=$((bad+1)); continue ;;
+        ''|*[!0-9]*) echo "  FAIL $slug - the check printed no bindable figure for the honest fix"; bad=$((bad+1)); continue ;;
       esac
       if [ "$got" -eq 0 ]; then
-        echo "  ok   $slug - an honest fix reaches ZERO ($BASE -> 0), so the target is satisfiable"
+        echo "  ok   $slug - an honest fix reaches ZERO on every BINDABLE path, so the target is satisfiable"
       else
         echo "  FAIL $slug - AN HONEST FIX CANNOT REACH THE TARGET: $BASE -> $got, not 0."
         echo "         The gold is a wall, not a target. This is the v0.31 failure, and it is a"
