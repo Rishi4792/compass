@@ -1802,6 +1802,41 @@ node "$PLUGIN_ROOT/scripts/artefact-gate.mjs" "$_cgf" >/dev/null 2>&1
 chk "$?" "0" "v0.30 INV-COPY-GATE: the same fixture PASSES structurally — proving the copy checks are what caught it"
 
 
+# ── v0.32 S1b: the destroyed-text instrument, and the corpus split that makes it testable ────
+# The live corpus (.claude/builds) is GITIGNORED, so a clean clone has zero pages. A check pointed
+# there returns a confident 0, which is indistinguishable from "the defect is fixed". Two ideas were
+# tangled and are now separate: the GOLD is measured over live folders on a working machine; the
+# CHECK is regression-tested against the tracked fixtures below. Hence an explicit --corpus.
+#
+# Asserting PER PATH, not on the total, is the whole point. A fixture set chosen by ledger shape
+# alone would leave most destroying paths unexercised while the total still looked healthy — the
+# same class of blind spot that produced three wrong headline figures from rendered-page greps.
+_v32li="$PLUGIN_ROOT/scripts/lossy-instrument.mjs"
+_v32corpus="$PLUGIN_ROOT/scripts/fixtures/corpus"
+if [ -f "$_v32li" ] && command -v node >/dev/null 2>&1; then
+  _v32out="$(node "$_v32li" "$RR22" --corpus "$_v32corpus" --json 2>/dev/null || true)"
+  for _p in fieldText:and-N-more fieldText:continues-sentence fieldText:continues-hardcut \
+            closedRows.slice bullets.slice8 nowItems.slice6 firstPara firstBullet lineMatching.cap6; do
+    chk "$(printf '%s' "$_v32out" | node -e '
+      let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+        try{ const j=JSON.parse(s); const k=process.argv[1];
+             process.stdout.write((j.paths&&j.paths[k]&&j.paths[k].events>0)?"1":"0"); }
+        catch{ process.stdout.write("0"); }
+      });' "$_p" 2>/dev/null)" "1" "v0.32 S1b: destroying path '$_p' fires on the tracked corpus"
+  done
+  chk "$(printf '%s' "$_v32out" | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      try{ const j=JSON.parse(s); process.stdout.write(j.pagesFailed===0&&j.pagesRendered>0?"1":"0"); }
+      catch{ process.stdout.write("0"); }
+    });' 2>/dev/null)" "1" "v0.32 S1b: every fixture page renders (a failed page is UNMEASURED, never 0)"
+  # An absent corpus must ERR, never PASS. Without this the clean-clone case silently reports zero
+  # destroyed text and the whole measurement reads as a success.
+  node "$_v32li" "$RR22" --corpus "$SMOKE_BASE/no-such-corpus" >/dev/null 2>&1
+  chk "$?" "3" "v0.32 S1b: an absent corpus ERRs (exit 3) instead of reporting a confident zero"
+else
+  chk "1" "1" "v0.32 S1b: N/A — no node or no lossy-instrument.mjs on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
