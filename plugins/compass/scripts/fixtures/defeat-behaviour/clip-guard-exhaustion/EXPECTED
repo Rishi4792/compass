@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=The clip-stripping loop is capped at 5000 iterations and FAILS OPEN when it runs out. Pad the page with 5001 empty display:none decoys and every real clipped remainder after them survives the strip and is counted reachable. This defeats the css-clip entry itself.

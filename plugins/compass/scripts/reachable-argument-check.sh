@@ -24,6 +24,19 @@ case "$rc" in
   3) echo "COMPASS-GATE: ERR — reachable-argument: nothing was measured. A corpus with no pages is not a clean result."; exit 3 ;;
   2) echo "COMPASS-GATE: ERR — reachable-argument: usage."; exit 2 ;;
 esac
+# v0.32 S4b, C-4: a page that FAILED TO RENDER is not a page with nothing unreachable on it.
+# An independent reviewer appended `throw new Error("boom")` to gen.mjs and got
+# `0 pages rendered, 24 failed` -> `COMPASS-GATE: PASS`, rc=0. The empty-CORPUS case was guarded;
+# the zero-PAGES case was not, and they fail the same way — a confident zero from a measurement
+# that never happened.
+_pr="$(printf '%s' "$out" | sed -nE 's/^reachable-argument: ([0-9]+) pages rendered, ([0-9]+) failed.*/\1 \2/p' | head -1)"
+_rendered="${_pr%% *}"; _failed="${_pr##* }"
+if [ -z "$_pr" ] || [ "${_rendered:-0}" -eq 0 ]; then
+  echo "COMPASS-GATE: ERR — reachable-argument: ZERO pages rendered. Nothing was measured, and a zero from an unmeasured corpus is not a clean result."; exit 3
+fi
+if [ "${_failed:-0}" -gt 0 ]; then
+  echo "COMPASS-GATE: ERR — reachable-argument: $_failed page(s) failed to render, so their rows were never checked. A partial measurement is not a pass."; exit 3
+fi
 # The verdict is read from the PRINTED figure, never from the exit code alone — SELF-4, the day a
 # missing `timeout` binary exited 0 with the suite never run.
 n="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"

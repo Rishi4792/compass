@@ -1,0 +1,4 @@
+kind=control
+check=reachable-argument-check.sh
+rule=figure-must-reach-zero
+why=A gold no honest implementation can reach is not a target, it is a wall. This is the positive control: every unit disclosed visibly in its own per-row control must score ZERO.

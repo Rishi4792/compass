@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=Text inside <template> is parsed into an inert fragment and NEVER rendered by any browser. It is present in the file, in its own per-row <details>, and no CSS is involved — so every clip rule in the check misses it. Presence is not reachability, and this is presence with no CSS to detect.

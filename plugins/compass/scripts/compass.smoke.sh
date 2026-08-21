@@ -2127,8 +2127,15 @@ _RCORP="$PLUGIN_ROOT/scripts/fixtures/corpus"
 if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   _rout="$(bash "$_RAC" "$RR22" --corpus "$_RCORP" 2>&1)"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*dropped units[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "174" "v0.32 S4: the check sees every dropped unit the instrument counts (174 on the tracked corpus)"
+  # v0.32 S4b (M-4). ONLY `dropped units` was pinned, so `probed`, `UNREACHABLE` and
+  # `SOURCE UNREACHABLE` were pinned to no value at all: an independent reviewer removed one call
+  # site's dropped text (probes 2,215 -> 1,335, unreachable 2,181 -> 1,323), shortened the probe cap
+  # and raised SRC_MIN, and the suite stayed green through all three. Every figure is pinned now.
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "172" "v0.32 S4b: exactly 172 of those units are probed (a call site quietly dropping its text moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "153" "v0.32 S4b: exactly 153 are unreachable on the tracked corpus"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE LINES[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "108" "v0.32 S4b: the SOURCE denominator is exactly 108 lines (raising SRC_MIN to hide lines moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "86" "v0.32 S4b: exactly 86 source lines cannot be found on any page"
   _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
-  chk "$([ -n "$_runr" ] && [ "$_runr" -gt 0 ] && echo 1 || echo 0)" "1" "v0.32 S4: on the UNFIXED generator it reports a non-zero unreachable count (a zero here would mean the check measures nothing)"
   # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
   chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.32 S4: ...and it says FAIL in words, not only in an exit code"
   # ERR, never a confident zero, when there is nothing to measure
@@ -2153,12 +2160,22 @@ fi
 # corpus in this repo pinned a COUNT, so swapping real entries for trivial ones scored the same;
 # this one pins each entry's IDENTITY and, more importantly, RUNS it.
 # Three of the five defeated my own check the first time it was run. That is what the corpus is for.
+# v0.32 S5b — PERF. With eight entries the full run costs 11s, and re-rendering the corpus once per
+# cheat is inherent to what it proves. Together with everything else this build added, the suite hit
+# 53.4s against a 25.2s baseline and a 50.2s ceiling — a BREACH of this build's own budget. So the
+# full run joins defeat-corpus-check, declared-check, proven-numbers and redfirst-count as a
+# standalone RELEASE gate, and what runs here is the part that is cheap: the corpus's shape, and
+# whether its identity pinning has teeth. Set COMPASS_BEHAVIOUR_FULL=1 to run it here anyway.
 _BCC="$PLUGIN_ROOT/scripts/behaviour-corpus-check.sh"
-if [ -f "$_BCC" ] && command -v node >/dev/null 2>&1; then
+if [ -f "$_BCC" ] && command -v node >/dev/null 2>&1 && [ -n "${COMPASS_BEHAVIOUR_FULL:-}" ]; then
   _bout="$(bash "$_BCC" "$RR22" 2>&1)"
-  chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: ([0-9]+) entries.*/\1/p' | head -1)" "5" "v0.32 S5: the behaviour corpus holds all five cheats from contract section 9"
+  # The corpus is ADD-ONLY, so this floor RISES and never falls. It went 5 -> 8: two cheats an
+  # independent reviewer found and wrote (a <template> stash, and exhausting the old stripper's
+  # 5,000-iteration budget with decoys), plus the POSITIVE control that asks the question v0.31
+  # forgot — can an honest fix actually reach the target?
+  chk "$([ "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: ([0-9]+) entries.*/\1/p' | head -1)" -ge 8 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 8 entries — five from contract section 9, two found by review, and the honest-fix control"
   chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: [0-9]+ entries, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S5: every cheat is DEFEATED — none lowers the figure without a row being fixed"
-  for _c in rename-marker hide-rows empty-control one-control-per-page css-clip; do
+  for _c in rename-marker hide-rows empty-control one-control-per-page css-clip template-stash clip-guard-exhaustion; do
     chk "$(printf '%s' "$_bout" | grep -c "ok   $_c - defeated")" "1" "v0.32 S5: cheat '$_c' is applied and defeated (not merely stored)"
     chk "$([ -s "$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour/$_c/REPRODUCTION.md" ] && echo 1 || echo 0)" "1" "v0.32 S5: ...and carries the reproduction that earned its place"
   done
@@ -2166,6 +2183,40 @@ if [ -f "$_BCC" ] && command -v node >/dev/null 2>&1; then
   chk "$([ -s "$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt" ] && echo 1 || echo 0)" "1" "v0.32 S5: the corpus is pinned by a per-entry checksum, so hollowing one out is a visible diff"
   # a zero baseline would make every 'must not fall' rule pass for free — both baselines are guarded
   chk "$(printf '%s' "$_bout" | grep -c 'baseline unreachable = ')" "1" "v0.32 S5: the run states the baseline it judged against, so a vacuous pass is visible"
+  # THE POSITIVE CONTROL. Every other entry asks "can this be cheated?". This asks the question
+  # v0.31 shipped without asking: can an HONEST implementation reach the target at all? When an
+  # independent reviewer first measured it the answer was NO — baseline 159, honest fix 141, and a
+  # <template> cheat 124, so the cheat beat the fix and exit 0 was unreachable by any honest route.
+  chk "$(printf '%s' "$_bout" | grep -c 'an honest fix reaches ZERO')" "1" "v0.32 S5b: an HONEST fix reaches ZERO, so the gold is satisfiable and not a wall (the v0.31 lesson, asserted on every run)"
+elif [ -f "$_BCC" ]; then
+  # the cheap half, and it is not decorative: it is the two properties an independent reviewer
+  # broke — entries could be DELETED with the run still green, and the manifest could be removed to
+  # disable identity pinning altogether.
+  _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
+  _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 8 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 8 entries (ADD-ONLY, so this floor rises and never falls)"
+  _bmiss=0
+  for _e in "$_BD"/*/; do
+    for _f in apply.sh EXPECTED REPRODUCTION.md; do [ -s "$_e/$_f" ] || _bmiss=$((_bmiss+1)); done
+    grep -q "^$(basename "$_e")  " "$_BM" 2>/dev/null || _bmiss=$((_bmiss+1))
+  done
+  chk "$_bmiss" "0" "v0.32 S5: every entry carries its reproduction AND is pinned in the manifest"
+  # deleting an entry must FAIL, and removing the manifest must ERR — both were possible.
+  _bt="$(mktemp -d)"; mkdir -p "$_bt/plugins/compass/scripts"
+  cp -R "$PLUGIN_ROOT/scripts/." "$_bt/plugins/compass/scripts/" 2>/dev/null
+  rm -rf "$_bt/plugins/compass/scripts/fixtures/defeat-behaviour/css-clip"
+  bash "$_bt/plugins/compass/scripts/behaviour-corpus-check.sh" "$_bt" >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S5b: DELETING an entry fails the corpus — 'a removed slug fails' used to be simply untrue"
+  rm -f "$_bt/plugins/compass/scripts/behaviour-corpus-manifest.txt"
+  bash "$_bt/plugins/compass/scripts/behaviour-corpus-check.sh" "$_bt" >/dev/null 2>&1
+  chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S5b: removing the MANIFEST ERRs — it used to silently disable all identity pinning"
+  rm -rf "$_bt"
+  # EVERY entry must assert that its patch actually landed. rename-marker was the one that did not,
+  # so against a tree whose markers had moved it printed "renamed 0 marker occurrences", exited 0,
+  # and the runner reported "defeated" — an entry proving nothing while looking green.
+  _bna=0
+  for _e in "$_BD"/*/; do grep -qE '^assert |assert s\.count|assert n > 0' "$_e/apply.sh" 2>/dev/null || _bna=$((_bna+1)); done
+  chk "$_bna" "0" "v0.32 S5b: every cheat ASSERTS that its patch landed, so none can silently no-op and still report 'defeated'"
 else
   chk "1" "1" "v0.32 S5: N/A — no node or no behaviour-corpus-check.sh on this tree"
 fi
@@ -2230,6 +2281,54 @@ if [ -f "$_ESC" ] && [ -d "$_EFX" ]; then
   rm -rf "$_ee"
 else
   chk "1" "1" "v0.32 S32: N/A — no evidence-shape-check.sh on this tree"
+fi
+
+# ── v0.32 S4b (M-3): each of the check's DEFENCES, tested on its own ─────────────────────────
+# An independent reviewer gutted four of them one at a time — CLIP_PROPS down to line-clamp only,
+# the hidden/aria-hidden branch deleted, dropSubtree's unclosed branch made to fail open, nesting
+# depth ignored — and the suite stayed green through every one. Only `-webkit-line-clamp` was
+# tested anywhere. These exercise the reachability function directly, one hiding technique each.
+_RAM="$PLUGIN_ROOT/scripts/reachable-argument.mjs"
+if [ -f "$_RAM" ] && command -v node >/dev/null 2>&1; then
+  _hid(){ node --input-type=module -e '
+    const m = await import(process.argv[1]);
+  ' >/dev/null 2>&1; }
+  # the module runs its own main on import, so the defences are exercised through a tiny harness
+  # that re-implements nothing: it renders a page-shaped string and asks the real check to score it.
+  _probe="thisisaverydistinctiveremaindersentence"
+  _try(){ # $1 = html body holding the probe · echoes 1 if the text is REACHABLE
+    COMPASS_RA_SELFTEST="$1" COMPASS_RA_PROBE="$_probe" node -e '
+      const fs=require("fs");
+      const src=fs.readFileSync(process.env.RAM,"utf8");
+      const body=src.slice(src.indexOf("const CLIP_PROPS ="), src.indexOf("// Which disclosure control"));
+      const fn=new Function(body+"; return { reachableText, clippedClasses };")();
+      const t=fn.reachableText(process.env.COMPASS_RA_SELFTEST);
+      process.stdout.write(t.includes(process.env.COMPASS_RA_PROBE)?"1":"0");
+    ' 2>/dev/null
+  }
+  RAM="$_RAM" export RAM
+  chk "$(RAM="$_RAM" _try "<div><p>$_probe</p></div>")" "1" "v0.32 S4b (M-3): plain visible text IS reachable (the control case — without it every check below passes for free)"
+  chk "$(RAM="$_RAM" _try "<div style=\"display:none\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): display:none is not reachable"
+  chk "$(RAM="$_RAM" _try "<div style=\"visibility:hidden\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): visibility:hidden is not reachable"
+  chk "$(RAM="$_RAM" _try "<div style=\"font-size:0\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): font-size:0 is not reachable"
+  chk "$(RAM="$_RAM" _try "<div style=\"color:transparent\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): color:transparent is not reachable"
+  chk "$(RAM="$_RAM" _try "<div style=\"position:absolute;left:-9999px\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): parked off-screen at left:-9999px is not reachable"
+  chk "$(RAM="$_RAM" _try "<div hidden><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): the bare 'hidden' attribute is not reachable"
+  chk "$(RAM="$_RAM" _try "<div aria-hidden=\"true\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): aria-hidden=true is not reachable"
+  chk "$(RAM="$_RAM" _try "<template><p>$_probe</p></template>")" "0" "v0.32 S4b (M-3): a <template> is inert in every browser and is not reachable"
+  chk "$(RAM="$_RAM" _try "<style>.k{display:none}</style><div class=\"k\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): clipping set by a CLASS, not inline, is not reachable"
+  chk "$(RAM="$_RAM" _try "<style>@media all{.k{display:none}}</style><div class=\"k\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): ...including a class clipped inside an @media block"
+  chk "$(RAM="$_RAM" _try "<style>[data-x] .k{display:none}</style><div class=\"k\"><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): ...and one reached by an attribute selector"
+  chk "$(RAM="$_RAM" _try "<div style=\"display:none\"><div><div><p>$_probe</p></div></div></div>")" "0" "v0.32 S4b (M-3): nesting is counted, so a clipped ancestor is not escaped by depth"
+  chk "$(RAM="$_RAM" _try "<div style=\"display:none\"><p>$_probe</p>")" "0" "v0.32 S4b (M-3): an UNCLOSED clipped element fails CLOSED — text after it is not credited"
+  chk "$(RAM="$_RAM" _try "<div style=\"display:none\"><img hidden><p>$_probe</p></div>")" "0" "v0.32 S4b (M-3): a void element inside a clipped subtree does not end it"
+  # printf, not a concat loop: building this string by appending cost 5.3 SECONDS of the suite's
+  # own budget. Same 142,800 characters, 0.01s. A test that blows the perf budget it is meant to
+  # protect is a defect in its own right.
+  _decoys="$(printf '<i style="display:none"></i>%.0s' $(seq 1 5100))"
+  chk "$(RAM="$_RAM" _try "$_decoys<div style=\"display:none\"><p>$_probe</p></div>")" "0" "v0.32 S4b (C-1): 5,100 clipped decoys do NOT exhaust the stripper — it has no budget to exhaust"
+else
+  chk "1" "1" "v0.32 S4b: N/A — no node or no reachable-argument.mjs"
 fi
 
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────

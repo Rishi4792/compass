@@ -63,11 +63,37 @@ if (!dirs.length) {
 // ── reachability ────────────────────────────────────────────────────────────────────────────
 // Classes whose own CSS clips their content. Read from the page's <style>, so a cheat that moves
 // the clipping out of an inline style and into a rule is still seen.
-const CLIP_PROPS = /(-webkit-line-clamp|text-overflow\s*:\s*ellipsis|display\s*:\s*none|visibility\s*:\s*hidden)/i;
+// v0.32 S4b — REWRITTEN after an independent reviewer drove the old version to
+// `COMPASS-GATE: PASS` with every row still unreadable. Four things were wrong and all four are
+// reproduced as corpus entries or assertions:
+//   1. the stripper ran a bounded loop (5000 full-document rescans) and FAILED OPEN when the budget
+//      ran out. 5,001 empty `display:none` decoys ate it, then the real remainders clipped freely:
+//      live corpus 2,181 -> 99, gate PASS. It is a SINGLE PASS now, with no budget to exhaust.
+//   2. `<template>` content is inert in every browser and was never stripped: 2,181 -> 435.
+//   3. CLIP_PROPS covered four properties, and the selector scraper read only `.class` before the
+//      first `{` — so `@media all{.x{display:none}}` and `[data-x]{display:none}` both slipped past.
+//   4. probes were RAW MARKDOWN and pages are RENDERED markdown, so half of them could never match
+//      no matter how honestly the text was disclosed. Both sides are normalised the same way now.
+const CLIP_PROPS = new RegExp([
+  '-webkit-line-clamp', 'text-overflow\\s*:\\s*ellipsis',
+  'display\\s*:\\s*none', 'visibility\\s*:\\s*hidden',
+  'opacity\\s*:\\s*0(?![.\\d])', 'font-size\\s*:\\s*0(?![.\\d])',
+  'color\\s*:\\s*transparent', '-webkit-text-fill-color\\s*:\\s*transparent',
+  'clip-path\\s*:\\s*inset\\(\\s*100%', 'clip\\s*:\\s*rect\\(\\s*0',
+  'max-height\\s*:\\s*0(?![.\\d])', 'text-indent\\s*:\\s*-\\s*\\d{3,}',
+  'left\\s*:\\s*-\\s*\\d{3,}', 'top\\s*:\\s*-\\s*\\d{3,}',
+  '(?:width|height)\\s*:\\s*0(?![.\\d])',
+].join('|'), 'i');
+
+// Classes whose own CSS clips their content. Read from EVERY rule in the page's <style>, including
+// nested at-rules, and from the whole selector rather than only a leading `.class`.
 function clippedClasses(html) {
   const out = new Set();
   for (const m of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
-    for (const rule of m[1].split('}')) {
+    const css = m[1];
+    // flatten at-rules (@media, @supports, @layer) so their inner rules are read like any other
+    const flat = css.replace(/@[a-zA-Z-]+[^{]*\{/g, ' ');
+    for (const rule of flat.split('}')) {
       const i = rule.indexOf('{');
       if (i < 0) continue;
       if (!CLIP_PROPS.test(rule.slice(i))) continue;
@@ -76,46 +102,83 @@ function clippedClasses(html) {
   }
   return out;
 }
-// Drop an element and everything inside it, matching nesting of the same tag name.
-function dropSubtree(html, startIdx, tag) {
-  const openRe = new RegExp(`<${tag}\\b`, 'gi');
-  const closeRe = new RegExp(`</${tag}\\s*>`, 'gi');
-  let depth = 0, i = startIdx;
-  while (i < html.length) {
-    openRe.lastIndex = i; closeRe.lastIndex = i;
-    const o = openRe.exec(html); const c = closeRe.exec(html);
-    if (!c) return html.slice(0, startIdx);          // unclosed: drop the rest, never credit it
-    if (o && o.index < c.index) { depth++; i = o.index + 1; continue; }
-    depth--; i = c.index + 1;
-    if (depth <= 0) return html.slice(0, startIdx) + html.slice(c.index + c[0].length);
-  }
-  return html.slice(0, startIdx);
+
+// Elements whose content a browser never renders, whatever the CSS says.
+const INERT_TAGS = new Set(['script', 'style', 'template', 'noscript', 'head', 'title']);
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+function isClipped(tag, attrs, clipped) {
+  if (INERT_TAGS.has(tag)) return true;
+  const styleM = /style\s*=\s*"([^"]*)"/i.exec(attrs) || /style\s*=\s*'([^']*)'/i.exec(attrs);
+  if (styleM && CLIP_PROPS.test(styleM[1])) return true;
+  const classM = /class\s*=\s*"([^"]*)"/i.exec(attrs) || /class\s*=\s*'([^']*)'/i.exec(attrs);
+  if (classM && classM[1].split(/\s+/).some((c) => clipped.has(c))) return true;
+  // `hidden` as a bare attribute, not as part of some id. `/\bhidden\b/` matched id="hidden-panel".
+  if (/(^|\s)hidden(\s|=|$)/i.test(attrs)) return true;
+  if (/aria-hidden\s*=\s*["']?true/i.test(attrs)) return true;
+  return false;
 }
+
+// ONE PASS. No budget, so nothing can exhaust it. While inside a clipped element we skip text and
+// track nesting by tag name; a void element never opens a subtree.
 function reachableText(html, clippedIn) {
-  let h = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
-  // v0.32 S5: the clipped-class set MUST come from the whole page. Deriving it from a <details>
-  // fragment found no <style> block, so a class-based clip inside a control was invisible and the
-  // css-clip cheat took the figure 159 -> 95. Found by the behaviour corpus, on my own check.
   const clipped = clippedIn || clippedClasses(html);
-  for (let guard = 0; guard < 5000; guard++) {
-    const m = /<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/.exec(h);
-    let hit = null;
-    for (const mm of h.matchAll(/<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g)) {
-      const attrs = mm[2] || '';
-      const styleM = /style\s*=\s*"([^"]*)"/i.exec(attrs);
-      const classM = /class\s*=\s*"([^"]*)"/i.exec(attrs);
-      const inlineClip = styleM && CLIP_PROPS.test(styleM[1]);
-      const classClip = classM && classM[1].split(/\s+/).some((c) => clipped.has(c));
-      const attrHidden = /\bhidden\b/i.test(attrs) || /aria-hidden\s*=\s*"true"/i.test(attrs);
-      if (inlineClip || classClip || attrHidden) { hit = mm; break; }
+  const h = html.replace(/<!--[\s\S]*?-->/g, ' ');
+  let out = '';
+  let skipTag = null, skipDepth = 0, last = 0;
+  const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  let m;
+  while ((m = re.exec(h)) !== null) {
+    if (!skipTag) out += h.slice(last, m.index);
+    last = re.lastIndex;
+    const closing = m[0][1] === '/';
+    const tag = m[1].toLowerCase();
+    const attrs = m[2] || '';
+    const selfClosing = /\/\s*$/.test(attrs) || VOID_TAGS.has(tag);
+    if (skipTag) {
+      if (tag !== skipTag || selfClosing) continue;
+      if (closing) { skipDepth--; if (skipDepth <= 0) { skipTag = null; skipDepth = 0; } }
+      else skipDepth++;
+      continue;
     }
-    if (!hit) break;
-    h = dropSubtree(h, hit.index, hit[1]);
+    if (!closing && !selfClosing && isClipped(tag, attrs, clipped)) { skipTag = tag; skipDepth = 1; }
   }
-  return h.replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ').trim();
+  if (!skipTag) out += h.slice(last);
+  // An UNCLOSED clipped element swallows the rest of the document — that is the fail-CLOSED
+  // direction, and it is deliberate: crediting text after a clip we could not close is how a
+  // malformed page would score better than a well-formed one.
+  return normalise(out);
 }
+
+// ── the normal form, applied to BOTH sides ───────────────────────────────────────────────────
+// Probes come from the SOURCE (markdown); pages carry RENDERED markdown. Comparing them raw meant
+// 1,114 of 2,215 probes could never match however honestly the text was disclosed — so the check
+// scored an honest fix WORSE than a cheat. Everything below is applied to the page text and to
+// every probe alike.
+function normalise(t) {
+  return t
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;|&#0*38;/gi, '&').replace(/&lt;|&#0*60;/gi, '<').replace(/&gt;|&#0*62;/gi, '>')
+    .replace(/&quot;|&#0*34;/gi, '"').replace(/&#0*39;|&apos;|&#x27;/gi, "'")
+    .replace(/&#8217;|&rsquo;|&#x2019;/gi, "'").replace(/&#8216;|&lsquo;/gi, "'")
+    .replace(/&#8220;|&ldquo;|&#8221;|&rdquo;/gi, '"')
+    .replace(/&#8212;|&mdash;/gi, '—').replace(/&#8211;|&ndash;/gi, '–')
+    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCodePoint(+d); } catch { return ' '; } })
+    .replace(/&#x([0-9a-f]+);/gi, (_, x) => { try { return String.fromCodePoint(parseInt(x, 16)); } catch { return ' '; } })
+    .replace(/[​‌‍﻿]/g, '')     // breakColors() injects a zero-width space after every #
+    // Everything that is not a letter or a digit goes. Stripping markdown SYNTAX one construct at a
+    // time kept losing: gen.mjs collapses a source block's newlines into spaces before the probe is
+    // built, so a list marker arrives mid-string where no `^`-anchored rule can see it, and the
+    // page renders it as a list with no marker at all. A signature of letters and digits is immune
+    // to every such difference, and 12 of them is still distinctive enough to find. It is also the
+    // conservative direction for cheat detection: hiding text or clipping it defeats this exactly
+    // as it defeated the stricter form.
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Which disclosure control, if any, holds a given probe — so cheat 4 can be caught.
 function controlsFor(html, clipped) {
   const out = [];
@@ -169,13 +232,26 @@ for (const p of pages) {
   (srcPages.get(p.dir) || srcPages.set(p.dir, []).get(p.dir)).push(text);
   const placed = [];
   const evPerCtrl = new Map();
+  // v0.32 S4b: assign each EVENT to a DISTINCT control, greedily. `findIndex` returned the first
+  // control containing the text, so two rows whose remainders read the same collapsed onto one
+  // control and the anti-dump rule then killed both — 106 of 172 fixture probes, 62%, even when
+  // every row had its own control. That is why an honest fix scored WORSE than a cheat.
+  const claimed = new Map();                       // control index -> ev that owns it
   for (const r of rows) {
     unitsSeen += r.unitsDropped || 0;
-    for (const probe of (r.probes || [])) {
+    for (const raw of (r.probes || [])) {
+      const probe = normalise(raw);
       probesTotal++;
       const b = (byPath[r.site] ||= { probes: 0, reachable: 0, unreachable: 0 });
       b.probes++;
-      const ci = ctrls.findIndex((c) => c.text.includes(probe));
+      if (probe.length < 12) { placed.push({ r, probe, ci: -1, inFlow: false, b }); continue; }
+      let ci = -1;
+      for (let i = 0; i < ctrls.length; i++) {
+        if (!ctrls[i].text.includes(probe)) continue;
+        const owner = claimed.get(i);
+        if (owner === undefined || owner === r.ev) { ci = i; claimed.set(i, r.ev); break; }
+        if (ci < 0) ci = i;                        // fall back to a shared one only if nothing free
+      }
       if (ci >= 0) { const set = evPerCtrl.get(ci) || new Set(); set.add(r.ev); evPerCtrl.set(ci, set); }
       placed.push({ r, probe, ci, inFlow: text.includes(probe), b });
     }
@@ -200,15 +276,24 @@ for (const d of dirs) {
   if (!texts.length) continue;
   const joined = texts.join(' \u0001 ');
   const seen = new Set();
+  // v0.32 S4b, M-5. This walked EVERY .md in the build dir, so `receipts.md` (27.9% of the live
+  // denominator), `progress.md`, `intake.md`, a superseded plan and a spawn log all counted as
+  // "lines a reader cannot find". They are build exhaust and were never meant to be on a page.
+  // The reader-facing documents are the three the views are rendered FROM.
+  const READER_DOCS = new Set(['contract.md', 'plan.md', 'review-ledger.md']);
   for (const f of readdirSync(d)) {
-    if (!f.endsWith('.md')) continue;
+    if (!READER_DOCS.has(f)) continue;
     let body = '';
     try { body = readFileSync(join(d, f), 'utf8'); } catch { continue; }
     let fenced = false;
     for (const raw of body.split('\n')) {
       if (/^\s*```/.test(raw)) { fenced = !fenced; continue; }
       if (fenced) continue;                        // a fenced block is code, not prose a reader hunts for
-      const line = raw.replace(/^[\s>|*_-]+/, '').replace(/[*`_]/g, '').replace(/\s+/g, ' ').trim();
+      // v0.32 S4b: the SOURCE side must go through the SAME normal form as the page, or the two
+      // are never comparable. When the page side became an alphanumeric signature and this did not,
+      // the measure read 0 of 6,417 reachable — a figure so bad it was obviously the measure, not
+      // the pages. Both sides, one function, always.
+      const line = normalise(raw);
       if (line.length < SRC_MIN) continue;
       const key = line.slice(0, 120);
       if (seen.has(key)) continue;                 // count a repeated line once

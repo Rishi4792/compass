@@ -47,6 +47,26 @@ esac
 [ "$SBASE" -gt 0 ] || { echo "behaviour-corpus: ERR - the SOURCE baseline is 0, so no cheat could lower it and every source-rule entry would 'pass' for free."; exit 2; }
 echo "behaviour-corpus: baseline unreachable = $BASE over the tracked corpus."
 
+# v0.32 S5b, all three found by an independent reviewer and all three reproduced:
+#   - deleting the two entries that ever went red left "3 entries, 0 failing", rc=0. "A removed
+#     slug fails" was simply false: the check only walked disk -> manifest, never the other way.
+#   - deleting the MANIFEST silently disabled identity pinning altogether, so a hollowed-out
+#     apply.sh still reported "defeated".
+# This is `defeat-corpus-check.sh:143`'s own recorded lesson, re-committed here and now fixed.
+[ -f "$MAN" ] || { echo "behaviour-corpus: ERR - no manifest at $MAN. Without it nothing is pinned and any entry can be hollowed out silently."; exit 2; }
+_pinned="$(awk '!/^#/ && NF>=2 {print $1}' "$MAN")"
+[ -n "$_pinned" ] || { echo "behaviour-corpus: ERR - the manifest pins nothing."; exit 2; }
+_gone=""
+for _slug in $_pinned; do
+  [ -d "$CORPUS/$_slug" ] || _gone="$_gone $_slug"
+done
+if [ -n "$_gone" ]; then
+  echo "behaviour-corpus: ERR - entries pinned in the manifest are MISSING from the corpus:$_gone"
+  echo "  The corpus is ADD-ONLY. Removing an entry removes the proof it carried, and doing it"
+  echo "  quietly is how a corpus becomes a decoration."
+  exit 2
+fi
+
 n=0; bad=0
 for d in "$CORPUS"/*/; do
   [ -d "$d" ] || continue
@@ -112,6 +132,30 @@ for d in "$CORPUS"/*/; do
         echo "         baseline it also had little room to show, so this is the weaker form of the proof)"
       else
         echo "  ok   $slug - defeated: source-unreachable $SBASE -> $got (the cheat made it WORSE, which is the strong form)"
+      fi ;;
+    figure-must-reach-zero)
+      # The POSITIVE control. Every other entry asks "can this be cheated?"; this one asks the
+      # question v0.31 forgot: can an HONEST implementation actually reach the target? A gold no
+      # honest fix can reach is a wall, not a target.
+      work="$TMP/$slug"; mkdir -p "$work"
+      mkdir -p "$work/plugins/compass/skills/compass-visual" "$work/plugins/compass/scripts"
+      cp -R "$ROOT/plugins/compass/skills/compass-visual/." "$work/plugins/compass/skills/compass-visual/" 2>/dev/null
+      cp -R "$ROOT/plugins/compass/scripts/." "$work/plugins/compass/scripts/" 2>/dev/null
+      if ! bash "$d/apply.sh" "$work" >"$TMP/$slug.apply.log" 2>&1; then
+        echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
+      fi
+      out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+      case "${got:-}" in
+        ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure for the honest fix"; bad=$((bad+1)); continue ;;
+      esac
+      if [ "$got" -eq 0 ]; then
+        echo "  ok   $slug - an honest fix reaches ZERO ($BASE -> 0), so the target is satisfiable"
+      else
+        echo "  FAIL $slug - AN HONEST FIX CANNOT REACH THE TARGET: $BASE -> $got, not 0."
+        echo "         The gold is a wall, not a target. This is the v0.31 failure, and it is a"
+        echo "         blocker on the CHECK, not on the generator."
+        bad=$((bad+1))
       fi ;;
     *) echo "  FAIL $slug - EXPECTED names no rule this runner knows ('$rule')"; bad=$((bad+1)) ;;
   esac
