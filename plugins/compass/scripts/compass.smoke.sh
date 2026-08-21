@@ -2117,6 +2117,37 @@ if [ -f "$_GEN" ] && command -v node >/dev/null 2>&1; then
   rm -rf "$_TL"
 fi
 
+# ── v0.32 S4: the gold's own check — can a reader still REACH what was destroyed? ────────────
+# Counting units says how much is cut. It cannot say whether a reader can get to it, and that is
+# what the gold grades. Each destroying return hands over the TEXT it dropped; the check looks for
+# that text in the page's REACHABLE text — never for a marker, which is how three published figures
+# went wrong. Runs against the TRACKED corpus so a clean clone tests it for real.
+_RAC="$PLUGIN_ROOT/scripts/reachable-argument-check.sh"
+_RCORP="$PLUGIN_ROOT/scripts/fixtures/corpus"
+if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
+  _rout="$(bash "$_RAC" "$RR22" --corpus "$_RCORP" 2>&1)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*dropped units[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "174" "v0.32 S4: the check sees every dropped unit the instrument counts (174 on the tracked corpus)"
+  _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+  chk "$([ -n "$_runr" ] && [ "$_runr" -gt 0 ] && echo 1 || echo 0)" "1" "v0.32 S4: on the UNFIXED generator it reports a non-zero unreachable count (a zero here would mean the check measures nothing)"
+  # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
+  chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.32 S4: ...and it says FAIL in words, not only in an exit code"
+  # ERR, never a confident zero, when there is nothing to measure
+  bash "$_RAC" "$RR22" --corpus "$RR22/no-such-corpus-xyz" >/dev/null 2>&1
+  chk "$?" "3" "v0.32 S4: an ABSENT corpus ERRs (exit 3) — a corpus with no pages is not a clean result"
+  chk "$(bash "$_RAC" "$RR22" --corpus "$RR22/no-such-corpus-xyz" 2>&1 | grep -c 'COMPASS-GATE: ERR')" "1" "v0.32 S4: ...and says ERR in words"
+  # contract section 12: the kill switch may silence a REPORTING gate, never the MEASUREMENT
+  _roff="$(COMPASS_V32_STRICT=0 bash "$_RAC" "$RR22" --corpus "$_RCORP" 2>&1 | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+  chk "$_roff" "$_runr" "v0.32 S4: COMPASS_V32_STRICT=0 does not change the figure — the flag cannot silence the measurement"
+  # and the flag is not read at all, so it CANNOT
+  chk "$(grep -c 'process.env.COMPASS_V32_STRICT' "$PLUGIN_ROOT/scripts/reachable-argument.mjs" || true)" "0" "v0.32 S4: ...because the measurement never reads that variable"
+  # weak evidence is reported apart from strong: text merely present elsewhere is NOT disclosure
+  chk "$(printf '%s' "$_rout" | grep -c 'in a per-row disclosure control')" "1" "v0.32 S4: 'reachable' is split into a per-row control vs merely present elsewhere, so the number cannot flatter itself"
+  # units too short to probe are reported as UNMEASURED, never folded into either column
+  chk "$(printf '%s' "$_rout" | grep -c 'NOT PROBED')" "1" "v0.32 S4: units too short to probe are reported as UNMEASURED, not silently dropped"
+else
+  chk "1" "1" "v0.32 S4: N/A — no node or no reachable-argument-check.sh on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.

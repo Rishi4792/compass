@@ -56,10 +56,31 @@ if (!dir || !VIEWS.includes(view || '')) {
 // is right.
 const LOSSY_TRACE = process.env.COMPASS_LOSSY_TRACE || '';
 const LOSSY_ROWS = [];
-function lossy(site, keptChars, fullChars, unitsDropped) {
+function lossy(site, keptChars, fullChars, unitsDropped, droppedUnitsFn) {
   if (!LOSSY_TRACE) return;
-  LOSSY_ROWS.push({ site, view, dir, keptChars, fullChars,
-                    charsDropped: Math.max(0, fullChars - keptChars), unitsDropped });
+  // The dropped text arrives as a THUNK, never a value. Passing it eagerly meant every render
+  // computed it whether or not anything was tracing — which cost time on the shipped path and,
+  // when one call site named the wrong variable, crashed all 116 pages. A measurement must not be
+  // able to break the thing it measures, so it is computed only inside this guard and any throw
+  // inside it is swallowed: a probe that cannot be built is one missing probe, never a dead render.
+  let droppedUnits = [];
+  try { droppedUnits = typeof droppedUnitsFn === 'function' ? droppedUnitsFn() : droppedUnitsFn; }
+  catch { droppedUnits = []; }
+  // v0.32.0 S4. Counting units tells us HOW MUCH is destroyed. It cannot tell us whether a reader
+  // can still REACH it, and reachability is what the gold actually grades. So each destroying return
+  // now hands over the TEXT of the units it dropped, and the check looks for that text on the
+  // rendered page. Keyed to the SOURCE — never to a marker the implementation can rename, which is
+  // how three published figures went wrong. Probes are normalised and capped: carrying whole
+  // remainders would make the trace enormous, and a distinctive slice is enough to find one.
+  const probes = (Array.isArray(droppedUnits) ? droppedUnits : (droppedUnits == null ? [] : [droppedUnits]))
+    .map((u) => String(u == null ? '' : u).replace(/\s+/g, ' ').trim())
+    .filter((u) => u.length >= 12)
+    .map((u) => u.slice(0, 120));
+  // `ev` identifies ONE destroying event — one row's field. It is what lets the check enforce the
+  // per-row rule: a disclosure control holding the remainders of many rows at once is a dump, not a
+  // control, and contract section 9 lists that as cheat 4.
+  LOSSY_ROWS.push({ ev: LOSSY_ROWS.length, site, view, dir, keptChars, fullChars,
+                    charsDropped: Math.max(0, fullChars - keptChars), unitsDropped, probes });
 }
 if (LOSSY_TRACE) {
   // Flush on exit so an early process.exit (usage 2, leak gate 3, sentinel 5) still reports what
@@ -433,14 +454,14 @@ function firstPara(body) {
     if (rest.length) {
       // P7a. The colon-label path consumed paragraphs one and two; anything past those is gone.
       const out = `${first} ${rest.join('; ')}`;
-      if (paras.length > 2) lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2);
+      if (paras.length > 2) lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2, () => paras.slice(2));
       return out;
     }
   }
   // P7b. The ordinary path returns paragraph one and drops every other paragraph in the section,
   // printing nothing at all to say so. One of the three paths that leave no trace — which is why
   // no amount of searching a rendered page could ever have found it.
-  if (paras.length > 1) lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1);
+  if (paras.length > 1) lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1, () => paras.slice(1));
   return first;
 }
 // ── render a FULL section body as paragraphs (blank-line separated; lines joined by <br>) — used on the
@@ -475,7 +496,7 @@ function invariants() {
     // invariant is split off here and reaches no rendered page, with nothing saying it was removed.
     const _invParts = m[2].split(/→\s*\*?\s*assert/i);
     let summary = _invParts[0].replace(/\*/g, '').replace(/[:\s]+$/, '').trim();
-    if (_invParts.length > 1) lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1);
+    if (_invParts.length > 1) lossy('invariants.assertTail', _invParts[0].length, m[2].length, 1, () => [_invParts.slice(1).join(' ')]);
     if (summary && !/[.!?)]$/.test(summary)) summary += '.';
     // A deferred INVARIANT carries a bookkeeping marker ("— original text retained …"); render
     // the deferral plainly instead of leaking the marker as if it were the assertion.
@@ -492,7 +513,7 @@ function invariants() {
       // the copy gate counts sentences, not rows. Folding the clause in keeps each row unique.
       // P11. NOT ENUMERATED IN SECTION 9. The page says "Not in this release" but never says the
       // invariant's own wording was discarded to say it — a partial marker, not a full one.
-      lossy('invariants.deferredReplaced', 0, summary.length, 1);
+      lossy('invariants.deferredReplaced', 0, summary.length, 1, () => [summary]);
       summary = what
         ? `Not in this release — ${what}; it ships with the work it governs, in ${defer[1]}.`
         : `Not in this release; it ships with the work it governs, in ${defer[1]}.`;
@@ -918,7 +939,7 @@ const firstBullet = (body) => {
   const m = all[0];
   const out = m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
   // P8. Returns bullet one and drops the rest of the list silently — no marker, no count.
-  if (all.length > 1) lossy('firstBullet', out.length, all.join('\n').length, all.length - 1);
+  if (all.length > 1) lossy('firstBullet', out.length, all.join('\n').length, all.length - 1, () => all.slice(1));
   return out;
 };
 const lineMatching = (body, re) => {
@@ -945,11 +966,11 @@ const lineMatching = (body, re) => {
       // (`rest.length < 6`), so a label with more than six content lines loses the remainder with
       // no marker. Found by instrumenting the producer, exactly as the durable lesson says: the
       // enumeration in the contract was itself derived from reading, and reading missed one.
-      let more = 0, moreChars = 0;
+      let more = 0, moreChars = 0; const moreText = [];
       for (let j = i + 1 + rest.length; j < lines.length; j++) {
         if (/^#/.test(lines[j])) break;
         const _c = clean(lines[j]).trim();
-        if (_c) { more++; moreChars += _c.length; }
+        if (_c) { more++; moreChars += _c.length; moreText.push(_c); }
       }
       if (rest.length >= 6 && more > 0) {
         // v0.32 S1-REOPEN. The `full` argument was `lines.slice(i).join('\n').length`, which counts
@@ -957,7 +978,7 @@ const lineMatching = (body, re) => {
         // cleaned kept string against a '\n'-joined RAW one. Three ways wrong in one call, and it
         // over-reported by exactly the 295 chars S2's independent census disagreed about. Chars
         // dropped is now the dropped lines themselves. Events and units were always right.
-        lossy('lineMatching.cap6', 0, moreChars, more);
+        lossy('lineMatching.cap6', 0, moreChars, more, () => moreText);
       }
       return `${first} ${rest.join('; ')}`;
     }
@@ -1043,7 +1064,7 @@ function fieldText(v, max = 150) {
     // P1. THE PATH THE FIRST TWO GOLD FIGURES MISSED. `nCt()` wraps the count in a
     // `<span data-prov="counted">`, so a plain text search of the rendered page returns 0 for this
     // path and reports it as absent rather than as unmeasured.
-    if (hidden > 0) lossy('fieldText:and-N-more', joined.length, full.length, hidden);
+    if (hidden > 0) lossy('fieldText:and-N-more', joined.length, full.length, hidden, () => parts.slice(kept.length));
     return joined + (hidden > 0 ? ` — and ${nCt(hidden)} more` : '');
   }
   // Prefer a sentence boundary, so a shortened field ends where a thought ends. A bare ellipsis
@@ -1060,13 +1081,13 @@ function fieldText(v, max = 150) {
     // P2. Contract section 9 calls this "the (continues) path", singular. It is two separate return
     // statements — this one and P3 below — that happen to print the same word. Counted apart,
     // because a figure that fuses two code paths is how the earlier ones went wrong.
-    if (kept.length < full.trim().length) lossy('fieldText:continues-sentence', kept.length, full.trim().length, 1);
+    if (kept.length < full.trim().length) lossy('fieldText:continues-sentence', kept.length, full.trim().length, 1, () => [full.trim().slice(kept.length)]);
     return kept.length < full.trim().length ? `${kept} (continues)` : kept;
   }
   const cut = splitLead(full, max);
   const lead = cut.lead.replace(/[;,]\s*$/, '');
   // P3. The second half of section 9's single "(continues) path".
-  if (cut.rest) lossy('fieldText:continues-hardcut', lead.length, full.length, 1);
+  if (cut.rest) lossy('fieldText:continues-hardcut', lead.length, full.length, 1, () => [cut.rest]);
   return cut.rest ? `${lead} (continues)` : lead;
 }
 
@@ -1134,7 +1155,7 @@ function briefBody() {
   ];
   const doneMeans = firstNonEmpty(_dmCands);
   if (_dmCands.findIndex((x) => x && String(x).trim()) === 2 && _goalSents.length > 2) {
-    lossy('doneMeans.goalSentence2', String(_goalSents[1]).length, _goalSents.slice(1).join(' ').length, _goalSents.length - 2);
+    lossy('doneMeans.goalSentence2', String(_goalSents[1]).length, _goalSents.slice(1).join(' ').length, _goalSents.length - 2, () => _goalSents.slice(2));
   }
   const goldLine = firstNonEmpty([
     lineMatching(sec('Reconciliation'), /gold\s*(figure)?s?\b/i),
@@ -1525,7 +1546,7 @@ function planMap() {
     const allItems = bullets(body, /^-\s+/);
     // P4. Drops every bullet past the eighth and prints nothing to say so.
     if (allItems.length > 8) {
-      lossy('bullets.slice8', allItems.slice(0, 8).join('').length, allItems.join('').length, allItems.length - 8);
+      lossy('bullets.slice8', allItems.slice(0, 8).join('').length, allItems.join('').length, allItems.length - 8, () => allItems.slice(8));
     }
     const items = allItems.slice(0, 8);
     const inner = items.length
@@ -1967,7 +1988,8 @@ function reviewArtefact() {
   const hiddenN = rows.length - shown.length;
   // P5. Drops WHOLE ledger rows. The unit here is a row, not a character, which is why the
   // char figures are reported as 0 rather than guessed at.
-  if (hiddenN > 0) lossy('closedRows.slice', 0, 0, hiddenN);
+  if (hiddenN > 0) lossy('closedRows.slice', 0, 0, hiddenN,
+    () => rows.filter((r) => !shown.includes(r)).map((r) => Object.values(r).filter((v) => typeof v === 'string').join(' ')));
   const list = shown.map((r) => {
     const cls = sev(r);
     // THREE labels, matching band 2's three counts. A status that is stated but recognised by
@@ -2031,7 +2053,7 @@ function releaseCard() {
     .map((l) => l.replace(/^\s*\d+\.\s*/, '').replace(/\*\*/g, ''));
   const nowItems = (ladderNow.length ? ladderNow : numbered).map((t) => fieldText(String(t), 140));
   // P6. Drops scope items past the sixth.
-  if (nowItems.length > 6) lossy('nowItems.slice6', 0, 0, nowItems.length - 6);
+  if (nowItems.length > 6) lossy('nowItems.slice6', 0, 0, nowItems.length - 6, () => nowItems.slice(6));
   const items = nowItems.slice(0, 6).map((b) => `<li>${txt(b)}</li>`).join('')
     + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more</li>` : '');
   const facet = hdr('facets') || 'library';
@@ -2058,7 +2080,7 @@ function releaseCard() {
       // P13. NOT ENUMERATED IN SECTION 9, and it lands on the one chip whose whole job is to
       // disclose what is still open: only the FIRST unchecked receipt line becomes the reason.
       const _whyAll = blk.match(/^- \[ \][^\n]*/gm) || [];
-      if (_whyAll.length > 1) lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1);
+      if (_whyAll.length > 1) lossy('waiverReason.firstOnly', _whyAll[0].length, _whyAll.join('\n').length, _whyAll.length - 1, () => _whyAll.slice(1));
       const why = (_whyAll[0] || '').replace(/^- \[ \]\s*/, '').replace(/\*/g, '');
       return `<span class="chip" style="background:var(--amberBg);color:var(--amberFg);border:1px solid var(--amberBorder)">shipped un-converged — ${txt(fieldText(why, 120))}</span>`;
     })()}<span class="chip">facet: ${txt(facet)}</span><span class="chip">${nowItems.length ? `${nC(nowItems.length)} changes` : 'changes not itemised in this contract'}</span><span class="chip">reversible — revert the release commit + tag</span></div>
