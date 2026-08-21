@@ -2848,6 +2848,16 @@ chk "$?" "1" "v0.32 S22: writing the word MEASURED three times does NOT satisfy 
 _mkpb recon "25.4 / 25.2 / 25.2s measured; $_PBBASE median 99.9s"
 bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/recon" >/dev/null 2>&1
 chk "$?" "1" "v0.32 S22: a series that reconciles with NOTHING stated is REFUSED — a first version searched the whole line and the median of an odd series IS one of its own members, so the rule matched itself"
+# EVERY series must reconcile, not just the longest. Checking one let a budget carry a real
+# measurement beside an INVENTED one and pass on the strength of the real one — the exact shape this
+# rule exists to refuse, one level up. Found by the rule catching this build's OWN contract when a
+# third series was recorded without its derived figure.
+_mkpb twoser "25.4 / 25.2 / 25.2s -> median 25.2s; and 90.1 / 90.2 / 90.3s -> median 12.0s; $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/twoser" >/dev/null 2>&1
+chk "$?" "1" "v0.32 S22: a budget with a REAL series beside an invented one is REFUSED — every series must reconcile, or one true measurement launders a false one"
+_mkpb twook "25.4 / 25.2 / 25.2s -> median 25.2s; and 90.1 / 90.2 / 90.3s -> median 90.2s; $_PBBASE"
+bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/twook" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S22: ...and two series that BOTH reconcile pass (the control — without it 'refuse anything with two series' would satisfy the case above)"
 # The unit is required. Without it, "25" inside the SLO range "25-50s" satisfied the rule.
 _mkpb unitless "25.4 / 25.2 / 25.2s runs; p95 latency 200 ms; peak-mem 256 MB; cost $0.00 per request; SLO healthy range 25-50s."
 bash "$PLUGIN_ROOT/scripts/compass.sh" perf-budget-gate "$_pbd/unitless" >/dev/null 2>&1

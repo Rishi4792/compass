@@ -1270,6 +1270,10 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
         for (i = 1; i <= n; i++) { gsub(/ /, "", parts[i]); v[i] = parts[i] + 0 }
         for (i = 1; i <= n; i++) for (j = i+1; j <= n; j++) if (v[j] < v[i]) { t = v[i]; v[i] = v[j]; v[j] = t }
         med = (n % 2) ? v[int(n/2)+1] : (v[n/2] + v[n/2+1]) / 2
+        # EVERY series, not just the longest. Checking one meant a budget could carry a real
+        # measurement beside an invented one and pass on the strength of the real one — which is
+        # precisely the shape this rule exists to refuse, one level up.
+        ns++; MED[ns] = med; UNIT[ns] = unit; CNT[ns] = n
         if (n > best_n) { best_n = n; best_med = med; best_unit = unit }
       }
       if (best_n == 0) { print "NOSERIES"; exit }
@@ -1287,11 +1291,17 @@ cmd_perf_budget_gate() { # <slug|build-dir> — non-trivial-Scale build MUST pin
       # THE UNIT IS REQUIRED, and the unit-less alternative is gone. It matched "25" inside the SLO
       # range "25-50s" and passed a budget claiming a median of 99.9s over observations of 25.2s.
       # A bare integer appears in almost any sentence; a figure carrying its unit is a claim.
-      for (p = 3; p >= 0; p--) {
-        want = sprintf("%." p "f", best_med); pat = want; gsub(/\./, "\\.", pat)
-        if (rest ~ ("[^0-9.]" pat "[ ]*" best_unit "([^a-zA-Z0-9]|$)")) { printf "OK %d %s%s\n", best_n, want, best_unit; exit }
+      okc = 0
+      for (k = 1; k <= ns; k++) {
+        found = 0
+        for (p = 3; p >= 0; p--) {
+          want = sprintf("%." p "f", MED[k]); pat = want; gsub(/\./, "\\.", pat)
+          if (rest ~ ("[^0-9.]" pat "[ ]*" UNIT[k] "([^a-zA-Z0-9]|$)")) { found = 1; lastwant = want; break }
+        }
+        if (found) okc++
+        else { printf "NORECONCILE %d %s%s\n", CNT[k], MED[k], UNIT[k]; exit }
       }
-      printf "NORECONCILE %d %s%s\n", best_n, best_med, best_unit
+      printf "OK %d %s%s\n", best_n, lastwant, best_unit
     }''')"
   case "$_pbv" in
     NOSERIES)
