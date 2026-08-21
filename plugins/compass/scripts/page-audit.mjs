@@ -538,15 +538,109 @@ export function runControls() {
 // arrives percent-encoded), so this guard silently never fired and `--controls` exited 0 having run
 // nothing — a self-test that reports success by doing nothing is the defect this file exists to fix.
 import { pathToFileURL } from "node:url";
-import { realpathSync } from "node:fs";
+import { realpathSync, readFileSync } from 'node:fs';
 // `import.meta.url` is the REALPATH; `pathToFileURL(process.argv[1])` is not. On macOS `/tmp` and
 // `/var` are symlinks, as are Docker mounts and symlinked worktrees — so invoked through one of
 // those this guard was false, `--controls` printed NOTHING and exited 0, and both callers read
 // "exit 0, no output" as "all controls fire". The control-of-controls was silently off. The earlier
 // comment here claimed this class was closed: it closed the spaces case, not the symlink case.
+
+// ── v0.32.0 S18 — SELF-CONSISTENCY: every total agrees with every other describing the same set ──
+// The plan named `--self-consistency` as if it existed. It did not: `grep -c self-consistency`
+// returned 0 and passing the flag exited 0 in silence, so the assertion written against it was a
+// no-op that always passed. Building it was step one.
+//
+// THE TRAP, found by reading a real page before writing a line of this. A review page's LEDGER
+// quotes historical numbers inside finding text — "207 findings, 64 critical + 100 major = 164",
+// "Header says 162 findings / 69 critical / 74 major". Those are quotations of past defects, not
+// claims this page is making, and a check that reads the prose flags every one of them.
+// So this reads the PROVENANCE MARKUP instead: only a number the page itself marks
+// `data-prov="counted"` is a claim this page makes about its own data. That is the same
+// distinction the rest of this file is built on, applied to arithmetic.
+export function selfConsistency(raw) {
+  const problems = [];
+  const claims = [];
+  for (const m of String(raw).matchAll(/<span[^>]*data-prov="counted"[^>]*>([^<]{1,12})<\/span>/g)) {
+    const nRaw = m[1].replace(/[,\u2009\u202f\s]/g, '');
+    if (!/^\d+$/.test(nRaw)) continue;
+    // The LABEL is the words immediately after the number, with markup and entities removed. Cut at
+    // the first punctuation, because "27 still open, 20 whose status" must not read as one label.
+    const after = String(raw).slice(m.index + m[0].length, m.index + m[0].length + 70)
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&')
+      .replace(/&#8212;|&mdash;|&#8211;|&ndash;/g, '\u2014')
+      .replace(/\s+/g, ' ').trim();
+    const label = after.split(/[,.;:\u2014\u00b7|(]/)[0].trim().toLowerCase();
+    if (!label) continue;
+    // A ROW'S REMAINDER IS NOT A PAGE-LEVEL SET. `gen.mjs` emits exactly one marker of the shape
+    // "— and <N> more" (fieldParts, the `and-N-more` site), and it counts what THIS ROW hid, not
+    // anything the page is claiming about its data. Two rows legitimately hide different amounts,
+    // so comparing them reported the honest live page as self-contradictory ("more show the" is
+    // claimed as 1 and 2). Excluded by its own documented shape — the words either side of the
+    // number — not by a guess about which numbers look important.
+    const before = String(raw).slice(Math.max(0, m.index - 30), m.index).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    if (/\band\s*$/.test(before) && /^more\b/.test(label)) continue;
+    claims.push({ n: Number(nRaw), label, at: m.index });
+  }
+  // VACUITY GUARD. A page with no counted claims is UNMEASURED, never "consistent". Returning a
+  // clean pass over an empty set is the defect this build has now found seven times.
+  if (!claims.length) return { ok: false, unmeasured: true, claims: 0, problems: ['no data-prov="counted" number on this page, so there is nothing to reconcile — UNMEASURED, not consistent'] };
+
+  const byLabel = new Map();
+  for (const c of claims) {
+    const k = c.label.split(' ').slice(0, 3).join(' ');
+    if (!byLabel.has(k)) byLabel.set(k, []);
+    byLabel.get(k).push(c);
+  }
+  // RULE 1 — the same claim, stated twice, must be the same number.
+  for (const [k, cs] of byLabel) {
+    const vals = [...new Set(cs.map((c) => c.n))];
+    if (vals.length > 1) problems.push(`"${k}" is claimed as ${vals.join(' and ')} on the same page`);
+  }
+  const one = (re) => {
+    for (const [k, cs] of byLabel) if (re.test(k)) return cs[0].n;
+    return null;
+  };
+  const findings = one(/^findings?$/) ?? one(/^findings?\b/);
+  const closed = one(/^closed\b/);
+  const open = one(/^still open\b/);
+  const unread = one(/^whose status\b/);
+  // RULE 2 — the status buckets PARTITION the findings, so they must sum to the total. Contract §3:
+  // "Anything unmatched is unreadable and is never silently folded into settled" — which is only
+  // true if the three are stated and add up.
+  if (findings !== null && closed !== null && open !== null && unread !== null) {
+    const sum = closed + open + unread;
+    if (sum !== findings) problems.push(`the status buckets do not partition the total: ${closed} closed + ${open} still open + ${unread} unreadable = ${sum}, but the page says ${findings} findings`);
+  }
+  // RULE 3 — severities are a SUBSET, never a superset.
+  const crit = one(/^critical\b/), maj = one(/^major\b/);
+  if (findings !== null && crit !== null && maj !== null && crit + maj > findings) {
+    problems.push(`severities exceed the total: ${crit} critical + ${maj} major = ${crit + maj} against ${findings} findings`);
+  }
+  return { ok: problems.length === 0, unmeasured: false, claims: claims.length, problems };
+}
+
 const _self = (() => { try { return pathToFileURL(realpathSync(process.argv[1] || "")).href; } catch { return ""; } })();
 if (_self && import.meta.url === _self) {
   const failed = runControls();
+  if (process.argv[2] === "--self-consistency") {
+    const f = process.argv[3];
+    if (!f) { console.log("page-audit: usage: page-audit.mjs --self-consistency <page.html>"); process.exit(2); }
+    let raw = "";
+    try { raw = readFileSync(f, "utf8"); } catch (e) { console.log("page-audit: cannot read " + f); process.exit(2); }
+    const r = selfConsistency(raw);
+    if (r.unmeasured) {
+      console.log("page-audit self-consistency: UNMEASURED — " + r.problems[0]);
+      process.exit(2);
+    }
+    if (!r.ok) {
+      console.log("page-audit self-consistency: FAIL — " + r.problems.length + " contradiction(s) over " + r.claims + " counted claim(s):");
+      for (const pr of r.problems) console.log("    " + pr);
+      process.exit(1);
+    }
+    console.log("page-audit self-consistency: PASS — " + r.claims + " counted claim(s), every total agrees with every other describing the same set.");
+    process.exit(0);
+  }
   if (process.argv[2] === "--controls") {
     if (failed.length) {
       console.log("page-audit: " + failed.length + " control(s) NOT firing:");

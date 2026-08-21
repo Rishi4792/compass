@@ -2739,6 +2739,60 @@ bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_wg/b" review-plan >/dev/null 2>&1
 chk "$?" "1" "v0.32 S10/S11c: a review round that says nothing about independence is refused BY compass.sh gate"
 rm -rf "$_wg"
 
+# ── v0.32 S18: --self-consistency, which the plan named as if it existed ─────────────────────
+# It did not. `grep -c self-consistency page-audit.mjs` returned 0 and passing the flag exited 0 in
+# silence, so plan v1's assertion against it was a no-op that always passed. Building the mode was
+# step one; these are its teeth.
+_PA="$PLUGIN_ROOT/scripts/page-audit.mjs"
+if [ -f "$_PA" ] && command -v node >/dev/null 2>&1; then
+  chk "$([ "$(grep -c 'self-consistency' "$_PA" || true)" -gt 0 ] && echo ok || echo ABSENT)" "ok" "v0.32 S18: the --self-consistency mode EXISTS (it did not; the flag exited 0 in silence)"
+  _sc="$(mktemp -d)"; mkdir -p "$_sc/b"
+  printf '# Contract — d · v1\n\nfacets: library\n\n## Goal & scope\n**Goal:** a fixture with a ledger.\n\n## Acceptance & INVARIANTs\n- **INV-X:** a thing. → *assert:* it holds.\n' > "$_sc/b/contract.md"
+  { printf '| Issue ID | Sev | Status |\n|---|---|---|\n'
+    i=0; while [ "$i" -lt 9 ]; do i=$((i+1)); printf '| A-%s | Maj | CLOSED |\n' "$i"; done
+    printf '| B-1 | Crit | OPEN |\n| B-2 | Maj | WEIRDSTATUS |\n'; } > "$_sc/b/review-ledger.md"
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_sc/b" review --out "$_sc/r.html" >/dev/null 2>&1
+  # VACUITY GUARD: the assertions below are about a page, so there had better be one.
+  chk "$([ -s "$_sc/r.html" ] && echo ok || echo MISSING)" "ok" "v0.32 S18: ...and there IS a rendered page to audit"
+  # grep -c counts LINES and this page is nearly all one line — the first version of this assertion
+  # read "1" for a page carrying eight counted claims. Occurrences, not lines.
+  _scn="$(grep -o 'data-prov="counted"' "$_sc/r.html" | wc -l | tr -d ' ')"
+  chk "$([ "${_scn:-0}" -ge 4 ] && echo ok || echo "ONLY:${_scn:-0}")" "ok" "v0.32 S18: ...carrying a NON-EMPTY population of counted claims to reconcile"
+  node "$_PA" --self-consistency "$_sc/r.html" >/dev/null 2>&1
+  chk "$?" "0" "v0.32 S18: a CONSISTENT page passes (the control — without it every refusal below is free)"
+  # A HEADER TOTAL THAT DISAGREES WITH THE BODY. Rewriting only the FIRST occurrence is the point:
+  # the same figure is stated twice on the page and the two must agree.
+  node -e '
+    const fs=require("fs"); const s=fs.readFileSync(process.argv[1],"utf8");
+    const m=s.match(/<span data-prov="counted">(\d+)<\/span> findings/);
+    if(!m){process.exit(3);}
+    fs.writeFileSync(process.argv[2], s.replace(m[0], m[0].replace(m[1], String(Number(m[1])+1))));
+  ' "$_sc/r.html" "$_sc/bad.html"
+  chk "$([ -s "$_sc/bad.html" ] && echo ok || echo MISSING)" "ok" "v0.32 S18: ...and the disagreeing variant was actually produced"
+  node "$_PA" --self-consistency "$_sc/bad.html" >/dev/null 2>&1
+  chk "$?" "1" "v0.32 S18: a header total that disagrees with the body total is REFUSED"
+  # a page with nothing counted is UNMEASURED, never 'consistent'
+  printf '<html><body><p>nothing counted here at all</p></body></html>' > "$_sc/none.html"
+  node "$_PA" --self-consistency "$_sc/none.html" >/dev/null 2>&1
+  chk "$?" "2" "v0.32 S18: a page with NO counted claim is UNMEASURED (exit 2), never a silent pass over an empty set"
+  # THE TRAP THIS CHECK EXISTS TO AVOID. A review ledger QUOTES historical numbers inside finding
+  # text — real rows on the live corpus read "207 findings, 64 critical + 100 major = 164". Those
+  # are quotations of past defects, not claims this page makes, and a checker reading the prose
+  # flags every one. Provenance markup is what separates them, so it is tested, not asserted.
+  printf '| Issue ID | Sev | Status | Failure mode |\n|---|---|---|---|\n| A-1 | Maj | CLOSED | Header said 162 findings / 69 critical / 74 major, and 999 closed, 0 still open |\n| A-2 | Crit | OPEN | a second row |\n| A-3 | Maj | CLOSED | a third row |\n' > "$_sc/b/review-ledger.md"
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_sc/b" review --out "$_sc/quoted.html" >/dev/null 2>&1
+  chk "$([ -s "$_sc/quoted.html" ] && echo ok || echo MISSING)" "ok" "v0.32 S18: ...and the quoting page rendered"
+  # The literal "162 findings" is NOT contiguous on the page — the number is wrapped as
+  # `<span data-prov="quoted">162</span> findings`, which is the very mechanism under test. Grepping
+  # the plain literal returned 0 and made the PASS below vacuous, which is how a control quietly
+  # stops controlling anything.
+  chk "$(grep -o 'data-prov="quoted">162<' "$_sc/quoted.html" | wc -l | tr -d ' ')" "1" "v0.32 S18: ...and it really does carry the contradictory total, marked QUOTED — without this the pass below would be over a page that never had the numbers"
+  chk "$(grep -o 'data-prov="quoted">999<' "$_sc/quoted.html" | wc -l | tr -d ' ')" "1" "v0.32 S18: ...including a '999 closed' that would break the partition rule if it were read as a claim"
+  node "$_PA" --self-consistency "$_sc/quoted.html" >/dev/null 2>&1
+  chk "$?" "0" "v0.32 S18: a page whose LEDGER QUOTES contradictory totals still PASSES — quoting a past defect is not claiming it, and only data-prov markup can tell them apart"
+  rm -rf "$_sc"
+fi
+
 # ── v0.32 S14: an ABSENT reader-copy block was an N/A-PASS ───────────────────────────────────
 # So on 27 of 30 contracts this gate printed a pass for a file it had not read one word of. "No
 # block" is not "the copy is fine". GUARD-FIRST (the v0.28 lesson): a contract that PREDATES the
