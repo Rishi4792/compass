@@ -708,9 +708,18 @@ chk "$([ "$(grep -c 'program-ledger' "$GO22")" -ge 1 ] && [ "$(grep -c 'program-
 chk "$([ "$(grep -c 'program-ledger' "$RES22")" -ge 1 ] && [ "$(grep -c 'program-next' "$RES22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D4: resume.md surfaces program-ledger + program-next on the 0-active branch"
 chk "$([ "$(grep -c 'red-green' "$RPK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-plan requires a red-green RED-evidence step"
 chk "$([ "$(grep -c 'red-green' "$RBK22")" -ge 1 ] && [ "$(grep -c 'mutation-check' "$RBK22")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.22 W-D5: review-build re-runs mutation-check + re-challenges red-green"
-chk "$(grep -c '0.31.0' "$PLUGIN_ROOT/.claude-plugin/plugin.json")" "1" "v0.26 W-F: plugin.json at the current release 0.31.0"
-chk "$(grep -c '0.29.2' "$RR22/.claude-plugin/marketplace.json")" "1" "v0.26 W-F: marketplace.json at the current release 0.29.2"
-chk "$(grep -c '## \[0.29.2\]' "$RR22/CHANGELOG.md")" "1" "v0.26 W-F: CHANGELOG carries the 0.29.2 entry"
+# v0.32 INSTRUMENT REPAIR: these three pins were three INDEPENDENT hardcoded literals, so they
+# could — and did — drift apart. Commit 8e1fc84 corrected marketplace.json to 0.31.0 and left the
+# assertion greping for 0.29.2, so the suite was RED at HEAD (686/1) and no round of any build
+# could honestly be called clean. The CHANGELOG pin was worse: it asserted an OLD entry still
+# exists, and a CHANGELOG only ever grows, so that assertion could never fail.
+# Now all three DERIVE from one source (plugin.json) and assert agreement — a behaviour test
+# ("these files say the same thing") instead of three prose greps for a literal. It survives the
+# next version bump instead of breaking on it.
+_v32rel="$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$PLUGIN_ROOT/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+chk "$([ -n "$_v32rel" ] && echo 1 || echo 0)" "1" "v0.32 W-F: plugin.json declares a version (the single source the other pins derive from)"
+chk "$(grep -c "\"$_v32rel\"" "$RR22/.claude-plugin/marketplace.json")" "1" "v0.32 W-F: marketplace.json agrees with plugin.json ($_v32rel)"
+chk "$(grep -c "## \[$_v32rel\]" "$RR22/CHANGELOG.md")" "1" "v0.32 W-F: CHANGELOG carries the $_v32rel entry"
 
 # ══ v0.24.0 clarity-simplicity — behavioral teeth ══════════════════════════════════════════════
 CURSH="$PLUGIN_ROOT/scripts/compass.sh"
