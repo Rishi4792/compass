@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=Text present but clipped to one line is not text a person can reach. Presence is not reachability.

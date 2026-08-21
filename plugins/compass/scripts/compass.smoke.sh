@@ -2148,6 +2148,28 @@ else
   chk "1" "1" "v0.32 S4: N/A — no node or no reachable-argument-check.sh on this tree"
 fi
 
+# ── v0.32 S5: the behaviour corpus — five ways to look clean without fixing anything ─────────
+# Each entry is APPLIED to a throwaway copy and the named check re-run against it. The previous
+# corpus in this repo pinned a COUNT, so swapping real entries for trivial ones scored the same;
+# this one pins each entry's IDENTITY and, more importantly, RUNS it.
+# Three of the five defeated my own check the first time it was run. That is what the corpus is for.
+_BCC="$PLUGIN_ROOT/scripts/behaviour-corpus-check.sh"
+if [ -f "$_BCC" ] && command -v node >/dev/null 2>&1; then
+  _bout="$(bash "$_BCC" "$RR22" 2>&1)"
+  chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: ([0-9]+) entries.*/\1/p' | head -1)" "5" "v0.32 S5: the behaviour corpus holds all five cheats from contract section 9"
+  chk "$(printf '%s' "$_bout" | sed -nE 's/^behaviour-corpus: [0-9]+ entries, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S5: every cheat is DEFEATED — none lowers the figure without a row being fixed"
+  for _c in rename-marker hide-rows empty-control one-control-per-page css-clip; do
+    chk "$(printf '%s' "$_bout" | grep -c "ok   $_c - defeated")" "1" "v0.32 S5: cheat '$_c' is applied and defeated (not merely stored)"
+    chk "$([ -s "$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour/$_c/REPRODUCTION.md" ] && echo 1 || echo 0)" "1" "v0.32 S5: ...and carries the reproduction that earned its place"
+  done
+  # identity, never a count: the previous corpus's own recorded defeat
+  chk "$([ -s "$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt" ] && echo 1 || echo 0)" "1" "v0.32 S5: the corpus is pinned by a per-entry checksum, so hollowing one out is a visible diff"
+  # a zero baseline would make every 'must not fall' rule pass for free — both baselines are guarded
+  chk "$(printf '%s' "$_bout" | grep -c 'baseline unreachable = ')" "1" "v0.32 S5: the run states the baseline it judged against, so a vacuous pass is visible"
+else
+  chk "1" "1" "v0.32 S5: N/A — no node or no behaviour-corpus-check.sh on this tree"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.

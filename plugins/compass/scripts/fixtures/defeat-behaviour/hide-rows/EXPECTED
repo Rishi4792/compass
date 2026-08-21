@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=source-unreachable-must-not-fall
+why=Showing fewer rows destroys MORE, not less. Judged on SOURCE coverage, because hiding a row also deletes the field truncations inside it — so a measure keyed to what the generator reports dropping FALLS while the reader loses more. This entry is why that second measure exists.

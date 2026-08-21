@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=A control that exists but holds nothing gives the reader nothing. Presence is not reachability.

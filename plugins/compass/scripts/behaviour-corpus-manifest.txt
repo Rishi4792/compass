@@ -1,0 +1,7 @@
+# v0.32 behaviour-corpus identity pin. Each line: slug, sha256[:16] of (apply.sh + EXPECTED + REPRODUCTION.md).
+# Entries are ADD-ONLY. A removed slug fails; a hollowed-out entry fails on its checksum.
+css-clip  c4f22deecae389cf
+empty-control  80dd97cddf28a146
+hide-rows  19ca24d8829d23ec
+one-control-per-page  7726177b2a3c3b65
+rename-marker  77c259d280503fb4

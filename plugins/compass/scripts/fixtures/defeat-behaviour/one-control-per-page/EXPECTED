@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=One control speaking for every row is a dump. A reader cannot get from a shortened row to its own remainder.

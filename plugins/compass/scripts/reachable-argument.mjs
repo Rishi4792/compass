@@ -91,9 +91,12 @@ function dropSubtree(html, startIdx, tag) {
   }
   return html.slice(0, startIdx);
 }
-function reachableText(html) {
+function reachableText(html, clippedIn) {
   let h = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
-  const clipped = clippedClasses(html);
+  // v0.32 S5: the clipped-class set MUST come from the whole page. Deriving it from a <details>
+  // fragment found no <style> block, so a class-based clip inside a control was invisible and the
+  // css-clip cheat took the figure 159 -> 95. Found by the behaviour corpus, on my own check.
+  const clipped = clippedIn || clippedClasses(html);
   for (let guard = 0; guard < 5000; guard++) {
     const m = /<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/.exec(h);
     let hit = null;
@@ -114,9 +117,9 @@ function reachableText(html) {
     .replace(/\s+/g, ' ').trim();
 }
 // Which disclosure control, if any, holds a given probe — so cheat 4 can be caught.
-function controlsFor(html) {
+function controlsFor(html, clipped) {
   const out = [];
-  for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) out.push({ start: m.index, text: reachableText(m[0]) });
+  for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) out.push({ start: m.index, text: reachableText(m[0], clipped) });
   return out;
 }
 
@@ -137,6 +140,17 @@ for (const d of dirs) {
 }
 
 let probesTotal = 0, unreachable = 0, reachable = 0, dumped = 0, unitsSeen = 0, inControl = 0, inFlowOnly = 0;
+// ── the SECOND measure, and the reason it exists ─────────────────────────────────────────────
+// The probe measure above is keyed to what the generator REPORTS dropping. That denominator moves:
+// hide a whole ledger row and the field truncations inside it never happen, so the count FALLS
+// while the reader loses more. The behaviour corpus caught exactly that — `hide-rows` took the
+// figure 159 -> 130 without a line being fixed.
+// So: a second measure whose denominator is the SOURCE and cannot move. Take every distinctive
+// line of the build's own markdown and ask whether a reader can find it on any of that build's
+// pages. Hiding a row lowers this. Renaming a marker does not touch it. Clipping lowers it.
+// This is the contract's unit stated literally: a row of source a reader cannot finish.
+const srcPages = new Map();                       // dir -> [reachable text of each of its pages]
+const SRC_MIN = 40;                               // shorter lines are not distinctive enough to find
 const byPath = {};
 const examples = [];
 for (const p of pages) {
@@ -145,9 +159,16 @@ for (const p of pages) {
     : [];
   if (!rows.length) continue;
   const html = readFileSync(p.out, 'utf8');
-  const text = reachableText(html);
-  const ctrls = controlsFor(html);
-  const evPerCtrl = new Map();                       // control index -> Set(ev)
+  const clipped = clippedClasses(html);
+  const text = reachableText(html, clipped);
+  const ctrls = controlsFor(html, clipped);
+  // TWO PASSES, because cheat 4 can only be judged once every probe has been placed. Crediting a
+  // control as soon as its FIRST event is found let the dump keep whichever event happened to be
+  // seen first — 33 probes, and the cheat took the figure 159 -> 126. A control that ends up
+  // speaking for more than one destroying event credits NONE of them: it is a dump, retroactively.
+  (srcPages.get(p.dir) || srcPages.set(p.dir, []).get(p.dir)).push(text);
+  const placed = [];
+  const evPerCtrl = new Map();
   for (const r of rows) {
     unitsSeen += r.unitsDropped || 0;
     for (const probe of (r.probes || [])) {
@@ -155,24 +176,49 @@ for (const p of pages) {
       const b = (byPath[r.site] ||= { probes: 0, reachable: 0, unreachable: 0 });
       b.probes++;
       const ci = ctrls.findIndex((c) => c.text.includes(probe));
-      const inFlow = text.includes(probe);
-      if (ci >= 0) {
-        const set = evPerCtrl.get(ci) || new Set();
-        set.add(r.ev); evPerCtrl.set(ci, set);
-        // cheat 4: one control may speak for ONE row. Beyond that it is a dump.
-        if (set.size > 1) { unreachable++; dumped++; b.unreachable++; continue; }
-        reachable++; inControl++; b.reachable++; continue;
-      }
-      // Found in ordinary flow, NOT in a disclosure control. That is weaker evidence and is
-      // reported apart: on an UNFIXED generator it usually means the same words happen to appear
-      // somewhere else on the page, not that this row's remainder was disclosed. Folding it into
-      // "reachable" would flatter the number in the one direction that matters.
-      if (inFlow) { reachable++; inFlowOnly++; b.reachable++; continue; }
-      unreachable++; b.unreachable++;
-      if (examples.length < 5) examples.push({ dir: p.dir, view: p.view, site: r.site, probe: probe.slice(0, 70) });
+      if (ci >= 0) { const set = evPerCtrl.get(ci) || new Set(); set.add(r.ev); evPerCtrl.set(ci, set); }
+      placed.push({ r, probe, ci, inFlow: text.includes(probe), b });
+    }
+  }
+  for (const q of placed) {
+    if (q.ci >= 0 && (evPerCtrl.get(q.ci) || new Set()).size === 1) { reachable++; inControl++; q.b.reachable++; continue; }
+    if (q.ci >= 0) { unreachable++; dumped++; q.b.unreachable++; continue; }
+    // Found in ordinary flow, NOT in a disclosure control. Weaker evidence, reported apart: on an
+    // UNFIXED generator it usually means the same words happen to appear in another card, not that
+    // this row's remainder was disclosed. Folding it in would flatter the number in the one
+    // direction that matters.
+    if (q.inFlow) { reachable++; inFlowOnly++; q.b.reachable++; continue; }
+    unreachable++; q.b.unreachable++;
+    if (examples.length < 5) examples.push({ dir: p.dir, view: p.view, site: q.r.site, probe: q.probe.slice(0, 70) });
+  }
+}
+// ── source coverage: a line of the build's own markdown a reader cannot find on its pages ───
+let srcLines = 0, srcReachable = 0;
+for (const d of dirs) {
+  const slug = d.split('/').pop();
+  const texts = srcPages.get(slug) || [];
+  if (!texts.length) continue;
+  const joined = texts.join(' \u0001 ');
+  const seen = new Set();
+  for (const f of readdirSync(d)) {
+    if (!f.endsWith('.md')) continue;
+    let body = '';
+    try { body = readFileSync(join(d, f), 'utf8'); } catch { continue; }
+    let fenced = false;
+    for (const raw of body.split('\n')) {
+      if (/^\s*```/.test(raw)) { fenced = !fenced; continue; }
+      if (fenced) continue;                        // a fenced block is code, not prose a reader hunts for
+      const line = raw.replace(/^[\s>|*_-]+/, '').replace(/[*`_]/g, '').replace(/\s+/g, ' ').trim();
+      if (line.length < SRC_MIN) continue;
+      const key = line.slice(0, 120);
+      if (seen.has(key)) continue;                 // count a repeated line once
+      seen.add(key);
+      srcLines++;
+      if (joined.includes(key)) srcReachable++;
     }
   }
 }
+const srcUnreachable = srcLines - srcReachable;
 try { rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
 
 const result = {
@@ -181,6 +227,7 @@ const result = {
   unitsDropped: unitsSeen, probes: probesTotal, unprobed: Math.max(0, unitsSeen - probesTotal),
   reachable, reachableInAControl: inControl, reachableInFlowOnly: inFlowOnly,
   unreachable, dumpedIntoAsharedControl: dumped,
+  sourceLines: srcLines, sourceReachable: srcReachable, sourceUnreachable: srcUnreachable,
   byPath, examples,
 };
 if (asJson) { console.log(JSON.stringify(result, null, 2)); }
@@ -201,6 +248,10 @@ else {
     console.log(`                          this row's remainder. The honest range is ${unreachable} to ${unreachable + inFlowOnly}.`);
   }
   console.log(`  UNREACHABLE          : ${unreachable}${dumped ? `  (${dumped} of them sat in a control shared by several rows)` : ''}`);
+  console.log(`  SOURCE LINES         : ${srcLines} distinctive lines in the corpus's own markdown`);
+  console.log(`  ...a reader can find  : ${srcReachable}`);
+  console.log(`  SOURCE UNREACHABLE   : ${srcUnreachable}   — the denominator here is the SOURCE, so hiding`);
+  console.log(`                          a row raises this instead of lowering it.`);
   for (const k of Object.keys(byPath).sort((a, b) => byPath[b].unreachable - byPath[a].unreachable)) {
     const v = byPath[k];
     console.log(`    ${k.padEnd(30)} unreachable ${String(v.unreachable).padStart(5)} of ${v.probes}`);
