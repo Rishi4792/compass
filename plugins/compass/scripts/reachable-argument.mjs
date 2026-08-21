@@ -283,7 +283,13 @@ for (const p of pages) {
   // control and the anti-dump rule then killed both — 106 of 172 fixture probes, 62%, even when
   // every row had its own control. That is why an honest fix scored WORSE than a cheat.
   const claimed = new Map();
-  const evShown = new Map();                       // control index -> ev that owns it
+  const evShown = new Map();
+  // how much THIS ROW lost in total, across every destroying path that touched it
+  const rowChars = new Map();
+  for (const r of rows) {
+    const sh = normalise(r.shownProbe || '').slice(0, 30);
+    if (sh.length >= 12) rowChars.set(sh, (rowChars.get(sh) || 0) + (r.charsDropped || 0));
+  }                       // control index -> ev that owns it
   for (const r of rows) {
     unitsSeen += r.unitsDropped || 0;
     // A PREFIX, because a shown half is often shortened AGAIN downstream: `invariants()` hands over
@@ -337,9 +343,21 @@ for (const p of pages) {
       // the dump and passing on size alone. A path that cannot be bound is reported as UNBINDABLE
       // and counted UNREACHABLE — never credited on a maybe.
 
-      // A floor as well as a ceiling: one row's control may hold what SEVERAL paths dropped from
-      // that row, so sizing it against a single event's characters was too tight.
-      const budget = Math.min(Math.max((r.charsDropped || probe.length) * 1.5 + 400, 800), 2000);
+      // NOT INDEPENDENTLY PINNED, and said so rather than dressed up. Deleting this test changes no
+      // assertion and no corpus entry: the POSITIONAL rule already refuses everything it refuses,
+      // and on an honest tree it fires against nothing at all — an honest control is proportionate
+      // to its row by construction. Two attempts to build a cheat that only this test catches both
+      // failed, because the padded control is caught positionally first. It is kept as a second
+      // line of defence, and it does still reject ONE probe on the live corpus. What is NOT claimed
+      // is that it is tested; an untested rule that looks like protection is this build's own
+      // subject, and the honest move is to name it, not to manufacture a test that fits it.
+      //
+      // Budgeted against what THIS ROW lost, summed across every path that dropped text from it —
+      // one row's control legitimately holds all of them. No absolute cap: a flat 2,000-character
+      // ceiling punished six honestly-disclosed long remainders on the live corpus, calling them
+      // unreachable because the text they disclose is long. The ratio is what separates a
+      // disclosure from an aggregation; an absolute number just penalises verbose rows.
+      const budget = (rowChars.get(shown) || r.charsDropped || probe.length) * 1.5 + 400;
       // `--explain <site>` says WHY a probe was refused, gate by gate. Added because one probe of
       // seven refused to move through three targeted fixes, and guessing which rule rejected it is
       // how you write a fourth fix for the wrong cause.

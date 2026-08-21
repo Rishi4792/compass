@@ -2,6 +2,8 @@
 # Entries are ADD-ONLY. A removed slug fails; a hollowed-out entry fails on its checksum.
 clip-guard-exhaustion  1c58e9c77647851e
 control-hidden-by-ancestor  502e6e5e6303b30f
+control-padded-with-the-page  0936a87da51f12f2
+controls-piled-at-the-foot  4f3c20d819310f86
 css-clip  c4f22deecae389cf
 empty-control  80dd97cddf28a146
 hide-rows  19ca24d8829d23ec

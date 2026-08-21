@@ -1,0 +1,5 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+floor=65
+why=A control in the right place, holding the right remainder, and eight thousand characters of everything else. The reader has to read the whole document to find one missing sentence. Defeated ONLY by the budget ceiling, which is what this entry pins.

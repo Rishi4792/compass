@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=figure-must-not-fall
+why=A control that is not beside its row gives a reader no route from the shortened text to its own missing half. It satisfies every other rule — one per row, proportionate, unclipped — so it is defeated ONLY by the positional rule, which is what this entry pins.

@@ -85,6 +85,11 @@ for d in "$CORPUS"/*/; do
     if [ "$want" != "$got" ]; then echo "  FAIL $slug - does not match its pinned identity (pinned $want, got $got)"; bad=$((bad+1)); continue; fi
   fi
   rule="$(sed -nE 's/^rule=(.*)$/\1/p' "$d/EXPECTED" | head -1)"
+  # An optional ABSOLUTE floor. A relative "must not fall" cannot survive mutating the CHECK — the
+  # baseline moves with the mutation and the two cancel, which is why deleting the budget ceiling
+  # changed no entry. An entry that names a floor is compared against that number, not against a
+  # baseline the mutation can drag down with it.
+  floor="$(sed -nE 's/^floor=([0-9]+)$/\1/p' "$d/EXPECTED" | head -1)"
   case "$rule" in
     figure-must-not-fall)
       work="$TMP/$slug"; mkdir -p "$work"
@@ -100,7 +105,11 @@ for d in "$CORPUS"/*/; do
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure after the cheat (rendered pages: $(printf '%s' "$out" | head -1))"; bad=$((bad+1)); continue ;;
       esac
-      if [ "$got" -lt "$BASE" ]; then
+      if [ -n "$floor" ] && [ "$got" -lt "$floor" ]; then
+        echo "  FAIL $slug - THE CHEAT WORKS: unreachable $got is below this entry's absolute floor of $floor"
+        echo "         (an absolute floor, because mutating the CHECK moves a relative baseline with it)"
+        bad=$((bad+1))
+      elif [ "$got" -lt "$BASE" ]; then
         echo "  FAIL $slug - THE CHEAT WORKS: unreachable fell $BASE -> $got without a single row being fixed"; bad=$((bad+1))
       elif [ "$got" -eq $BASE ]; then
         # Equal is a PASS — the cheat bought nothing — but it is weaker evidence than a rise, and
