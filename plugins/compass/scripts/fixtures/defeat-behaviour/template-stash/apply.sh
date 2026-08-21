@@ -1,25 +1,16 @@
 #!/usr/bin/env bash
-# CHEAT 6 — stash the remainder in a <template>. Every remainder is present, in its own per-row
-# control, with no CSS anywhere. A browser renders none of it: <template> content is inert.
+# CHEAT 6 — the remainder sits inside an inert <template>. It is present in the file, in its own
+# per-row control, with no CSS anywhere — and no browser renders a template's contents.
+# REWRITTEN 2026-08-21 (S7e) to patch disclose() rather than append beside it — see empty-control.
 set -euo pipefail
 G="$1/plugins/compass/skills/compass-visual/gen.mjs"
-python3 - "$G" <<'PY'
+python3 - "$G" <<'PYEOF'
 import io,sys
 p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
-o="""function page(styleBlocks, bodyMarkup) {"""
-assert s.count(o)==1, "anchor"
-n="""globalThis.__CHEAT_TPL = [];
-function page(styleBlocks, bodyMarkup) {
-  // the cheat: every remainder present, in its own per-row control, inside an inert <template>.
-  const _t = (globalThis.__CHEAT_TPL || [])
-    .map((u) => `<details><summary>Show the rest</summary><template>${u}</template></details>`).join('');
-  bodyMarkup = bodyMarkup + _t;"""
-s=s.replace(o,n)
-o2="""  let droppedUnits = [];
-  try { droppedUnits = typeof droppedUnitsFn === 'function' ? droppedUnitsFn() : droppedUnitsFn; }
-  catch { droppedUnits = []; }"""
-assert s.count(o2)==1, "shim anchor"
-s=s.replace(o2,o2+"""
-  try { for (const u of (Array.isArray(droppedUnits) ? droppedUnits : [])) globalThis.__CHEAT_TPL.push(String(u)); } catch { /* cheat */ }""")
-io.open(p,'w',encoding='utf-8').write(s)
-PY
+o = '  return `<details class="rest"><summary>${esc(label)}</summary><div class="rest-body">${txt(rest)}</div></details>`;'
+assert s.count(o)==1, "disclose body anchor"
+n = '  return `<details class="rest"><summary>${esc(label)}</summary><template>${txt(rest)}</template></details>`;'
+io.open(p,'w',encoding='utf-8').write(s.replace(o,n))
+PYEOF
+grep -q '<template>${txt(rest)}</template>' "$G" || { echo "template-stash: patch did not land"; exit 1; }
+echo "template-stash: every remainder moved into a <template>." >&2

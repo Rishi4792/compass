@@ -316,6 +316,11 @@ for (const p of pages) {
       // The escape hatch is closed by the SOURCE measure: hide a row's shown half to make it "not
       // rendered" and its source lines stop being findable, which raises SOURCE UNREACHABLE.
       if (shown && shown.length >= 20 && !text.includes(shown)) { notRendered++; nrPaths.add(r.site); probesTotal--; b.probes--; continue; }
+      // DISCARDED: the generator computed this value and `firstNonEmpty` then chose a different
+      // candidate, so it was never rendered. A JS array literal evaluates every candidate, so the
+      // destroying counter fires for text nobody will see. There is no row, so there is nothing a
+      // reader cannot finish. Counted in NEITHER column, and named, like NOT RENDERED.
+      if (r.discarded) { notRendered++; nrPaths.add(r.site + ' (computed then discarded)'); probesTotal--; b.probes--; continue; }
       // v0.32 S6b: ONE control speaks for ONE event, and an event is credited only if it CLAIMS a
       // control of its own. The earlier version fell back to a control another event already owned,
       // which let contract §9's cheat 4 — every remainder dumped into one control — credit 8 probes
@@ -484,8 +489,8 @@ else {
   console.log(`  REACHABLE            : ${reachable}  — each in a control holding THAT row's remainder`);
   console.log(`  UNREACHABLE (bindable): ${bindUnreach}  — counting only the paths that carry their shown half,`);
   console.log(`                          i.e. the ones an honest fix can currently drive to zero.`);
+  console.log(`  UNBINDABLE PATHS      : ${unbindable.size} of ${Object.keys(byPath).length}${unbindable.size ? ` — ${[...unbindable].sort().join(', ')}` : ' — every destroying path carries its shown half'}`);
   if (unbindable.size) {
-    console.log(`  UNBINDABLE PATHS      : ${unbindable.size} of ${Object.keys(byPath).length} — ${[...unbindable].sort().join(', ')}`);
     console.log(`                          These do not carry the shown half yet, so no control can be`);
     console.log(`                          tied to their rows. Counted UNREACHABLE, never credited on`);
     console.log(`                          a maybe. Wiring them is step S7.`);

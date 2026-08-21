@@ -103,6 +103,11 @@ if (LOSSY_TRACE) {
   // exactly the pages that went wrong.
   process.on('exit', () => {
     try {
+      // Stamped at FLUSH time, because whether a value was selected is only known after the page
+      // has been built — the counter fires long before `firstNonEmpty` chooses.
+      for (const r of LOSSY_ROWS) {
+        if (r.shownProbe && _DISCARDED.has(_dkey(r.shownProbe))) r.discarded = true;
+      }
       appendFileSync(LOSSY_TRACE, LOSSY_ROWS.map((r) => JSON.stringify(r)).join('\n') + (LOSSY_ROWS.length ? '\n' : ''));
     } catch { /* never let instrumentation break a render */ }
   });
@@ -297,7 +302,14 @@ const READER_COPY = (() => {
 // rc('build-what', <fallback>) — the block wins where it speaks, the old path fills the rest.
 const rc = (key, fallback) => {
   const v = READER_COPY && READER_COPY[key];
-  return (Array.isArray(v) ? v[0] : v) || fallback;
+  const out = (Array.isArray(v) ? v[0] : v) || fallback;
+  // v0.32.0 S7e: when reader copy REPLACES the contract's own words, anything an upstream helper
+  // dropped to produce those words is orphaned — the render site now holds a different string, so
+  // the side channel's key no longer matches and that row's control loses half its contents.
+  // Carry it across. Deliberately not per call site: `rc()` is the one place the substitution
+  // happens, and doing it here covers every caller including future ones.
+  if (out !== fallback) { const up = droppedFor(fallback); if (up) noteDropped(out, up); }
+  return out;
 };
 // rcList('now', fallback) — the block's plain-language list where it speaks, the contract's own
 // scope ladder where it does not. Guard-first, exactly like rc().
@@ -469,14 +481,20 @@ function firstPara(body) {
     if (rest.length) {
       // P7a. The colon-label path consumed paragraphs one and two; anything past those is gone.
       const out = `${first} ${rest.join('; ')}`;
-      if (paras.length > 2) lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2, () => paras.slice(2));
+      if (paras.length > 2) {
+        lossy('firstPara', out.length, paras.join('\n\n').length, paras.length - 2, () => paras.slice(2), () => out);
+        noteDropped(out, paras.slice(2).join('\n\n'));
+      }
       return out;
     }
   }
   // P7b. The ordinary path returns paragraph one and drops every other paragraph in the section,
   // printing nothing at all to say so. One of the three paths that leave no trace — which is why
   // no amount of searching a rendered page could ever have found it.
-  if (paras.length > 1) lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1, () => paras.slice(1));
+  if (paras.length > 1) {
+    lossy('firstPara', first.length, paras.join('\n\n').length, paras.length - 1, () => paras.slice(1), () => first);
+    noteDropped(first, paras.slice(1).join('\n\n'));
+  }
   return first;
 }
 // ── render a FULL section body as paragraphs (blank-line separated; lines joined by <br>) — used on the
@@ -1019,13 +1037,28 @@ function flowCaption(own) {
   if (LAST_GRAPH_SOURCE === 'lifecycle') return 'The Compass lifecycle this build passes through \u2014 this contract carries no diagram of its own.';
   return own;
 }
-const firstNonEmpty = (xs) => (xs.find((x) => x && String(x).trim()) || '').toString().trim();
+// v0.32.0 S7e — `firstNonEmpty` picks ONE candidate and throws the rest away, but a JS array
+// literal has already EVALUATED all of them, so a helper like `firstBullet` fires its destroying
+// counter for a value nobody will ever render. Seven such events on the fixture corpus. They are
+// not a defect a reader can feel — there is no row — so they are MARKED, not counted, and the
+// check reports them in their own bucket exactly as it does a field the page never showed.
+const _DISCARDED = new Set();
+const _dkey = (v) => String(v || '').trim().slice(0, 120);
+const firstNonEmpty = (xs) => {
+  const i = xs.findIndex((x) => x && String(x).trim());
+  for (let k = 0; k < xs.length; k++) if (k !== i && xs[k]) _DISCARDED.add(_dkey(xs[k]));
+  return (i >= 0 ? xs[i] : '').toString().trim();
+};
 const firstBullet = (body) => {
   const all = String(body || '').split('\n').filter((l) => /^\s*-\s+\S/.test(l));
   const m = all[0];
   const out = m ? m.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim() : '';
   // P8. Returns bullet one and drops the rest of the list silently — no marker, no count.
-  if (all.length > 1) lossy('firstBullet', out.length, all.join('\n').length, all.length - 1, () => all.slice(1));
+  if (all.length > 1) {
+    const _restB = all.slice(1).map((b) => b.replace(/^\s*-\s+/, '').replace(/\*\*/g, '').trim());
+    lossy('firstBullet', out.length, all.join('\n').length, all.length - 1, () => _restB, () => out);
+    noteDropped(out, _restB.join('\n'));
+  }
   return out;
 };
 const lineMatching = (body, re) => {
@@ -1149,6 +1182,20 @@ function demd(x) {
 // result in an escaping helper, so a returned `<details>` renders as literal angle brackets on 120
 // pages. And EIGHT of those contexts cannot legally hold one at all — an SVG `<text>`, a `<p>`,
 // several `<span>`s. The shape has to change, not the string.
+// v0.32.0 S7e — the SIDE CHANNEL, and why it is one.
+// `firstPara` and `firstBullet` return a STRING and have eighteen call sites between them, most of
+// them inside a `firstNonEmpty([...])` chain that ends in `.toString().trim()` — which builds a
+// fresh primitive and drops anything attached to the value. (That is not a guess: attaching a
+// property to lineMatching's return value failed for exactly this reason, found with --explain.)
+// So the dropped half is recorded HERE, keyed by the text that was kept, and `fieldParts` folds it
+// into that row's remainder. One change reaches every call site, and no signature moves.
+const _DROPPED = new Map();
+function noteDropped(shown, rest) {
+  const k = String(shown || '').trim().slice(0, 120);
+  if (k && rest) _DROPPED.set(k, [_DROPPED.get(k), rest].filter(Boolean).join('\n\n'));
+}
+function droppedFor(v) { return _DROPPED.get(String(v || '').trim().slice(0, 120)) || ''; }
+
 function fieldText(v, max = 150) { return fieldParts(v, max).shown; }
 
 // v0.32.0 S6 — THE DISCLOSURE CONTROL. One per shortened field, holding THAT field's own remainder.
@@ -1169,6 +1216,12 @@ function fieldDisclosed(v, max = 150, label = 'Show the rest') {
   return txt(p.shown) + disclose(p.rest, label);
 }
 function fieldParts(v, max = 150) {
+  // Anything an upstream helper dropped to produce THIS value belongs in THIS row's control.
+  const _up = droppedFor(v);
+  const _r = fieldPartsOwn(v, max);
+  return _up ? { shown: _r.shown, rest: [_r.rest, _up].filter(Boolean).join('\n\n') } : _r;
+}
+function fieldPartsOwn(v, max = 150) {
   const full = demd(String(v || '').trim());
   if (full.length <= max) return { shown: full.replace(/[;,]\s*$/, ''), rest: '' };
   const parts = full.split(/;\s*/).filter(Boolean);
@@ -1681,12 +1734,17 @@ function planMap() {
     if (!body) return bandNA(title, naReason);
     const allItems = bullets(body, /^-\s+/);
     // P4. Drops every bullet past the eighth and prints nothing to say so.
+    const _clean8 = (b) => String(b).replace(/^-\s+/, '').replace(/\*\*/g, '').trim();
     if (allItems.length > 8) {
-      lossy('bullets.slice8', allItems.slice(0, 8).join('').length, allItems.join('').length, allItems.length - 8, () => allItems.slice(8));
+      // v0.32.0 S7e: bound to the EIGHTH bullet — the last one a reader sees before the control.
+      lossy('bullets.slice8', allItems.slice(0, 8).join('').length, allItems.join('').length,
+            allItems.length - 8, () => allItems.slice(8).map(_clean8), () => _clean8(allItems[7]));
     }
     const items = allItems.slice(0, 8);
     const inner = items.length
-      ? `<ul class="pl">${items.map((i) => (() => { const _p = fieldParts(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190); return `<li><span class="pill now">·</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })()).join('')}</ul>`
+      ? `<ul class="pl">${items.map((i) => (() => { const _p = fieldParts(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190); return `<li><span class="pill now">·</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })()).join('')}${
+          allItems.length > 8 ? `<li><span class="pill now">+</span><span>${nC(allItems.length - 8)} more</span>${
+            disclose(allItems.slice(8).map(_clean8).join('\n'), `Show the other ${allItems.length - 8}`)}</li>` : ''}</ul>`
       : (() => { const _p = fieldParts(firstPara(body), 400); return `<p class="b-det">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })();
     return bandSection(title, purpose, inner);
   };
@@ -2124,8 +2182,15 @@ function reviewArtefact() {
   const hiddenN = rows.length - shown.length;
   // P5. Drops WHOLE ledger rows. The unit here is a row, not a character, which is why the
   // char figures are reported as 0 rather than guessed at.
-  if (hiddenN > 0) lossy('closedRows.slice', 0, 0, hiddenN,
-    () => rows.filter((r) => !shown.includes(r)).map((r) => Object.values(r).filter((v) => typeof v === 'string').join(' ')));
+  // v0.32.0 S7e: the hidden rows are the tail of ONE list, so one control holds them, bound to the
+  // LAST SHOWN row — the text a reader meets immediately before the "+N not shown" line.
+  const _hiddenRows = rows.filter((r) => !shown.includes(r))
+    .map((r) => Object.values(r).filter((v) => typeof v === 'string').join(' '));
+  if (hiddenN > 0) {
+    const _lastShown = shown.length
+      ? Object.values(shown[shown.length - 1]).filter((v) => typeof v === 'string').join(' ') : '';
+    lossy('closedRows.slice', 0, 0, hiddenN, () => _hiddenRows, () => _lastShown);
+  }
   const list = shown.map((r) => {
     const cls = sev(r);
     // THREE labels, matching band 2's three counts. A status that is stated but recognised by
@@ -2145,7 +2210,8 @@ function reviewArtefact() {
     ? `<div class="b-step"><div class="b-num"><span class="pill now">+${nC(hiddenN)}</span></div>` +
       `<div><div class="b-ttl">${nC(hiddenN)} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
       `<div class="b-det">Everything not marked closed is listed above — that is the complete set of what still needs you. The full record is review-ledger.md.</div></div>` +
-      `<div class="verify"><b>note</b>all ${nF('findings.total', rows.length)} are counted in the totals</div></div>`
+      `<div class="verify"><b>note</b>all ${nF('findings.total', rows.length)} are counted in the totals${
+        disclose(_hiddenRows.join('\n\n'), `Show the ${nC(hiddenN)} not listed above`)}</div></div>`
     : '';
   // The title carries provenance markers, so it is rendered by the caller and passed raw.
   const b4 = bandSection(
@@ -2192,9 +2258,16 @@ function releaseCard() {
   const nowParts = (ladderNow.length ? ladderNow : numbered).map((t) => fieldParts(String(t), 140));
   const nowItems = nowParts.map((p) => p.shown);
   // P6. Drops scope items past the sixth.
-  if (nowItems.length > 6) lossy('nowItems.slice6', 0, 0, nowItems.length - 6, () => nowItems.slice(6));
+  // v0.32.0 S7e: the dropped items are the TAIL OF ONE LIST, not separate rows, so ONE control
+  // holds them — and it is bound to the LAST VISIBLE item, which is the text immediately before it.
+  if (nowItems.length > 6) {
+    lossy('nowItems.slice6', 0, 0, nowItems.length - 6, () => nowItems.slice(6), () => nowItems[5]);
+  }
   const items = nowParts.slice(0, 6).map((p) => `<li>${txt(p.shown)}${disclose(p.rest)}</li>`).join('')
-    + (nowItems.length > 6 ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more</li>` : '');
+    + (nowItems.length > 6
+        ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more${
+            disclose(nowItems.slice(6).join('\n'), `Show the other ${nowItems.length - 6}`)}</li>`
+        : '');
   const facet = hdr('facets') || 'library';
   // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo
   const body = `

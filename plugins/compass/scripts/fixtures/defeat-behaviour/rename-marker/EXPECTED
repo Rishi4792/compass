@@ -1,4 +1,4 @@
 kind=cheat
 check=reachable-argument-check.sh
-rule=figure-must-not-fall
+rule=figure-must-not-change
 why=A count keyed to a marker goes to zero here while the same text is still destroyed.

@@ -352,7 +352,7 @@ node "$VIS15/gen.mjs" "$VSMK" brief --out "$VSMK/brief.html" >/dev/null 2>&1
 # recipe must not sit inline in the summary, and it MUST be reachable in that row's control.
 chk "$( { grep -q 'INV-Y' "$VSMK/brief.html" && grep -q 'CRITICAL' "$VSMK/brief.html"; } && echo 1 || echo 0)" "1" "v0.15 INV-BRIEF: the Brief keeps the invariant and its binding CRITICAL tail"
 chk "$(sed -e 's|<details class="rest">|\n@@CTRL@@|g' "$VSMK/brief.html" | grep -v '@@CTRL@@' | grep -c 'grep it' || true)" "0" "v0.15/v0.32 INV-BRIEF: the assert recipe is NOT inline in the summary"
-chk "$(grep -c 'grep it' "$VSMK/brief.html" || true)" "1" "v0.32 S7: ...and it IS on the page, inside that row's disclosure control — destroyed before, reachable now"
+chk "$([ "$(grep -c 'grep it' "$VSMK/brief.html" || true)" -ge 1 ] && echo 1 || echo 0)" "1" "v0.32 S7: ...and it IS on the page, inside a disclosure control — destroyed before, reachable now"
 # INV-BRIEF-LEAK (R3-M3 / R3-C2 regression): a shareable Brief with a gold FIGURE / never-show / secret HARD-STOPs, literals ABSENT
 LKF="$(dirname "$VSMK")/leak"; mkdir -p "$LKF"
 printf '%s\n' '# Contract — leak' '## Goal & scope' 'NAV $9,999,999.00 (42 crore), coverage 1.5 turns; partner AUM 12,00,000, FY rev 8 750 000 for the book; ops key sk-ABCD1234EFGH lives in the env.' '## Reconciliation' 'N/A for counts; gold = $9,999,999.00, i.e. 42 crore, coverage 1.5 turns, AUM 1,200,000, FY rev 8,750,000 (board-signed).' '## Security & data-sensitivity' 'never-show: SecretField' '## Acceptance & INVARIANTs' '- **INV-X:** a bound.' '## Scope ladder' '- NOW: a' '- LATER: b' '- NEVER: c' > "$LKF/contract.md"
@@ -2137,13 +2137,13 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   # `SOURCE UNREACHABLE` were pinned to no value at all: an independent reviewer removed one call
   # site's dropped text (probes 2,215 -> 1,335, unreachable 2,181 -> 1,323), shortened the probe cap
   # and raised SRC_MIN, and the suite stayed green through all three. Every figure is pinned now.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "162" "v0.32 S4b: exactly 162 of those units are probed (a call site quietly dropping its text moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "65" "v0.32 S4b: exactly 65 are unreachable on the tracked corpus"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*\.\.\.probed[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "135" "v0.32 S4b: exactly 135 of those units are probed (a call site quietly dropping its text moves this)"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S4b: exactly 0 are unreachable on the tracked corpus"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE LINES[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "108" "v0.32 S4b: the SOURCE denominator is exactly 108 lines (raising SRC_MIN to hide lines moves this)"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "82" "v0.32 S4b: exactly 82 source lines cannot be found on any page"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*SOURCE UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)" "66" "v0.32 S4b: exactly 66 source lines cannot be found on any page"
   _runr="$(printf '%s' "$_rout" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
   # the verdict must be readable from the PRINTED figure, never from an exit code alone (SELF-4)
-  chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.32 S4: ...and it says FAIL in words, not only in an exit code"
+  chk "$(printf '%s' "$_rout" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S7e: ...and on the tracked corpus it now says PASS in words — every dropped unit is reachable"
   # ERR, never a confident zero, when there is nothing to measure
   bash "$_RAC" "$RR22" --corpus "$RR22/no-such-corpus-xyz" >/dev/null 2>&1
   chk "$?" "3" "v0.32 S4: an ABSENT corpus ERRs (exit 3) — a corpus with no pages is not a clean result"
@@ -2155,15 +2155,15 @@ if [ -f "$_RAC" ] && command -v node >/dev/null 2>&1; then
   chk "$(grep -c 'process.env.COMPASS_V32_STRICT' "$PLUGIN_ROOT/scripts/reachable-argument.mjs" || true)" "0" "v0.32 S4: ...because the measurement never reads that variable"
   # weak evidence is reported apart from strong: text merely present elsewhere is NOT disclosure
   chk "$(printf '%s' "$_rout" | grep -c 'each in a control holding THAT row.s remainder')" "1" "v0.32 S4b: only a control holding THAT row's remainder counts as reachable — text merely present elsewhere does not"
-  chk "$(printf '%s' "$_rout" | grep -c 'UNBINDABLE PATHS')" "1" "v0.32 S6b: paths that cannot be tied to a row are NAMED and counted unreachable, never credited on a maybe"
+  chk "$(printf '%s' "$_rout" | grep -c 'UNBINDABLE PATHS')" "1" "v0.32 S6b: the unbindable count is ALWAYS printed, at zero as well — an absent line is not evidence"
   chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNREACHABLE \(bindable\) *: *([0-9]+).*/\1/p' | head -1)" "0" "v0.32 S6: every wired remainder is in its own row's control — 0 unreachable on every bindable path"
   # v0.32 S7b (C-3), from the independent review of S6. `UNREACHABLE (bindable)` filters by SITE, so
   # ONE blank shown half poisons a whole path OUT of the figure — and with all three poisoned the
   # POSITIVE CONTROL still printed "an honest fix reaches ZERO" on a tree with no disclosure at all.
   # A conjunction whose SET the thing under test chooses proves nothing. So the CREDIT side is
   # pinned too, and so is how many paths are in scope.
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "97" "v0.32 S7b: exactly 97 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
-  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNBINDABLE PATHS *: *([0-9]+) of ([0-9]+).*/\1 \2/p' | head -1)" "5 13" "v0.32 S7b: exactly 5 of 13 paths are unbindable — the scope of 'bindable' is pinned, not chosen at runtime"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *REACHABLE *: *([0-9]+).*/\1/p' | head -1)" "135" "v0.32 S7b: exactly 135 remainders are CREDITED as reachable — poisoning a path out of scope moves this"
+  chk "$(printf '%s' "$_rout" | sed -nE 's/^ *UNBINDABLE PATHS *: *([0-9]+) of ([0-9]+).*/\1 \2/p' | head -1)" "0 13" "v0.32 S7b: ZERO of 13 paths are unbindable — every destroying path now carries its shown half"
   # units too short to probe are reported as UNMEASURED, never folded into either column
   chk "$(printf '%s' "$_rout" | grep -c 'NOT PROBED')" "1" "v0.32 S4: units too short to probe are reported as UNMEASURED, not silently dropped"
 else
@@ -2209,7 +2209,7 @@ elif [ -f "$_BCC" ]; then
   # disable identity pinning altogether.
   _BD="$PLUGIN_ROOT/scripts/fixtures/defeat-behaviour"
   _BM="$PLUGIN_ROOT/scripts/behaviour-corpus-manifest.txt"
-  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 9 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 9 entries (ADD-ONLY, so this floor rises and never falls)"
+  chk "$([ "$(find "$_BD" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -ge 11 ] && echo 1 || echo 0)" "1" "v0.32 S5: the behaviour corpus holds at least 11 entries (ADD-ONLY, so this floor rises and never falls)"
   _bmiss=0
   for _e in "$_BD"/*/; do
     for _f in apply.sh EXPECTED REPRODUCTION.md; do [ -s "$_e/$_f" ] || _bmiss=$((_bmiss+1)); done

@@ -41,7 +41,13 @@ RBASE="$(printf '%s' "$base_out" | sed -nE 's/^[[:space:]]*REACHABLE[[:space:]]*
 case "${BASE:-}" in
   ''|*[!0-9]*) echo "behaviour-corpus: ERR - no baseline figure from reachable-argument-check. Silence is not a pass."; exit 2 ;;
 esac
-[ "$BASE" -gt 0 ] || { echo "behaviour-corpus: ERR - the probe baseline is 0, so no cheat could lower it and every entry would 'pass' for free."; exit 2; }
+# v0.32 S7e — the baseline reached ZERO, which is the point of the whole build, and it made
+# "the figure must not FALL" vacuous. That is not a reason to weaken the corpus; it is a reason to
+# state the stronger rule that a zero baseline makes available: a cheat that hides text must make
+# the figure RISE. Below, `figure-must-not-fall` means exactly that when BASE is 0.
+if [ "$BASE" -eq 0 ]; then
+  echo "behaviour-corpus: the honest figure is 0, so every cheat must RAISE it, not merely fail to lower it."
+fi
 case "${SBASE:-}" in
   ''|*[!0-9]*) echo "behaviour-corpus: ERR - no SOURCE baseline figure. Silence is not a pass."; exit 2 ;;
 esac
@@ -105,7 +111,13 @@ for d in "$CORPUS"/*/; do
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure after the cheat (rendered pages: $(printf '%s' "$out" | head -1))"; bad=$((bad+1)); continue ;;
       esac
-      if [ -n "$floor" ] && [ "$got" -lt "$floor" ]; then
+      if [ "$BASE" -eq 0 ]; then
+        if [ "$got" -gt 0 ]; then
+          echo "  ok   $slug - defeated: the honest figure is 0 and the cheat RAISES it to $got"
+        else
+          echo "  FAIL $slug - THE CHEAT WORKS: it hides text and the figure stays at 0"; bad=$((bad+1))
+        fi
+      elif [ -n "$floor" ] && [ "$got" -lt "$floor" ]; then
         echo "  FAIL $slug - THE CHEAT WORKS: unreachable $got is below this entry's absolute floor of $floor"
         echo "         (an absolute floor, because mutating the CHECK moves a relative baseline with it)"
         bad=$((bad+1))
@@ -134,7 +146,10 @@ for d in "$CORPUS"/*/; do
       case "${got:-}" in
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no SOURCE figure after the cheat"; bad=$((bad+1)); continue ;;
       esac
-      if [ "$got" -lt "$SBASE" ]; then
+      if [ "$SBASE" -eq 0 ]; then
+        if [ "$got" -gt 0 ]; then echo "  ok   $slug - defeated: source-unreachable is 0 and the cheat RAISES it to $got"
+        else echo "  FAIL $slug - THE CHEAT WORKS: source-unreachable stays at 0"; bad=$((bad+1)); fi
+      elif [ "$got" -lt "$SBASE" ]; then
         echo "  FAIL $slug - THE CHEAT WORKS: source-unreachable fell $SBASE -> $got without a single row being fixed"; bad=$((bad+1))
       elif [ "$got" -eq $SBASE ]; then
         # Equal is a PASS — the cheat bought nothing — but it is weaker evidence than a rise, and
@@ -145,6 +160,29 @@ for d in "$CORPUS"/*/; do
         echo "         baseline it also had little room to show, so this is the weaker form of the proof)"
       else
         echo "  ok   $slug - defeated: source-unreachable $SBASE -> $got (the cheat made it WORSE, which is the strong form)"
+      fi ;;
+    figure-must-not-change)
+      # Renaming a marker HIDES NOTHING, so the figure must not move at all — neither down (the
+      # check would be reading a marker) nor up (it would be reading one in the other direction).
+      # "Must not fall" was right while the figure was non-zero and became wrong at zero, where a
+      # blanket "must rise" would demand a rise from a cheat that changes nothing. This is the
+      # property that was always meant.
+      work="$TMP/$slug"; mkdir -p "$work"
+      mkdir -p "$work/plugins/compass/skills/compass-visual" "$work/plugins/compass/scripts"
+      cp -R "$ROOT/plugins/compass/skills/compass-visual/." "$work/plugins/compass/skills/compass-visual/" 2>/dev/null
+      cp -R "$ROOT/plugins/compass/scripts/." "$work/plugins/compass/scripts/" 2>/dev/null
+      if ! bash "$d/apply.sh" "$work" >"$TMP/$slug.apply.log" 2>&1; then
+        echo "  FAIL $slug - its apply.sh no longer applies: $(tail -1 "$TMP/$slug.apply.log")"; bad=$((bad+1)); continue
+      fi
+      out="$(bash "$work/plugins/compass/scripts/reachable-argument-check.sh" "$work" --corpus "$FXCORP" 2>&1)"
+      got="$(printf '%s' "$out" | sed -nE 's/^[[:space:]]*UNREACHABLE[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)"
+      case "${got:-}" in
+        ''|*[!0-9]*) echo "  FAIL $slug - the check printed no figure after the cheat"; bad=$((bad+1)); continue ;;
+      esac
+      if [ "$got" -eq "$BASE" ]; then
+        echo "  ok   $slug - defeated: the figure is UNCHANGED at $BASE, because no marker is read"
+      else
+        echo "  FAIL $slug - THE CHEAT MOVED THE FIGURE: $BASE -> $got, so something IS keyed to the marker"; bad=$((bad+1))
       fi ;;
     figure-must-reach-zero)
       # The POSITIVE control. Every other entry asks "can this be cheated?"; this one asks the
