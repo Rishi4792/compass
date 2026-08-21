@@ -11,6 +11,7 @@ hide-rows  19ca24d8829d23ec
 honest-fix-reaches-zero  be09587561703b4e
 one-control-per-page  70420e40233f085c
 rename-marker  45e0c881596a155c
+shared-shown-half  ddd5fbf46f6d98e3
 stage-end-no-cockpit  e1827f73768ac935
 stage-end-no-question  2e1528f3022a04fd
 template-stash  28970b90138f9e5d

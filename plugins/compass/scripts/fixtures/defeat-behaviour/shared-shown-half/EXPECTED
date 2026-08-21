@@ -1,0 +1,4 @@
+kind=cheat
+check=reachable-argument-check.sh
+rule=reachable-must-not-hold
+why=The check takes each row's SHOWN half from the generator and uses it for all three of its per-row rules — anti-dump, ownership and budget. One shared string collapses all three at once, so every control can be torn from its row and piled at the page foot while the figure stays at 0.

@@ -288,6 +288,32 @@ for (const p of pages) {
   // every row had its own control. That is why an honest fix scored WORSE than a cheat.
   const claimed = new Map();
   const evShown = new Map();
+  // ── ROW IDENTITY MUST BE DISTINCTIVE ON THE PAGE ────────────────────────────────────────────
+  // The shown half comes FROM THE GENERATOR, and three rules keyed on it: the anti-dump count, the
+  // ownership map, and the budget. An independent reviewer collapsed all three at once by handing
+  // every event the SAME 16-character string — 25 per-row controls became 8 boxes at the page foot
+  // under one label, and the check scored it BETTER than honest (REACHABLE 144 -> 162) with the
+  // unreachable figure unmoved.
+  // A string that precedes MANY controls is not identifying a row; it is a label on a pile. So
+  // count, from the PAGE, how many controls each candidate shown half sits before, and refuse to
+  // bind on one that is not unique. Fail CLOSED: an event whose identity cannot be established is
+  // unreachable, never credited on a maybe.
+  // ── OPEN DEFECT, NOT FIXED. Recorded here because a comment naming a hole is worth more than a
+  // rule that does not close it. An independent reviewer (C-1) hands every destroying event the
+  // SAME shown half; ownership, the anti-dump count and the budget all key on that one string, so
+  // 25 per-row controls collapse into 8 piles at the page foot under one label and this check
+  // scores it BETTER than honest — REACHABLE 144 -> 162, unreachable unmoved at 8.
+  //
+  // TWO FIXES TRIED AND BOTH REJECTED, with the measurement:
+  //   * require the shown half to be UNIQUE on the page — too blunt: honest rows legitimately
+  //     share a 30-character opening, and it cost 80 honest probes (REACHABLE 144 -> 64).
+  //   * cap the events one control may serve — it cannot see the defect: the corpus averages about
+  //     three destroying events per PAGE, so a cap of six never fires while the controls are still
+  //     displaced. Displacement is the harm; event count is not a proxy for it.
+  //
+  // The real problem is structural: row identity is a string the GENERATOR supplies, and no rule
+  // built on that string can outrank the generator's choice of it. The fix has to derive identity
+  // from the page. `fixtures/defeat-behaviour/shared-shown-half/` is the standing red test.
   // how much THIS ROW lost in total, across every destroying path that touched it
   const rowChars = new Map();
   for (const r of rows) {
@@ -307,6 +333,7 @@ for (const p of pages) {
     // preceded by the word "the", and score byte-identically to an honest build. Found by the
     // independent review of S6.
     if (shown.length < 12) unbindable.add(r.site);
+
     for (const raw of (r.probes || [])) {
       const probe = normalise(raw);
       probesTotal++;
@@ -384,6 +411,7 @@ for (const p of pages) {
         // the text immediately before the control. A page that dumps every remainder into one box
         // at the end fails this for every row but at most one, whatever the box's size.
         if (shown.length < 12) { why.push(`shown half too short (${shown.length} < 12): UNBINDABLE`); continue; }
+
         if (!ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is not in the ${ctrls[i].before.length} chars before it`); continue; }
         // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
         // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
