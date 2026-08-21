@@ -1052,10 +1052,31 @@ const firstNonEmpty = (xs) => {
   for (let k = 0; k < xs.length; k++) {
     if (k === i || !xs[k]) continue;
     const up = droppedFor(xs[k]);
-    if (up && out) noteDropped(out, up);
+    if (up && out) { noteDropped(out, up); repointShown(xs[k], out, up); }
   }
   return out;
 };
+// v0.32.0 — the OTHER half of that transfer, and the seven probes it was hiding.
+// Moving the discarded candidate's TEXT to the selected value put it in the right control, but the
+// destroying EVENT still named the discarded candidate as its row. So the check went looking for a
+// row reading "rows a reader cannot finish: 0" — a string the page never renders as a row, because
+// the row it renders is the SELECTED value — found the text sitting in the Proof row's control, and
+// refused it as belonging to somebody else. Seven of the eight remaining unreachable probes, all on
+// one page, were this one bookkeeping gap.
+// The guard matters as much as the fix: a row is re-pointed ONLY when this render produced it AND
+// its dropped text is demonstrably inside the text that moved. Without that, "re-point" is a lever
+// for pointing every row on the page at one control, which is contract §9 cheat 4 with extra steps.
+function repointShown(from, to, moved) {
+  if (!LOSSY_TRACE) return;
+  const norm = (x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim();
+  const f = norm(from).slice(0, 60), t = norm(to).slice(0, 60), hay = norm(moved);
+  if (!f || !t || f === t || !hay) return;
+  for (const r of LOSSY_ROWS) {
+    if (r.dir !== dir || r.view !== view || r.shownProbe !== f) continue;
+    if (!r.probes.length || !r.probes.every((probe) => hay.includes(probe))) continue;
+    r.shownProbe = t;
+  }
+}
 const firstBullet = (body) => {
   const all = String(body || '').split('\n').filter((l) => /^\s*-\s+\S/.test(l));
   const m = all[0];

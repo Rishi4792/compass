@@ -243,9 +243,9 @@ for d in "$CORPUS"/*/; do
         ''|*[!0-9]*) echo "  FAIL $slug - the check printed no REACHABLE figure after the cheat"; bad=$((bad+1)); continue ;;
       esac
       if [ "$got" -ge "$RBASE" ]; then
-        echo "  FAIL $slug - THE CHEAT WORKS: every control is inside display:none and REACHABLE held $RBASE -> $got"; bad=$((bad+1))
+        echo "  FAIL $slug - THE CHEAT WORKS: REACHABLE held $RBASE -> $got, so the check cannot see it"; bad=$((bad+1))
       else
-        echo "  ok   $slug - defeated: REACHABLE fell $RBASE -> $got once the controls became unopenable"
+        echo "  ok   $slug - defeated: REACHABLE fell $RBASE -> $got, so the cheat costs the figure rather than buying it"
       fi ;;
     *) echo "  FAIL $slug - EXPECTED names no rule this runner knows ('$rule')"; bad=$((bad+1)) ;;
   esac

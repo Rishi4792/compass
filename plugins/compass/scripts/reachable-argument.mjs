@@ -222,45 +222,17 @@ function visibleHtml(html, clippedIn) {
   return chars.join('');
 }
 // The innermost element ENCLOSING an offset: scan once, keeping a stack of open elements. This is
-// what "this row's control" means in the only place it is decidable — the document. An honest
-// control is emitted INSIDE its row (a <li>, a <td>, the <div> beside a <p>); a pile at the page
-// foot has the body as its parent, and no string the generator nominates can change that.
-function enclosingRange(html, at) {
-  const stack = [];
-  const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    if (m.index >= at) break;
-    const closing = m[0][1] === '/';
-    const tag = m[1].toLowerCase();
-    const attrs = m[2] || '';
-    if (VOID_TAGS.has(tag) || /\/\s*$/.test(attrs)) continue;
-    if (closing) { for (let k = stack.length - 1; k >= 0; k--) if (stack[k].tag === tag) { stack.length = k; break; } }
-    else stack.push({ tag, start: m.index });
-  }
-  if (!stack.length) return null;
-  const top = stack[stack.length - 1];
-  // find where that element closes, counting nesting
-  const re2 = new RegExp(`<\\/?${top.tag}\\b[^>]*>`, 'gi');
-  re2.lastIndex = top.start;
-  let depth = 0, m2;
-  while ((m2 = re2.exec(html)) !== null) {
-    if (m2[0][1] === '/') { depth--; if (depth <= 0) return { start: top.start, end: re2.lastIndex, tag: top.tag }; }
-    else depth++;
-  }
-  return { start: top.start, end: html.length, tag: top.tag };
-}
+// The element a control sits in USED to be recorded here, for the DOM-containment rule. Both are
+// gone: an independent review beat that rule with a one-line move of a `</div>` and again by
+// wrapping the page body in a single div. Dead machinery that looks like protection is worse than
+// none, so it is deleted rather than left commented out. See the C-1 note in the claim loop.
 function controlsFor(rawHtml, clipped) {
   const html = visibleHtml(rawHtml, clipped);
   const out = [];
   let prevEnd = 0;
   for (const m of html.matchAll(/<details\b[\s\S]*?<\/details>/gi)) {
     const before = reachableText(html.slice(prevEnd, m.index), clipped);
-    const encl = enclosingRange(html, m.index);
-    out.push({ start: m.index, text: reachableText(m[0], clipped), before: before.slice(-600),
-               // the text of the element this control lives INSIDE, minus the control itself
-               parentText: encl ? reachableText(html.slice(encl.start, encl.end).replace(m[0], ' '), clipped) : '',
-               parentTag: encl ? encl.tag : '' });
+    out.push({ start: m.index, text: reachableText(m[0], clipped), before: before.slice(-600) });
     prevEnd = m.index + m[0].length;
   }
   return out;
@@ -331,31 +303,54 @@ for (const p of pages) {
   // count, from the PAGE, how many controls each candidate shown half sits before, and refuse to
   // bind on one that is not unique. Fail CLOSED: an event whose identity cannot be established is
   // unreachable, never credited on a maybe.
-  // ── C-1, CLOSED BY DOM CONTAINMENT — and the three wrong turns are kept, because they are the
-  // reason the fourth is right.
-  // An independent reviewer handed every destroying event the SAME shown half. Ownership, the
-  // anti-dump count and the budget all keyed on that one string, so 25 per-row controls collapsed
-  // into 8 piles at the page foot under one label and this check scored it BETTER than honest —
-  // REACHABLE 144 -> 162, with the unreachable figure unmoved at 8.
+  // ── C-1 IS OPEN. FIVE RULES TRIED, ALL FIVE MEASURED, ALL FIVE WRONG. ───────────────────────
+  // This comment is longer than the code it guards, on purpose. A named hole is worth more than a
+  // rule that looks like protection and is not — which is this build's whole subject.
   //
-  // THREE FIXES TRIED AND REJECTED, each with its measurement:
-  //   1. require the shown half to be UNIQUE on the page — too blunt. Honest rows legitimately
-  //      share a 30-character opening: REACHABLE 144 -> 64 on a tree with nothing wrong with it.
-  //   2. cap the events one control may serve — cannot see the defect. The corpus averages about
-  //      three destroying events per PAGE, so a cap of six never fires while every control is still
-  //      displaced. Displacement is the harm; event count is not a proxy for it.
-  //   3. refuse controls that share their preceding text — worse than both. Adjacent honest
-  //      controls in a list share a `</li><li>` preamble, so honest fell to 80 while the cheat
-  //      still scored 152.
-  // All three were built on the generator's own string, or on a proxy for displacement. The
-  // structural read that followed: no rule built on a generator-supplied string can outrank the
-  // generator's choice of it.
+  // THE DEFECT. An independent reviewer hands every destroying event the SAME shown half. Ownership,
+  // the anti-dump count and the budget all key on that one string, so per-row controls collapse into
+  // 8 piles at the page foot under one label and this check scores it BETTER than honest:
+  // REACHABLE 144 -> 162, unreachable unmoved at 8. `fixtures/defeat-behaviour/shared-shown-half/`.
   //
-  // WHAT WORKS is the one thing the DOCUMENT decides: a control belongs to the row it is INSIDE.
-  // Measured on the tracked corpus — honest, 25 controls, every parent a <div> carrying that row's
-  // own text; cheat, 8 controls, parent tag EMPTY because the body is their parent. The rule is in
-  // the claim loop below. Honest is unchanged at 144 / 8; the cheat goes to REACHABLE 0.
-  // `fixtures/defeat-behaviour/shared-shown-half/` is the standing test.
+  // WHAT WAS TRIED, AND WHAT IT COST:
+  //   1. shown half must be UNIQUE on the page — honest 144 -> 64. Honest rows legitimately share a
+  //      30-character opening; the rule punishes a tree with nothing wrong with it.
+  //   2. cap the events one control may serve — never fires. ~3 destroying events per PAGE, so a cap
+  //      of six sits idle while every control is displaced. Event count is not a proxy for the harm.
+  //   3. refuse controls that share their preceding text — honest 144 -> 80, cheat still 152.
+  //      Adjacent honest controls in a list share a `</li><li>` preamble.
+  //   4. DOM CONTAINMENT — a control belongs to the element it sits in. Shipped, then taken apart by
+  //      a second independent review the same day, two ways, both one-liners:
+  //        · move the cheat's `</div>` so the pile sits INSIDE its label -> 162 again;
+  //        · wrap the page body in a single div -> 162 again, with no cheating intent at all.
+  //      It only ever worked because `page()` returns a <body>-less FRAGMENT, so a foot pile has no
+  //      enclosing element. In a real document everything is inside <body>. The same review also
+  //      showed `enclosingRange` disagreeing with a browser on implied end tags (<p>, <table>
+  //      foster-parenting, unclosed <li>) and found that 17 of the 144 honest credits rested on the
+  //      OR-fallback to the old positional test, not on containment at all.
+  //      And the figure that comment stated — "25 controls, every parent a <div>" — was itself
+  //      false: the tracked corpus has 52 controls, parents {div:42, td:8, li:2}. In a file about
+  //      unproven numbers, that one was unproven.
+  //   5. DERIVE ROW IDENTITY FROM THE SOURCE. The right instinct — contract.md / plan.md /
+  //      review-ledger.md are tracked fixtures the generator reads and cannot rewrite — and it does
+  //      restore distinct per-row keys. It still does not defeat the cheat: honest 138 / 10 against
+  //      cheat 135 / 13, and by ROWS rather than units, honest 53 / 6 against cheat 51 / 8. The
+  //      reason is arithmetic, not principle: the cheat makes 8 piles PER PAGE and this corpus
+  //      averages about 2.5 rows per page, so a one-control-per-row rule can never bite here.
+  //      Deriving the on-page NEEDLE from source as well costs honest 162 -> 68, because the page
+  //      does not render source text verbatim (markdown stripped, reader copy substituted).
+  //      A sixth try — refuse any control holding more than one row's dropped text — scored honest
+  //      and cheat IDENTICALLY at 24 / 124, i.e. it measures nothing.
+  //
+  // WHAT IS ACTUALLY LEFT. The rule below is the POSITIONAL one, which the cheat beats by printing
+  // its shared label before each pile. It is kept because it is honest about what it is, and it
+  // still catches the other eleven cheats in the corpus. C-1 is recorded as an open defect against
+  // this build rather than papered over with a sixth rule that passes only the corpus.
+  //
+  // WHAT WOULD PROBABLY CLOSE IT, for whoever picks this up: the instrument and the check both run
+  // inside the generator's own process, so a generator that lies about its trace cannot be caught
+  // from inside it. The fix is likely structural — render the page, then measure it from OUTSIDE
+  // with a real HTML parser and real source text, with no trace at all.
   // how much THIS ROW lost in total, across every destroying path that touched it
   const rowChars = new Map();
   for (const r of rows) {
@@ -460,8 +455,7 @@ for (const p of pages) {
         // page-derived and no string the generator nominates can change it.
         // Three earlier attempts are recorded below with their measurements; all three were built
         // on the generator's own string or on proxies for displacement, and all three were wrong.
-        if (!ctrls[i].parentTag) { why.push(`c${i}: no enclosing element — its parent is the page body, so it is a pile, not a row's control`); continue; }
-        if (!ctrls[i].parentText.includes(shown) && !ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is neither inside the element holding this control nor immediately before it`); continue; }
+        if (!ctrls[i].before.includes(shown)) { why.push(`c${i}: this row's shown text is not in the ${ctrls[i].before.length} chars before it`); continue; }
 
         // Ownership is keyed to the ROW — the shown half — not to the event. One row can lose text
         // on SEVERAL paths at once (a field shortened AND its invariant's assert recipe split off),
