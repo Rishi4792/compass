@@ -1923,31 +1923,70 @@ graph TD
 SGC
 printf 'v1 · 2026-08-21 · decision=x · alternatives=a,b · picked=a · render=file-only · file=sketch/mock-v1.html\n' > "$_SG/base/sketch/LEDGER"
 printf '<!-- COMPASS-MOCK slug=fixture -->\n<h1>THROWAWAY WIREFRAME</h1>\n' > "$_SG/base/sketch/mock-v1.html"
+_sg(){ bash "$SH" sketch-gate "$_SG/$1" >/dev/null 2>&1; [ "$?" -ne 0 ] && echo 1 || echo 0; }   # 1 = REFUSED
 bash "$SH" sketch-gate "$_SG/base" >/dev/null 2>&1
 chk "$?" "0" "v0.32 S21: the unmutated sketch fixture still PASSES (the gate did not become a wall)"
+# Every mutant below breaks EXACTLY ONE thing. The first version of these fixtures broke two at
+# once, so three assertions were killed by the WRONG check and stayed green when their own check
+# was deleted — found by the independent reviewer, and the reason each fixture is now isolated.
 cp -R "$_SG/base" "$_SG/nomock"; rm -f "$_SG/nomock/sketch/mock-v1.html"
-bash "$SH" sketch-gate "$_SG/nomock" >/dev/null 2>&1
-chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): deleting the artefact the LEDGER NAMES now REFUSES (shipped gate: exit 0)"
-cp -R "$_SG/base" "$_SG/nomarker"; printf '<h1>no marker</h1>\n' > "$_SG/nomarker/sketch/mock-v1.html"
-bash "$SH" sketch-gate "$_SG/nomarker" >/dev/null 2>&1
-chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): a LEDGER-named mock with no line-1 COMPASS-MOCK marker is REFUSED"
+chk "$(_sg nomock)" "1" "v0.32 S21 (§17-3): deleting the artefact the LEDGER NAMES is REFUSED (shipped gate: exit 0)"
+cp -R "$_SG/base" "$_SG/nomarker"; printf '<h1>THROWAWAY WIREFRAME</h1>\n' > "$_SG/nomarker/sketch/mock-v1.html"
+chk "$(_sg nomarker)" "1" "v0.32 S21 (§17-3): marker absent, BANNER PRESENT — isolated, so only the marker check can kill it"
 cp -R "$_SG/base" "$_SG/nobanner"; printf '<!-- COMPASS-MOCK slug=fixture -->\n<h1>quiet</h1>\n' > "$_SG/nobanner/sketch/mock-v1.html"
-bash "$SH" sketch-gate "$_SG/nobanner" >/dev/null 2>&1
-chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-3): a LEDGER-named mock with no THROWAWAY banner is REFUSED"
+chk "$(_sg nobanner)" "1" "v0.32 S21 (§17-3): banner absent, MARKER PRESENT — isolated"
 cp -R "$_SG/base" "$_SG/nolm"; sed -e 's/^  A\[source\] --> B\[gate\]$/  (no edges)/' "$_SG/base/contract.md" > "$_SG/nolm/contract.md"
-bash "$SH" sketch-gate "$_SG/nolm" >/dev/null 2>&1
-chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21 (§17-4): a WEB build with no Logic Map edge is REFUSED (the check used to sit in the non-web arm)"
-# the doc#anchor shape: 9 of 14 render lines in the live corpus are `contract.md#logic-map`,
-# so treating every file= as a path would newly refuse 9 historical builds.
+chk "$(_sg nolm)" "1" "v0.32 S21 (§17-4): a WEB build with no Logic Map edge is REFUSED (the check used to sit in the non-web arm)"
+# the doc#anchor shape: 9 of 14 render lines in the live corpus are `contract.md#logic-map`.
 cp -R "$_SG/base" "$_SG/anchor"
-printf 'v1 · 2026-08-21 · decision=x · alternatives=a,b · picked=a · render=file-only · file=contract.md#logic-map\n' > "$_SG/anchor/sketch/LEDGER"
+printf 'v1 · 2026-08-21 · decision=x · render=file-only · file=contract.md#logic-map\n' > "$_SG/anchor/sketch/LEDGER"
 rm -f "$_SG/anchor/sketch/mock-v1.html"
 bash "$SH" sketch-gate "$_SG/anchor" >/dev/null 2>&1
 chk "$?" "0" "v0.32 S21: a 'contract.md#logic-map' render line resolves to the heading and PASSES (canary: 9 historical builds use this shape)"
+# ISOLATED: the Logic Map heading stays intact, only the ANCHOR is bogus. The earlier fixture also
+# removed the heading, so it died on `refuse: logicmap` and the anchor branch was never exercised.
 cp -R "$_SG/anchor" "$_SG/anchorbad"
-sed -e 's/^## Logic Map$/## Something Else/' "$_SG/anchor/contract.md" > "$_SG/anchorbad/contract.md"
-bash "$SH" sketch-gate "$_SG/anchorbad" >/dev/null 2>&1
-chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S21: ...and a render line whose anchor resolves to NOTHING is REFUSED"
+printf 'v1 · 2026-08-21 · decision=x · render=file-only · file=contract.md#no-such-heading\n' > "$_SG/anchorbad/sketch/LEDGER"
+chk "$(_sg anchorbad)" "1" "v0.32 S21c: an anchor resolving to NOTHING is REFUSED (heading left intact, so only the anchor check can kill it)"
+cp -R "$_SG/anchor" "$_SG/anchorpfx"
+printf 'v1 · 2026-08-21 · decision=x · render=file-only · file=contract.md#l\n' > "$_SG/anchorpfx/sketch/LEDGER"
+chk "$(_sg anchorpfx)" "1" "v0.32 S21c: a PREFIX anchor ('#l' for '## Logic Map') is REFUSED — it used to resolve"
+# A heading that exists ONLY inside a code fence is an EXAMPLE, not a heading. It used to satisfy
+# the anchor. The Logic Map the §17-4 check needs is kept under a different name so this fixture
+# tests the fence rule and nothing else.
+cp -R "$_SG/anchor" "$_SG/anchorfence"
+sed -e 's/^## Logic Map$/## Diagram/' "$_SG/anchor/contract.md" > "$_SG/anchorfence/contract.md"
+printf '\n```\n## Logic Map\n```\n' >> "$_SG/anchorfence/contract.md"
+printf 'v1 · x · file=contract.md#logic-map\n' > "$_SG/anchorfence/sketch/LEDGER"
+chk "$(_sg anchorfence)" "1" "v0.32 S21c: a heading that exists ONLY inside a code fence does NOT satisfy an anchor"
+# ── the seven defeats an independent reviewer found in the FIRST version of this check ──
+cp -R "$_SG/base" "$_SG/nofile"
+printf 'v1 · 2026-08-21 · decision=x · alternatives=a,b · picked=a · render=local\n' > "$_SG/nofile/sketch/LEDGER"
+chk "$(_sg nofile)" "1" "v0.32 S21c: a render line naming NO artefact is REFUSED — it used to skip the whole check, so 'unwaivable' was false"
+cp -R "$_SG/base" "$_SG/notrail"
+printf 'v1 · x · file=sketch/mock-v1.html\nv2 · x · file=sketch/GONE.html' > "$_SG/notrail/sketch/LEDGER"
+chk "$(_sg notrail)" "1" "v0.32 S21c: a LEDGER with NO TRAILING NEWLINE still reads its last render line"
+cp -R "$_SG/base" "$_SG/upper"
+printf 'v1 · x · file=sketch/mock-v1.HTML\n' > "$_SG/upper/sketch/LEDGER"
+printf 'no marker and no banner\n' > "$_SG/upper/sketch/mock-v1.HTML"
+chk "$(_sg upper)" "1" "v0.32 S21c: an UPPERCASE .HTML gets the marker+banner checks (the extension match was case-sensitive)"
+cp -R "$_SG/base" "$_SG/escape"; mkdir -p "$_SG/shared"
+printf '<!-- COMPASS-MOCK slug=x -->\n<h1>THROWAWAY WIREFRAME</h1>\n' > "$_SG/shared/any.html"
+printf 'v1 · x · file=../shared/any.html\n' > "$_SG/escape/sketch/LEDGER"
+chk "$(_sg escape)" "1" "v0.32 S21c: a '../' path is REFUSED — one mock anywhere used to satisfy every build"
+cp -R "$_SG/base" "$_SG/twofile"
+printf 'v1 · x · file=sketch/GONE.html · note file=contract.md#logic-map\n' > "$_SG/twofile/sketch/LEDGER"
+chk "$(_sg twofile)" "1" "v0.32 S21c: EVERY file= on a line is checked — a greedy match used to read only the last, laundering a missing mock"
+# ISOLATED for the plain-existence check: a NON-.html artefact, so the marker/banner branch cannot
+# be what kills it. 3 of the 14 live render lines name a non-.html artefact.
+cp -R "$_SG/base" "$_SG/missingtxt"
+printf 'v1 · x · file=sketch/notes.txt\n' > "$_SG/missingtxt/sketch/LEDGER"
+chk "$(_sg missingtxt)" "1" "v0.32 S21c: a MISSING non-.html artefact is REFUSED (isolates the existence check from the marker check)"
+cp -R "$_SG/missingtxt" "$_SG/emptytxt"; : > "$_SG/emptytxt/sketch/notes.txt"
+chk "$(_sg emptytxt)" "1" "v0.32 S21c: a ZERO-BYTE non-.html artefact is REFUSED — a recorded sketch that was never made"
+cp -R "$_SG/missingtxt" "$_SG/goodtxt"; printf 'a real note\n' > "$_SG/goodtxt/sketch/notes.txt"
+bash "$SH" sketch-gate "$_SG/goodtxt" >/dev/null 2>&1
+chk "$?" "0" "v0.32 S21c: ...and a non-empty non-.html artefact PASSES, so that branch is not a wall"
 rm -rf "$_SG"
 
 # ── v0.32 S19 + S31: the three fabricated numbers on the pages, each with a check that FAILS ─

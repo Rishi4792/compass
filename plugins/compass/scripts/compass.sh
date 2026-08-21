@@ -2775,37 +2775,70 @@ cmd_sketch_gate() { # <build-dir>   (run from within the target repo for the tra
   # `doc#anchor` reference must resolve to a heading in that doc. 9 of the 14 render lines
   # across the 30 build folders are `contract.md#logic-map`; treating those as paths would
   # newly refuse 9 historical builds, which contract §12's canary forbids.
-  local _ll _lf _ldoc _lanc _lhead
-  while IFS= read -r _ll; do
-    _lf="$(printf '%s' "$_ll" | sed -nE 's/.*file=([^ ·]+).*/\1/p')"
-    [ -n "$_lf" ] || continue
+  # v0.32.0 S21c — REWRITTEN after an INDEPENDENT reviewer defeated the first version seven ways,
+  # every one reproduced here before the rewrite: a render line with NO `file=` skipped the check
+  # entirely (so "unwaivable" was false); a LEDGER with no trailing newline dropped its last line;
+  # `.HTML` skipped the marker and banner because the extension match was case-sensitive; `../`
+  # escaped the build dir, so one mock anywhere satisfied every build; a greedy `.*` read only the
+  # LAST `file=`, so appending a valid anchor laundered a missing mock; an anchor matched by PREFIX;
+  # and a heading inside a code fence counted as a heading. It also forked one `sed` PER LINE —
+  # 59.67s on a 20,000-line ledger, over this build's own deterministic perf budget.
+  # ONE awk pass now extracts every token; the loop forks nothing per line.
+  local _lkind _lf _ldoc _lanc _lhead _lfl
+  while read -r _lkind _lf || [ -n "$_lkind" ]; do
+    [ -n "$_lkind" ] || continue
+    if [ "$_lkind" = "NOFILE" ]; then
+      echo "refuse: ledger-artefact" >&2
+      die "sketch-gate: sketch/LEDGER render line $_lf names no artefact (no 'file=' field). A render line recording no artefact is not evidence that one was ever made."
+    fi
+    # Stay inside the build's own state root. Otherwise a single mock anywhere on disk satisfies
+    # every build that points at it, which is the same defect as no check at all.
+    case "$_lf" in
+      /*|../*|*/../*|*/..) echo "refuse: ledger-artefact" >&2
+        die "sketch-gate: LEDGER names '$_lf', which leaves the build directory. Sketch artefacts live under the build's own state root." ;;
+    esac
     case "$_lf" in
       *"#"*)
         _ldoc="${_lf%%#*}"; _lanc="${_lf#*#}"
         [ -f "$dir/$_ldoc" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '$_ldoc' does not exist."; }
-        # the anchor is stripped to [A-Za-z0-9 _] BEFORE it reaches a regex — an unescaped
-        # variable inside a pattern is a recurring defect class in this file's own gates.
+        # the anchor is stripped to [A-Za-z0-9 _] BEFORE it reaches a pattern — an unescaped
+        # variable inside a regex is a recurring defect class in this file's own gates.
         _lhead="$(printf '%s' "$_lanc" | tr '-' ' ' | tr -cd 'A-Za-z0-9 _')"
         [ -n "$_lhead" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '#$_lanc' is not a usable heading anchor."; }
-        grep -qiE "^#+ +$_lhead" "$dir/$_ldoc" \
-          || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '$_ldoc' has no heading for '#$_lanc'."; }
+        # EXACT heading, and never one inside a code fence. Prefix matching let `#l` resolve to
+        # `## Logic Map`, and a fenced example heading counted as the real thing.
+        awk -v h="$_lhead" '
+          /^```/ { f = !f; next }
+          !f && tolower($0) ~ "^#+[ \t]+" tolower(h) "[ \t]*$" { found = 1 }
+          END { exit found ? 0 : 1 }' "$dir/$_ldoc" 2>/dev/null \
+          || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names '$_lf' but '$_ldoc' carries no heading '#$_lanc' outside a code fence."; }
         ;;
       *)
         [ -f "$dir/$_lf" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER names artefact '$_lf' but the file is missing — a recorded sketch that is not on disk is not evidence."; }
-        case "$_lf" in
-          *.html)
-            # reason code stays `mockup`: a LEDGER-named .html failing the marker or the banner is
-            # the SAME defect the web arm already refused under that name, and callers and the
-            # selftest both key on it. Only a MISSING artefact is a new class.
+        _lfl="$(printf '%s' "$_lf" | tr 'A-Z' 'a-z')"
+        case "$_lfl" in
+          *.html|*.htm)
             head -1 "$dir/$_lf" 2>/dev/null | grep -q '^<!-- COMPASS-MOCK slug=' \
               || { echo "refuse: mockup" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the line-1 COMPASS-MOCK marker."; }
             grep -q 'THROWAWAY WIREFRAME' "$dir/$_lf" 2>/dev/null \
               || { echo "refuse: mockup" >&2; die "sketch-gate: LEDGER artefact '$_lf' lacks the visible THROWAWAY banner."; }
             ;;
+          *)
+            # a non-HTML artefact has no marker convention, so the only honest check is that it
+            # holds something. A zero-byte file is a recorded sketch that was never made.
+            [ -s "$dir/$_lf" ] || { echo "refuse: ledger-artefact" >&2; die "sketch-gate: LEDGER artefact '$_lf' is EMPTY. A zero-byte artefact is not a sketch."; }
+            ;;
         esac
         ;;
     esac
-  done < "$dir/sketch/LEDGER"
+  done <<EOF
+$(awk '
+  /^v[0-9]+/ && index($0, "·") > 0 {
+    n = 0
+    for (i = 1; i <= NF; i++) if ($i ~ /^file=/) { t = substr($i, 6); if (substr(t, length(t)-1) == "·") t = substr(t, 1, length(t)-2); if (t != "") { print "FILE " t; n++ } }
+    if (n == 0) print "NOFILE " NR
+  }' "$dir/sketch/LEDGER" 2>/dev/null)
+EOF
   case "$facets" in
     *web*)
       local ok_spec=""
