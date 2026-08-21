@@ -665,6 +665,18 @@ const HOUSE_CSS = `
   /* v0.32.0 S6 — the disclosure control. NO line-clamp, NO ellipsis, NO max-height: clipped text is
      not reachable text, and this build's own check strips clipped subtrees before it looks. */
   .rest{margin-top:6px}
+  /* v0.32.0 S7c — a LAYOUT regression an independent reviewer measured on 30 of 120 pages.
+     ul.pl li is a two-column grid (pill then text) and the control is its THIRD child, so it
+     auto-placed into row 2 COLUMN 1 — the pill column, 127px wide — turning a sentence into a
+     seven-line ribbon beside an ~890px empty pill bar. It belongs under the text, in column 2.
+     overflow-wrap:anywhere because a long unbroken token in a remainder pushed the page 158px
+     wide horizontally. NOT overflow:hidden and NOT a max-height: this build's own check treats
+     clipped text as unreachable, and it would be right to. */
+  .cv-body ul.pl li > .rest{grid-column:2}
+  .rest .rest-body{overflow-wrap:anywhere;word-break:normal}
+  .cv-body .svg-labels{margin-top:8px;display:grid;gap:6px}
+  .cv-body .svg-label-row{font-size:12px;color:var(--mut)}
+  .cv-body .svg-label-k{font-weight:600;color:var(--ink)}
   .rest>summary{cursor:pointer;font-size:11px;color:var(--mut2);list-style:revert}
   .rest>summary:hover{color:var(--ink)}
   .rest .rest-body{margin-top:4px;font-size:12px;line-height:1.5;color:var(--ink);white-space:pre-wrap}
@@ -898,8 +910,20 @@ function logicBlock(graph, ariaLead) {
     // cheat wearing a different hat. So: shorten to what fits, keep the full text in the node's
     // accessible name (the aria-label below already carries it), AND emit it in a reachable element
     // OUTSIDE the svg. All three, because any two of them still leave a sighted reader short.
-    const _sub = fieldParts(rest, 34);
-    if (_sub.rest) _svgRest.push(`${lead} — ${rest}`);
+    // v0.32.0 S7c — "shorten to what fits" was FALSE, measured by an independent reviewer at 255px
+    // inside a 210px box, clipped by the viewBox. `fieldParts` appends " (continues)" AFTER its cap,
+    // so a 34-character budget produced a 46-character string. Budget the marker too.
+    const _SUBCAP = 34, _CONT = ' (continues)';
+    let _sub = fieldParts(rest, Math.max(12, _SUBCAP - _CONT.length));
+    // A FINAL guard. `fieldParts` cannot always find a break point, so 3 labels still came back
+    // over the cap and were clipped by the viewBox — which is the css-clip cheat by another route.
+    // A hard cut is honest ONLY because this box's full text is now reachable in its own control
+    // directly beneath the diagram; without that it would be the same defect wearing a third hat.
+    if (_sub.shown.length > _SUBCAP) {
+      const _keep = Math.max(4, _SUBCAP - _CONT.length);
+      _sub = { shown: _sub.shown.slice(0, _keep).replace(/[\s,;.]+$/, '') + _CONT, rest: rest };
+    }
+    if (_sub.rest) _svgRest.push({ label: lead, full: rest });
     const t2 = rest ? `<text x="${p.x + W / 2}" y="${p.y + 39}" text-anchor="middle" fill="${THEME.mut}" font-size="11" font-style="italic">${txt(_sub.shown)}</text>` : '';
     return `<rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="${THEME.surface}" stroke="${THEME.line}"/>${t1}${t2}`;
   }).join('');
@@ -937,9 +961,13 @@ function logicBlock(graph, ariaLead) {
     `<marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${THEME.redFg}"/></marker>` +
     `</defs>${arrows}${boxes}</svg>` +
     // OUTSIDE the svg, where a control is legal and a reader can actually open it.
+    // ONE control per BOX, not one for all of them. A single control speaking for every box is the
+    // aggregation contract §9 cheat 4 names, and this file's own check would refuse it. Each row
+    // shows its box label in the flow and discloses that box's full text beneath it.
     (_svgRest.length
-      ? `<details class="rest"><summary>Show each box's full label</summary><div class="rest-body">${
-          _svgRest.map((t) => `<div>${txt(t)}</div>`).join('')}</div></details>`
+      ? `<div class="svg-labels">${_svgRest.map((t) =>
+          `<div class="svg-label-row"><span class="svg-label-k">${txt(t.label)}</span>${
+            disclose(t.full, 'Show this box in full')}</div>`).join('')}</div>`
       : '');
 }
 

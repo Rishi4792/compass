@@ -2351,6 +2351,76 @@ else
   chk "1" "1" "v0.32 S4b: N/A — no node or no reachable-argument.mjs"
 fi
 
+# ── v0.32 S7c: the disclosure control must not land in the PILL column ───────────────────────
+# A LAYOUT regression an independent reviewer measured in a real browser on 30 of 120 pages.
+# `ul.pl li` is a two-column grid (pill then text) and S6 made the control its THIRD child, so it
+# auto-placed into row 2 COLUMN 1 — 127px wide inside a 921px text column — turning a sentence into
+# a seven-line ribbon beside an ~890px empty pill bar, and adding 158px of horizontal page scroll
+# once the controls were opened.
+# This suite is deliberately Chrome-free (see the "durable gold, no Chrome" checks above), so what
+# is asserted here is the STRUCTURE that produced it: the grid has exactly two columns, so a third
+# child wraps, and the control is explicitly placed in column 2. The browser numbers are in the
+# receipt: column 2, width 1012px (was 127px), horizontal overflow with every control open 0px
+# (was 158px).
+_GEN2="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"
+if [ -f "$_GEN2" ]; then
+  chk "$(grep -c 'ul\.pl li{[^}]*grid-template-columns:auto 1fr' "$_GEN2" || true)" "1" "v0.32 S7c: the pill list is still a TWO-column grid, so a third child would wrap into the pill column"
+  chk "$(grep -c 'ul\.pl li > \.rest{grid-column:2}' "$_GEN2" || true)" "1" "v0.32 S7c: ...so the control is explicitly placed in column 2, under the text it discloses"
+  chk "$(grep -c 'rest-body{overflow-wrap:anywhere' "$_GEN2" || true)" "1" "v0.32 S7c: a long unbroken token in a remainder wraps instead of widening the page by 158px"
+  # and the control must NOT be clipped to achieve that — this build's own check would call it unreachable
+  chk "$(grep -cE '\.rest[^{]*\{[^}]*(max-height:0|overflow:hidden|-webkit-line-clamp|text-overflow:ellipsis)' "$_GEN2" || true)" "0" "v0.32 S7c: ...and the fix uses NO clipping property, which would make the text unreachable by this build's own measure"
+fi
+
+# ── v0.32 S7c: the SVG box label, which was the one call site with no generic answer ─────────
+# An independent reviewer measured the claim "shorten to what fits" and it was FALSE: 255px inside a
+# 210px box, clipped by the viewBox — the css-clip cheat by another route. `fieldParts` appends
+# " (continues)" AFTER its cap, so a 34-character budget produced a 46-character string. And the
+# whole diagram emitted ONE control for ALL its boxes, which is the aggregation §9 cheat 4 names.
+# Measured across all 120 live pages: longest sub-label 68 -> 34, labels over the cap 27 -> 0.
+if [ -f "$_GEN2" ] && command -v node >/dev/null 2>&1; then
+  _sv="$(mktemp -d)"
+  for _d in "$PLUGIN_ROOT/scripts/fixtures/corpus"/*/; do
+    [ -f "$_d/contract.md" ] || continue
+    node "$_GEN2" "$_d" brief --out "$_sv/$(basename "$_d").html" >/dev/null 2>&1 || true
+  done
+  chk "$(node -e '
+    const fs=require("fs"), path=require("path");
+    let over=0, n=0;
+    for (const f of fs.readdirSync(process.argv[1])) {
+      const s=fs.readFileSync(path.join(process.argv[1],f),"utf8");
+      for (const m of s.matchAll(/<text[^>]*font-size="11"[^>]*>([\s\S]*?)<\/text>/g)) {
+        const t=m[1].replace(/<[^>]+>/g,"").replace(/&[a-z]+;|&#\d+;/g," ");
+        n++; if (t.length > 34) over++;
+      }
+    }
+    process.stdout.write(String(over));
+  ' "$_sv" 2>/dev/null)" "0" "v0.32 S7c: no SVG box sub-label exceeds the width it is budgeted for (68 chars -> 34, and it is CLIPPED BY THE VIEWBOX above that)"
+  # One control per box, counted on the RENDERED page: each row carries exactly one control with
+  # its own summary, so the two counts must be equal. They were 1 and N before — one box's worth of
+  # summary over every box's text.
+  chk "$(node -e '
+    const fs=require("fs"), path=require("path");
+    let bad=0;
+    for (const f of fs.readdirSync(process.argv[1])) {
+      const s=fs.readFileSync(path.join(process.argv[1],f),"utf8");
+      const rows=(s.match(/class="svg-label-row"/g)||[]).length;   // the CLASS ATTRIBUTE, not the CSS rule
+      const ctrls=(s.match(/Show this box in full/g)||[]).length;
+      if (rows !== ctrls) bad++;
+    }
+    process.stdout.write(String(bad));
+  ' "$_sv" 2>/dev/null)" "0" "v0.32 S7c: the diagram emits ONE control PER BOX — it emitted one for ALL boxes, which is §9 cheat 4"
+  chk "$(node -e '
+    const fs=require("fs"), path=require("path");
+    let bad=0;
+    for (const f of fs.readdirSync(process.argv[1])) {
+      const s=fs.readFileSync(path.join(process.argv[1],f),"utf8");
+      for (const m of s.matchAll(/<svg[\s\S]*?<\/svg>/g)) if (/<details/.test(m[0])) bad++;
+    }
+    process.stdout.write(String(bad));
+  ' "$_sv" 2>/dev/null)" "0" "v0.32 S7c: and NO control sits inside an <svg>, where it would be illegal"
+  rm -rf "$_sv"
+fi
+
 # ── v0.32 §17-8 teeth: did THIS suite run dirty a tracked fixture? ───────────────────────────
 # Runs last, after every fixture-touching assertion above. Compares against the snapshot taken
 # before the first one. `__nogit__` on both sides = no git = N/A-pass, stated rather than skipped.
