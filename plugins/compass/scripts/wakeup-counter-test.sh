@@ -372,6 +372,30 @@ fire "$T/pr" "$(wakepay "$T/pr" prb)" >/dev/null
 _prn="$(tail -1 "$PRF" | { read -r a _; printf '%s' "${a:-0}"; })"
 chk "$([ "$_prn" -ge 400 ] && echo kept || echo "RESET:$_prn")" "kept" "...and pruning does NOT reset the cap — the count continues past 400 rather than starting again"
 
+# ── 20. §13 / S38 — THE CEILING MUST BIND THE HUMAN-GATED PATH, WHICH IS THE DEFAULT ──────────
+# §13, after round 2: "`budget-check` has exactly one call site, inside the post-ship loop and gated
+# on `.auto-mode`; `--bump-session` has zero callers, so the session ceiling is dead code; 13 of 30
+# build folders have no budget file; and on the HUMAN-GATED path — the default — there is no cap
+# whatsoever." Two reviewers established that independently.
+# So the counter must be MODE-INDEPENDENT, and that is tested by varying the one thing that used to
+# decide it. Same build, same wakeups, once with `.auto-mode` and once without.
+for _mode in gated auto; do
+  mkbuild "$T/m20-$_mode" mb
+  [ "$_mode" = auto ] && : > "$T/m20-$_mode/.claude/builds/mb/.auto-mode"
+  _r=0; _out=""
+  while [ "$_r" -lt 4 ]; do
+    _r=$((_r+1)); printf '\n- round %s\n' "$_r" >> "$T/m20-$_mode/.claude/builds/mb/progress.md"
+    _out="$(COMPASS_WAKEUP_CAP=4 fire "$T/m20-$_mode" "$(wakepay "$T/m20-$_mode" mb)")"
+  done
+  _n="$(grep -c . "$T/m20-$_mode/.claude/builds/mb/.compass-wakeups" 2>/dev/null || echo 0)"
+  chk "$_n" "4" "§13/S38: a $_mode build's wakeups are COUNTED — the human-gated path is the default and had no cap at all"
+  chk "$(printf '%s' "$_out" | grep -c 'the cap is reached')" "1" "§13/S38: ...and the $_mode build HITS the ceiling and is told to stop"
+done
+# The strongest form: the hook does not READ the mode marker, so it cannot become auto-only again.
+# `budget-check`'s single call site is gated on exactly this file, which is how the human-gated path
+# ended up unbounded in the first place.
+chk "$(grep -vE '^[[:space:]]*#' "$HOOK" | grep -c 'auto-mode' || true)" "0" "§13/S38: ...and no CODE path in the hook reads .auto-mode, so the counter cannot quietly become auto-only"
+
 # ── 9. PERF: the cost paid by every unrelated prompt on the machine ───────────────────────────
 # The budget in the plan is <=10 ms over the measured 5.3 ms fast path, for a prompt in a
 # NON-Compass directory. Timed over 20 runs so one scheduling blip cannot decide it.

@@ -2607,7 +2607,7 @@ _WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
 if [ -f "$_WCT" ]; then
   _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
   chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "64" "v0.32 S16: ...and there are exactly 64 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 across two independent reviews that found 14 and 11 defects the earlier cases could not see"
+  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "69" "v0.32 S16: ...and there are exactly 69 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 across two independent reviews that found 14 and 11 defects the earlier cases could not see"
 else
   chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
 fi
