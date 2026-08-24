@@ -24,12 +24,15 @@ R="${1:-.}"; QUIET="${2:-}"
 cd "$R" 2>/dev/null || { echo "mechanical-suite: cannot enter '$R'"; exit 2; }
 [ -d plugins/compass ] || { echo "mechanical-suite: not a compass repo root: $R"; exit 2; }
 D=plugins/compass/scripts
+_strict() {
+  case "${COMPASS_V32_STRICT:-1}" in 0|off|OFF|false|FALSE|no|NO) printf '0' ;; *) printf '1' ;; esac
+}
 _current_build() {
   local c; c="$(cat .claude/builds/CURRENT 2>/dev/null | head -1)"
   [ -n "$c" ] && [ -d ".claude/builds/$c" ] && printf '.claude/builds/%s' "$c"
 }
 
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable"
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check"
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'
@@ -53,7 +56,19 @@ for c in $CHILDREN; do
   fi
   if [ "$rc" -eq 0 ]; then printf '  ok    %s\n' "$summary"
   else printf '  FAIL  %s\n' "$summary"; failed=$((failed+1)); names_failed="$names_failed $c"; fi
-  [ "$QUIET" = "--quiet" ] || printf '%s\n' "$out" | LC_ALL=C grep -E '^  (DUP|VACUOUS|UNWIRED|KNOWN-OPEN|T[0-9])' | sed 's/^/    /'
+  # ── v0.33 S18 — the kill switch's REPORTING half, which v0.32 documented and never built ──────
+  # COMPASS_V32_STRICT=0 silences REPORTING output — the advisory lines a check prints about things
+  # it cannot decide. It NEVER touches a MEASUREMENT: every child still runs, every verdict still
+  # counts, and a failing check still fails. The flag can make the suite quieter; it cannot make it
+  # blinder.
+  #
+  # outside-in-reachable.mjs and reachable-argument.mjs both deliberately refuse to read this
+  # variable at all, and that stays true — a measurement that a flag can move is not a measurement.
+  if [ "$(_strict)" = "0" ]; then
+    [ "$QUIET" = "--quiet" ] || printf '    (reporting silenced by COMPASS_V32_STRICT=0 — measurements are unaffected)\n'
+  else
+    [ "$QUIET" = "--quiet" ] || printf '%s\n' "$out" | LC_ALL=C grep -E '^  (DUP|VACUOUS|UNWIRED|KNOWN-OPEN|PROBE|T[0-9])' | sed 's/^/    /'
+  fi
 done
 
 printf '─────────────────────────────────────────────────────────────────────\n'
