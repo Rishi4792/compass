@@ -3,6 +3,46 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.2] — 2026-08-24
+
+**The last two things the cold readers found.**
+
+**A disclosure was repeating itself four times.** `noteDropped()` appended a remainder every time a
+field passed through a helper, and several fields pass through more than one. A reader measured the
+card carrying this plan's whole rationale in a browser: **8,190 characters of which ~2,050 were
+unique** — the same block four times. Their verdict was that a reader would hit the repeat and
+conclude the page was broken, *worse than not disclosing at all, because they had already chosen to
+click*. A remainder is a fact about a field, not a running log, so it is stored once. Genuinely
+different remainders for the same field still accumulate.
+
+```
+longest disclosure : 8,123 chars, opening block 4×   →   2,030 chars, 1×
+```
+
+**And two of the four fact cards were 111 pixels wide.** A grid track's implicit minimum is `auto`,
+so the card holding a long unbreakable file path refused to shrink and took the space from its
+neighbours — about three words per line, eleven screens tall when opened. `minmax(0, 1fr)` lets every
+track shrink to its share.
+
+**Fixing that layout exposed a false positive in v0.32's own clip detector**, and this is the part
+worth reading. The rule `(?:width|height)\s*:\s*0` had **no word boundary**, so it matched the
+`width:0` inside **`min-width:0`** — the standard grid idiom for letting a track shrink. A card
+styled with it had its entire subtree read as CLIPPED and its text counted unreachable: **eight
+assertions moved on a page that was perfectly readable.** `max-height:0` keeps its own dedicated
+rule and still catches real clipping; what is now excluded is a *prefixed* property, which is a
+different declaration meaning something else.
+
+Bisected rather than guessed: CSS reverted → 999/0; grid alone → 999/0; grid plus `min-width:0` →
+991/8. The boundary fix makes all three green.
+
+Both fixes carry a regression test. Gates: smoke **1001 passed / 0 failed** · selftest **561 / 0** ·
+recon PASS · mechanical-suite 9 of 9 · canary 387 calls over 32 folders, **0 newly refused**.
+
+**Now closed:** every defect the two independent cold readers found in v0.33.0 — the five unreachable
+rows (0.33.1), the repeating disclosure, and the 111px column. **Still open:** the perf budget is
+spent exactly, 53s of a 53s ceiling with zero margin, and two gates remain KNOWN-OPEN
+(`drift-check`, `cockpit-gate`).
+
 ## [0.33.1] — 2026-08-24
 
 **The sentences that stopped now finish.**

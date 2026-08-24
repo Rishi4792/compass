@@ -84,7 +84,12 @@ const CLIP_PROPS = new RegExp([
   'clip-path\\s*:\\s*inset\\(\\s*100%', 'clip\\s*:\\s*rect\\(\\s*0',
   'max-height\\s*:\\s*0(?![.\\d])', 'text-indent\\s*:\\s*-\\s*\\d{3,}',
   'left\\s*:\\s*-\\s*\\d{3,}', 'top\\s*:\\s*-\\s*\\d{3,}',
-  '(?:width|height)\\s*:\\s*0(?![.\\d])',
+  // v0.33.2 — a missing word boundary made this match `min-width:0`, which is the standard grid
+  // idiom for letting a track shrink, and `min-height:0` likewise. A fact card styled with it had
+  // its whole subtree read as CLIPPED and its text counted unreachable — 8 assertions moved on a
+  // page that was perfectly readable. `max-height:0` above is deliberate and still matched; what is
+  // excluded is a PREFIXED property, which is a different declaration with a different meaning.
+  '(?<![a-z-])(?:width|height)\\s*:\\s*0(?![.\\d])',
 ].join('|'), 'i');
 
 // Classes whose own CSS clips their content. Read from EVERY rule in the page's <style>, including

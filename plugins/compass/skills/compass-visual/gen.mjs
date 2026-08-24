@@ -760,10 +760,15 @@ const HOUSE_CSS = `
   .cv-body .b-id{color:var(--mut);margin-top:8px;font-size:13.5px}
   .cv-body .b-id b{color:var(--ink);font-weight:600}
   .cv-body .b-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--kicker);margin-bottom:10px}
-  .cv-body .b-facts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  /* v0.33.2 — a grid track's implicit min-width is AUTO, so a card holding one long unbreakable
+     path (a file list) refuses to shrink and takes the space from its siblings. A cold reader
+     measured the result in a browser: two of these four cards squeezed to 111px, about three words
+     per line, one of them eleven screens tall when opened. minmax(0,1fr) lets every track shrink to
+     its share; overflow-wrap on the value lets the long path break instead of forcing the width. */
+  .cv-body .b-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
   .cv-body .b-fact{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .cv-body .b-fact .k{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--kicker);margin-bottom:7px}
-  .cv-body .b-fact .v{font-size:14px;color:var(--mut);line-height:1.45}
+  .cv-body .b-fact .v{font-size:14px;color:var(--mut);line-height:1.45;overflow-wrap:anywhere;min-width:0}
   .cv-body .b-fact .v b{color:var(--ink)}
   .cv-body .b-flow{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px;overflow-x:auto}
   .cv-body .b-flow svg{display:block;margin:0 auto;max-width:100%;height:auto}
@@ -1289,8 +1294,25 @@ function noteOrigin(kept, origin) {
 }
 function originOf(v) { return _ORIGIN.get(String(v || '').trim().slice(0, 120)) || ''; }
 function noteDropped(shown, rest) {
+  // ── v0.33.2 — THE SAME REMAINDER WAS BEING STORED ONCE PER CALL ───────────────────────────────
+  // This appended unconditionally. When the same field is processed more than once during a render
+  // — and several are, because a value can pass through more than one helper on its way to the
+  // page — the identical remainder was concatenated again each time.
+  //
+  // A cold reader measured the result in a browser: the card carrying this plan's whole rationale
+  // opened into 8,190 characters of which only ~2,050 were unique, the same block FOUR TIMES, in a
+  // 111px-wide column about eleven screens tall. Their verdict was that a reader would hit the
+  // repeat and conclude the page was broken — worse than not disclosing at all, because they had
+  // already chosen to click.
+  //
+  // A remainder is a FACT ABOUT A FIELD, not a running log, so it is stored once. Genuinely
+  // different remainders for the same key still accumulate; identical ones do not.
   const k = String(shown || '').trim().slice(0, 120);
-  if (k && rest) _DROPPED.set(k, [_DROPPED.get(k), rest].filter(Boolean).join('\n\n'));
+  if (!k || !rest) return;
+  const prev = _DROPPED.get(k);
+  if (!prev) { _DROPPED.set(k, rest); return; }
+  if (prev === rest || prev.includes(rest)) return;
+  _DROPPED.set(k, `${prev}\n\n${rest}`);
 }
 function droppedFor(v) { return _DROPPED.get(String(v || '').trim().slice(0, 120)) || ''; }
 

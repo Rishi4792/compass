@@ -3167,6 +3167,54 @@ else
   [ "$_v32drift" = 0 ] || comm -13 <(printf '%s\n' "$_V32_FX_BEFORE") <(printf '%s\n' "$_V32_FX_AFTER") | sed 's/^/    DIRTIED: /'
 fi
 
+# ── v0.33.2 — `min-width:0` IS NOT CLIPPING ──────────────────────────────────────────────────────
+# The clip detector's width/height rule had no word boundary, so it matched the `width:0` inside
+# `min-width:0` — the standard grid idiom for letting a track shrink. A fact card styled with it had
+# its whole subtree read as CLIPPED and its text counted unreachable: 8 assertions moved on a page
+# that was perfectly readable. `max-height:0` keeps its own dedicated rule and is still caught; what
+# is excluded is a PREFIXED property, which is a different declaration meaning something else.
+_cp="$PLUGIN_ROOT/scripts/reachable-argument.mjs"
+if [ -f "$_cp" ]; then
+  chk "$(grep -c "(?<!\[a-z-\])(?:width|height)" "$_cp")" "1" "v0.33.2: the clip detector's width/height rule is boundary-guarded, so min-width:0 is not read as clipping"
+  # Count the RULE, not any mention: the comment above it says "max-height" too, and the first
+  # version of this assertion counted both and reported 2. A test that counts prose is measuring
+  # the wrong thing — the same class of error this whole release is about.
+  chk "$(grep -c "'max-height" "$_cp")" "1" "v0.33.2: ...and max-height:0 keeps its own rule, so real clipping is still caught"
+else
+  chk "1" "1" "v0.33.2: N/A — no reachable-argument.mjs on this tree"
+fi
+
+# ── v0.33.2 — A DISCLOSURE MUST NOT REPEAT ITSELF ────────────────────────────────────────────────
+# noteDropped() appended a remainder every time a field passed through a helper, so a value
+# processed four times stored four identical copies. A cold reader measured the card carrying this
+# plan's whole rationale: 8,190 characters of which ~2,050 were unique, the same block four times,
+# in a 111px column about eleven screens tall. Worse than not disclosing, because they had already
+# clicked. A remainder is a fact about a field, not a running log.
+if command -v node >/dev/null 2>&1 && [ -f "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" ]; then
+  _dd="$(mktemp -d)"
+  for _cb in "$PLUGIN_ROOT/scripts/fixtures/corpus"/*/; do
+    [ -d "$_cb" ] || continue
+    node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_cb" plan-map --out "$_dd/$(basename "$_cb").html" >/dev/null 2>&1
+  done
+  _dup=$(node -e '
+    const fs=require("fs"),path=require("path");const d=process.argv[1];let worst=0;
+    for(const f of fs.readdirSync(d).filter(x=>x.endsWith(".html"))){
+      const h=fs.readFileSync(path.join(d,f),"utf8");
+      for(const m of h.matchAll(/<div class="rest-body">([\s\S]*?)<\/div>/g)){
+        const t=m[1].replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim();
+        if(t.length<400)continue;
+        const probe=t.slice(0,200);let n=0,i=0;
+        while((i=t.indexOf(probe,i))>=0){n++;i+=probe.length;}
+        if(n>worst)worst=n;
+      }
+    }
+    console.log(worst);' "$_dd" 2>/dev/null || echo 9)
+  chk "$_dup" "1" "v0.33.2: no disclosure repeats its own opening block — a remainder is stored once, not once per helper"
+  rm -rf "$_dd"
+else
+  chk "1" "1" "v0.33.2: N/A — no node or no gen.mjs on this tree"
+fi
+
 # ── v0.33.1 — A WRAPPED BULLET MUST NOT LOSE ITS TAIL ────────────────────────────────────────────
 # bullets() split on newlines and kept only the lines matching the bullet pattern, so a markdown
 # bullet wrapped onto a second line ended at the wrap and everything after it vanished — with no
