@@ -20,7 +20,7 @@ CALLERS="plugins/compass/skills plugins/compass/commands plugins/compass/hooks"
 
 is_allowed() { LC_ALL=C grep -qE "^[[:space:]]*$1([[:space:]]|#|$)" "$ALLOW" 2>/dev/null; }
 
-total=0; unwired=0; allowed=0
+total=0; unwired=0; allowed=0; known=0
 while IFS= read -r fn; do
   [ -n "$fn" ] || continue
   sub=$(printf '%s' "$fn" | sed -e 's/^cmd_//' -e 's/_/-/g')
@@ -35,7 +35,19 @@ while IFS= read -r fn; do
   # (b) invoked by a skill, command or hook, by subcommand name
   external=$(git grep -l -- "compass.sh $sub" -- $CALLERS 2>/dev/null | wc -l | tr -d ' ')
   if [ "${internal:-0}" -gt 0 ] || [ "${external:-0}" -gt 0 ]; then continue; fi
-  if is_allowed "$sub"; then allowed=$((allowed+1)); continue; fi
+  if is_allowed "$sub"; then
+    # A THIRD STATE, because two were not enough to be honest. "Wired" and "human-typed" leave no
+    # way to say "this should run automatically, nothing does, and fixing it is not in scope yet".
+    # Without it the only options are to fail the build or to call a monitor a CLI tool — and the
+    # second is how a known gap becomes an unknown one.
+    if LC_ALL=C grep -qE "^[[:space:]]*$sub[[:space:]]+#[[:space:]]*KNOWN-OPEN:" "$ALLOW" 2>/dev/null; then
+      known=$((known+1))
+      printf '  KNOWN-OPEN  %-20s declared unwired on purpose, and still unwired.\n' "$sub"
+    else
+      allowed=$((allowed+1))
+    fi
+    continue
+  fi
   printf '  UNWIRED  %-22s no caller in compass.sh, no skill, no command, no hook.\n' "$sub"
   printf '           Wire it, or declare it human-typed in %s with a reason.\n' "$ALLOW"
   unwired=$((unwired+1))
@@ -48,7 +60,8 @@ if [ "$total" -eq 0 ]; then
   echo "unwired-gate-check: ERR — 0 dispatchable commands found. A green over an empty set is not a signal."
   exit 1
 fi
-printf 'unwired-gate-check: %s unwired of %s dispatchable commands (%s declared human-typed).\n' \
-  "$unwired" "$total" "$allowed"
+printf 'unwired-gate-check: %s unwired of %s dispatchable commands (%s human-typed, %s KNOWN-OPEN).\n' \
+  "$unwired" "$total" "$allowed" "$known"
+[ "$known" -eq 0 ] || printf '  A KNOWN-OPEN entry is a gap this repo has decided not to close YET. It is printed every\n  run so it cannot quietly become permanent.\n'
 [ "$unwired" -eq 0 ] || exit 1
 exit 0

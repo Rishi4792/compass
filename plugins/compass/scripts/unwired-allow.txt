@@ -15,3 +15,9 @@ auto-init           # orchestrator setup, invoked by auto-start, not standalone
 budget-init         # orchestrator setup, invoked by auto-start, not standalone
 auto-resume         # entered by the resume command's prose, not by a script
 auto-spawn          # entered by the Stop hook's cross-session path
+dora-ledger         # CLI: a read-only report a person runs to see the delivery ledger
+drift-check         # KNOWN-OPEN: this is a post-ship MONITOR, not a CLI tool. Nothing runs it, so
+                    # nothing detects drift after a release. Calling it human-typed would be false —
+                    # a person is not going to remember. Wiring it into the post-ship loop is real
+                    # work and is NOT in this contract's NOW list, so it is recorded here as open
+                    # rather than dressed up as a decision. Carried in contract section 17.

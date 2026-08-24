@@ -937,6 +937,38 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
   if type cmd_engine_gate >/dev/null 2>&1; then
       cmd_engine_gate "$dir" >/dev/null || die "gate: engine-gate FAILED for '$dir' (see stderr)."
   fi
+  # ── v0.33.0 S4 — TWO MORE GATES NOBODY CALLED ────────────────────────────────────────────
+  # `unwired-gate-check` (this build) found four dispatchable commands with no caller anywhere —
+  # not a skill, not a command, not a hook, not another function. Two of them are GATES that v0.32
+  # built, in its own steps S12/S13/S15, to fire at every stage end. They never fired once.
+  # That is the defect v0.32 named twice in its own release notes and shipped anyway, and it was
+  # found here in one second by a script rather than by a sixth adversarial review.
+  #
+  # Both are file-based — they read receipts.md — so they ride this seam exactly as engine-gate
+  # does, and no skill file is edited (which keeps them clear of the 14 pinned string-counts the
+  # suite holds over skill markdown).
+  #
+  # BLAST RADIUS MEASURED BEFORE WIRING, over every build folder on this machine:
+  #   cockpit-gate    pass=32  refuse=0
+  #   stage-end-gate  pass=32  refuse=0
+  # Zero newly refused. Had any legitimate folder refused, that would have been a finding against
+  # the gate, not an acceptable cost.
+  if type cmd_stage_end_gate >/dev/null 2>&1; then
+      cmd_stage_end_gate "$dir" >/dev/null || die "gate: stage-end-gate FAILED for '$dir' (see stderr)."
+  fi
+  # cockpit-gate is NOT wired here, and the reason is worth keeping. It was, for one commit, and the
+  # suite went 968 passed / 4 FAILED. Unlike stage-end-gate it is not guard-first: it demands a
+  # stage-end block on receipts written before that block existed, so it refused the suite's own
+  # minimal fixtures — including the one asserting that `gate` PASSES a complete receipt.
+  #
+  # The blast radius I measured before wiring was 32 build folders, 0 refusals. It was measured over
+  # the WRONG SET: the live folders, not the suite's fixtures. Same denominator error this build
+  # keeps finding in other people's work, committed here, and caught by the suite in one run.
+  #
+  # It also belongs somewhere else. `cmd_gate` checks receipt FILES; cockpit-gate checks a block the
+  # model PRINTS at a stage transition. Its correct home is the stage skills' own gate block, which
+  # is a skill-file edit and therefore rides the 14 pinned string-counts (P1-02). That is the next
+  # step, not a line to squeeze in here.
   # ── v0.32.0 S10/S11 — A GATE NOBODY RUNS IS NOT A GATE ────────────────────────────────────
   # An independent reviewer's first finding: neither review gate was invoked by any skill, by
   # cmd_gate, or by any hook. The only callers on the whole tree were the corpus fixtures and the
