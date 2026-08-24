@@ -2442,17 +2442,50 @@ cmd_cockpit_gate() { # <build-dir>
   [ -z "$missing" ] || { echo "refuse: cockpit-element" >&2
     die "cockpit-gate: the stage-end block is missing:$missing
   Contract §7 — a stage-end block states what happened, where you are, what is next, and the options."; }
-  # The PLAIN-WORDS half needs the walkthrough skill to define a term where it is used. When that
-  # skill is absent the check N/A-passes AND SAYS SO — an unstated N/A is how a rule stops being
-  # enforced without anyone deciding to stop enforcing it.
-  # BOTH locations. `feynman-walkthrough` is a USER-level skill, not bundled in this plugin, so
-  # looking only inside the plugin would report N/A on every machine that HAS it — a permanent N/A
-  # is a rule quietly retired, which is the shape this build exists to catch.
-  local fey_p fey_u
-  fey_p="$(dirname "${BASH_SOURCE[0]}")/../skills/feynman-walkthrough"
-  fey_u="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/feynman-walkthrough"
-  if [ ! -d "$fey_p" ] && [ ! -d "$fey_u" ]; then
-    ok "cockpit-gate: all four elements present. Plain-words half N/A — /feynman-walkthrough is not installed on this tree, so no term-definition check ran. Stated, not skipped silently."
+  # ── v0.33.4 — THE PLAIN-WORDS HALF, WHICH WAS NEVER ACTUALLY IMPLEMENTED ──────────────────────
+  # What stood here probed for a `feynman-walkthrough` directory and, on finding none, printed an
+  # N/A message. That is all it did. There was NO check on either branch — nothing counted, nothing
+  # compared, no way for it to fail. It was not a dormant rule; it was a rule that never existed,
+  # wearing an honest-looking N/A.
+  #
+  # It also could not have worked as designed: it keyed on a USER-level skill this plugin has never
+  # shipped, so on every installation but its author's it took the N/A branch. v0.33 fixed that
+  # dependency for the explain stage by moving the method into `shared/walkthrough.md`, and the
+  # same move makes a real check possible here — the standard is in the plugin now, so the check
+  # needs nothing installed.
+  #
+  # WHAT IT CHECKS: the stage-end block is reader-facing, so it may not carry internal codes. Same
+  # rule, same fixture, as `copy-gate` — one source for what counts as jargon, rather than a second
+  # list that drifts from the first.
+  #
+  # BLAST RADIUS, measured before wiring, over every build folder on this machine: 32 clean, 0
+  # carrying jargon. It refuses nothing that was passing.
+  local _jf; _jf="$(dirname "${BASH_SOURCE[0]}")/fixtures/copy/jargon.txt"
+  if [ -r "$_jf" ]; then
+    # Plain single quotes. The first version used the '\''-escape idiom inside a "$( )" — that
+    # idiom only works inside a SINGLE-quoted string; inside double quotes those quotes terminate
+    # the outer quote and the command became nonsense. It exited 1 with no output at all, which is
+    # the worst kind of failure: a gate that refuses everything and says nothing.
+    local _jpat; _jpat="$(LC_ALL=C grep -v '^#' "$_jf" | LC_ALL=C grep . | paste -sd'|' -)"
+    if [ -n "$_jpat" ]; then
+      # `|| true` is load-bearing. grep exits 1 when it finds NOTHING, which is the passing case,
+      # and this script runs under `set -e` — so the clean path killed the function silently: exit 1,
+      # no stdout, no stderr, 31 of 32 folders "refused" by a gate that never actually ran. That is
+      # T2 in this build's own shell-trap catalogue, the class demoted to REPORT because deciding it
+      # needs judgment. Committed here by the author of the catalogue, and found by measuring rather
+      # than by reading the diff.
+      local _hit; _hit="$(printf '%s' "$out" | LC_ALL=C grep -oE "$_jpat" | head -3 | tr '\n' ' ' || true)"
+      [ -z "$_hit" ] || { echo "refuse: cockpit-plain-words" >&2
+        die "cockpit-gate: the stage-end block carries internal code a reader cannot decode: $_hit
+  This block is what a person reads to decide what happens next, so it states things in plain words
+  or it is not doing its job. The standard is shared/walkthrough.md; the jargon list is the same one
+  copy-gate uses, so there is one source for what counts."; }
+    else
+      ok "cockpit-gate: all four elements present. Plain-words half N/A — the jargon list is empty, so nothing was checked. Stated, not skipped."
+      return 0
+    fi
+  else
+    ok "cockpit-gate: all four elements present. Plain-words half N/A — no jargon fixture on this tree, so nothing was checked. Stated, not skipped."
     return 0
   fi
   ok "cockpit-gate: all four elements present (what happened · where you are · what is next · the options)."

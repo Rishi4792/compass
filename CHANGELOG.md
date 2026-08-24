@@ -3,6 +3,47 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.4] — 2026-08-24
+
+**The last dormant thing turns out never to have existed.**
+
+`cockpit-gate`'s "plain-words half" probed for a `feynman-walkthrough` directory and, on finding
+none, printed an honest-looking N/A. **That is all it did.** There was no check on either branch —
+nothing counted, nothing compared, no way for it to fail. It was not a dormant rule; it was **a rule
+that never existed, wearing an N/A**. And it could never have worked as designed: it keyed on a
+user-level skill this plugin has never shipped, so every installation but its author's took the N/A
+branch.
+
+**Now it is a real check.** v0.33 moved the teaching method into `shared/walkthrough.md`, so the
+standard is in the plugin and the check needs nothing installed. The stage-end block is what a
+person reads to decide what happens next, so it may not carry internal codes — same rule and same
+fixture as `copy-gate`, one source for what counts as jargon. Blast radius measured before wiring:
+**32 folders, 0 refused.** Proven able to fail: a block containing `cmd_gate` and `INV-COCKPIT` is
+refused by name.
+
+**Three of my own bugs on the way in, and they are the useful part of this entry.**
+
+1. **A shell-quoting error made the gate refuse 31 of 32 folders while never running.** The
+   `'\''`-escape idiom only works inside a single-quoted string; inside `"$( )"` those quotes
+   terminate the outer quote.
+2. **Then an unguarded `grep` under `set -e` did the same thing again.** grep exits 1 when it finds
+   **nothing** — the *passing* case — so the clean path killed the function silently: exit 1, no
+   stdout, no stderr. **That is T2 in this release's own shell-trap catalogue, committed by the
+   author of the catalogue.** And `shell-trap-check` did **not** catch it: T2 scans for a bare
+   `read`, and this was `x="$(… grep …)"`. A new **T2b** now counts that shape — 47 on the tree, all
+   reported and none failed, because most sit in an `if`, `while` or `||` chain where a non-zero
+   status is tolerated and telling which is judgment.
+3. **A `\n"` where a `\n'` belonged** broke the summary block and made the checker exit 2 while
+   still printing its output. Third occurrence of that same over-escape this release.
+
+Every one was found by **running the thing**, never by re-reading the diff.
+
+**KNOWN-OPEN and directory-probes are both zero.** `unwired-gate-check`: *0 unwired of 106
+dispatchable commands, 8 human-typed, 0 KNOWN-OPEN, 0 directory-probes.*
+
+Gates: smoke **1003 passed / 0 failed** · selftest **561 / 0** · recon PASS · mechanical-suite 9 of 9
+· canary 387 calls over 32 folders, **0 newly refused**.
+
 ## [0.33.3] — 2026-08-24
 
 **Everything v0.33.0 shipped as "known open" is now closed.**

@@ -19,7 +19,7 @@ R="${1:-.}"
 cd "$R" 2>/dev/null || { echo "shell-trap-check: cannot enter '$R'"; exit 2; }
 [ -d plugins/compass ] || { echo "shell-trap-check: not a compass repo root: $R"; exit 2; }
 ALLOW=plugins/compass/scripts/shell-trap-allow.txt
-traps=0; scanned=0; t1=0; t2=0; t4=0
+traps=0; scanned=0; t1=0; t2=0; t2b=0; t4=0
 
 # T4 helper. PARITY, not a pattern. The first rule looked for letter-apostrophe-letter not preceded
 # by a double quote and it NEVER FIRED — the planted trap sat inside a double-quoted string, so the
@@ -87,6 +87,16 @@ EOF2
   if LC_ALL=C grep -qE '^set -[a-z]*e' "$f"; then
     n=$(LC_ALL=C grep -cE '^[[:space:]]*(read|IFS=[^ ]* read)[^|]*$' "$f" 2>/dev/null || true)
     t2=$((t2+${n:-0}))
+    # T2b — THE SHAPE THAT ACTUALLY BIT. The rule above scans for a bare `read`, and the trap that
+    # silently killed cockpit-gate was a different shape entirely: `x="$(... | grep ...)"`. grep
+    # exits 1 when it finds NOTHING — the passing case — and under `set -e` that ends the function
+    # with no stdout, no stderr and exit 1. The gate "refused" 31 of 32 folders without ever running.
+    #
+    # Counted, not failed: there are 47 of this shape on the tree and the tree works, because most
+    # sit inside an `if`, a `while` or a `||` chain where a non-zero status is tolerated. Deciding
+    # which context a given line is in needs judgment, so the number is printed and a person looks.
+    n=$(LC_ALL=C grep -cE '="\$\([^)]*grep[^)]*\)"[[:space:]]*$' "$f" 2>/dev/null || true)
+    t2b=$((t2b+${n:-0}))
   fi
 done <<EOF
 $(git ls-files -- 'plugins/compass/scripts/*.sh' 'plugins/compass/hooks/*.sh' 2>/dev/null)
@@ -104,6 +114,9 @@ printf '    T1  %s grep -c compared for equality. The trap needs the pattern to 
 printf '        line; whether it can is a judgment about the pattern. The first version of this\n'
 printf '        check failed 40 lines and every one was correct.\n'
 printf '    T2  %s read(s) under set -e. Whether a given read can fail at EOF is a judgment.\n' "$t2"
+printf '    T2b %s assignment(s) from a grep-ending substitution under set -e. grep exits 1 on NO\n' "$t2b"
+printf '        match — the passing case — so an unguarded one ends the function silently. This is\n'
+printf '        the shape that made cockpit-gate refuse 31 of 32 folders without ever running.\n'
 printf '    T4  %s line(s) with odd apostrophe parity around an awk program. THREE rules were tried;\n' "$t4"
 printf '        all three failed on correct code. Apostrophes appear in many correct paired\n'
 printf '        positions and a line scan cannot tell which pair is which.\n'

@@ -3130,7 +3130,20 @@ bash "$_S15M/scripts/compass.sh" cockpit-gate "$_S15" >/dev/null 2>&1
 chk "$([ "$?" -ne 0 ] && echo 1 || echo 0)" "1" "v0.32 S15: ...and REFUSES one with the options removed — the check can fail"
 rm -rf "$_S15M"
 # the plain-words half N/A-passes when the walkthrough skill is absent, AND says that it did
-chk "$(CLAUDE_CONFIG_DIR=/nonexistent-xyz bash "$SH" cockpit-gate "$_S15" 2>&1 | grep -c 'Plain-words half N/A')" "1" "v0.32 S15: with /feynman-walkthrough absent the plain-words half N/A-passes AND says so"
+# ── v0.33.4 — REWRITTEN FOR MEANING. This asserted that the plain-words half N/A-PASSES when the
+# feynman-walkthrough skill is absent — and it was green on every installation, because Compass has
+# never shipped that skill. Worse, there was NO CHECK on either branch: the probe only chose which
+# message printed. A green assertion certifying that a rule did nothing, everywhere.
+#
+# v0.33 moved the teaching method into shared/walkthrough.md, so the standard is in the plugin and
+# the check needs nothing installed. It now runs everywhere and asserts what the block must actually
+# be: readable. Blast radius measured before wiring — 32 folders, 0 refused.
+chk "$(CLAUDE_CONFIG_DIR=/nonexistent-xyz bash "$SH" cockpit-gate "$_S15" >/dev/null 2>&1; echo $?)" "0" "v0.33.4 S15: the plain-words half RUNS with no user skills installed — the standard ships in the plugin now"
+_pw="$(mktemp -d)"; mkdir -p "$_pw/b"
+printf '# p\n\n**Status:** BUILDING\n**Stage:** build\n**Next:** run cmd_gate and check INV-COCKPIT\n' > "$_pw/b/progress.md"
+printf '## RECEIPT — plan · x · PASS\n- [x] ok\n' > "$_pw/b/receipts.md"
+( bash "$SH" cockpit-gate "$_pw/b" >/dev/null 2>&1 ); chk "$?" "1" "v0.33.4 S15: ...and REFUSES a stage-end block carrying internal code a reader cannot decode"
+rm -rf "$_pw"
 rm -rf "$(dirname "$_S15")"
 
 # ── v0.32 S12 + S13: the stage-end contract, checked instead of hoped for ────────────────────
