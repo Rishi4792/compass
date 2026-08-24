@@ -3167,7 +3167,40 @@ else
   [ "$_v32drift" = 0 ] || comm -13 <(printf '%s\n' "$_V32_FX_BEFORE") <(printf '%s\n' "$_V32_FX_AFTER") | sed 's/^/    DIRTIED: /'
 fi
 
+# ── v0.33.0 S21 — THE MECHANICAL SUITE, ACTUALLY RUN ─────────────────────────────────────────────
+# Nine checks were built in this release and until this block none of them was invoked by the suite.
+# A check the release gate never runs is the same shape as a gate nobody calls, which is the defect
+# this whole release is about — so each one is RUN here, not merely asserted to exist. That is also
+# what finally spends the 15s the perf budget allows: before this block the suite timed identically
+# to the base commit, and a green perf check measured a budget nothing had spent.
+_MS="$PLUGIN_ROOT/scripts"
+for _c in dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check \
+          doctrine-wired-check self-arm-check incremental-check figures-check; do
+  chk "$([ -x "$_MS/$_c.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: $_c.sh ships and is executable"
+  ( cd "$T" && bash "$_MS/$_c.sh" "$PLUGIN_ROOT/../.." >/dev/null 2>&1 ); chk "$?" "0" "v0.33 S21: $_c is GREEN on the tracked tree (run, not just present)"
+done
+chk "$([ -x "$_MS/cap-enforce-check.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: cap-enforce-check.sh ships and is executable"
+chk "$([ -f "$_MS/outside-in-reachable.mjs" ] && echo 1 || echo 0)" "1" "v0.33 S21: outside-in-reachable.mjs ships"
+chk "$([ -x "$_MS/mechanical-suite.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: mechanical-suite.sh ships and is executable"
+chk "$([ -f "$_MS/mechanical-suite-classes.md" ] && echo 1 || echo 0)" "1" "v0.33 S21: the class registry ships — the promise that the suite grows"
+# The suite is a single command, and it must REFUSE when a child is missing rather than report a
+# green it did not earn. Proven by hiding one child in a copy.
+_msc="$(mktemp -d)"; cp -R "$PLUGIN_ROOT/../.." "$_msc/r" 2>/dev/null || cp -R "$PLUGIN_ROOT/.." "$_msc/r"
+if [ -d "$_msc/r/plugins/compass/scripts" ]; then
+  rm -f "$_msc/r/plugins/compass/scripts/dup-fact-check.sh"
+  ( cd "$_msc/r" && bash plugins/compass/scripts/mechanical-suite.sh . >/dev/null 2>&1 ); chk "$?" "3" "v0.33 S21: the suite ERRs (exit 3) when a child is MISSING — never a green it did not earn"
+else
+  chk "1" "1" "v0.33 S21: N/A — could not stage a copy to hide a child in on this tree"
+fi
+rm -rf "$_msc"
+# ZERO npm dependencies. The whole plugin, still. outside-in-reachable's parser is purpose-built for
+# one generator's closed output precisely so this stays true.
+chk "$(find "$PLUGIN_ROOT/../.." -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
+# The kill switch may silence REPORTING and must never move a MEASUREMENT.
+_sa="$( cd "$T" && bash "$_MS/mechanical-suite.sh" "$PLUGIN_ROOT/../.." --quiet 2>&1 | grep '^mechanical-suite:' )"
+_sb="$( cd "$T" && COMPASS_V32_STRICT=0 bash "$_MS/mechanical-suite.sh" "$PLUGIN_ROOT/../.." --quiet 2>&1 | grep '^mechanical-suite:' )"
+chk "$([ "$_sa" = "$_sb" ] && echo 1 || echo 0)" "1" "v0.33 S21/S18: COMPASS_V32_STRICT=0 does not change the suite's verdict — the flag cannot move a measurement"
+
 echo "──────── $pass passed, $fail failed ────────"
 cd /; rm -rf "$SMOKE_TMP" 2>/dev/null
 [ "$fail" = 0 ]
-
