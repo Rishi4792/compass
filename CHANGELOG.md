@@ -3,6 +3,58 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.32.0] — 2026-08-24
+
+**Compass stops saying things it cannot back up.**
+
+Compass has always stated a lot: that a review ran with independent adversaries, that a page shows
+you everything, that a performance budget was measured. This release makes it prove those, and —
+where a thing cannot be proven — say so on the page instead of implying otherwise.
+
+**What you will notice**
+
+- **Shortened text is finishable.** When a page shortens a long field it now leaves the rest behind a
+  control you can open, and a check proves every dropped unit is reachable on its own page. Measured
+  over the pinned corpus: 152 of 152 reachable, 0 unreachable.
+- **A review that claims six streams ran must show six.** The denominator comes from the review
+  skill's own machine-readable stream list, never from the receipt's claim about itself. Before this,
+  20 receipts said "all streams run" and exactly one build folder held any evidence at all.
+- **Every review page says: "This review was NOT independently verified."** Because it cannot be.
+  A reviewer forged a subagent transcript pair in four shell lines with zero agent calls, so the
+  invariant that tried to prove independence was deleted and replaced with a sentence that is true.
+- **A performance budget needs a measurement behind it.** Not the word "measured" — a run series
+  whose figures reconcile arithmetically with the bound they support.
+- **Pages stop claiming certainty they do not have.** Statuses fall into settled, open, or unreadable
+  by the contract's own lists; unreadable is never folded into settled; and when any row is
+  unreadable the page states an honest range rather than a single figure.
+
+**Known open, and named on purpose**
+
+- **C-1 — one cheat this release cannot see.** The reachability check runs inside the generator's own
+  process, so a generator that lies about its own trace cannot be caught from inside it. Six rules
+  were tried, each measured and rejected; all six are recorded in the code with their numbers. The
+  check prints what it is blind to beside every verdict, passing or failing. The fix is structural —
+  measure from outside the generator — and it is the next contract.
+- **Two evidence records are incomplete.** The cold-read harness ships and self-checks, but the two
+  reader transcripts the contract asks for were not run. And 4 recorded RED proofs stand against
+  roughly 15 gates added — each was mutation-proved during the build, but in commit messages rather
+  than in the evidence file. Both are carried to the next build rather than waived quietly.
+- **§17-15**: `gen.mjs`'s `cockpit()` render function is unreachable dead code. MINOR, carried.
+
+**Cut before shipping**
+
+The long-build wakeup counter was built, reviewed three times, and removed. It counted per directory
+when a loop is per build, two sessions halved it, its stall detector could not be made to work by
+that approach, and it had never once fired in the repo it was written in. It bought a bound on a loop
+a human can close by hand and cost a script running on every prompt in every project. `engine-gate`
+survives: a build must record its engine and cap, and an armed loop with no stated bound is refused.
+
+**Under the hood**
+
+Nine new checking scripts and six new gates, all wired into `compass.sh gate` — because a gate
+nothing calls is not a gate, which this release learned twice. Six independent adversarial reviews
+found 61 real defects; every mutation those reviewers applied now turns the suite red.
+
 ## [0.31.0] — 2026-08-20
 
 **Every number says where it came from.**
