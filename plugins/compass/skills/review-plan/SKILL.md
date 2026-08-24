@@ -19,6 +19,31 @@ live in `plugins/compass/shared/` so they are the same for every stage that uses
 first line claimed three stages loaded it.)
 <!-- DOCTRINE:END -->
 
+## Step 0a — the cheap checks run FIRST, before any reviewer is spawned
+
+Run **`bash plugins/compass/scripts/mechanical-suite.sh .`** and read its output before doing
+anything else in this stage.
+
+**Why it comes first.** The last release ran six independent adversarial reviews and they found 59
+recorded defects. **32 of them — just over half — needed no judgment at all:** a duplicate constant,
+a test whose population could be empty, a check nobody called, a shell mistake. A reasoning model
+was paid to find the fourth copy of a literal. The suite finds that whole class in seconds, for no
+tokens, and it runs before a reviewer is asked to look at anything.
+
+**What to do with it:**
+- **A MEASURED failure blocks this stage.** Fix it and re-run. No reviewer should ever be handed a
+  defect a script had already decided.
+- **Its REPORTED lines are handed to the reviewers as context**, not as findings — they are the
+  things the suite could not decide, which is exactly where judgment is worth paying for.
+- **If a reviewer finds a defect of a class the suite could have caught, ADD THE CLASS** to
+  `plugins/compass/scripts/mechanical-suite-classes.md` rather than re-reviewing it forever. That
+  file is the registry; a class in it is a class no future review pays for twice.
+
+**Honest limit, stated so nobody over-trusts this.** Only some defect classes are soundly mechanical
+— building this suite found that of five shell-trap classes exactly one could be decided by a line
+scan without failing on correct code. Every check therefore says whether it MEASURES or REPORTS.
+A green suite means the cheap classes are clear; it does not mean the work is right.
+
 ## Step 0 — gate
 Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `compass:plan`. Read `contract.md` + `plan.md`. Set `progress.md` = `in-review (R2)`.
 
