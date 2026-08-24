@@ -1,0 +1,8 @@
+# dup-allow — deliberate repeats of a single-source fact, each with its reason.
+#
+# THIS FILE IS AN ESCAPE HATCH AND IS NAMED AS ONE (contract section 16). Nothing checks that a
+# reason is good, only that one is present. What it buys is that every exemption is visible in one
+# diffable file instead of scattered through the tree as an unrecorded judgment.
+#
+# Format:  <class>:<value>:<file-glob>  # reason
+# Classes: version | gate | stream | floor | path
