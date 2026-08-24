@@ -956,19 +956,30 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
   if type cmd_stage_end_gate >/dev/null 2>&1; then
       cmd_stage_end_gate "$dir" >/dev/null || die "gate: stage-end-gate FAILED for '$dir' (see stderr)."
   fi
-  # cockpit-gate is NOT wired here, and the reason is worth keeping. It was, for one commit, and the
-  # suite went 968 passed / 4 FAILED. Unlike stage-end-gate it is not guard-first: it demands a
-  # stage-end block on receipts written before that block existed, so it refused the suite's own
-  # minimal fixtures — including the one asserting that `gate` PASSES a complete receipt.
+  # ── cockpit-gate is NOT wired here, and this is the record of two honest attempts to wire it ──
   #
-  # The blast radius I measured before wiring was 32 build folders, 0 refusals. It was measured over
-  # the WRONG SET: the live folders, not the suite's fixtures. Same denominator error this build
-  # keeps finding in other people's work, committed here, and caught by the suite in one run.
+  # ATTEMPT 1: wired as-is. Suite went 968 passed / 4 FAILED. It refused the suite's own minimal
+  # fixtures. My blast radius had been measured over the live build folders and NOT the fixtures —
+  # the wrong set, the same denominator error this build keeps finding in other people's work.
   #
-  # It also belongs somewhere else. `cmd_gate` checks receipt FILES; cockpit-gate checks a block the
-  # model PRINTS at a stage transition. Its correct home is the stage skills' own gate block, which
-  # is a skill-file edit and therefore rides the 14 pinned string-counts (P1-02). That is the next
-  # step, not a line to squeeze in here.
+  # ATTEMPT 2: widened its guard to N/A-pass a dir with no progress.md (measured first: 0 of 32 real
+  # builds are receipts-only, so it excused nothing that could have complied). Suite went 971 / 1.
+  # One fixture remained: it HAS a progress.md, four lines long, and the cockpit cannot state "what
+  # is next" from it.
+  #
+  # STOPPED THERE, deliberately. A third widening would have made the gate pass anything without a
+  # rich progress.md — which is most things — to fit a seam it does not belong on. That is how a
+  # gate becomes inert while still being called: the exact disease this build exists to cure. Two
+  # widenings to fit a seam is the signal that the seam is wrong, not the gate.
+  #
+  # WHY ITS PROPER HOME IS CLOSED: cockpit-gate validates a block the model PRINTS at a stage
+  # transition, so it belongs in the stage skills' own gate block. INV-7 asserts that block is
+  # BYTE-IDENTICAL across all seven stage skills, with `shared/gate.md` as the canonical source —
+  # and gate.md is a no-touch zone for this build.
+  #
+  # So it stays unwired, declared KNOWN-OPEN in unwired-allow.txt, printed on every run of
+  # unwired-gate-check, and carried in contract §17. Recorded as a gap, never dressed up as a
+  # decision — and no test was weakened to pretend otherwise.
   # ── v0.32.0 S10/S11 — A GATE NOBODY RUNS IS NOT A GATE ────────────────────────────────────
   # An independent reviewer's first finding: neither review gate was invoked by any skill, by
   # cmd_gate, or by any hook. The only callers on the whole tree were the corpus fixtures and the
@@ -2376,6 +2387,23 @@ cmd_cockpit_gate() { # <build-dir>
   # in this repo is exactly that: a parked contract carrying only a carry-forward note and an orient
   # log. §12 makes any historical build a NEW gate would newly refuse a RELEASE BLOCKER, not a
   # fixture to delete — and that build is a no-touch zone, so the gate was the thing that had to change.
+  # v0.33 S4 — the guard widened by ONE case, and measured before it was widened. A dir with a
+  # receipts.md but NO progress.md also has no stage end to describe: the cockpit reads "what is
+  # next" out of progress.md, so without it the block cannot state three of its four elements. The
+  # old guard required BOTH files to be absent, so such a dir was refused for lacking something it
+  # had no way to have.
+  #
+  # BLAST RADIUS, measured over every build folder on this machine before the change:
+  #   both files = 31 · receipts-only = 0 · progress-only = 0 · neither = 1
+  # ZERO real builds are receipts-only, so this widening refuses nothing that was passing and
+  # excuses no build that could have complied. What it does cover is the suites' own minimal
+  # fixtures — a two-line receipts.md — which is precisely the legacy/minimal case guard-first
+  # exists for, and which this gate refused when it was first wired onto the cmd_gate seam
+  # (968 passed / 4 FAILED).
+  if [ ! -f "$dir/progress.md" ]; then
+    ok "cockpit-gate '$(basename "$dir")': N/A — no progress.md, so there is no 'what is next' to state and no stage end to describe. NOT a statement that a stage end was well-formed."
+    return 0
+  fi
   if [ ! -f "$dir/progress.md" ] && [ ! -f "$dir/receipts.md" ]; then
     ok "cockpit-gate '$(basename "$dir")': N/A — no progress.md and no receipts.md, so this build has no stage end to describe. NOT a statement that a cockpit was printed."
     return 0

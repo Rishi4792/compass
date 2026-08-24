@@ -101,6 +101,28 @@ Each row: the id, the class, the check class that would catch it, and why in one
 | SELF-3 | judgment | — | a reviewer correcting their own evidence |
 | SELF-4 | mechanical | shell-trap | macOS has no `timeout`, so the command silently did not run |
 
+## A QUALIFICATION MEASURED DURING THE BUILD, not written at classification time
+
+**"Mechanical" here means a script could catch it IN PRINCIPLE. It does not mean a line scanner
+catches it soundly.** S5 measured the difference on the five shell traps, and the result is stark:
+
+| trap | soundly mechanical by a line scan? |
+| --- | --- |
+| T5 space-joined path list | **yes** — a definite shape |
+| T1 `grep -c` counting lines | no — the trap needs the pattern to match twice on ONE line, and whether it can is a judgment about the pattern. The first rule failed 40 correct lines |
+| T2 unguarded read under `set -e` | no — whether a given read can fail at EOF is a judgment |
+| T3 unescaped variable in a regex | no — whether a value can carry a metacharacter is a judgment about the value |
+| T4 apostrophe closing an awk program | no — **three rules were tried and all three failed on correct code.** Rule 1 never fired at all; rule 2 failed 23 correct lines; rule 3 failed 8 |
+
+**One of five.** The same pattern appeared in S3 (2 of 3 vacuity classes could only be reported) and
+in S4 (the uncalled-gate check needed a third state, KNOWN-OPEN, because two were not honest enough).
+
+This does not overturn the 32-of-59 split — those findings really were caught by counting, comparing
+or resolving something, and no reviewer's judgment was needed to SEE them. What it changes is the
+expected yield: a check that is sound enough to FAIL a build is rarer than a defect that a script
+could in principle notice. The suite therefore reports far more than it fails, and every check says
+which of the two it is doing. That distinction is the honest form of this build's claim.
+
 ## What this file is NOT
 
 It does not claim the 32 mechanical findings would have been caught **by this build's suite as

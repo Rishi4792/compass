@@ -1,0 +1,1 @@
+# shell-trap-allow — deliberate uses, each with a reason. Format: <trap>:<file>  # reason
