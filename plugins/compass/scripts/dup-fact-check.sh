@@ -79,6 +79,11 @@ for sk in review-contract review-plan review-build; do
 done
 
 # ── class: floor — each pinned numeric floor appears once in the tracked tree ─────────────────
+# THIS CLASS WAS VACUOUS FOR ITS FIRST FIVE COMMITS. The pattern read SELFTEST_FLOOR / SMOKE_FLOOR;
+# recon.sh actually declares FLOOR_SELFTEST and FLOOR_SMOKE. The words were reversed, so the loop
+# iterated over nothing and the class reported clean by measuring an empty set — the exact defect
+# vacuous-assert-check exists to catch, committed inside the duplicate-fact check. It was found by
+# trying to prove its RED and discovering there was no literal to plant against.
 checked=$((checked+1))
 RECON=plugins/compass/scripts/compass.recon.sh
 if [ -f "$RECON" ]; then
@@ -90,7 +95,7 @@ if [ -f "$RECON" ]; then
     allowed floor "$fl" "$RECON" && continue
     report floor "$fl" "a pinned floor stated in $n files — lifting it in one leaves the others lying" $hits
   done <<EOF
-$(LC_ALL=C grep -oE '\b(SELFTEST|SMOKE)_FLOOR=[0-9]+' "$RECON" 2>/dev/null | LC_ALL=C sort -u)
+$(LC_ALL=C grep -oE '\bFLOOR_[A-Z]+=[0-9]+' "$RECON" 2>/dev/null | LC_ALL=C sort -u)
 EOF
 fi
 

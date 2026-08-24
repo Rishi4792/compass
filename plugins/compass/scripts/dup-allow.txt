@@ -6,3 +6,5 @@
 #
 # Format:  <class>:<value>:<file-glob>  # reason
 # Classes: version | gate | stream | floor | path
+floor:FLOOR_SELFTEST=556:plugins/compass/scripts/compass.smoke.sh  # deliberate tripwire: smoke asserts recon pins this exact floor, so lifting it in one place and not the other turns the suite red. That is the intent, not drift.
+floor:FLOOR_SMOKE=568:plugins/compass/scripts/compass.smoke.sh     # same tripwire for the smoke floor.
