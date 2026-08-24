@@ -8,6 +8,17 @@ description: Review-3 (FULL) — final adversarial review of the BUILT product v
 
 Lens: **is the BUILT thing correct, complete vs the contract, and safe — proven, not vibed?**
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/review-core.md`** — the severity bug-bar, self-refutation and dedupe rules every review shares.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Step 0 — gate
 Run `compass.sh gate .claude/builds/<slug> build`. **Non-zero → STOP** (build incomplete), offer the right earlier stage. Read `contract.md` + `plan.md`. Set `progress.md` = `in-review (R3)`. Check the product against the contract feature-by-feature.
 

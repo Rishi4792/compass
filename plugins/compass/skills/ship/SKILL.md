@@ -8,6 +8,17 @@ description: Ship (optional) — deploy the CLOSED build and prove it in prod �
 
 The lifecycle verifies locally (prod stays read-only during build). This stage takes a CLOSED build to production and proves it there — closing the gap where the contract's Observability check only means something post-deploy.
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/feynman.md`** — the writing standard for the reader-facing copy this stage produces.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## When NOT to run
 If the contract's Non-goals mark **deploy out of scope**, skip — the build is done at CLOSED and the observability check was scoped to staging. Say so and stop.
 

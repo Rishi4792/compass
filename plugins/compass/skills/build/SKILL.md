@@ -8,6 +8,18 @@ description: Build-Test-Verify — execute the locked PLAN one step at a time, v
 
 Execute the locked `plan.md` step by step. Loop = **Build → Test → Verify**; verify is adversarial (try to prove the step WRONG).
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/engine.md`** — how this build keeps moving between steps.
+- **`shared/verify-ladder.md`** — what counts as a real verify for this project's facets.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Step 0 — own this build, then gate
 **FIRST, unconditionally (fresh OR resumed/direct entry), before the gate:** `compass.sh own <slug> --session "$CLAUDE_CODE_SESSION_ID"`. This binds the build's owner to THIS session so the Stop hook guards *your* session — and only yours — from the very first edit (a resumed build entered in a new terminal must be owned before any work, never guarded only after the first step). v0.9.0: the Stop hook blocks the owning session of a mid-build and stays quiet for every other session, build, and project — so parallel builds never contaminate each other.
 

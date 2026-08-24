@@ -495,7 +495,13 @@ chk "$( { ! grep -qF "$(cat "$PLUGIN_ROOT/scripts/fixtures/lockphrase.txt")" "$C
 # INV-MODE
 chk "$( { grep -q '\*\*Auto\*\*' "$CSK15" && grep -q 'Human-gated' "$CSK15"; } && echo 1 || echo 0)" "1" "v0.15 INV-MODE: contract skill offers Auto vs Human-gated (each explained)"
 # INV-EXPLAIN
-chk "$([ -f "$EXP15" ] && grep -q '^description: .\+' "$EXP15" && grep -q 'feynman-walkthrough' "$EXP15" && echo 1 || echo 0)" "1" "v0.15 INV-EXPLAIN: explain skill exists with description + teaching invocation"
+# v0.33 S10 — REWRITTEN FOR MEANING, not because it was failing. It asserted that explain names
+# `feynman-walkthrough`, a skill this plugin has never shipped: the assertion was green while the
+# teaching surface pointed at nothing on every install but its author's. It would STILL be green
+# today, because that name survives as an optional enhancement — a test passing for the wrong
+# reason is worse than one failing, because nobody looks at it again. What matters is that explain
+# teaches with NOTHING installed.
+chk "$([ -f "$EXP15" ] && grep -q '^description: .\+' "$EXP15" && grep -q 'shared/walkthrough.md' "$EXP15" && echo 1 || echo 0)" "1" "v0.15/v0.33 INV-EXPLAIN: explain exists and owns its teaching method in-plugin (shared/walkthrough.md), not via an unshipped skill"
 # INV-FEYNMAN — unique markers, ordered feynman<confidence<GATE:START, non-blank window 1..28
 feyn_ok() { local f="$1" fc cc fl cl gl nb
   fc=$(grep -c '<!-- FEYNMAN -->' "$f"); cc=$(grep -c '<!-- CONFIDENCE -->' "$f")
@@ -862,9 +868,11 @@ for g in 'Autonomous mode' 'Gated or Autonomous' 'auto-start' 'pipeline'; do gre
 chk "$_ssok" "1" "v0.25 INV-START-SKILL: skills/start migrated (orchestrator intact, hidden, no dead slashes)"
 # INV-EXPLAIN-SKILL: explain.md migrated to skills/explain (feynman, hidden, 0 dead slashes)
 _es="$PLUGIN_ROOT/skills/explain/SKILL.md"; _esok=1
-{ [ -f "$_es" ] && grep -q '^user-invocable: false' "$_es" && grep -qE '^description: .+' "$_es" && grep -q 'feynman-walkthrough' "$_es"; } || _esok=0
+# v0.33 S10 — same rewrite, same reason: the delegation is now an OPTIONAL enhancement, so its
+# presence proves nothing. What is asserted is that the method ships with the plugin.
+{ [ -f "$_es" ] && grep -q '^user-invocable: false' "$_es" && grep -qE '^description: .+' "$_es" && grep -q 'shared/walkthrough.md' "$_es"; } || _esok=0
 [ "$(grep -roE "$DEADPAT" "$_es" | wc -l | tr -d ' ')" = "0" ] || _esok=0
-chk "$_esok" "1" "v0.25 INV-EXPLAIN-SKILL: skills/explain migrated (feynman-walkthrough, hidden, no dead slashes)"
+chk "$_esok" "1" "v0.25/v0.33 INV-EXPLAIN-SKILL: skills/explain migrated, hidden, no dead slashes, and its teaching method ships in-plugin"
 # INV-GATE-FOOTER-GO: the canonical gate block points at /compass:go, not the old per-stage command
 _gblk="$(xblk "$GATE")"
 chk "$(printf '%s' "$_gblk" | grep -c '/compass:go')" "1" "v0.25 INV-GATE-FOOTER-GO: gate footer runs /compass:go"

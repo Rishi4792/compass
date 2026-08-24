@@ -8,6 +8,17 @@ description: Review-2 (FULL) — adversarially pressure-test the PLAN before bui
 
 Lens: **will this plan, built exactly as written, work — and break nothing else?**
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/review-core.md`** — the severity bug-bar, self-refutation and dedupe rules every review shares.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Step 0 — gate
 Run `compass.sh gate .claude/builds/<slug> plan`. **Non-zero → STOP**, offer `compass:plan`. Read `contract.md` + `plan.md`. Set `progress.md` = `in-review (R2)`.
 

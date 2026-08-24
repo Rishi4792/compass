@@ -1,0 +1,18 @@
+# shared/MANIFEST — every doctrine file, and who actually reads it.
+#
+# A file here is only doctrine if something loads it. feynman.md sat in this directory for three
+# releases opening with the words "Loaded by the contract, plan and ship stages" while zero stages
+# loaded it, and nothing noticed, because nothing checked. This file is the declaration and
+# `doctrine-wired-check.sh` is the proof; a declaration alone would be the same honour system in a
+# new file.
+#
+# Format:  <file>: <skill> [<skill>...]      the named skills must really reference the filename
+#          <file>: script-only <script.sh>   a test suite or script is a real consumer; an
+#                                            error-message string mentioning the name is NOT
+engine.md: build start
+feynman.md: contract plan ship
+gate.md: start
+enforcement.md: human-reference   # its own header says "Agents: do NOT read at runtime — human/maintainer overview only"
+review-core.md: review-contract review-plan review-build
+verify-ladder.md: build
+walkthrough.md: explain

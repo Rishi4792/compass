@@ -8,6 +8,17 @@ description: Review-1 (LIGHT) — adversarially pressure-test a CONTRACT before 
 
 Lens: **is the WHAT airtight?** One focused pass; loop only if gaps.
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/review-core.md`** — the severity bug-bar, self-refutation and dedupe rules every review shares.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Step 0 — gate (real, not prose)
 Run `compass.sh gate .claude/builds/<slug> contract` (slug from `.claude/builds/CURRENT`). **Non-zero exit → STOP**, offer `compass:contract`. Read `contract.md`. Set `progress.md` status = `in-review (R1)`.
 

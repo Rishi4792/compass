@@ -10,6 +10,17 @@ Compass builds software **true to spec, with zero drift**. The contract is the i
 
 > The whole lifecycle is driven through the single front door **`/compass:go`**, which reads state and routes into each stage skill (`compass:contract`, `compass:review-contract`, `compass:plan`, `compass:review-plan`, `compass:build`, `compass:review-build`, `compass:ship`). Resume from a fresh terminal with **`/compass:resume`**. The per-stage skills are hidden from the `/` menu (`user-invocable: false`) but Compass invokes them for you — you never have to remember which one.
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/engine.md`** — how the orchestrator paces a long run, and where it deliberately stops.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Compass is a graph
 
 Compass's lifecycle is an explicit directed graph — drawn at design time, never improvised at runtime:

@@ -8,6 +8,17 @@ description: Define a build's CONTRACT — the locked spec that becomes the inva
 
 The contract is the **single source of truth** — the invariant every later step is checked against. A vague contract guarantees drift. Interview until airtight, then write `contract.md`. (Entry point — no prerequisite gate.)
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/feynman.md`** — the writing standard for the reader-facing copy this stage produces.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## 1. Folder, index, facets
 - **Create the folder with `compass.sh new-build <slug>` — never `mkdir`.** It writes `<dir>/.compass-format`, the stamp that arms `mode-gate` and `redfirst-check`. That stamp is deliberately a file the contract stage cannot author: an earlier design used a `compass-format:` header, the model wrote it, and omitting one line disarmed the gate. A dir made by hand is refused by `contract-gate` at the first seam.
 - Then populate `<state-root>/<slug>/` (resolve `<state-root>` via `compass.sh state-root`). Write the slug to `<state-root>/CURRENT` (a non-authoritative hint only — resume disambiguates by worktree, not this file); append to `<state-root>/INDEX`: `<slug> · <goal> · status=draft · facets=<…> · touches=<rough paths, refined by plan>`.

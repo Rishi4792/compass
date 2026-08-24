@@ -8,6 +8,17 @@ description: Turn a locked CONTRACT into an industry-standard engineering plan. 
 
 Convert `contract.md` into the plan the world's best engineers would deliver right the first time.
 
+<!-- DOCTRINE:START -->
+**Read these before you start.** They are the standards this stage is held to, and they
+live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+
+- **`shared/feynman.md`** — the writing standard for the reader-facing copy this stage produces.
+
+(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
+`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
+first line claimed three stages loaded it.)
+<!-- DOCTRINE:END -->
+
 ## Step 0 — gate
 Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP** (contract not LOCKED), offer `compass:review-contract`. Read `contract.md` — the invariant below.
 
