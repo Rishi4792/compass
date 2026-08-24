@@ -23,154 +23,33 @@ set -u
 
 payload="$(cat 2>/dev/null || true)"
 
-# ── v0.32.0 S16 — THE WAKEUP COUNTER ────────────────────────────────────────
-# THIS IS THE ONLY PART OF v0.32 WHOSE BLAST RADIUS LEAVES THE REPO: a
-# UserPromptSubmit hook registered "matcher": "*", running on every prompt in
-# every project where Compass is installed once v0.32 publishes.
+# ── v0.32.0 S16 — THE WAKEUP COUNTER: BUILT, THEN CUT (Rishi, 2026-08-24) ──
+# A counter lived here. It advanced on every long-build wakeup, capped the loop
+# and flagged a stall. It is gone, and the reason is worth leaving in the file
+# it was removed from.
 #
-# THIRD VERSION. Two independent reviews found 14 and 11 defects. The one that
-# forced this rewrite is architectural, not a bug: A LOOP IS PER BUILD, AND THE
-# COUNTER WAS PER DIRECTORY. It looped over every unfinished build in the repo,
-# so a stale build reported "wakeup 40 of 40" on wakeup 1 of a healthy one — and
-# per long-build's own fences the correct response to that message is to STOP.
-# A backstop that stops the wrong loop is worse than no backstop. It also cost
-# 699 ms in a 31-build repo, 45x the budget, because it did ~10 forks per folder.
+# It was rewritten three times against three independent reviews, which found
+# 14, 11 and 13 defects — 38 of this build's 61 findings in this one feature.
+# The failures were all in the direction that matters:
+#   · it counted per DIRECTORY when a loop is per BUILD, so a stale build
+#     reported "wakeup 40 of 40" on wakeup 1 of a healthy one — and the engine's
+#     own fences say the answer to that message is to STOP;
+#   · two sessions halved it: fifty real wakeups counted as twenty-five;
+#   · the stall detector could not fire, and could not be MADE to by this
+#     approach — it fingerprints progress.md while the skill mandates rewriting
+#     a line in that file every wakeup, and no filter of that shape covers a
+#     per-turn timestamp;
+#   · it had never once fired in this repo, because the path head was trimmed at
+#     the last space and this repo lives under "Claude Code Projects".
 #
-# THE FIX IS TO READ WHAT THE PROMPT ALREADY SAYS. long-build's wakeup template
-# carries the state path verbatim — ".../.claude/builds/<name>/progress.md" — so
-# the build is NAMED, absolutely, in the text that triggers the count. One build,
-# no walk, no $PWD (the slow path below already distrusts $PWD; the counter used
-# to trust it, and the two halves of this file cannot both be right).
-# If the prompt names no build there is nothing to count, and nothing is written:
-# a human typing `/long-build <task>` is STARTING one, and has no counter yet.
-case "$payload" in
-  # The prompt FIELD, tolerant of the whitespace real prompts carry — a pasted
-  # wakeup with one leading space, a newline, pretty-printed JSON, or a
-  # capitalised command all armed nothing in the previous version, which meant
-  # the cap was off for that build's whole life.
-  *'"prompt"'*'/long-build'*|*'"prompt"'*'/Long-build'*|*'"prompt"'*'/LONG-BUILD'*)
-    # Only when the marker is in the PROMPT, never in `cwd`: take the text after
-    # the prompt key and require the marker there.
-    _wk_after="${payload#*'"prompt"'}"
-    case "$_wk_after" in
-      *'/long-build'*|*'/Long-build'*|*'/LONG-BUILD'*) : ;;
-      *) _wk_after="" ;;
-    esac
-    # ── THE BUILD, RESOLVED THE ONLY WAY THAT SURVIVES A REAL PATH ────────────────────────────
-    # Version three trimmed the path head at the last SPACE to strip the prose in front of it. This
-    # repo lives at "/Users/rishi/Desktop/Claude Code Projects/compass", so the head became
-    # "Projects/compass" and the counter NEVER FIRED HERE — measured: zero counter files after a
-    # real wakeup, on the machine the feature was built on. A third independent review found it.
-    #
-    # So nothing is guessed from whitespace. The ROOT comes from the payload's `cwd` field, which is
-    # a JSON string with a known delimiter, and only the SLUG comes from the prompt — anchored on
-    # the wakeup template's own "State:" marker, so a path mentioned anywhere else (a "Never touch:"
-    # zone, for instance) cannot claim the count. The resolved directory must then sit UNDER that
-    # root: the previous version happily appended outside the project via "..".
-    _wk_root=""
-    case "$payload" in
-      *'"cwd"'*)
-        _wk_c="${payload#*'"cwd"'}"; _wk_c="${_wk_c#*:}"; _wk_c="${_wk_c#*\"}"; _wk_root="${_wk_c%%\"*}" ;;
-    esac
-    [ -n "$_wk_root" ] && [ -d "$_wk_root" ] || _wk_root="$PWD"
-    _wk_dir=""; _wk_slugraw=""
-    case "$_wk_after" in
-      *'State:'*'/.claude/builds/'*)
-        _wk_st="${_wk_after#*State:}"
-        case "$_wk_st" in
-          */.claude/builds/*)
-            _wk_t="${_wk_st#*/.claude/builds/}"
-            _wk_slugraw="${_wk_t%%/*}"
-            ;;
-        esac
-        ;;
-    esac
-    if [ -n "$_wk_slugraw" ] && [ -d "$_wk_root/.claude/builds/$_wk_slugraw" ]; then
-      # CONTAINMENT: no "..", no absolute escape. The slug is one path segment or it is nothing.
-      case "$_wk_slugraw" in *..*|/*|*/*) _wk_slugraw="" ;; esac
-      [ -n "$_wk_slugraw" ] && _wk_dir="$_wk_root/.claude/builds/$_wk_slugraw"
-    fi
-    if [ -n "$_wk_dir" ] && [ -f "$_wk_dir/progress.md" ]; then
-      _wk_msg=""
-      _wk_b="$_wk_dir/"
-      # "Is this build finished" reads the LAST status line, not the first. A
-      # stage-log progress.md appends, so `head -1` returned its OLDEST status
-      # and a build shipped at v0.7.0 was counted forever; a front-matter one
-      # returned a stale stamp over a live gate-wait. Real files here carry up to
-      # six status lines.
-      # Both separators. Compass writes `**Status:** SHIPPED` in progress files and `status=shipped`
-      # in the INDEX line, and a progress.md may carry either.
-      _wk_st="$(LC_ALL=C sed -nE 's/^[[:space:]*_-]*[Ss]tatus[[:space:]*_]*[:=][[:space:]*]*(.*)$/\1/p' "$_wk_b/progress.md" 2>/dev/null | tail -1 | sed -E 's/^[^A-Za-z]*//' | tr 'a-z' 'A-Z')"
-      _wk_fin=0
-      case "$_wk_st" in
-        SHIPPED|SHIPPED[^A-Z]*|CLOSED|CLOSED[^A-Z]*|ABANDONED|ABANDONED[^A-Z]*|ROLLED-BACK*) _wk_fin=1 ;;
-      esac
-      if [ "$_wk_fin" = 0 ]; then
-        _wk_f="$_wk_b.compass-wakeups"
-        # The fingerprint drops ONLY the engine's own bookkeeping, and only the
-        # bookkeeping part of it. `grep -v` removed whole lines, so a step line
-        # that happened to carry the word called real work a stall — on a build
-        # whose subject IS the wakeup counter, that is most of them. Both
-        # spellings long-build's SKILL.md uses are covered: `wakeups_used: N/40`
-        # from its template and `stall: 1` from fence 3, singular, which the
-        # previous filter missed entirely.
-        _wk_sig="$(LC_ALL=C sed -E 's/wakeups_used[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*\/?[[:space:]]*[0-9]*//g; s/stalls?[[:space:]]*:[[:space:]]*[0-9]+//g' "$_wk_b/progress.md" 2>/dev/null | cksum 2>/dev/null | { read -r a b _; printf '%s-%s' "${a:-0}" "${b:-0}"; } || printf 'x')"
-        _wk_prev=""; [ -f "$_wk_f" ] && _wk_prev="$(tail -1 "$_wk_f" 2>/dev/null || true)"
-        _wk_prevsig="${_wk_prev##* }"
-        _wk_stall=0
-        if [ -n "$_wk_prev" ] && [ "$_wk_sig" = "$_wk_prevsig" ]; then
-          _wk_stall="$(printf '%s' "$_wk_prev" | { read -r _ _ s _; printf '%s' "${s:-0}"; } 2>/dev/null || printf '0')"
-          case "$_wk_stall" in ''|*[!0-9]*) _wk_stall=0 ;; esac
-          _wk_stall=$((_wk_stall + 1))
-        fi
-        # COUNT = the higher of (lines, highest label). Labels are sanity-checked
-        # before use: a leading-zero label ("08") made the shell abort mid-script
-        # with "value too great for base", and an INT64-max label overflowed and
-        # took the count DOWN, permanently disabling the cap.
-        _wk_lines=0
-        if [ -f "$_wk_f" ]; then _wk_lines="$(wc -l < "$_wk_f" 2>/dev/null || echo 0)"; fi
-        _wk_lines="$(printf '%s' "${_wk_lines:-0}" | tr -d ' ')"
-        case "$_wk_lines" in ''|*[!0-9]*) _wk_lines=0 ;; esac
-        _wk_max=0
-        if [ -f "$_wk_f" ]; then
-          while IFS=' ' read -r _c _rest; do
-            case "$_c" in ''|*[!0-9]*) continue ;; esac
-            case "$_c" in 0*) continue ;; esac            # a leading zero is not a decimal label
-            [ "${#_c}" -le 9 ] || continue                 # and neither is a number that cannot be compared
-            [ "$_c" -gt "$_wk_max" ] && _wk_max="$_c"
-          done < "$_wk_f" 2>/dev/null || true
-        fi
-        _wk_n="$_wk_lines"; [ "$_wk_max" -gt "$_wk_n" ] && _wk_n="$_wk_max"
-        _wk_n=$(( _wk_n + 1 ))
-        if printf '%s %s %s %s\n' "$_wk_n" "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf 'unknown')" "$_wk_stall" "$_wk_sig" >> "$_wk_f" 2>/dev/null; then
-          _wk_lines="$(wc -l < "$_wk_f" 2>/dev/null || echo "$_wk_n")"
-          _wk_lines="$(printf '%s' "${_wk_lines:-0}" | tr -d ' ')"
-          case "$_wk_lines" in ''|*[!0-9]*) _wk_lines=0 ;; esac
-          [ "$_wk_lines" -gt "$_wk_n" ] && _wk_n="$_wk_lines"
-          # Bounded. It is re-read every wakeup; 20,000 lines cost 215 ms.
-          if [ "$_wk_n" -gt 400 ]; then
-            tail -200 "$_wk_f" > "$_wk_f.trim" 2>/dev/null && mv "$_wk_f.trim" "$_wk_f" 2>/dev/null || rm -f "$_wk_f.trim" 2>/dev/null
-          fi
-        else
-          _wk_msg="Compass: the wakeup counter for this build could not be written (read-only?), so the cap cannot be enforced."
-        fi
-        _wk_cap="${COMPASS_WAKEUP_CAP:-40}"
-        case "$_wk_cap" in ''|*[!0-9]*) _wk_cap=40 ;; esac
-        # The slug is SANITISED. A build directory name was interpolated raw into
-        # JSON, and a crafted one produced valid JSON carrying an attacker-chosen
-        # `additionalContext` straight into the model's context.
-        _wk_slug="$(printf '%s' "$_wk_slugraw" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_' | cut -c1-64)"
-        if [ "$_wk_n" -ge "$_wk_cap" ]; then
-          _wk_msg="Compass: wakeup $_wk_n of $_wk_cap for $_wk_slug — the cap is reached; the loop should stop and report."
-        elif [ "$_wk_stall" -ge 2 ]; then
-          _wk_msg="Compass: $_wk_stall consecutive wakeups with no real change to progress.md for $_wk_slug — that is the stall condition; stop the loop rather than re-arming."
-        fi
-      fi
-      # ONE JSON object, always.
-      [ -n "$_wk_msg" ] && printf '{"systemMessage":"%s"}\n' "$_wk_msg" 2>/dev/null
-    fi
-    ;;
-esac
+# THE ASYMMETRY THAT DECIDED IT. What it bought was a bound on a loop a human can
+# also stop by closing the window. What it cost was a script on EVERY prompt in
+# EVERY project of anyone who installs Compass.
+#
+# WHAT SURVIVES: `compass.sh engine-gate` — a build must RECORD its engine and
+# cap and is refused if it arms a loop with no stated bound. Honest about being a
+# recorded intention rather than an enforced ceiling, and no reach outside the repo.
+# The rebuild belongs outside the agent's own process; it is the next contract.
 
 # ── FAST PATH: the only work done for a non-Compass prompt ──────────────────
 case "$payload" in

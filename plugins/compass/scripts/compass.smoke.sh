@@ -2598,28 +2598,15 @@ bash "$PLUGIN_ROOT/scripts/compass.sh" review-disclose-gate "$_s11l" >/dev/null 
 chk "$?" "0" "v0.32 S11: two rounds that each disclose in their OWN block PASS (the control)"
 rm -rf "$_s11l"
 
-# ── v0.32 S16: THE WAKEUP COUNTER — the only part of v0.32 whose blast radius leaves the repo ──
-# It lives in the UserPromptSubmit hook, registered "matcher": "*", so once v0.32 is published it
-# runs on every prompt in every project where Compass is installed. Its own test file drives the
-# REAL hook with real payloads from real directories; this wires that file into the suite so it
-# cannot rot unnoticed, and pins the case count so a silently-shrinking test is a visible diff.
-_WCT="$PLUGIN_ROOT/scripts/wakeup-counter-test.sh"
-if [ -f "$_WCT" ]; then
-  _wct_out="$(bash "$_WCT" "$PLUGIN_ROOT/../.." 2>&1 || true)"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: [0-9]+ cases, ([0-9]+) failing.*/\1/p' | head -1)" "0" "v0.32 S16: the wakeup counter passes every case in its own test file"
-  chk "$(printf '%s' "$_wct_out" | sed -nE 's/^wakeup-counter: ([0-9]+) cases.*/\1/p' | head -1)" "75" "v0.32 S16: ...and there are exactly 75 of them — a shrinking test is how coverage leaves quietly. It went 16 -> 34 -> 64 -> 75 across THREE independent reviews that found 14, 11 and 13 defects the earlier cases could not see — the third being that the counter never fired in this repo at all, because every fixture path came from mktemp and had no spaces in it"
-else
-  chk "MISSING" "present" "v0.32 S16: wakeup-counter-test.sh is present"
-fi
-# The counter must sit ABOVE the matcher's fast path. Below it, a `/long-build continue` wakeup —
-# which names no /compass front door — never reaches the counter, the cap never trips, and the loop
-# is unbounded. That is worse than having no counter, so the ORDER is pinned, not just the presence.
+# ── v0.32 S16: THE WAKEUP COUNTER WAS CUT (Rishi, 2026-08-24) ────────────────────────────────
+# Its assertions and its 75-case test file are withdrawn with it. The reason lives in
+# hooks/orient-hook.sh where the code was. What is asserted instead is that it is GONE: a feature
+# removed for safety must not drift back in unnoticed, and the hook is the one surface in this
+# release whose blast radius leaves the repo.
 _HK="$PLUGIN_ROOT/hooks/orient-hook.sh"
-chk "$([ "$(grep -n 'S16 — THE WAKEUP COUNTER' "$_HK" | head -1 | cut -d: -f1)" -lt "$(grep -n 'FAST PATH: the only work done' "$_HK" | head -1 | cut -d: -f1)" ] && echo above || echo BELOW)" "above" "v0.32 S16: the counter sits ABOVE the matcher's fast path — below it, a /long-build wakeup never reaches it and the cap never trips"
-# INV-ORIENT-INERT still holds: the hook must never exit non-zero, on any path.
-# The "hook never exits 2" rule is NOT re-asserted here. v0.28's INV-ORIENT-DELIVERED already does
-# it and catches the same planted mutation (verified in this turn: planting a real `exit 2` reddens
-# both). A second assertion for the same property is noise that looks like coverage.
+chk "$(grep -vE '^[[:space:]]*#' "$_HK" | grep -c 'compass-wakeups' || true)" "0" "v0.32 S16: the wakeup counter is GONE from the hook — no code path writes a counter file"
+chk "$(grep -c 'BUILT, THEN CUT' "$_HK" || true)" "1" "v0.32 S16: ...and the hook records WHY it was cut, in the file it was cut from"
+chk "$([ -f "$PLUGIN_ROOT/scripts/wakeup-counter-test.sh" ] && echo PRESENT || echo withdrawn)" "withdrawn" "v0.32 S16: ...and its test file is withdrawn with it, rather than left passing over nothing"
 
 # ── v0.32 S17: ARM THE ENGINE, AND SAY SO WHEN YOU CANNOT ────────────────────────────────────
 # Compass's own --auto stalls; the long-build skill is the engine that replaces that continuation
