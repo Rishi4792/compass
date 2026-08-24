@@ -20,11 +20,12 @@
 #        Exit 0 inside the ceiling · 1 over it · 2 usage.
 set -uo pipefail
 R="${1:-.}"; shift 2>/dev/null || true
-CEIL=""; RUNS=3
+CEIL=""; RUNS=3; HERE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ceiling) CEIL="${2:-}"; shift 2 ;;
     --runs)    RUNS="${2:-3}"; shift 2 ;;
+    --here)    HERE=1; shift ;;
     *) shift ;;
   esac
 done
@@ -43,6 +44,23 @@ fi
 
 case "${RUNS:-0}" in ''|*[!0-9]*|0) echo "perf-cap-check: ERR — runs must be a positive integer."; exit 2 ;; esac
 
+# ── MEASURE THE SET THE CEILING IS DEFINED FOR ────────────────────────────────────────────────
+# The ceiling is derived from a CLEAN CLONE, because that is what an installer runs. Timed on a
+# working tree carrying build folders the same suite is ~10s slower, and several checks iterate
+# those folders. The first real run of this check proved the point by failing: median 54s against a
+# 53s ceiling, on a tree an installer never has.
+#
+# The fix is NOT a second ceiling for developer machines — that is one fact with two sources, and
+# they drift. It is to measure the right set every time: clone to a temp dir at HEAD and time there,
+# so the measurement and the ceiling share a population by construction. Pass --here to time the
+# working tree instead, which reports honestly and is never the release verdict.
+WORK="$PWD"; CLONED=""
+if [ "${HERE:-0}" != "1" ] && command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+  CLONED="$(mktemp -d)/c"
+  if git clone -q --no-hardlinks . "$CLONED" >/dev/null 2>&1; then cd "$CLONED" || CLONED=""; else CLONED=""; fi
+fi
+[ -n "$CLONED" ] || printf '  NOTE: could not clone — timing the working tree, which is SLOWER than an installer. Not a release verdict.\n'
+
 times=""
 i=1
 while [ "$i" -le "$RUNS" ]; do
@@ -50,13 +68,17 @@ while [ "$i" -le "$RUNS" ]; do
   times="$times $((e-s))"
   i=$((i+1))
 done
+cd "$WORK" 2>/dev/null || true
 med="$(printf '%s\n' $times | LC_ALL=C sort -n | awk -v n="$RUNS" 'NR==int((n+1)/2){print}')"
 
 # STATE THE SET. The same suite runs ~38s in a fresh clone and ~48s on a tree carrying build
 # folders, because several checks iterate them. Reporting a duration without saying which set it
 # was taken over is how this build published a baseline nobody could reproduce — twice.
-_bs="absent (clean-clone conditions, the set an installer has)"
-[ -d .claude/builds ] && _bs="PRESENT ($(ls -d .claude/builds/*/ 2>/dev/null | grep -c . || echo 0) folders — this run is SLOWER than an installer's by ~10s)"
+if [ -n "$CLONED" ]; then
+  _bs="measured in a FRESH CLONE at HEAD — build state absent, the set the ceiling is defined for"
+else
+  _bs="measured on the WORKING TREE ($(ls -d .claude/builds/*/ 2>/dev/null | grep -c . || echo 0) build folders) — ~10s SLOWER than an installer, so not a release verdict"
+fi
 printf 'perf-cap-check: median %ss of %s run(s) [%s ] against a %ss ceiling.\n' "$med" "$RUNS" "$times" "$CEIL"
 printf '  build state: %s\n' "$_bs"
 printf '  Asserting a CEILING, never an equality — a wall clock never repeats, and a speed gate that\n'
