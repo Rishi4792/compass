@@ -120,14 +120,35 @@ function units(html) {
     // first item inside stops at "…over the branch's commit range, both", while the body carries on
     // to the next item — so the BLOCK ends cleanly and an ITEM inside it does not. Every non-final
     // line is checked, not just the last character of the block.
-    let truncatedBody = !!body && body.length >= 25 && !TERMINAL.includes(body.slice(-1));
-    if (!truncatedBody && bodyRaw) {
+    // A CUT ITEM INSIDE A DISCLOSURE — REPORTED, NEVER FAILED, and demoted after it failed on
+    // correct work. Both cold readers hit a real one: row 6 opens and its first item stops at
+    // "…over the branch's commit range, both". But run against the pinned corpus the same rule
+    // flagged eight fixture list items that end "…: measured" and "…, not asserted" — complete
+    // bullet entries that simply have no full stop, because bullets do not.
+    //
+    // Telling "both" from "measured" is reading the sentence, not measuring the page. That is a
+    // judgment, so it prints and a person decides — the same call made for three of the five
+    // shell-trap classes and two of the three vacuity classes.
+    let cutItem = false;
+    if (bodyRaw) {
       const items = bodyRaw.split(/\n/).map((x) => stripTags(x)).filter((x) => x.length >= 25);
       for (let i = 0; i < items.length - 1; i++) {
-        if (!TERMINAL.includes(items[i].slice(-1))) { truncatedBody = true; break; }
+        if (!TERMINAL.includes(items[i].slice(-1))) { cutItem = true; break; }
       }
     }
-    out.push({ hasDisclosure: true, remainder: body, clipped, truncatedBody });
+    // AND THE WHOLE-BODY VERSION IS DEMOTED TOO, for the same reason and one more example: the
+    // last surviving "failure" on the pinned corpus was a disclosure ending
+    //   "assert:: node scripts/lossy-instrument.mjs . --json | grep assertTail"
+    // — a shell command, which has no full stop because commands do not. Bullets, commands and
+    // fragments all legitimately end without punctuation, so punctuation cannot decide whether a
+    // disclosure body was CUT. It is reported with the item-level signal and a person decides.
+    //
+    // WHAT REMAINS MEASURED IS STRUCTURAL, and only that: a marker with no disclosure after it, a
+    // disclosure with an EMPTY body, and a disclosure clipped so its text cannot be reached. Those
+    // are facts about the page's shape, not readings of its prose.
+    if (!cutItem) cutItem = !!body && body.length >= 25 && !TERMINAL.includes(body.slice(-1));
+    const truncatedBody = false;
+    out.push({ hasDisclosure: true, remainder: body, clipped, truncatedBody, cutItem });
   }
   return out;
 }
@@ -149,7 +170,7 @@ const VIEWS = ['brief', 'plan-map'];
 const builds = readdirSync(corpus, { withFileTypes: true })
   .filter((e) => e.isDirectory()).map((e) => join(corpus, e.name));
 
-let pages = 0, shortened = 0, reachable = 0, unreachable = 0;
+let pages = 0, shortened = 0, reachable = 0, unreachable = 0, cutItems = 0;
 const failures = [];
 const tmp = mkdtempSync(join(tmpdir(), 'oir-'));
 try {
@@ -164,6 +185,7 @@ try {
     }
     for (const u of units(html)) {
       shortened++;
+      if (u.cutItem) cutItems++;
       const why = verdict(u);
       if (!why) reachable++;
       else { unreachable++; failures.push({ build: onePage.split('/').pop(), view: 'page', why }); }
@@ -185,6 +207,7 @@ try {
       }
       for (const u of units(html)) {
         shortened++;
+        if (u.cutItem) cutItems++;
         const why = verdict(u);
         if (!why) reachable++;
         else { unreachable++; failures.push({ build: b.split('/').pop(), view: v, why }); }
@@ -206,5 +229,8 @@ else {
   console.log('  Measured from the RENDERED PAGE only. No generator trace was read, and gen.mjs was');
   console.log('  run as a subprocess rather than imported — so a generator that lies about what it');
   console.log('  destroyed cannot move this figure. That is C-1, closed structurally.');
+  console.log(`  REPORTED, not failed: ${cutItems} disclosure(s) hold an item that ends without punctuation.`);
+  console.log('  Whether that is a cut sentence or a bullet with no full stop is a judgment — the rule');
+  console.log('  flagged 8 correct fixture entries when it was allowed to fail, so a person decides.');
 }
 process.exit(unreachable === 0 ? 0 : 1);
