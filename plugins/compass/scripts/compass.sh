@@ -386,11 +386,28 @@ cmd_engine_gate() { # <build-dir>
     ok "engine-gate '$slug': N/A — no .compass-format stamp, so this build predates the engine rule (27 of this repo's 31 build folders do). NOT a statement that a loop is armed or bounded."
     return 0
   fi
-  local skilldir
-  if ! skilldir="$(_engine_skill_present)"; then
-    ok "engine-gate '$slug': N/A — the long-build skill is not installed here, and Compass does not ship it (it is a user skill), so for most installs this gate is inert BY DESIGN and not a misconfiguration. NOT a statement that this build is bounded; without an engine it runs on Compass's own continuation, which stalls."
-    return 0
+  # ── v0.33.0 S11 — THE EXCUSE IS GONE, BECAUSE COMPASS NOW OWNS THE DOCTRINE ─────────────────
+  # This gate used to N/A-pass whenever the user-level `long-build` skill was absent, on the
+  # reasoning that you cannot arm an engine that is not installed. Its own message admitted the
+  # cost: "for most installs this gate is inert BY DESIGN". Inert on every install but one.
+  #
+  # That reasoning no longer holds. v0.33 ships `shared/engine.md`, so the ENGINE DOCTRINE is
+  # present on every installation, and what this gate asks for is not a skill — it is a RECORDED
+  # DECISION. A build with no loop writes `engine: none · reason=<why>`; a build with one writes
+  # its cap. Both are answerable with nothing installed.
+  #
+  # BLAST RADIUS, measured over BOTH sets before the arm was removed — the second set is the one
+  # S4 forgot, and forgetting it there cost two reverts:
+  #   live build folders, with HOME emptied so the skill is genuinely absent : pass=32 refuse=0
+  #   the suite's own fixtures, via a full smoke run                         : 972 passed, 0 failed
+  local skilldir _engine_where
+  skilldir="$(_engine_skill_present || true)"
+  if [ -n "$skilldir" ]; then
+    _engine_where="The long-build skill is installed at $skilldir, so a loop is available and arming it is a decision this build must state."
+  else
+    _engine_where="The long-build skill is not installed here and Compass does not ship it — but Compass DOES ship the engine doctrine at shared/engine.md, so this is still your decision to record, not a question about what is installed. A build driven by hand writes 'engine: none · reason=<why>'."
   fi
+
   # ── SCOPE, in the order the states actually occur ─────────────────────────────────────────
   # The engine is armed at the BUILD stage, so the seam is a BUILD receipt. Two guard-first misses
   # in a row taught this: measuring the 31 folders on disk said 31 pass / 0 refused, and a
@@ -420,7 +437,7 @@ cmd_engine_gate() { # <build-dir>
     return 0
   fi
   local line; line="$(LC_ALL=C sed -nE 's/^engine:[[:space:]]*(.+)$/\1/p' "$prog" | head -1)"
-  [ -n "$line" ] || die "engine-gate: '$slug' records no 'engine:' line in progress.md. The long-build skill is installed at $skilldir, so the engine is available and its arming is a decision this build must state. WRITE THIS LINE in progress.md — 'engine: long-build · armed=yes · cap=40 · counter=.compass-wakeups' — and stamp '- [x] engine: long-build armed, cap 40' on a receipt. (An independent reviewer found this gate hard-stopping on a line nothing on the tree told anyone to write; the build skill's receipt template now carries it.) HARD STOP (S17)."
+  [ -n "$line" ] || die "engine-gate: '$slug' records no 'engine:' line in progress.md. $_engine_where WRITE THIS LINE in progress.md — 'engine: long-build · armed=yes · cap=40 · counter=.compass-wakeups' — and stamp '- [x] engine: long-build armed, cap 40' on a receipt. (An independent reviewer found this gate hard-stopping on a line nothing on the tree told anyone to write; the build skill's receipt template now carries it.) HARD STOP (S17)."
   # BOUNDED, and bounded by a NUMBER. "armed" on its own is the unbounded loop the 2026-04-28
   # runaway was — 1.16B tokens spent re-scheduling. A cap is what makes arming safe to record.
   local cap; cap="$(printf '%s' "$line" | LC_ALL=C sed -nE 's/.*cap=([0-9]+).*/\1/p' | head -1)"

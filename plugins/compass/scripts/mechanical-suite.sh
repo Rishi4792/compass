@@ -25,7 +25,7 @@ cd "$R" 2>/dev/null || { echo "mechanical-suite: cannot enter '$R'"; exit 2; }
 [ -d plugins/compass ] || { echo "mechanical-suite: not a compass repo root: $R"; exit 2; }
 D=plugins/compass/scripts
 
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check"
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check"
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'

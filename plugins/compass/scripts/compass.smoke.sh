@@ -2660,9 +2660,19 @@ chk "$?" "1" "v0.32 S17: a counter past the stated cap is REFUSED — the bound 
 _eo="$(bash "$_ENG" engine-gate "$_eg/none" 2>&1 || true)"
 _mkeng "$_eg/skillless" "" "$_STAMP"
 _eo2="$(COMPASS_ENGINE_SKILL_DIR=/nonexistent-xyz HOME=/nonexistent-xyz CLAUDE_PROJECT_DIR=/nonexistent-xyz bash "$_ENG" engine-gate "$_eg/skillless" 2>&1 || true)"
-chk "$(printf '%s' "$_eo2" | grep -c 'COMPASS-GATE: PASS')" "1" "v0.32 S17: with NO long-build skill installed the gate N/A-PASSES — it cannot demand a build arm an engine that is not there"
-chk "$(printf '%s' "$_eo2" | grep -c 'not installed here, and Compass does not ship it')" "1" "v0.32 S17: ...and SAYS the skill is absent"
-chk "$(printf '%s' "$_eo2" | grep -c 'NOT a statement that this build is bounded')" "1" "v0.32 S17: ...and says explicitly what it is NOT claiming"
+# ── v0.33 S11 — REWRITTEN FOR MEANING. These three asserted the OPPOSITE behaviour: that with no
+# long-build skill installed the gate N/A-PASSES. That was true and it was the defect. The gate's
+# own message admitted it — "for most installs this gate is inert BY DESIGN" — which is to say the
+# engine decision went unrecorded on every installation but its author's, and three green
+# assertions certified it.
+#
+# v0.33 ships shared/engine.md, so the DOCTRINE is present everywhere. What the gate asks for was
+# never a skill; it is a recorded DECISION, and "engine: none · reason=driven by hand" is
+# answerable with nothing installed at all. So the gate now demands it either way, and these
+# assertions demand that it does.
+chk "$(printf '%s' "$_eo2" | grep -c 'COMPASS-GATE: FAIL')" "1" "v0.33 S17/S11: with NO long-build skill installed the gate STILL demands the engine decision — Compass ships the doctrine, so the excuse is gone"
+chk "$(printf '%s' "$_eo2" | grep -c 'not installed here and Compass does not ship it')" "1" "v0.33 S17/S11: ...and SAYS the skill is absent while demanding it"
+chk "$(printf '%s' "$_eo2" | grep -c 'ship the engine doctrine at shared/engine.md')" "1" "v0.33 S17/S11: ...and names the doctrine it DOES ship, so the decision is answerable with nothing installed"
 mkdir -p "$_eg/legacy"; printf '# p\n\n**Status:** BUILDING\n' > "$_eg/legacy/progress.md"
 _eo3="$(bash "$_ENG" engine-gate "$_eg/legacy" 2>&1 || true)"
 chk "$(printf '%s' "$_eo3" | grep -c 'predates the engine rule')" "1" "v0.32 S17: a build with no v0.30 stamp N/A-PASSES and says it predates the rule"

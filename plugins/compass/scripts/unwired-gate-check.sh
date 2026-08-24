@@ -55,13 +55,37 @@ done <<EOF
 $(LC_ALL=C grep -oE '^cmd_[a-z0-9_]+\(\)' "$SH" | sed 's/()$//' | LC_ALL=C sort -u)
 EOF
 
+# ── v0.33 S11b — CHECKS THAT GO QUIET BECAUSE A DIRECTORY IS MISSING ─────────────────────────
+# The sweep above finds a command nobody CALLS. This finds a command that is called and then
+# silently declines to do its work, because it probes for something outside the plugin that is not
+# there. From the outside the two are indistinguishable and both mean "this never runs".
+#
+# It was Review-2 that forced this half into existence (P2-02). The stage-end gate's plain-words
+# check probes for a `feynman-walkthrough` DIRECTORY that Compass does not ship, so that half has
+# never run on any installation — and the sweep as first written would have walked straight past
+# it, because the command itself is called perfectly well.
+#
+# REPORTED, NEVER FAILED. Whether a probe is a legitimate optional enhancement or a rule that
+# quietly retired is a judgment about intent, and a line scan cannot make it. What the check
+# guarantees is that every one is VISIBLE on every run, with the file and line, so it cannot
+# become invisible the way this one did for three releases.
+probes=0
+while IFS=: read -r pf pln _; do
+  [ -n "$pln" ] || continue
+  probes=$((probes+1))
+  printf '  PROBE       %s:%s\n' "$(basename "$pf")" "$pln"
+  printf '              a check declines its work when a directory outside the plugin is absent.\n'
+done <<EOF_P
+$(LC_ALL=C grep -nE '\[ ! -d "\$[a-z_]+" \]' plugins/compass/scripts/compass.sh 2>/dev/null | sed "s|^|plugins/compass/scripts/compass.sh:|")
+EOF_P
+
 echo
 if [ "$total" -eq 0 ]; then
   echo "unwired-gate-check: ERR — 0 dispatchable commands found. A green over an empty set is not a signal."
   exit 1
 fi
-printf 'unwired-gate-check: %s unwired of %s dispatchable commands (%s human-typed, %s KNOWN-OPEN).\n' \
-  "$unwired" "$total" "$allowed" "$known"
+printf 'unwired-gate-check: %s unwired of %s dispatchable commands (%s human-typed, %s KNOWN-OPEN) · %s directory-probe(s) that can silently decline.\n' \
+  "$unwired" "$total" "$allowed" "$known" "$probes"
 [ "$known" -eq 0 ] || printf '  A KNOWN-OPEN entry is a gap this repo has decided not to close YET. It is printed every\n  run so it cannot quietly become permanent.\n'
 [ "$unwired" -eq 0 ] || exit 1
 exit 0
