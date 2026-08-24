@@ -1,0 +1,17 @@
+# unwired-allow — commands deliberately invoked only by a HUMAN typing them.
+#
+# A forensic or CLI utility with no automatic caller is correct. A GATE with no automatic caller is
+# a gate that never runs. From the outside the two look identical, which is how six gates in this
+# plugin came to exist and never fire. This file is where the difference is DECLARED, so the
+# distinction is a recorded decision instead of a shrug.
+#
+# Format: <subcommand>  # reason
+artefact-audit      # forensic: a person auditing rendered artefacts by hand
+statusline          # CLI: prints a status line for a shell prompt
+statusline-install  # CLI: one-time installer a person runs
+worktree-rm         # CLI: destructive, deliberately never automatic
+abort-clear         # CLI: a person clearing an abort sentinel they set
+auto-init           # orchestrator setup, invoked by auto-start, not standalone
+budget-init         # orchestrator setup, invoked by auto-start, not standalone
+auto-resume         # entered by the resume command's prose, not by a script
+auto-spawn          # entered by the Stop hook's cross-session path
