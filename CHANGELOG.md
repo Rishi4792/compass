@@ -3,6 +3,48 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.1] — 2026-08-24
+
+**The sentences that stopped now finish.**
+
+v0.33.0 shipped with one Critical named on the label: text on a page a reader could not get to.
+Two independent cold readers had hit it five times. This is that fix.
+
+**The cause was one function, and it lost text silently.** `bullets()` split the source on newlines
+and kept only the lines that matched a bullet — so a markdown bullet **wrapped onto a second line
+ended at the wrap**, and everything after it vanished. No `(continues)` marker, no disclosure,
+nothing downstream able to restore it: the renderer believed the item had ended, so there was no
+"rest" for it to put in a control.
+
+Measured over the fixture corpus and this build's own plan: **8 of 108 top-level bullets are
+wrapped, and every one was losing its tail.**
+
+```
+the page two cold readers read : 5 unreachable of 13   →   0 unreachable of 10
+the pinned corpus              : already 0 of 21       →   0 of 21
+```
+
+**`INV-OUTSIDE-IN` is now MET.** The row the readers named — *"…there is no read-modify-write on"* —
+renders whole, through to its full stop. The next one is shortened properly, with a "Show the rest"
+that opens onto the remainder.
+
+**And it has a test that would have caught it.** A fixture carries a sentinel word in the second
+line of a wrapped bullet. Rendered with the bug the sentinel is absent; with the fix it is present.
+Proven both directions before the fix was trusted.
+
+**One thing the canary caught on the way in**, worth recording because it is this project's own
+lesson: the new fixture declared the v0.30 contract format, which obliges a reader-copy block, so
+`copy-gate` refused it — 1 newly refused historical build. A fixture should exercise one rule, not
+accidentally opt into all of them. The claim was dropped and the reason written into the fixture.
+Canary back to **0 newly refused**.
+
+Gates: smoke **998 passed / 0 failed** · selftest **561 / 0** · recon PASS · mechanical-suite 9 of 9.
+
+**Still open from 0.33.0, unchanged:** the perf budget is spent exactly (53s of a 53s ceiling, zero
+margin) · two gates KNOWN-OPEN (`drift-check`, `cockpit-gate`) · three artefact defects the cold
+readers found that are not this fix (a disclosure repeating its content four times in a 111px
+column, a dangling "see below", and 61 vs 59 unreconciled on one page).
+
 ## [0.33.0] — 2026-08-24
 
 **Stop paying reviewers to do a linter's job — and find out how much of the job is actually a

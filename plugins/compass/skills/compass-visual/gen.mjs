@@ -507,7 +507,36 @@ function bodyHtml(body) {
 }
 // ── bullet lines from a section matching a prefix predicate ──
 function bullets(body, re) {
-  return body.split('\n').map((l) => l.trim()).filter((l) => re.test(l));
+  // ── v0.33.1 — A WRAPPED BULLET USED TO LOSE ITS TAIL, SILENTLY ────────────────────────────────
+  // This split on newlines and kept only the lines matching the bullet pattern. A markdown bullet
+  // wrapped onto a second line therefore ended at the wrap, and everything after it vanished — with
+  // NO "(continues)" marker and NO disclosure, because as far as the renderer was concerned the
+  // item had ended. Nothing downstream could restore it: fieldParts never saw the missing half, so
+  // it had nothing to put in a control.
+  //
+  // Two independent cold readers hit this on a real page and could not finish five separate rows —
+  // "…there is no read-modify-write on", "…The perf design that DOES bind". Measured over the
+  // fixture corpus plus this build's own plan: 8 of 108 top-level bullets are wrapped, and every
+  // one of them was losing its tail.
+  //
+  // A continuation is an INDENTED, non-empty line that is not itself a bullet and not a heading.
+  // Anything else closes the current item, so a blank line or a flush-left line still ends it.
+  const out = [];
+  let cur = null;
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (re.test(line)) { if (cur !== null) out.push(cur); cur = line; continue; }
+    if (cur !== null && line
+        && /^\s+\S/.test(raw)
+        && !/^\s*([-*+]|\d+\.)\s/.test(raw)
+        && !/^\s*#{1,6}\s/.test(raw)) {
+      cur += ' ' + line;
+      continue;
+    }
+    if (cur !== null) { out.push(cur); cur = null; }
+  }
+  if (cur !== null) out.push(cur);
+  return out;
 }
 
 // ── INVARIANTs: name + short summary (drop the "→ assert" tail) ──

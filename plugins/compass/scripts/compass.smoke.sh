@@ -3167,6 +3167,23 @@ else
   [ "$_v32drift" = 0 ] || comm -13 <(printf '%s\n' "$_V32_FX_BEFORE") <(printf '%s\n' "$_V32_FX_AFTER") | sed 's/^/    DIRTIED: /'
 fi
 
+# ── v0.33.1 — A WRAPPED BULLET MUST NOT LOSE ITS TAIL ────────────────────────────────────────────
+# bullets() split on newlines and kept only the lines matching the bullet pattern, so a markdown
+# bullet wrapped onto a second line ended at the wrap and everything after it vanished — with no
+# marker and no disclosure, because the renderer believed the item had ended. Two independent cold
+# readers could not finish five separate rows on a real page because of this one function.
+#
+# The fixture carries a sentinel word in the SECOND line of a wrapped bullet. Rendered with the bug
+# the sentinel is absent; rendered with the fix it is present. Nothing subtle to interpret.
+if command -v node >/dev/null 2>&1 && [ -f "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" ] && [ -d "$PLUGIN_ROOT/scripts/fixtures/wrapped-bullet" ]; then
+  _wb="$(mktemp -d)"
+  node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$PLUGIN_ROOT/scripts/fixtures/wrapped-bullet" plan-map --out "$_wb/p.html" >/dev/null 2>&1
+  chk "$(grep -c 'SENTINELTAILSURVIVED' "$_wb/p.html" 2>/dev/null || echo 0)" "1" "v0.33.1: a WRAPPED bullet keeps its second line — the tail is on the page, not silently dropped"
+  rm -rf "$_wb"
+else
+  chk "1" "1" "v0.33.1: N/A — no node or no wrapped-bullet fixture on this tree"
+fi
+
 # ── v0.33.0 S21 — THE MECHANICAL SUITE, ACTUALLY RUN, AND RUN ONCE ───────────────────────────────
 # Nine checks were built in this release and until this block none was invoked by the release gate.
 # A check the gate never runs is the same shape as a gate nobody calls, which is what this release
