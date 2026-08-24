@@ -39,6 +39,10 @@ const MARK = '(continues)';
 const argv = process.argv.slice(2);
 const getArg = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : null; };
 const corpus = getArg('--corpus') || resolve(HERE, 'fixtures/corpus');
+// --page measures ONE already-rendered file. Added so the check can be pointed at exactly the page
+// a cold reader read, which is how CR-01 was confirmed: the readers' verdict and this figure have
+// to agree on the same artefact or one of them is wrong.
+const onePage = getArg('--page');
 const asJson = argv.includes('--json');
 
 if (!existsSync(GEN)) { console.error('outside-in-reachable: no generator at ' + GEN); process.exit(2); }
@@ -52,32 +56,92 @@ function decode(s) {
 }
 function stripTags(s) { return decode(s.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim(); }
 
-// Find each shortened unit and the disclosure that should carry its remainder.
-function units(html) {
+// ── CR-01: the population, widened after two cold readers found what this check could not ─────
+// The first version counted only units carrying the literal marker. Two independent readers found
+// TWO of eight named rows unreachable on a real page — plus five more, unprompted — while this
+// check reported ZERO. Its blindness was never in its logic; it was in its POPULATION. A row the
+// generator truncated WITHOUT emitting a marker was invisible to it.
+//
+// That is v0.32's DG-2 recurring word for word: "717 covers only fieldText(); four more destroy
+// paths outside it drop bullets with NO MARKER AT ALL." S15 closed C-1 — a lying generator cannot
+// move the figure — and left DG-2 wide open.
+//
+// So a unit is SHORTENED if it carries a marker OR it is prose that stops without terminal
+// punctuation and without a disclosure to continue into.
+//
+// GUARD-FIRST, measured on the real page before this rule was written: of 34 prose units it flags
+// exactly 5, and those 5 are precisely the rows both readers named. Zero false positives. Units
+// under 25 characters are skipped — labels, chips and counters legitimately have no full stop.
+const TERMINAL = ['.', '!', '?', ':', ';', ')', ']', '"', "'", '\u201d'];
+function unmarked(html) {
   const out = [];
-  let from = 0;
-  for (;;) {
-    const at = html.indexOf(MARK, from);
-    if (at < 0) break;
-    from = at + MARK.length;
-    const after = html.slice(at + MARK.length, at + MARK.length + 4000);
-    const d = after.indexOf('<details');
-    // A disclosure must follow IMMEDIATELY. Anything else means the remainder went nowhere.
-    const immediate = d >= 0 && stripTags(after.slice(0, d)) === '';
-    let body = null, clipped = false;
-    if (immediate) {
-      const openTag = after.slice(d, after.indexOf('>', d) + 1);
-      clipped = /line-clamp|max-height|overflow\s*:\s*hidden/i.test(openTag);
-      const bStart = after.indexOf('class="rest-body"', d);
-      if (bStart >= 0) {
-        const tStart = after.indexOf('>', bStart) + 1;
-        const tEnd = after.indexOf('</div>', tStart);
-        if (tEnd > tStart) body = stripTags(after.slice(tStart, tEnd));
-      }
+  const pats = [/<div class="v">([\s\S]*?)<\/div>\s*<\/div>/g, /<li[^>]*>([\s\S]*?)<\/li>/g, /<div class="b-det">([\s\S]*?)<\/div>/g];
+  for (const re of pats) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const raw = m[1];
+      if (raw.includes('<details')) continue;           // it discloses; the marker path handles it
+      const txt = stripTags(raw.replace(/<details[\s\S]*?<\/details>/g, ''));
+      if (txt.length < 25) continue;                     // a label, a chip, a counter
+      if (TERMINAL.includes(txt.slice(-1))) continue;    // it finished
+      if (txt.includes(MARK)) continue;                  // already counted by the marker path
+      out.push(txt.slice(-70));
     }
-    out.push({ hasDisclosure: immediate, remainder: body, clipped });
   }
   return out;
+}
+
+// Find each shortened unit and the disclosure that should carry its remainder.
+//
+// KEYED ON THE DISCLOSURE, NOT ON A MARKER STRING — and that is the second population fix this
+// check needed. The first version scanned for the literal "(continues)". The page uses at least
+// three marker forms: "(continues)", "— and N more", and "+ N more". Scanning for one of them made
+// the other two invisible, which is how the readers' row 6 — an overflow counter whose disclosure
+// opens onto a cut sentence — slipped past even after the unmarked-truncation fix.
+//
+// Every disclosure IS a shortening. So the population is: every `<details class="rest">` on the
+// page, plus (from `unmarked`) every prose unit that stops without one.
+function units(html) {
+  const out = [];
+  const re = /<details class="rest"([^>]*)>([\s\S]*?)<\/details>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const openAttrs = m[1] || '';
+    const inner = m[2] || '';
+    const clipped = /line-clamp|max-height|overflow\s*:\s*hidden/i.test(openAttrs);
+    let body = null, bodyRaw = null;
+    const bStart = inner.indexOf('class="rest-body"');
+    if (bStart >= 0) {
+      const tStart = inner.indexOf('>', bStart) + 1;
+      const tEnd = inner.lastIndexOf('</div>');
+      if (tEnd > tStart) { bodyRaw = inner.slice(tStart, tEnd); body = stripTags(bodyRaw); }
+    }
+    // A disclosure that opens onto a SECOND cliff. Both cold readers hit this: row 6 opens and the
+    // first item inside stops at "…over the branch's commit range, both", while the body carries on
+    // to the next item — so the BLOCK ends cleanly and an ITEM inside it does not. Every non-final
+    // line is checked, not just the last character of the block.
+    let truncatedBody = !!body && body.length >= 25 && !TERMINAL.includes(body.slice(-1));
+    if (!truncatedBody && bodyRaw) {
+      const items = bodyRaw.split(/\n/).map((x) => stripTags(x)).filter((x) => x.length >= 25);
+      for (let i = 0; i < items.length - 1; i++) {
+        if (!TERMINAL.includes(items[i].slice(-1))) { truncatedBody = true; break; }
+      }
+    }
+    out.push({ hasDisclosure: true, remainder: body, clipped, truncatedBody });
+  }
+  return out;
+}
+
+// ONE verdict, ONE definition. This condition lived in two code paths — the --page path and the
+// corpus path — and when the second-cliff rule was added it landed in only one of them, so the
+// same page scored differently depending on how it was reached. That is INV-NO-DUPLICATED-FACT's
+// own class, committed inside the check meant to close C-1. Extracted so it cannot drift again.
+function verdict(u) {
+  if (!u.hasDisclosure) return 'no disclosure follows the marker — the remainder went nowhere';
+  if (u.clipped) return 'the disclosure is CSS-clipped, so the text is present but not reachable';
+  if (!u.remainder || u.remainder.length === 0) return 'the disclosure is EMPTY — the marker promises more and delivers nothing';
+  if (u.truncatedBody) return 'the disclosure OPENS ONTO A SECOND CLIFF — its own text stops mid-sentence, with nothing further to open';
+  return null; // reachable
 }
 
 // ── render every corpus build, then read only the HTML ───────────────────────────────────────
@@ -89,6 +153,22 @@ let pages = 0, shortened = 0, reachable = 0, unreachable = 0;
 const failures = [];
 const tmp = mkdtempSync(join(tmpdir(), 'oir-'));
 try {
+  if (onePage) {
+    if (!existsSync(onePage)) { console.error('outside-in-reachable: no page at ' + onePage); process.exit(2); }
+    const html = readFileSync(onePage, 'utf8');
+    pages++;
+    for (const tail of unmarked(html)) {
+      shortened++; unreachable++;
+      failures.push({ build: onePage.split('/').pop(), view: 'page',
+        why: `cut with NO marker and NO disclosure — it just stops: "…${tail}"` });
+    }
+    for (const u of units(html)) {
+      shortened++;
+      const why = verdict(u);
+      if (!why) reachable++;
+      else { unreachable++; failures.push({ build: onePage.split('/').pop(), view: 'page', why }); }
+    }
+  } else {
   for (const b of builds) {
     for (const v of VIEWS) {
       const out = join(tmp, `${v}.html`);
@@ -97,19 +177,20 @@ try {
       if (r.status !== 0 || !existsSync(out)) continue;
       const html = readFileSync(out, 'utf8');
       pages++;
+      // the unmarked half — a row that simply stops, with nothing to open
+      for (const tail of unmarked(html)) {
+        shortened++; unreachable++;
+        failures.push({ build: b.split('/').pop(), view: v,
+          why: `cut with NO marker and NO disclosure — it just stops: "…${tail}"` });
+      }
       for (const u of units(html)) {
         shortened++;
-        const ok = u.hasDisclosure && u.remainder && u.remainder.length > 0 && !u.clipped;
-        if (ok) reachable++;
-        else {
-          unreachable++;
-          failures.push({ build: b.split('/').pop(), view: v,
-            why: !u.hasDisclosure ? 'no disclosure follows the marker — the remainder went nowhere'
-               : u.clipped ? 'the disclosure is CSS-clipped, so the text is present but not reachable'
-               : 'the disclosure is EMPTY — the marker promises more and delivers nothing' });
-        }
+        const why = verdict(u);
+        if (!why) reachable++;
+        else { unreachable++; failures.push({ build: b.split('/').pop(), view: v, why }); }
       }
     }
+  }
   }
 } finally { rmSync(tmp, { recursive: true, force: true }); }
 
