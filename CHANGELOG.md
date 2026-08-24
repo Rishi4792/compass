@@ -3,6 +3,89 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.0] — 2026-08-24
+
+**Stop paying reviewers to do a linter's job — and find out how much of the job is actually a
+linter's.**
+
+The last release ran six independent adversarial reviews. They found 59 recorded defects, and this
+release began by counting how many needed judgment at all. The answer is committed to the repository
+rather than asserted in a commit message:
+
+| | count | share |
+| --- | --- | --- |
+| **mechanical** — a script could have caught it | **32** | 54% |
+| **judgment** — someone had to decide true from misleading | 27 | 46% |
+
+Just over half of what six adversarial reviews found needed no reviewer. Nine checks now find that
+class in about six seconds, for no tokens, and they run **before** any reviewer is spawned.
+
+**But the honest finding of this release cuts the other way**, and it is on the tin: *"mechanical"
+means a script could catch it IN PRINCIPLE, not that a line scanner catches it soundly.* Of five
+shell-trap classes, exactly **one** could be made to fail correctly without also failing on correct
+code — three separate rules for the awk-apostrophe trap each fired on working shell, and the first
+never fired at all. So every check now states whether it **MEASURES** (fails a run) or **REPORTS**
+(prints and never fails), and the suite reports far more than it fails.
+
+**Both outside skills Compass was quietly depending on are now inside it.**
+
+- `shared/engine.md` carries the non-stop-build doctrine: long batched turns, slow work detached
+  rather than polled, state on disk that outranks the conversation, and five safety fences. **What
+  it deliberately does NOT ship is the self-re-arming loop.** Compass's `--auto` still stops after a
+  step; this release makes that stop *legible* rather than silent. The keystroke that continues a
+  run is the fence, not an oversight.
+- `shared/walkthrough.md` carries the teaching method, so `/compass:explain` works with nothing
+  installed. It had pointed at a skill Compass has never shipped, with no fallback, for three
+  releases — working on exactly one machine.
+
+**Three checks that had never run on any installation, found by a script in seconds.**
+`cockpit-gate` and `stage-end-gate` were built by v0.32 to fire at every stage end and were invoked
+by nothing. `engine-gate` excused itself whenever a user-level skill was absent — its own message
+said *"for most installs this gate is inert BY DESIGN"*. `shared/feynman.md` opened with *"Loaded by
+the contract, plan and ship stages"* while zero stages loaded it.
+
+**C-1 is closed structurally.** v0.32's reachability check ran inside the generator's own process and
+read a trace the generator wrote about itself. The new one renders as a subprocess and reads only the
+page and the tracked source. Proven by making the generator lie — `lossy()` turned into a no-op so
+its trace reported destroying nothing — and the figure was byte-identical.
+
+**Under the hood.** Suite 997 passed / 0 failed. Nine mechanical checks, a class registry so the
+suite grows, a recorded-override path so a cap bounds drift rather than the person who owns the
+build, and evidence for `INV-COLD-READER` for the first time since v0.32 — two independent readers
+and a grading, on file.
+
+### Known open, and named on purpose
+
+- **`INV-OUTSIDE-IN` is NOT met, and the number says how badly.** Two independent cold readers found
+  rows they could not finish on a page the reachability check called clean. The check was blind four
+  ways: it knew one marker form of three, could not see rows cut with no marker at all, missed a
+  truncation nested *inside* a disclosure, and kept its verdict in two code paths that had drifted
+  apart. Fixed — and the figure rose from **0 unreachable of 5 to 9 of 13** on that page, and 0 of 5
+  to 3 of 21 on the pinned corpus. **It was not tuned back down.** The remaining defect is real and
+  in `gen.mjs`: it destroys text a reader cannot reach.
+- **The perf budget is spent exactly.** A fresh clone measures **53s against the 53s ceiling** — the
+  entire 15s allowance, to the second, with runs of 53 / 52 / 53. Ordinary variance decides the
+  verdict and a slower machine is already over. **The ceiling was not raised to buy margin.**
+- **Two gates remain KNOWN-OPEN**, printed on every run so they cannot quietly become permanent:
+  `drift-check` (a post-ship monitor nothing invokes, so nothing detects drift after a release) and
+  `cockpit-gate` (its proper home is pinned byte-identical across seven skills from a no-touch file;
+  two attempts to wire it elsewhere were made and abandoned rather than widening it into inertness).
+- **Four defects the cold readers found in the artefacts** and this release did not fix: a
+  disclosure that delivers ~2,050 unique characters as 8,190 — the same block four times — in a
+  111px column eleven screens tall; a dangling "see below" with no below; and two figures on one
+  page (61 and 59) left unreconciled.
+- **The build's own review never converged.** Review-1 took four rounds against a cap of two;
+  Review-2 took four against a cap of three and reached one clean round where the rule wants two.
+  Both cap raises are recorded with who decided and when. Accepted un-converged on a signed waiver.
+
+### The thing this release keeps proving against itself
+
+Every check in it caught a defect in another check, and the cold read caught what no check could.
+A vacuous class shipped green five times because its pattern had two words reversed, and was found
+only by trying to plant its red. A baseline was corrected twice — once for false provenance, once
+for measuring the wrong population. **A check's blindness is usually in what it counts, not in how it
+counts**, and the only reliable way to find that is to run it against something that disagrees.
+
 ## [0.32.0] — 2026-08-24
 
 **Compass stops saying things it cannot back up.**
