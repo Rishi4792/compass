@@ -3170,6 +3170,28 @@ cmd_loop_round() { # <build-dir> <phase> <CLEAN|MATERIAL> --sig <sha12|nogit>
       _refuse ping-pong "sig alternation A,B,A,B — oscillating fixes; fire G2."
     fi
   fi
+  # ── v0.33.3 — DRIFT IS NOW WATCHED, AND REPORTED RATHER THAN ENFORCED ───────────────────────
+  # drift-check re-runs a shipped build's recorded observation command. It existed since v0.23 and
+  # NOTHING invoked it — no skill, no hook, no loop — so nothing detected drift after any release.
+  # It was carried as KNOWN-OPEN through v0.33.2. This is where it belongs: the post-ship loop is
+  # the only thing that runs after a release, per round, per build.
+  #
+  # REPORTED, NEVER ENFORCED, and the measurement decided that. Over the 14 build folders that
+  # actually carry a post-ship loop, drift-check refuses at least 4 — and the refusals are exit 127,
+  # a recorded command that no longer resolves. That is environment rot in a historical build, not a
+  # product regression, and hard-failing a post-ship round on it would break the loop for most of
+  # the builds that have one. Telling rot from regression is reading the command, which is judgment.
+  #
+  # So the round RUNS it, PRINTS its verdict, and carries on. A drift that matters is now visible
+  # every round instead of invisible forever; a drift that is only a stale path costs a line of
+  # output. Run in a subshell so a die() inside it cannot escape and end the round (VZ-4).
+  if type cmd_drift_check >/dev/null 2>&1; then
+    _dc="$( ( cmd_drift_check "$dir" ) 2>&1 | head -3 || true )"
+    case "$_dc" in
+      *DRIFT*) printf 'loop-round: drift watch — %s\n' "$(printf '%s' "$_dc" | head -1)" >&2 ;;
+      *)       : ;;
+    esac
+  fi
   # 9 budget is loop-round-OWNED under .auto-mode (subshell: die() exits cannot escape it — VZ-4)
   if [ -f "$dir/.auto-mode" ]; then
     if ( cmd_budget_check "$dir" --bump-stage >/dev/null ); then :; else

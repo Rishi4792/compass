@@ -146,6 +146,13 @@ does **not** present a second gate — the stage owns it.
    sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
    in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
 
+   Then RUN the stage-end gate on what you just printed — `compass.sh cockpit-gate <build-dir>`.
+   It checks the four elements a reader needs are actually there (what happened · where you are ·
+   what is next · the options, each naming a real command). v0.32 built it and NOTHING invoked it,
+   so it never ran on a single installation; v0.33.3 wires it here, which is its only correct home
+   because it validates a block the model PRINTS rather than a file on disk. Non-zero → fix the
+   block and print it again before presenting the gate.
+
 2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
    (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,
    or just print the artifact if the user asks):

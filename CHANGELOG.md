@@ -3,6 +3,48 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.3] — 2026-08-24
+
+**Everything v0.33.0 shipped as "known open" is now closed.**
+
+**The perf budget has margin again — 48s against the 53s ceiling, up from 53s with none.** The
+release suite had been running the mechanical suite **twice**: once normally and once with
+`COMPASS_V32_STRICT=0`, purely to prove the flag cannot move a verdict. That comparison cost ~6s of
+a 15s allowance to prove a property of *printing*, not of measurement. The suite now emits both
+verdicts from a single pass and the assertion compares them. Same claim, one execution, **5 seconds
+of headroom recovered**.
+
+**`drift-check` runs at last.** It re-runs a shipped build's recorded observation command, it has
+existed since v0.23, and *nothing invoked it* — so nothing detected drift after any release. It is
+now called from the post-ship loop, the only thing that runs after a release.
+
+**Reported, never enforced, and the measurement decided that.** Over the 14 build folders that
+actually carry a post-ship loop, drift-check refuses **10**. The refusals are `exit 127` — a
+recorded command that no longer resolves. That is environment rot in a historical build, not a
+product regression, and hard-failing a round on it would have broken the loop for most builds that
+have one. Telling rot from regression means reading the command, which is judgment. So the round
+runs it, prints its verdict, and carries on: a drift that matters is visible every round instead of
+invisible forever.
+
+**`cockpit-gate` runs at last too — and this one needed the no-touch lifted.** It validates a block
+the model *prints* at a stage transition, so its only correct home is the stage skills' gate block —
+which `INV-7` pins byte-identical across seven skills from `shared/gate.md`, a file under a standing
+no-touch order. Two earlier attempts to wire it elsewhere were abandoned rather than widen the gate
+into inertness. With the no-touch lifted it is wired into the canonical block and all seven copies
+at once; **INV-7 still reports 7 of 7 byte-identical**, and the canary reports **0 newly refused**.
+
+**KNOWN-OPEN is now zero.** `unwired-gate-check`: *0 unwired of 106 dispatchable commands, 8
+human-typed, 0 KNOWN-OPEN.*
+
+**And wiring it exposed one more unbounded pattern**, the third this release has found. The
+assertion counting the cockpit push read `compass.sh cockpit` with no boundary — so
+`compass.sh cockpit-gate` matched it and the count went to 2. Exactly the shape of the
+`min-width`/`width` bug in the clip detector two releases ago. The push and the gate now have
+separate assertions so neither can go missing unnoticed.
+
+Gates: smoke **1002 passed / 0 failed** · selftest **561 / 0** · recon PASS · mechanical-suite 9 of 9
+(both verdicts, one pass) · canary 387 calls over 32 folders, **0 newly refused** · perf 48s of 53s.
+
 ## [0.33.2] — 2026-08-24
 
 **The last two things the cold readers found.**

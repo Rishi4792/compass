@@ -774,7 +774,13 @@ COUT="$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null || true)"
 # INV-COCKPIT / INV-PUSH-STAGE — the pushed strip renders
 chk "$(printf '%s' "$COUT" | grep -cE 'BUILD ·')" "1" "v0.24 INV-COCKPIT: cockpit prints the BUILD strip"
 chk "$(printf '%s' "$COUT" | grep -c '▲ plan')" "1" "v0.24 INV-PUSH-STAGE: marker lands on the correct stage from CANONICAL receipts (contract+review-contract PASS → plan) — bites the R1 receipt-format bug"
-chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit')" "1" "v0.24 INV-PUSH-STAGE: the canonical gate block invokes compass.sh cockpit"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -cE 'compass\.sh cockpit[^-]')" "1" "v0.24 INV-PUSH-STAGE: the canonical gate block invokes compass.sh cockpit"
+# v0.33.3 — the push and the GATE are two different invocations and the counter must tell them
+# apart. `compass.sh cockpit-gate` contains `compass.sh cockpit` as a substring, so the unbounded
+# count above read 2 the moment the gate was wired — a boundary bug of exactly the kind this
+# release found in the clip detector's `min-width` rule. The push is matched with a negative class;
+# the gate gets its own assertion so neither can go missing unnoticed.
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit-gate')" "1" "v0.33.3 INV-PUSH-STAGE: the canonical gate block also RUNS cockpit-gate on what it just printed"
 # INV-MULTI-CONTRACT — both contracts render, and a status flip flips the glyph (teeth)
 chk "$([ "$(printf '%s' "$COUT" | grep -c 'p2-a')" -ge 1 ] && [ "$(printf '%s' "$COUT" | grep -c 'p2-b')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-MULTI-CONTRACT: both contracts in phase 2 render"
 sed -i.bak 's/p2-a · status=shipped/p2-a · status=planned/' "$V24/.claude/builds/PROGRAM.md"
@@ -3270,8 +3276,11 @@ rm -f "$_msc/r/plugins/compass/scripts/dup-fact-check.sh"
 rm -rf "$_msc"
 # The kill switch may silence REPORTING and must never move a MEASUREMENT. One extra run, and it is
 # the only duplicate left, because comparing a verdict to itself needs two of them.
-_sb="$( cd "$T" && COMPASS_V32_STRICT=0 bash "$_MS/mechanical-suite.sh" "$_ROOT" --quiet 2>&1 | grep '^mechanical-suite:' )"
-_sa="$(printf '%s' "$_msout" | grep '^mechanical-suite:')"
+# v0.33.3 — read BOTH verdicts out of the ONE pass already run above, instead of running the whole
+# suite a second time with the flag off. That second run cost ~6s of a 15s allowance to prove a
+# property of printing, not of measurement.
+_sa="$(printf '%s' "$_msout" | grep '^mechanical-suite:' | sed 's/^mechanical-suite//')"
+_sb="$(printf '%s' "$_msout" | grep '^mechanical-suite\[strict=0\]:' | sed 's/^mechanical-suite\[strict=0\]//')"
 chk "$([ "$_sa" = "$_sb" ] && echo 1 || echo 0)" "1" "v0.33 S21/S18: COMPASS_V32_STRICT=0 does not change the suite's verdict — the flag cannot move a measurement"
 
 echo "──────── $pass passed, $fail failed ────────"

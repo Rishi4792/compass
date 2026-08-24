@@ -16,14 +16,3 @@ budget-init         # orchestrator setup, invoked by auto-start, not standalone
 auto-resume         # entered by the resume command's prose, not by a script
 auto-spawn          # entered by the Stop hook's cross-session path
 dora-ledger         # CLI: a read-only report a person runs to see the delivery ledger
-drift-check         # KNOWN-OPEN: this is a post-ship MONITOR, not a CLI tool. Nothing runs it, so
-                    # nothing detects drift after a release. Calling it human-typed would be false —
-                    # a person is not going to remember. Wiring it into the post-ship loop is real
-                    # work and is NOT in this contract's NOW list, so it is recorded here as open
-                    # rather than dressed up as a decision. Carried in contract section 17.
-cockpit-gate        # KNOWN-OPEN: validates a block the model PRINTS at a stage transition, so its
-                    # home is the stage skills' gate block — which INV-7 pins byte-identical across
-                    # seven skills from shared/gate.md, a no-touch zone. Wiring it onto the cmd_gate
-                    # seam was tried twice and abandoned: it refused the suite's own minimal
-                    # fixtures, and a third guard widening would have made it inert to fit a seam it
-                    # does not belong on. Carried in contract section 17-15.
