@@ -29,19 +29,20 @@ _current_build() {
   [ -n "$c" ] && [ -d ".claude/builds/$c" ] && printf '.claude/builds/%s' "$c"
 }
 
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check"
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable"
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'
 for c in $CHILDREN; do
-  f="$D/$c.sh"
+  f="$D/$c.sh"; [ -f "$f" ] || f="$D/$c.mjs"
   if [ ! -f "$f" ]; then missing="$missing $c"; continue; fi
   # cap-enforce-check needs a build dir as well as the root; the rest take the root alone. Passing
   # the CURRENT build keeps the suite a single command rather than a thing you have to remember
   # arguments for — a check you have to look up how to run is a check that stops being run.
   case "$c" in
-    cap-enforce-check) out="$(bash "$f" . "$(_current_build)" 2>&1)"; rc=$? ;;
-    *)                 out="$(bash "$f" . 2>&1)"; rc=$? ;;
+    cap-enforce-check)     out="$(bash "$f" . "$(_current_build)" 2>&1)"; rc=$? ;;
+    outside-in-reachable)  out="$(node "$f" --corpus "$D/fixtures/corpus" 2>&1)"; rc=$? ;;
+    *)                     out="$(bash "$f" . 2>&1)"; rc=$? ;;
   esac
   ran=$((ran+1))
   summary="$(printf '%s' "$out" | LC_ALL=C grep -E "^$c:" | tail -1)"
