@@ -3,6 +3,48 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.33.5] — 2026-08-25
+
+**A gate signed off with a finding it never made.**
+
+`engine-gate`'s passing message ended with the words `Skill found at $skilldir.` — unconditionally.
+That variable is **empty** whenever no `long-build` skill is installed, which is every installation
+but its author's. So the gate whose entire job is to make the engine decision honest printed:
+
+```
+PASS — engine armed and BOUNDED — cap=40, counter at 0, recorded in progress.md
+and stamped on a receipt. Skill found at .
+```
+
+**The decision was right and is unchanged.** v0.33.0 removed the skill dependency on purpose,
+because Compass now ships the doctrine at `shared/engine.md` and what the gate asks for is a
+*recorded decision*, not an installed file — `engine: none · reason=driven by hand` is answerable
+with nothing installed at all. It was the **sentence** that lied, claiming a finding the gate had,
+one line earlier, failed to make.
+
+Now the pass says which case it is, the same rule the N/A branches already had to follow because a
+bare N/A reads as "armed":
+
+- skill present → `Skill found at <the real path>.`
+- skill absent → `No long-build skill is installed here — this build is held to the engine doctrine
+  at shared/engine.md, which is what the decision was always about.`
+
+**Proven able to fail before it was trusted green.** Three assertions were written and run against
+the *old* code first. The two naming the defect went red (`got 1 want 0`, `got 0 want 1`); the
+control — an armed, bounded build passes with no skill installed — was green throughout, so the fix
+could not have been a quiet weakening of the gate. A fourth, that the message names a real path when
+the skill *is* there, was green before and after.
+
+**The class, recorded honestly rather than claimed.** `unwired-gate-check` counts whether a gate is
+*reached*. Nothing counts whether a gate's *words* match what it found. The registry now carries that
+class with the owner **"not yet owned"**, because guard-first says a line scan cannot have it: the
+nearest mechanical shape returns ~90 hits on this tree and about nine in ten are noise, since a line
+scan does not track function scope — one `local s` matches every later message in the file. Stating
+the gap is worth more than a check that fires on correct code.
+
+**Suites:** smoke **1007 passed / 0 failed** (up 3) · selftest **561 / 0** · recon **PASS** ·
+mechanical-suite **9 of 9**.
+
 ## [0.33.4] — 2026-08-24
 
 **The last dormant thing turns out never to have existed.**

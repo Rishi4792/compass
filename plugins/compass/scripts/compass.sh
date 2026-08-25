@@ -456,7 +456,19 @@ cmd_engine_gate() { # <build-dir>
     n="$(LC_ALL=C awk '{ if ($1+0 > m) m = $1+0 } END { print m+0 }' "$ctr" 2>/dev/null || printf '0')"
     [ "$n" -le "$cap" ] || die "engine-gate: '$slug' is at wakeup $n against a stated cap of $cap. The loop ran past its own bound. HARD STOP (S17)."
   fi
-  ok "engine-gate '$slug': engine armed and BOUNDED — cap=$cap, counter at $n, recorded in progress.md and stamped on a receipt. Skill found at $skilldir."
+  # v0.33.5 — SAY ONLY WHAT WAS FOUND. This line ended "Skill found at $skilldir" unconditionally,
+  # and $skilldir is EMPTY when no long-build skill is installed, so the gate whose whole job is to
+  # make the engine decision honest signed off with the words "Skill found at ." on every install
+  # but its author's. The DECISION was right — S11 removed the skill dependency deliberately,
+  # because Compass ships the doctrine — but the sentence claimed a finding the gate had just
+  # failed to make, which is the same class as a bare N/A that reads as "armed".
+  local _found
+  if [ -n "$skilldir" ]; then
+    _found="Skill found at $skilldir."
+  else
+    _found="No long-build skill is installed here — this build is held to the engine doctrine at shared/engine.md, which is what the decision was always about."
+  fi
+  ok "engine-gate '$slug': engine armed and BOUNDED — cap=$cap, counter at $n, recorded in progress.md and stamped on a receipt. $_found"
 }
 
 # ── INDEX / status ─────────────────────────────────────────────────────────

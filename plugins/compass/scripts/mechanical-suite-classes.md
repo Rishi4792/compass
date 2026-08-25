@@ -33,6 +33,24 @@ classes have a judgment core, and a check that fires on correct work gets disabl
 | a stated cap exceeded with no recorded decision | cap-enforce-check | MEASURES | a recorded raise naming who and when is allowed |
 | text present on a page but not reachable by a reader | outside-in-reachable | MEASURES | measured from the rendered page, never from the generator's own account |
 | unshipped commits piling up past the cap | incremental-check | MEASURES | v0.32 ran ~50 on one branch before shipping |
+| a gate message naming a finding the gate did not make | not yet owned | not scanned | v0.33.5: `engine-gate` passed with "Skill found at ." because the path variable is empty when nothing is found. See below — this one is SAID, not scanned |
+
+## The one class recorded here with no owner
+
+**A gate's message asserting a finding the gate did not make.** v0.33.5: `engine-gate`'s passing
+line ended `Skill found at $skilldir.` unconditionally, and that variable is empty on every install
+without the `long-build` skill — so the gate printed "Skill found at ." while passing. The verdict
+was right; the sentence was not.
+
+**Guard-first says a line scan cannot own this.** The nearest mechanical shape is "a variable
+assigned from a command that may return empty, then interpolated into an `ok`/`die` message". Counted
+on this tree it returns **~90 hits, and roughly nine in ten are noise**, because a line scan does not
+track function scope: one `local s` in `status_line()` matches every later message in the file.
+Separating the real cases needs scope tracking, which is a different tool than a grep.
+
+`unwired-gate-check` counts whether a gate is *reached*. Nothing counts whether a gate's *words*
+match what it found. That gap is stated here rather than left implied — the same treatment as the
+unescaped-variable row above, and the reason the table has a "not scanned" column at all.
 
 ## How to add a class
 

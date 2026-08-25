@@ -2692,6 +2692,22 @@ printf '# p\n\n**Status:** BUILDING — S17 and S18 shipped; F-3 was CLOSED in S
 _eo5="$(bash "$_ENG" engine-gate "$_eg/prose" 2>&1 || true)"
 chk "$(printf '%s' "$_eo5" | grep -c 'STATUS line says it is finished')" "0" "v0.32 S17: ...and SHIPPED/CLOSED in unrelated PROSE does NOT take an actively-building build out of scope"
 chk "$(printf '%s' "$_eo5" | grep -c 'engine armed and BOUNDED')" "1" "v0.32 S17: ...it is judged on its merits instead"
+# ── v0.33.5 — A PASS MESSAGE MUST NOT CLAIM A FINDING IT DID NOT MAKE ───────────────────────────
+# The armed-and-bounded PASS ended with "Skill found at $skilldir" UNCONDITIONALLY, and skilldir is
+# EMPTY when no long-build skill is installed. So the gate that exists to make the engine decision
+# honest signed off with the words "Skill found at ." on every install but its author's. The
+# DECISION was right — v0.33 removed the skill dependency on purpose, because Compass ships the
+# doctrine — but the sentence asserted a finding the gate had just failed to make. Same class as
+# the N/A messages above, which is why each of those had to say WHICH case it was.
+_mkeng "$_eg/armed-noskill" "$_ARMED" "$_STAMP"
+_eo6="$(COMPASS_ENGINE_SKILL_DIR=/nonexistent-xyz HOME=/nonexistent-xyz CLAUDE_PROJECT_DIR=/nonexistent-xyz bash "$_ENG" engine-gate "$_eg/armed-noskill" 2>&1 || true)"
+chk "$(printf '%s' "$_eo6" | grep -c 'engine armed and BOUNDED')" "1" "v0.33.5: an armed+bounded build PASSES with NO long-build skill installed — the decision never depended on the skill (the control)"
+chk "$(printf '%s' "$_eo6" | grep -c 'Skill found at')" "0" "v0.33.5: ...and that PASS does NOT say 'Skill found at' when nothing was found"
+chk "$(printf '%s' "$_eo6" | grep -c 'shared/engine.md')" "1" "v0.33.5: ...it names the doctrine the build is actually held to instead"
+_mkeng "$_eg/armed-skill" "$_ARMED" "$_STAMP"
+mkdir -p "$_eg/fakeskill"; printf '# long-build\n' > "$_eg/fakeskill/SKILL.md"
+_eo7="$(COMPASS_ENGINE_SKILL_DIR="$_eg/fakeskill" bash "$_ENG" engine-gate "$_eg/armed-skill" 2>&1 || true)"
+chk "$(printf '%s' "$_eo7" | grep -c "Skill found at $_eg/fakeskill")" "1" "v0.33.5: ...and when the skill IS installed the PASS names its real path, so the sentence tracks the finding either way"
 rm -rf "$_eg"
 # And this repo's own live builds: the gate must refuse none of them.
 _egn=0; _egf=0
