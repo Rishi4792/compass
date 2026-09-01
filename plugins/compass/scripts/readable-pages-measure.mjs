@@ -141,10 +141,55 @@ if (cuts.length === 0) {
   emit('cuts', 'REPORT', bad, `of ${cuts.length} truncation control(s) on this page, not at a sentence end or a closing bracket`);
 }
 
+// decision — does the page state the decision it is asking for?
+//
+// THE EXPECTED LINE IS DECLARED, not read back out of the generator. An earlier draft asserted the
+// rendered string against `gen.mjs`'s own literal, which compares the generator with itself — the
+// vacuous class `vacuous-assert-check.sh` exists to catch.
+//
+// `release-card` is DELIBERATELY ABSENT from this map, and finding out why is the useful part: its
+// hero kicker reads "Shipped". It is a RECORD of a decision already taken, not a page asking for
+// one, so demanding a question of it would be demanding the page be something else. The contract's
+// own table declared "Ship this release?" for it and the contract was wrong — corrected there.
+const DECISION = {
+  'brief': 'Lock this contract?',
+  'brief-body': 'Lock this contract?',
+  'plan-map': 'Approve this plan?',
+};
+const view = String(label).split('/').pop();
+if (view in DECISION) {
+  const h1 = (raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || [, ''])[1].replace(/<[^>]*>/g, '').trim();
+  const want = DECISION[view];
+  emit('decision', h1 === want ? 'REPORT' : 'REPORT', h1 === want ? 0 : 1,
+       h1 === want ? `the page asks "${want}", which is what the contract declares for this view`
+                   : `the page asks "${h1}" where the contract declares "${want}"`);
+} else {
+  emit('decision', 'ERR', 0, `no decision is declared for the ${view} view — it records a decision already taken rather than asking for one, so there is nothing to compare. Stated rather than passed silently.`);
+}
+
 // leaks — escaped markup a reader sees as text, excluding correct <code> quotations
 let leaks = 0, quoted = 0;
 for (const m of raw.matchAll(LEAK)) { if (inCode(raw, m.index)) quoted++; else leaks++; }
 emit('leaks', 'REPORT', leaks,
      `escaped opening tag(s) outside a <code> element${quoted ? `; ${quoted} more are correctly quoted inside <code> and are excluded` : ''}`);
+
+// pictures — does every image describe itself for a reader who cannot see it?
+//
+// REPORT, never MEASURE, and the reason is worth keeping. This started as a MEASURE bound to the
+// one image on this machine lacking a text equivalent — and a reviewer found that image lives in
+// `cover()`, a function with ZERO call sites, which no render of any view can reach. A bar whose
+// entire population is unreachable code is green on day one and proves nothing.
+//
+// What it reports instead is the real thing: of the images a page actually renders, how many carry
+// a text equivalent. Today that is all of them, and saying so plainly is more useful than a rule
+// that could never fire.
+const svgs = [...raw.matchAll(/<svg\b[^>]*>/gi)].map((m) => m[0]);
+if (svgs.length === 0) {
+  emit('picture', 'ERR', 0, 'this page renders no picture, so there is nothing to describe. An empty population is not a pass — and note the contract asks every reader-facing view to carry one.');
+} else {
+  const bare = svgs.filter((t) => !/role="img"/.test(t) && !/aria-hidden="true"/.test(t)).length;
+  emit('picture', 'REPORT', bare,
+       `of ${svgs.length} image(s) on this page, carrying neither a text equivalent (role="img") nor a marker saying they are decorative (aria-hidden)`);
+}
 
 process.stdout.write(lines.join('\n') + (lines.length ? '\n' : ''));

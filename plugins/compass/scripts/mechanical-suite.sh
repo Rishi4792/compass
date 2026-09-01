@@ -32,7 +32,20 @@ _current_build() {
   [ -n "$c" ] && [ -d ".claude/builds/$c" ] && printf '.claude/builds/%s' "$c"
 }
 
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check"
+# ── v0.34 S12 — THE ERR CHANNEL QUESTION, ANSWERED BY SEPARATING TWO KINDS OF ERR ─────────────
+# This suite has no ERR channel: any non-zero child exits the whole suite 1, and the suite gates
+# Step 0a of all three review skills. A reviewer flagged that an honest "empty population" ERR would
+# therefore become a permanent red on every review in the repo.
+#
+# The answer is not a new channel. It is that those are two different things:
+#   - a (page, metric) pair with NOTHING TO INSPECT is ordinary and common — 69 of 92 real pages
+#     render no truncation control at all. readable-pages-check names each one on its own line and
+#     returns 0, because a page with nothing to measure is not a failure.
+#   - a corpus that will not RENDER, or is missing, means no verdict exists over that population.
+#     That returns 3 and the suite is right to fail on it.
+# So the check distinguishes them itself and the suite needs no change. Written down here rather
+# than left to whoever runs it, because the plan required that choice be recorded.
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check readable-pages-check"
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'
