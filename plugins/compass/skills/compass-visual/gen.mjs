@@ -1420,6 +1420,19 @@ function splitLead(text, softMax = 92) {
   // was `t.length` — "do not cut at all". Downstream the field was still clipped, and it landed
   // mid-filename ("…CHANGELOG.md,RE") with nothing to say it continued. Fall back to a comma or a
   // slash before giving up, and always hand back the remainder so the caller can mark it.
+  // ── v0.34 S7 — PREFER A UNIT BOUNDARY BEFORE FALLING BACK TO A WORD ───────────────────────────
+  // A cut should land where a unit really ends. Three endings count, and this function can see two
+  // of them: a sentence (handled above) and the close of a bracketed or braced run. The third — a
+  // list item — is handled one level up by the semicolon path, which is the only place list
+  // structure still exists; by the time text reaches here it has been flattened and `</li>` is
+  // indistinguishable from an ordinary space, so pretending to detect it here would be a rule that
+  // cannot fire.
+  //
+  // A closing bracket is a real boundary and the old code walked straight past it: a value ending
+  // `…(measured over 92 pages)` was cut at the last SPACE, landing on "over", when a complete
+  // clause ended four characters later.
+  const close = Math.max(t.lastIndexOf(')', softMax + 20), t.lastIndexOf(']', softMax + 20), t.lastIndexOf('}', softMax + 20));
+  if (close > softMax * 0.5) return { lead: t.slice(0, close + 1).trim(), rest: t.slice(close + 1).trim() };
   const sp = t.lastIndexOf(' ', softMax);
   const cm = Math.max(t.lastIndexOf(',', softMax), t.lastIndexOf(';', softMax));
   const cut = sp > 20 ? sp : (cm > 20 ? cm + 1 : (softMax > 20 ? softMax : t.length));

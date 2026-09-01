@@ -125,10 +125,17 @@ if (cuts.length === 0) {
 } else {
   let bad = 0;
   for (const m of cuts) {
+    // THE MARKER NAMES THE BOUNDARY KIND, so the rule must too. The generator has three cut paths
+    // and only one of them can land mid-clause:
+    //   `— and N more` / `+ N more`  a LIST was shortened at an item boundary. Clean by
+    //                                construction — the text before it ends on the last item, and
+    //                                requiring a full stop there would fail every correct list.
+    //                                An earlier draft of this rule did exactly that and would have
+    //                                flagged 63 of 208 correct cuts.
+    //   `(continues)`                prose was shortened. This one has to land on a sentence end or
+    //                                the close of a bracketed run, and is the only one worth counting.
+    if (!/\(continues\)/.test(m[0])) continue;
     const before = openText.slice(Math.max(0, m.index - 90), m.index).trimEnd();
-    // a unit boundary: a sentence end, or a closing bracket/brace. The list-item case cannot be
-    // decided here — flattening turns </li> into an ordinary space — and is handled in the
-    // generator, which still has the markup.
     if (!/[.!?]$|[)\]}]$/.test(before)) bad++;
   }
   emit('cuts', 'REPORT', bad, `of ${cuts.length} truncation control(s) on this page, not at a sentence end or a closing bracket`);
