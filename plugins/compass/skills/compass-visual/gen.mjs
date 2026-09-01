@@ -554,7 +554,28 @@ function bullets(body, re) {
 function invariants() {
   const body = sec('INVARIANT') || sec('Acceptance');
   const rows = [];
-  for (const l of body.split('\n')) {
+  // ── v0.34 S16 — A WRAPPED BULLET LOSES ITS TAIL, AND THIS IS THE SECOND FUNCTION IT BIT ───────
+  // This loop read ONE LINE per invariant. A bullet wrapped onto a second line — which is ordinary
+  // in any hand-written contract — had everything after the wrap silently dropped, and a full stop
+  // was then welded onto the stump. TWO INDEPENDENT COLD READERS found the result before any script
+  // did: eleven of fourteen promises rendered as "carries a.", "at least two readers who.",
+  // "names the." — with NO disclosure control, because nothing had been marked as removed. They
+  // LOOK finished, so a reader never knows to click. That is worse than a visible cut, and it is
+  // invisible to a checker that counts truncation markers, because there is no marker to count.
+  //
+  // The identical defect was found and fixed in `bullets()` for v0.33.1 and never generalised.
+  // Third appearance of "fix the shape, not the instance" in this build.
+  //
+  // Join continuation lines first: a line that is indented, non-empty, and is not itself a new
+  // bullet, heading or table row belongs to the bullet above it.
+  const joined = [];
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    const isNewUnit = /^[-*|]\s/.test(line) || /^#{1,6}\s/.test(line) || line === '';
+    if (!isNewUnit && joined.length && /^\s+\S/.test(raw)) { joined[joined.length - 1] += ' ' + line; continue; }
+    joined.push(raw);
+  }
+  for (const l of joined) {
     // v0.32.0 S19 (§17-6): TWO shapes, not one. A contract may write its invariants as bullets
     // OR as a table, and this parser only knew bullets — so a contract with a 12-row invariant
     // table rendered "this contract pins no INVARIANTs" in the panel while the header, fed from

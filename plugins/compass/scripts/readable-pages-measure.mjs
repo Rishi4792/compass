@@ -173,6 +173,36 @@ for (const m of raw.matchAll(LEAK)) { if (inCode(raw, m.index)) quoted++; else l
 emit('leaks', 'REPORT', leaks,
      `escaped opening tag(s) outside a <code> element${quoted ? `; ${quoted} more are correctly quoted inside <code> and are excluded` : ''}`);
 
+// unmarked cuts — text that stops mid-thought with NO control to click
+//
+// THE CLASS EVERY OTHER CHECK HERE IS BLIND TO, and two cold readers found it before any script.
+// `cuts` counts truncation MARKERS. A cut that emits no marker is not in its population, so a page
+// can be full of them and every count reads clean — which is exactly what happened: eleven of
+// fourteen promises rendered as "carries a.", "at least two readers who.", "names the.", each with
+// a full stop welded onto a stump and no disclosure to open. They LOOK finished, so a reader never
+// knows to click. That is worse than a visible cut.
+//
+// REPORT, and the rule is deliberately narrow. "Ends without a full stop" fires on every bullet and
+// every shell command — this project demoted five rules for exactly that. What it looks for instead
+// is a DANGLING FUNCTION WORD before a full stop ("... carries a.", "... names the."), which prose
+// does not do and a truncation does.
+// NARROWED after it fired on correct work — the very thing this project has demoted five rules for.
+// "A percentage was never needed to say that." is a COMPLETE sentence; so is "...needed for this."
+// Demonstratives and relatives (that, this, these, those, which) legitimately end a sentence, so
+// they are out. What remains cannot end English prose: an article, a preposition, a conjunction,
+// a bare copula, a possessive.
+const DANGLING = /\b(a|an|the|who|whom|whose|is|are|was|were|to|of|and|or|but|with|in|on|at|for|from|by|its|their)\.\s*$/i;
+const units = [...raw.matchAll(/<(td|div|p|li)\b[^>]*>([\s\S]*?)<\/\1>/gi)]
+  .map((m) => ({ html: m[0], text: visible(m[2], { includeDetails: false }) }))
+  .filter((u) => u.text.length >= 25);
+if (units.length === 0) {
+  emit('unmarked', 'ERR', 0, 'this page renders no text unit long enough to judge, so there is nothing to inspect.');
+} else {
+  const bad = units.filter((u) => DANGLING.test(u.text) && !/<details\b/i.test(u.html) && !/\(continues\)|more\s*$/i.test(u.text));
+  emit('unmarked', 'REPORT', bad.length,
+       `of ${units.length} text unit(s), stopping on a dangling function word with NO control to open — the shape a marker-counting check cannot see`);
+}
+
 // pictures — does every image describe itself for a reader who cannot see it?
 //
 // REPORT, never MEASURE, and the reason is worth keeping. This started as a MEASURE bound to the
