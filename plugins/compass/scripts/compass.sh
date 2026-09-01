@@ -4784,6 +4784,29 @@ $(node "$rc_ex" --extract "$f" 2>&1 >/dev/null | sed 's/^/    /')
   A block this gate cannot read is a block it did not check. Fix the fence — do not ship it unchecked." ;;
   esac
   [ -n "$body" ] || die "copy-gate: the compass-reader-copy block in $(basename "$f") is empty."
+  # ── v0.34 S9 — THE KEY VOCABULARY ──────────────────────────────────────────────────────────────
+  # Wiring this gate to the lock proves a block EXISTS, not that it reaches the page. A reviewer
+  # cut a real contract's block down to one key: the gate PASSED and the rendered brief got WORSE,
+  # 16 internal codes becoming 17, because every key the block omits silently falls back to the
+  # spec's own prose. A misspelled key does the same thing and says nothing.
+  #
+  # UNKNOWN KEY REFUSES — structural, decidable, and the silent one.
+  # A MISSING KEY IS REPORTED, never refused: omitting a key falls back on purpose, and demanding
+  # all eight would refuse the shipped `fixtures/copy/clean.txt` (zero keys, and INV-9 requires this
+  # gate to pass it) and a real contract that omits `later`. A rule that fires on correct work is a
+  # rule somebody switches off.
+  local _keys_out _keys_rc
+  if _keys_out="$(node "$rc_ex" --keys "$f" 2>/dev/null)"; then _keys_rc=0; else _keys_rc=$?; fi
+  case "$_keys_out" in
+    *unknown:*) echo "refuse: reader-copy-key" >&2
+      die "copy-gate: '$(basename "$f")' names a key the generator does not read — $(printf '%s' "$_keys_out" | sed -n 's/^unknown: //p').
+  That key renders nothing. Its heading falls back to the spec's own words, so the page reads as the
+  spec while the block claims plain copy. The keys the generator reads are:
+  build-what done-means proof blast-radius now later never rollback" ;;
+  esac
+  case "$_keys_out" in
+    *missing:*) printf 'copy-gate: REPORTING — this block omits %s. Each falls back to the spec text; that is allowed and is said here rather than left silent.\n' "$(printf '%s' "$_keys_out" | sed -n 's/^missing: //p')" >&2 ;;
+  esac
   # Case-INSENSITIVE, and dashes normalised. Reader copy is sentences, so the terms appear
   # capitalised at the start of one — `Self-computed`, `Guard-first`, `Byte-inert` all passed a
   # case-sensitive match while their lowercase forms failed. gold-gate already normalises the

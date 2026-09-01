@@ -55,6 +55,35 @@ export function extractReaderCopy(text) {
 }
 
 // Parse the body into key → value(s). Repeated keys accumulate (the scope ladder needs many).
+// ── v0.34 S9 — THE KEY VOCABULARY, DERIVED FROM THE GENERATOR, DECLARED HERE ──────────────────
+// Wiring the gate into the lock proves a block EXISTS, not that it reaches the page. A reviewer
+// showed a contract cut down to a single `build-what:` key PASSES the gate and its rendered brief
+// gets WORSE — 16 internal codes become 17 — because `rc(key, fallback)` silently substitutes the
+// spec's own prose for every key the block does not supply. A misspelled `done_means:` does the
+// same thing, quietly.
+//
+// These eight are what `gen.mjs` actually reads: derived by scanning its rc/rcList/rcText call
+// sites, not typed from memory. Hand-typing a set has been the cause of four separate defects in
+// this build alone.
+export const READER_COPY_KEYS = ['build-what', 'done-means', 'proof', 'blast-radius', 'now', 'later', 'never', 'rollback'];
+
+// TWO RULES, and they are deliberately not the same strength.
+//
+// UNKNOWN KEY -> REFUSE. It is structural, decidable, and it is the silent one: a typo renders the
+// spec's prose under a heading that promises plain words, and nothing anywhere says so.
+//
+// MISSING KEY -> REPORT, never refuse. A block that omits a key falls back on purpose, and
+// demanding all eight would refuse the shipped `fixtures/copy/clean.txt` — which carries ZERO keys
+// and which `assert-invariants.sh:316` requires this gate to PASS — plus a real contract on this
+// machine that omits `later`. A rule that fires on correct work gets switched off within a week,
+// and this build demoted ten of its own rules for exactly that reason.
+export function checkReaderCopyKeys(parsed) {
+  const known = new Set(READER_COPY_KEYS);
+  const unknown = Object.keys(parsed || {}).filter((k) => !known.has(k));
+  const missing = READER_COPY_KEYS.filter((k) => !(k in (parsed || {})));
+  return { unknown, missing };
+}
+
 export function parseReaderCopy(body) {
   const out = {};
   for (const line of String(body || '').split('\n')) {
@@ -70,6 +99,20 @@ export function parseReaderCopy(body) {
 }
 
 function main(argv) {
+  // --keys <file>: print the vocabulary verdict for a file's block. Exit 1 on an UNKNOWN key,
+  // 0 otherwise; missing keys are printed and never fail. See checkReaderCopyKeys for why the two
+  // rules differ in strength.
+  const ki = argv.indexOf('--keys');
+  if (ki !== -1 && argv[ki + 1]) {
+    let t; try { t = readFileSync(argv[ki + 1], 'utf8'); } catch { console.error('reader-copy: cannot read'); return 4; }
+    const r = extractReaderCopy(t);
+    if (r.status !== 'ok') { console.log(`keys: n/a (${r.status})`); return 0; }
+    const { unknown, missing } = checkReaderCopyKeys(parseReaderCopy(r.body));
+    if (missing.length) console.log(`missing: ${missing.join(' ')}`);
+    if (unknown.length) { console.log(`unknown: ${unknown.join(' ')}`); return 1; }
+    console.log('keys: every key is one the generator reads');
+    return 0;
+  }
   const i = argv.indexOf('--extract');
   if (i === -1 || !argv[i + 1]) { console.error('usage: reader-copy.mjs --extract <file>'); return 2; }
   let text;
