@@ -1727,9 +1727,26 @@ bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
 chk "$?" "1" "v0.34 S10: a contract DECLARING the reader-copy format with NO block is REFUSED at the lock seam — 'no block, no lock' now has a lock to attach to"
 # ...and a contract that predates the format still locks, with node absent from the PATH, because
 # that branch is decided in bash. Wiring this gate must not make node a prerequisite of every lock.
+# v0.34 FIX ROUND — REWRITTEN FOR MEANING after the oracle fix, not weakened.
+# This fixture carries a `.compass-format` STAMP FILE (written at the top of this block), so it is
+# NOT a build that predates the format — it is a modern build whose contract happens to lack the
+# header line. The gate now reads the stamp, like every other gate on this seam, so this fixture
+# correctly requires node.
+#
+# "Predates the format" means NO STAMP. That case is asserted below, on a dir that genuinely has
+# none — and the consequence for stamped builds is asserted directly rather than left implied.
+_ps_legacy="$(mktemp -d)"; mkdir -p "$_ps_legacy/b"
+printf -- '# c\n\n## Goal\nA thing.\n' > "$_ps_legacy/b/contract.md"
+printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > "$_ps_legacy/b/receipts.md"
+env PATH=/usr/bin:/bin bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps_legacy/b" contract >/dev/null 2>&1
+chk "$?" "0" "v0.34 S10: a contract that genuinely PREDATES the format (no stamp file) still locks with node OFF the PATH"
+rm -rf "$_ps_legacy"
+# ...and the honest consequence, asserted rather than implied: a build `new-build` created DOES
+# require node at its lock, because the stamp arms the reader-copy check. A reviewer flagged this
+# prerequisite as real and undisclosed; this is the disclosure, in a test.
 printf -- '# c\n\n## Goal\nA thing.\n' > "$_ps/b/contract.md"
 env PATH=/usr/bin:/bin bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
-chk "$?" "0" "v0.34 S10: ...and a contract predating the format still locks with node OFF the PATH"
+chk "$?" "1" "v0.34 FIX: a STAMPED build requires node at its lock — the prerequisite is real, and stating it in a test is the disclosure"
 printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n\n```compass-reader-copy\nbuild-what: A short plain sentence about what this build changes.\n```\n' > "$_ps/b/contract.md"
 printf '## RECEIPT — build · b · PASS\n- [x] done\n' >> "$_ps/b/receipts.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" build >/dev/null 2>&1
