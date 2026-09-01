@@ -3331,6 +3331,41 @@ chk "$(printf '%s' "$_msout" | grep -c '  ok    outside-in-reachable:')" "1" "v0
 chk "$([ -x "$_MS/figures-check.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: figures-check.sh ships and is executable"
 chk "$([ -x "$_MS/mechanical-suite.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: mechanical-suite.sh ships and is executable"
 chk "$([ -f "$_MS/mechanical-suite-classes.md" ] && echo 1 || echo 0)" "1" "v0.33 S21: the class registry ships — the promise that the suite grows"
+
+# ── v0.34 — readable-pages-check had ZERO assertions of its own ────────────────────────────────
+# Its v0.32 analogue got four. A reviewer pointed out that the newest check in the suite was the
+# only one nothing tested, and then proved why it mattered: four of its verdict paths passed while
+# broken. Each assertion below plants the defect the path exists to catch.
+_RP="$PLUGIN_ROOT/scripts/readable-pages-check.sh"
+_RPC="$PLUGIN_ROOT/scripts/fixtures/pages"
+_RPR="$PLUGIN_ROOT/../.."   # the repo root; the suite does not run from it
+chk "$([ -f "$_RP" ] && echo 1 || echo 0)" "1" "v0.34: readable-pages-check ships"
+bash "$_RP" --help >/dev/null 2>&1
+chk "$?" "0" "v0.34: --help exits 0 (an earlier draft could not be invoked at all: exit 127)"
+bash "$_RP" "$_RPR" --corpus /nonexistent-corpus-xyz >/dev/null 2>&1
+chk "$?" "3" "v0.34: an ABSENT corpus ERRs (exit 3) — never a green over a population that is not there"
+# a fixture that no longer matches its pin. The pins were written and never verified until a
+# reviewer found that the integrity of a corpus built BECAUSE of a near-miss leak rested on a comment.
+_rptmp="$(mktemp -d)"; cp -R "$_RPC" "$_rptmp/pages" 2>/dev/null
+printf '\n' >> "$_rptmp/pages/with-block/contract.md"
+bash "$_RP" "$_RPR" --corpus "$_rptmp/pages" >/dev/null 2>&1
+chk "$?" "3" "v0.34: a fixture that no longer matches its MANIFEST pin ERRs (exit 3) — the pin is checked, not decoration"
+rm -rf "$_rptmp"
+# every control must still fail its own class, counted as CONTROLS not as lines
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1
+chk "$?" "1" "v0.34: --controls-only exits 1 while every control still fails its own class"
+# THE DECISION CONTROL, which no fixture can provide because the string is generated, not authored.
+# This is the code-level red-first for a check that used to read `h1 === want ? 'REPORT' : 'REPORT'`
+# — two identical branches, so it could not fail. A reviewer set the headline to "Ship it maybe?"
+# and the whole suite stayed green.
+_rpg="$(mktemp -d)"; cp "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_rpg/gen.bak"
+LC_ALL=C sed -i.tmp "s/'Lock this contract?'/'Ship it maybe?'/" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" 2>/dev/null
+bash "$_RP" "$_RPR" >/dev/null 2>&1
+_rp_rc=$?
+cp "$_rpg/gen.bak" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs"; rm -rf "$_rpg" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs.tmp" 2>/dev/null
+chk "$_rp_rc" "1" "v0.34: a page whose decision line disagrees with the contract's declared table FAILS (exit 1) — the check can go red"
+bash "$_RP" "$_RPR" >/dev/null 2>&1
+chk "$?" "0" "v0.34: ...and the generator restored, it is green again — so the assertion above measured the change, not the environment"
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a

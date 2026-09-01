@@ -15,3 +15,4 @@ empty-ledger 36ab2ed4221ba1a8  MEASURED
 no-block 3c06cfd9db1fd490  MEASURED
 open-findings efaeac39c527c20f  MEASURED
 with-block 9d0853beee9b1393  MEASURED
+ctl-unmarked-stump c841a2d042253b1d  CONTROL — asserted to FAIL its class
