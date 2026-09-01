@@ -163,17 +163,32 @@ for (const mode of [{ k: 'shown', includeDetails: false }, { k: 'open', includeD
 
 // truncation controls
 const CUT = /\(continues\)|—\s*and\s+\d+\s+more|\+\s*\d+\s+more/g;
-let cuts = 0, mid = 0;
+// ── v0.34 S14 — THE PRODUCER NOW AGREES WITH THE GLOSSARY ─────────────────────────────────────
+// This counted a cut as bad unless the text before it ended in `. ! ? : ;` — a rule of the
+// producer's own invention, which the contract's glossary never states. An independent
+// re-derivation from the glossary got a different number, and the contract's own blocking rule
+// ("any figure the reviewer cannot reproduce blocks the lock") fired on exactly this figure.
+//
+// TWO CORRECTIONS, and the first is the one that matters:
+//   1. THE MARKER NAMES THE BOUNDARY KIND. `— and N more` and `+ N more` mean a LIST was shortened
+//      at an item boundary; that is clean by construction, and demanding a full stop there fails
+//      every correct list. Only `(continues)` — shortened prose — can land mid-clause.
+//   2. A boundary is a sentence end or a closing bracket/brace. `:` and `;` were the producer's
+//      additions and appear in the glossary nowhere. Zero real cuts are preceded by either, so
+//      removing them changes no verdict — but a rule nobody can re-derive is not a measurement.
+let cuts = 0, mid = 0, listCuts = 0;
 for (const p of PAGES) {
   const t = visible(readFileSync(p, 'utf8'), { includeDetails: true });
   for (const m of t.matchAll(CUT)) {
     cuts++;
-    const before = t.slice(Math.max(0, m.index - 80), m.index).trimEnd();
-    if (!/[.!?:;]$/.test(before)) mid++;
+    if (!/\(continues\)/.test(m[0])) { listCuts++; continue; }
+    const before = t.slice(Math.max(0, m.index - 90), m.index).trimEnd();
+    if (!/[.!?]$|[)\]}]$/.test(before)) mid++;
   }
 }
-fig('cuts.total', cuts, 'occurrences of (continues) | — and N more | + N more in open visible text over pages.total', 'CUT regex');
-fig('cuts.mid_clause', mid, 'cuts.total whose preceding 80 chars do not end in . ! ? : ;', 'the same pass');
+fig('cuts.total', cuts, 'every truncation control in open visible text over pages.total: (continues), — and N more, + N more', 'CUT regex');
+fig('cuts.list_boundary', listCuts, 'cuts.total that shortened a LIST at an item boundary — clean by construction, and excluded from mid_clause', 'the marker names the kind');
+fig('cuts.mid_clause', mid, 'the (continues) cuts whose preceding 90 chars end at neither a sentence end (. ! ?) nor a closing bracket ()  ]  }) — the glossary definition, not the producer\'s own', 'the same pass');
 
 // markup leaks — the tag set is DECLARED, because v1 published "9" with no reproducible population
 const LEAK = /&lt;(?:span|div|details|summary|svg|rect|text|style|script|html|p|ul|li)\b/g;
@@ -216,6 +231,37 @@ for (const fn of ['briefBody', 'releaseCard', 'planMap', 'reviewArtefact']) {
   const m = gen.match(new RegExp(`function ${fn}\\b[\\s\\S]*?\\n\\}`, ''));
   const n = m ? (m[0].match(/\brc\(|\brcList\(/g) || []).length : -1;
   fig(`reach.${fn}`, n, `rc()/rcList() call sites inside function ${fn} in gen.mjs — how much of that view reader copy can reach at all`, `count rc( in function ${fn}`);
+}
+
+// ── v0.34 S15 — THE CORPUS FIGURES, WHICH DO NOT DRIFT ────────────────────────────────────────
+// Everything above walks a LIVE tree that this build itself keeps changing: it writes contracts and
+// renders pages while it runs, so ten of the contract's published figures had already moved by the
+// time a reviewer re-derived them. A figure that changes while you are checking it cannot be
+// reconciled by anyone, and the contract's own rule — "any figure the reviewer cannot reproduce
+// blocks the lock" — has no way to be satisfied against a moving population.
+//
+// So the MEASURED gold is the fixture corpus: ten authored folders, fixed on disk, rendered fresh.
+// Two runs an hour apart print identical figures because nothing in that population can move
+// unless someone edits a fixture, and the MANIFEST pins each fixture's sha so that is visible.
+// The live-tree figures above stay, because they are what makes the case for the build — but they
+// are a DATED SNAPSHOT, not a gate.
+const CORPUS = join(ROOT, 'compass/plugins/compass/scripts/fixtures/pages');
+if (existsSync(CORPUS)) {
+  const slugs = readdirSync(CORPUS, { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  fig('corpus.fixtures', slugs.length, `authored fixture folders under fixtures/pages — a FIXED population, unlike everything above it`, 'readdir');
+  fig('corpus.controls', slugs.filter((x) => x.startsWith('ctl-')).length,
+      'fixtures asserted to FAIL their class; they are the CONTROL set and are never counted in a measured figure', 'slug prefix');
+  // the sha of the corpus itself, so a figure and the population it came from travel together
+  let h = 0;
+  for (const sl of slugs) {
+    for (const f of readdirSync(join(CORPUS, sl)).sort()) {
+      const t = readFileSync(join(CORPUS, sl, f), 'utf8');
+      for (let i = 0; i < t.length; i++) { h = (h * 31 + t.charCodeAt(i)) >>> 0; }
+    }
+  }
+  fig('corpus.sha', h.toString(16).padStart(8, '0'),
+      'a digest of every fixture file — quote it beside any corpus figure so the figure and its population travel together', 'rolling hash over the sorted corpus');
 }
 
 // ── OUTPUT ──────────────────────────────────────────────────────────────────────────────────────
