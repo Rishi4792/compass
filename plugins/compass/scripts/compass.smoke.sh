@@ -906,7 +906,7 @@ node "$GENJS" "$FXB" brief-body --out "$V26T/body.html" >/dev/null 2>&1
 _hero="$(awk '/class="ba"/{exit} {print}' "$V26T/body.html")"
 # v0.30: the goal moved out of the lede into the Build-what fact card (it used to render in
 # both, one directly under the other). Same property, new home — rewritten, not deleted.
-_lede="$(grep -o 'Build what</div><div class="v">[^<]*' "$V26T/body.html" | head -1)"
+_lede="$(grep -oE 'Build what</div><div class="v"[^>]*>[^<]*' "$V26T/body.html" | head -1)"
 chk "$([ "$(printf '%s' "$_lede" | grep -c 'revenue')" -ge 1 ] && [ "$(printf '%s' "$_hero" | grep -c 'NONGOAL-SENTINEL')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: the lede shows the real Goal (an empty goal reddens it) + hero carries no Non-goals sentinel"
 # exercise sec('Goal') ITSELF (a contract with NO **Goal:** header falls through to sec) — this is what bites the anchored-sec fix
 node "$GENJS" "$PLUGIN_ROOT/scripts/fixtures/brief-contract-nohdr" brief-body --out "$V26T/nohdr.html" >/dev/null 2>&1

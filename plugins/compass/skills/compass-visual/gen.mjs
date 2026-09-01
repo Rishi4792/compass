@@ -1820,16 +1820,25 @@ function planMap() {
     // you need to decide" — on the page asking "Approve this plan?" — rendered as a blank box, and
     // the gate could not see it because an empty string trips no rule. Widen the chain, then say
     // plainly that the plan does not state it.
-    { k: 'What changes', v: fieldDisclosed(firstNonEmpty([
+    // ── v0.34 NOW-1 — THE PLAN MAP GETS A READER-COPY PATH ──────────────────────────────────
+    // This view had ZERO `rc()` call sites. Reader copy could not reach one word of it, so the
+    // whole page was the spec re-arranged, and "require the block and pages become readable" was
+    // false here by construction. Three of these four rows map onto keys the format ALREADY has,
+    // and only `rollback` is new — a vocabulary of seven grows to eight rather than sprouting six
+    // invented names nobody declared.
+    //
+    // The fallback is the previous behaviour, verbatim. A build with no block renders exactly what
+    // it rendered before, which is what keeps 163 existing builds unchanged.
+    { k: 'What changes', v: fieldDisclosed(rc('build-what', firstNonEmpty([
         firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
         firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
         firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
         steps.length ? `${nC(steps.length)} steps, beginning: ${txt(steps[0].title)}` : '',
         'not stated in this plan — read plan.md before approving',
-      ]), 150) },
-    { k: "How it's proven", v: `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}` },
-    { k: 'What it touches', v: fieldDisclosed(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150) },
-    { k: 'Rollback', v: fieldDisclosed(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150) },
+      ])), 150) },
+    { k: "How it's proven", v: rc('proof', `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}`) },
+    { k: 'What it touches', v: fieldDisclosed(rc('blast-radius', firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.'])), 150) },
+    { k: 'Rollback', v: fieldDisclosed(rc('rollback', firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.'])), 150) },
   ]);
 
   const b3 = band3Flow(logicBlockFor('plan'),

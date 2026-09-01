@@ -273,7 +273,7 @@ if (argv.includes('--copy')) {
   // FLATTEN and DECODE before judging. The check fired only on a literal `<div class="v"></div>`,
   // so `&nbsp;`, a lone em-dash, or an empty `<code></code>` all passed — one character away from
   // the defect it was written for, and reachable from a reader-copy block writing `build-what: —`.
-  const emptyFields = [...html.matchAll(/<div class="k">([^<]*)<\/div><div class="v">([\s\S]*?)<\/div>/g)]
+  const emptyFields = [...html.matchAll(/<div class="k"[^>]*>([^<]*)<\/div><div class="v"[^>]*>([\s\S]*?)<\/div>/g)]
     .filter((m) => {
       const v = m[2].replace(/<[^>]+>/g, ' ')
         .replace(/&nbsp;/gi, ' ').replace(/&[a-z]+;/gi, ' ')

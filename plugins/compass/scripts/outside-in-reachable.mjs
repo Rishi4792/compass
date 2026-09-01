@@ -75,7 +75,9 @@ function stripTags(s) { return decode(s.replace(/<[^>]*>/g, '')).replace(/\s+/g,
 const TERMINAL = ['.', '!', '?', ':', ';', ')', ']', '"', "'", '\u201d'];
 function unmarked(html) {
   const out = [];
-  const pats = [/<div class="v">([\s\S]*?)<\/div>\s*<\/div>/g, /<li[^>]*>([\s\S]*?)<\/li>/g, /<div class="b-det">([\s\S]*?)<\/div>/g];
+  // ATTRIBUTE-TOLERANT. These were literal-string matches, so any new attribute on the element
+  // — v0.34 adds data-reader-region — made them match nothing and report a silent clean.
+  const pats = [/<div class="v"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g, /<li[^>]*>([\s\S]*?)<\/li>/g, /<div class="b-det"[^>]*>([\s\S]*?)<\/div>/g];
   for (const re of pats) {
     let m;
     while ((m = re.exec(html)) !== null) {
@@ -110,7 +112,7 @@ function units(html) {
     const inner = m[2] || '';
     const clipped = /line-clamp|max-height|overflow\s*:\s*hidden/i.test(openAttrs);
     let body = null, bodyRaw = null;
-    const bStart = inner.indexOf('class="rest-body"');
+    const bStart = inner.indexOf('class="rest-body"');   // class-only, already attribute-tolerant
     if (bStart >= 0) {
       const tStart = inner.indexOf('>', bStart) + 1;
       const tEnd = inner.lastIndexOf('</div>');
