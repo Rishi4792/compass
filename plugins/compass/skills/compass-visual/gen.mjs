@@ -310,6 +310,17 @@ const rc = (key, fallback) => {
   if (out !== fallback) { const up = droppedFor(fallback); if (up) noteDropped(out, up); noteOrigin(out, originOf(fallback)); }
   return out;
 };
+// rcText(key, markupFallback) — for a row whose FALLBACK is generator-built markup.
+//
+// `rc()` returns its value unescaped, which is right when the fallback wins (the generator built
+// that markup deliberately) and WRONG when the reader-copy block wins, because a block is
+// hand-written prose and a stray `<` in it would render as markup. Wiring reader copy into a
+// markup row without this is a leak the author introduced one step earlier and caught here.
+const rcText = (key, markupFallback) => {
+  const v = READER_COPY && READER_COPY[key];
+  const raw = Array.isArray(v) ? v[0] : v;
+  return raw ? txt(rc(key, '')) : markupFallback;
+};
 // rcList('now', fallback) — the block's plain-language list where it speaks, the contract's own
 // scope ladder where it does not. Guard-first, exactly like rc().
 const rcList = (key, fallback) => {
@@ -1866,10 +1877,17 @@ function planMap() {
         firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
         firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
         firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
-        steps.length ? `${nC(steps.length)} steps, beginning: ${txt(steps[0].title)}` : '',
+        // PLAIN TEXT on purpose. Every other candidate in this chain is plain, and the whole
+        // chain is escaped by fieldDisclosed below — so a candidate that builds markup has its
+        // markup printed to the reader as text. That is the defect, and it shipped on a real page
+        // reading `<span data-prov="counted">34</span> steps, beginning: ...`.
+        // The number here is marked QUOTED rather than COUNTED as a result. That is a real loss of
+        // provenance and it is the honest trade: a counted marker cannot survive an escaping path,
+        // and printing the marker to the reader is worse than a weaker label.
+        steps.length ? `${steps.length} steps, beginning: ${steps[0].title}` : '',
         'not stated in this plan — read plan.md before approving',
       ])), 150) },
-    { k: "How it's proven", v: rc('proof', `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}`) },
+    { k: "How it's proven", v: rcText('proof', `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}`) },
     { k: 'What it touches', v: fieldDisclosed(rc('blast-radius', firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.'])), 150) },
     { k: 'Rollback', v: fieldDisclosed(rc('rollback', firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.'])), 150) },
   ]);
