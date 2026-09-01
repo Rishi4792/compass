@@ -160,9 +160,19 @@ const view = String(label).split('/').pop();
 if (view in DECISION) {
   const h1 = (raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || [, ''])[1].replace(/<[^>]*>/g, '').trim();
   const want = DECISION[view];
-  emit('decision', h1 === want ? 'REPORT' : 'REPORT', h1 === want ? 0 : 1,
+  // MEASURE, and the ternary that used to be here is worth naming: it read
+  //     h1 === want ? 'REPORT' : 'REPORT'
+  // — two identical branches, so the verdict could not depend on the comparison and the check could
+  // not fail. An independent reviewer set the generator's headline to "Ship it maybe?" and the run
+  // still exited 0 with the suite green. That is the vacuous-assertion class, written into the tool
+  // built to catch that class, and Compass's own `vacuous-assert-check.sh` could not see it because
+  // it scans shell files and this is a .mjs. The class is now in the registry.
+  //
+  // MEASURE is right here where the counts are REPORT, because this compares two declared strings —
+  // a structural fact about the output, not a reading of prose.
+  emit('decision', 'MEASURE', h1 === want ? 0 : 1,
        h1 === want ? `the page asks "${want}", which is what the contract declares for this view`
-                   : `the page asks "${h1}" where the contract declares "${want}"`);
+                   : `the page asks "${h1}" where the contract declares "${want}" — a MEASURE failure`);
 } else {
   emit('decision', 'ERR', 0, `no decision is declared for the ${view} view — it records a decision already taken rather than asking for one, so there is nothing to compare. Stated rather than passed silently.`);
 }

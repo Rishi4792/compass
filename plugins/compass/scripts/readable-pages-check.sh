@@ -70,6 +70,23 @@ MANIFEST="$CORPUS/MANIFEST"
 FIXTURES=""
 if [ -f "$MANIFEST" ]; then
   FIXTURES="$(LC_ALL=C sed -nE 's/^([a-z0-9-]+)[[:space:]]+[0-9a-f]{16}.*$/\1/p' "$MANIFEST")"
+  # ── THE PINS ARE NOW VERIFIED. They were written and never checked: the sha was used only as a
+  # format filter, so the integrity of a corpus created BECAUSE of a near-miss leak rested on a
+  # comment. Two independent reviewers found it, and the repo's own doctrine says it in one line —
+  # `cap-enforce-check.sh:2`, "a cap nobody checks is a wish".
+  _pin_bad=""
+  while IFS= read -r _ln; do
+    case "$_ln" in ''|\#*) continue ;; esac
+    _sl="$(printf '%s' "$_ln" | awk '{print $1}')"; _want="$(printf '%s' "$_ln" | awk '{print $2}')"
+    [ -d "$CORPUS/$_sl" ] || { _pin_bad="$_pin_bad $_sl(absent)"; continue; }
+    _got="$(cat "$CORPUS/$_sl"/*.md 2>/dev/null | shasum -a 256 | cut -c1-16)"
+    [ "$_got" = "$_want" ] || _pin_bad="$_pin_bad $_sl(pin=$_want got=$_got)"
+  done < "$MANIFEST"
+  if [ -n "$_pin_bad" ]; then
+    echo "readable-pages-check: ERR — a fixture no longer matches its pin:$_pin_bad"
+    echo "readable-pages-check: ERR (corpus pin mismatch —$_pin_bad)"
+    exit 3
+  fi
 else
   FIXTURES="$(cd "$CORPUS" 2>/dev/null && ls -1d */ 2>/dev/null | sed 's#/$##')"
 fi
@@ -128,22 +145,46 @@ printf '────────────────────────
 
 # ── verdict ─────────────────────────────────────────────────────────────────────────────────────
 if [ "$CONTROLS_ONLY" = 1 ]; then
-  # every control must still FAIL its own class. A control that stops failing means the check can no
-  # longer catch the thing it exists to catch, and that is an ERR, not a quiet green.
-  if [ "$ctl_still_failing" -gt 0 ]; then
-    echo "readable-pages-check: $ctl_still_failing control(s) still fail their class, as required, over $rendered render(s)."
-    exit 1
+  # COUNT CONTROLS, NOT LINES, AND NOTICE A MISSING ONE. This counted failing LINES, so neutralising
+  # two of three controls left the third's lines carrying the total and the run still said "as
+  # required" — and a control DELETED FROM DISK did the same, because render_failed was never read.
+  _want_ctl="$(printf '%s\n' $FIXTURES | grep -c '^ctl-' || true)"
+  _got_ctl="$(LC_ALL=C awk -F'\t' '$4+0 > 0 {split($1,a,"/"); print a[1]}' "$OUT" | grep '^ctl-' | sort -u | grep -c . || true)"
+  if [ "$render_failed" -gt 0 ]; then
+    echo "readable-pages-check: ERR — $render_failed control render(s) failed; a control that will not render proves nothing."
+    echo "readable-pages-check: ERR (control render failure)"
+    exit 3
   fi
-  echo "readable-pages-check: ERR — no control failed. A control that stops failing is a check that has stopped checking."
-  exit 3
+  if [ "${_got_ctl:-0}" != "${_want_ctl:-0}" ]; then
+    echo "readable-pages-check: ERR — ${_got_ctl:-0} of ${_want_ctl:-0} control(s) still fail their class. A control that stopped failing is a check that stopped checking."
+    echo "readable-pages-check: ERR (${_got_ctl:-0} of ${_want_ctl:-0} controls failing)"
+    exit 3
+  fi
+  echo "readable-pages-check: all ${_want_ctl} control(s) still fail their own class, each counted once, over $rendered render(s)."
+  exit 1
 fi
-
 if [ "$render_failed" -gt 0 ]; then
   echo "readable-pages-check: ERR — $render_failed of $((rendered+render_failed)) render(s) failed; no verdict over an incomplete corpus."
   exit 3
 fi
 if [ "$rendered" -eq 0 ]; then
   echo "readable-pages-check: ERR — nothing rendered. An empty population is not a pass."
+  exit 3
+fi
+# A metric that ERRs on EVERY page it applies to has lost its mechanism, not its data. Deleting the
+# region stamp made all 40 `codes` lines ERR and this script still exited 0, the suite still said
+# 10 of 10, and smoke still passed 1010. `err_pairs` was counted, printed, and never tested.
+_metrics="$(LC_ALL=C awk -F'\t' '{print $2}' "$OUT" | sort -u | grep -v '^$' || true)"
+_dead=""
+for _m in $_metrics; do
+  _tot="$(LC_ALL=C awk -F'\t' -v m="$_m" '$2==m' "$OUT" | grep -c . || true)"
+  _err="$(LC_ALL=C awk -F'\t' -v m="$_m" '$2==m && $3=="ERR"' "$OUT" | grep -c . || true)"
+  [ "${_tot:-0}" -gt 0 ] && [ "${_err:-0}" = "${_tot:-0}" ] && _dead="$_dead $_m"
+done
+if [ -n "$_dead" ]; then
+  echo "readable-pages-check: ERR — these metric(s) reported NOTHING BUT ERR on every page:$_dead"
+  echo "  A metric that never measures anywhere has lost the mechanism it reads, not merely its data."
+  echo "readable-pages-check: ERR (metric(s) dead everywhere:$_dead)"
   exit 3
 fi
 if [ "$measure_failed" -gt 0 ]; then

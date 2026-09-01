@@ -4777,7 +4777,17 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
   #
   # A file with neither a `compass-format:` line nor a reader-copy fence has nothing for the
   # extractor to read, so it is answered here and never reaches node.
-  if ! grep -qE '^compass-format:' "$f" 2>/dev/null && ! grep -qE '^[[:space:]]{0,3}```+[[:space:]]*compass-reader-copy' "$f" 2>/dev/null; then
+  # TWO ORACLES WAS THE BUG. Every other gate on this seam decides "is this a modern build?" from the
+  # `.compass-format` STAMP FILE that `new-build` writes. This gate alone read a `compass-format:`
+  # TEXT LINE inside contract.md — chosen because it was greppable without node, which is convenient
+  # rather than correct. An independent reviewer measured the cost: 14 build folders carry the stamp
+  # and no line, so this gate told them "predates the reader-copy format" — untrue — and the rule was
+  # silently OFF for them. Two were their project's CURRENT build.
+  #
+  # The stamp is also the CHEAPER test: a file-existence check, not a grep. Armed on the UNION, so
+  # nothing that was armed before is disarmed now.
+  _rc_stamp="$(dirname "$f")/.compass-format"
+  if [ ! -f "$_rc_stamp" ] && ! grep -qE '^compass-format:' "$f" 2>/dev/null && ! grep -qE '^[[:space:]]{0,3}```+[[:space:]]*compass-reader-copy' "$f" 2>/dev/null; then
     ok "copy-gate: N/A — '$(basename "$f")' predates the reader-copy format (no 'compass-format:' line) and carries no block, so there is nothing to read. Answered without node, because this gate now runs at every contract lock."
     return 0
   fi
@@ -4798,7 +4808,10 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
        # marker is the `compass-format:` line `compass.sh new-build` writes. Measured over all 30
        # build folders before the change: the three carrying that line are EXACTLY the three
        # carrying a block, so this refuses none of them.
-       if grep -qE '^compass-format:' "$f" 2>/dev/null; then
+       # SAME ORACLE AS THE ARMING ABOVE. This read only the text line while the arming now also
+       # accepts the stamp, so a stamp-only build was armed and then waved through — the rule
+       # switched on and immediately off again. Union here too, or the two halves disagree.
+       if [ -f "$_rc_stamp" ] || grep -qE '^compass-format:' "$f" 2>/dev/null; then
          echo "refuse: reader-copy" >&2
          die "copy-gate: '$(basename "$f")' declares a compass-format but carries NO compass-reader-copy block.
   A contract written to this format states its own reader copy; without it there is nothing to check
