@@ -958,6 +958,19 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_mode_gate >/dev/null 2>&1; then
       cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
     fi
+    # ── v0.34 S10 — "NO BLOCK, NO LOCK" NEEDS A LOCK TO ATTACH TO ─────────────────────────────
+    # copy-gate has existed and worked since v0.32.0 S14, and until now its ONLY callers were two
+    # prose lines inside skill files. A reviewer put it plainly: the flagship rule asserted the gate
+    # in isolation and never at the moment that matters, which is the exact shape this build's own
+    # contract records four times over as "the check exists and nothing calls it".
+    #
+    # It rides the CONTRACT arm because that is where a contract locks. It answers a contract
+    # predating the format in bash, without node, so wiring it here adds no prerequisite to a lock
+    # (see cmd_copy_gate). Blast radius measured over every build folder on this machine before the
+    # change, not after.
+    if type cmd_copy_gate >/dev/null 2>&1 && [ -f "$dir/contract.md" ]; then
+      cmd_copy_gate "$dir/contract.md" >/dev/null || die "gate: copy-gate FAILED for '$dir/contract.md' (see stderr)."
+    fi
   fi
 
   # v0.32.0 S17 — a gate nobody runs is not a gate, so the engine check rides the same seam as
@@ -4752,7 +4765,23 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
   # fence line made gen.mjs render copy that the gate reported as absent. Silent in both directions.
   local rc_ex; rc_ex="$(dirname "${BASH_SOURCE[0]}")/reader-copy.mjs"
   [ -f "$rc_ex" ] || die "copy-gate: the shared extractor is missing at $rc_ex"
-  command -v node >/dev/null 2>&1 || die "copy-gate: node is required to read the reader-copy block."
+  # ── v0.34 S10 — THE OLDER-CONTRACT BRANCH IS DECIDED IN BASH, BEFORE NODE IS REQUIRED ─────────
+  # v0.34 wires this gate into the contract-lock seam, so whatever it requires becomes a
+  # requirement of EVERY contract lock in EVERY project. None of the other gates on that seam
+  # reference node at all.
+  #
+  # The naive fix — "move the node check below the branch that lets an older contract through" —
+  # does NOT work, and a reviewer proved it: that branch is computed BY running node, so with node
+  # absent an older contract died "block cannot be parsed: node: command not found". The branch has
+  # to be decided WITHOUT node, which means in bash, which means here.
+  #
+  # A file with neither a `compass-format:` line nor a reader-copy fence has nothing for the
+  # extractor to read, so it is answered here and never reaches node.
+  if ! grep -qE '^compass-format:' "$f" 2>/dev/null && ! grep -qE '^[[:space:]]{0,3}```+[[:space:]]*compass-reader-copy' "$f" 2>/dev/null; then
+    ok "copy-gate: N/A — '$(basename "$f")' predates the reader-copy format (no 'compass-format:' line) and carries no block, so there is nothing to read. Answered without node, because this gate now runs at every contract lock."
+    return 0
+  fi
+  command -v node >/dev/null 2>&1 || die "copy-gate: node is required to read the reader-copy block in '$(basename "$f")', which declares the reader-copy format. A contract predating the format is answered without node."
   # set -e: a bare \`body="$(node …)"\` whose substitution exits 3 aborts the whole script BEFORE the
   # N/A branch below can run — the unguarded-read-under-set-e class. Assign inside an if-condition.
   local body rcx

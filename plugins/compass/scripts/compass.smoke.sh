@@ -1707,8 +1707,30 @@ printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: ask
 # locked, because the work has not started — so arming redfirst-check at the CONTRACT seam made it
 # impossible for any new build to lock its own contract. It belongs where INV-0's own words put it:
 # "before its step is ticked".
+# v0.34 S10 — REWRITTEN FOR MEANING, not weakened. This fixture carried a `compass-format:` line
+# and no reader-copy block, and v0.34 wires copy-gate onto this seam, so it started failing.
+#
+# The assertion's MEANING is "do not put a check on the contract seam that a new build CANNOT
+# satisfy". Red-first evidence genuinely cannot exist at contract time — the work has not started.
+# Reader copy CAN: writing it is part of writing the contract. So the fixture now does what the
+# contract stage requires, and the original meaning is asserted unchanged below it.
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n\n```compass-reader-copy\nbuild-what: A short plain sentence about what this build changes.\n```\n' > "$_ps/b/contract.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
 chk "$?" "0" "v0.30 post-ship: a NEW build can lock its contract (redfirst-check is not on the contract seam)"
+# ...and the ORIGINAL meaning, asserted directly rather than as a side effect of the fixture:
+# no red-first evidence exists here, and the seam still passes.
+chk "$([ -f "$_ps/b/red-first-evidence.md" ] && echo 1 || echo 0)" "0" "v0.30 post-ship: ...and it locks with NO red-first evidence on disk, which is the point"
+# ── v0.34 S10 — AND THE NEW RULE BITES: format declared, block absent, lock REFUSED ─────────────
+# Without this, the change above would be indistinguishable from deleting the rule.
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n' > "$_ps/b/contract.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
+chk "$?" "1" "v0.34 S10: a contract DECLARING the reader-copy format with NO block is REFUSED at the lock seam — 'no block, no lock' now has a lock to attach to"
+# ...and a contract that predates the format still locks, with node absent from the PATH, because
+# that branch is decided in bash. Wiring this gate must not make node a prerequisite of every lock.
+printf -- '# c\n\n## Goal\nA thing.\n' > "$_ps/b/contract.md"
+env PATH=/usr/bin:/bin bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
+chk "$?" "0" "v0.34 S10: ...and a contract predating the format still locks with node OFF the PATH"
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n\n```compass-reader-copy\nbuild-what: A short plain sentence about what this build changes.\n```\n' > "$_ps/b/contract.md"
 printf '## RECEIPT — build · b · PASS\n- [x] done\n' >> "$_ps/b/receipts.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" build >/dev/null 2>&1
 chk "$?" "1" "v0.30 post-ship: redfirst-check STILL bites at the build seam (no evidence = refused)"
