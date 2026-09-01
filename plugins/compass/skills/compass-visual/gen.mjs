@@ -1203,12 +1203,27 @@ const indexTouches = () => {
   } catch { return ''; }
 };
 
+// ── v0.34 NOW-3 — THE READER-FACING REGION IS A STAMP, NEVER A DESCRIPTION ────────────────────
+// Three independent reviewers killed the prose definition in one round: its two clauses were
+// DISJOINT on one view, the band it excluded could not be identified in the output at all (every
+// band emits an identical `b-sec`), and under one reading the code check read CLEAN on a brief
+// showing the reader fifteen internal codes — this build's own carried defect, reproduced inside
+// the contract that records it. A region a checker cannot identify is not a definition.
+//
+// So the generator marks it. The set is DERIVED from the choke points rather than hand-named:
+// every reader-facing card comes through band1Decision, band2Facts or bandSection, and the one
+// band addressed to a reviewer rather than a reader opts out explicitly at its call site.
+const RR = ' data-reader-region="1"';
+
 function band1Decision(ask, question, idParts) {
-  return `<div class="b-decide"><div class="ask">${txt(ask)}</div><h1>${txt(question)}</h1>` +
+  return `<div class="b-decide"${RR}><div class="ask">${txt(ask)}</div><h1>${txt(question)}</h1>` +
          `<div class="b-id">${idParts.filter(Boolean).join(' &nbsp;·&nbsp; ')}</div></div>`;
 }
 function band2Facts(label, facts) {
-  const cards = facts.map((f) => `<div class="b-fact"><div class="k">${txt(f.k)}</div><div class="v">${f.v}</div></div>`).join('');
+  // the VALUE carries the stamp, not the card: the key is a label the generator writes, the value
+  // is what a reader actually reads, and a disclosure body nests inside it so a balanced scan from
+  // here reaches the whole unit.
+  const cards = facts.map((f) => `<div class="b-fact"><div class="k">${txt(f.k)}</div><div class="v"${RR}>${f.v}</div></div>`).join('');
   return `<div class="b-label">${txt(label)}</div><div class="b-facts">${cards}</div>`;
 }
 function band3Flow(svg, purpose, legend) {
@@ -1216,12 +1231,12 @@ function band3Flow(svg, purpose, legend) {
          (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + svg +
          (legend ? `<div class="b-legend">${legend.map((l) => `<span>${txt(l)}</span>`).join('')}</div>` : '') + `</div>`;
 }
-function bandSection(title, purpose, inner, raw = false) {
+function bandSection(title, purpose, inner, raw = false, region = true) {
   // `raw` = the caller has already rendered its own HTML (because it contains provenance markers).
   // Escaping it here printed the markup to the reader on every plan map.
   const T = raw ? title : txt(title);
   const P = raw ? purpose : txt(purpose);
-  return `<div class="b-sec"><h2>${T}</h2>` +
+  return `<div class="b-sec"${region ? RR : ''}><h2>${T}</h2>` +
          (purpose ? `<div class="b-purpose">${P}</div>` : '') + inner + `</div>`;
 }
 // INV-COMPLETE-PLAN: a section with nothing in the source says so, in the reader's
@@ -1506,12 +1521,17 @@ function briefBody() {
     : bandNA('What\u2019s in scope', 'this contract declares no scope ladder');
 
   const invCard = inv.length
+    // NOT a reader region, and this is the ONE exception. This band exists to show a reviewer the
+    // assertion ids; the ids are its content, so counting them as reader-facing shorthand would
+    // demand deleting the thing the band is for. It opts out here, at its call site, where the
+    // reason is visible — never by a rule in a glossary that no checker can apply.
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
         inv.map((i) => { const _p = fieldParts(i.summary, 150);
           // ONE control for this row, holding everything this row lost: the field's own remainder
           // AND the assert recipe / original wording that `invariants()` split off upstream.
-          return `<tr><td class="k">${txt(i.name)}</td><td>${txt(_p.shown)}${disclose([_p.rest, i.dropped].filter(Boolean).join('\n\n'))}</td></tr>`; }).join('') + `</table>`)
+          return `<tr><td class="k">${txt(i.name)}</td><td>${txt(_p.shown)}${disclose([_p.rest, i.dropped].filter(Boolean).join('\n\n'))}</td></tr>`; }).join('') + `</table>`,
+        false, /* region = */ false)
     : (ARTEFACT_DATA && Number.isFinite(ARTEFACT_DATA['invariants.total']) && ARTEFACT_DATA['invariants.total'] > 0
         // v0.32.0 S19b: "pins no INVARIANTs" is a CLAIM, and it was false on any contract whose
         // invariant shape this parser does not know — it printed it beside a header stating a
@@ -2469,10 +2489,10 @@ function releaseCard() {
   <div class="card vr-hero"><div class="kicker">Shipped</div>
     <h1>${txt(slug)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
-    ${goal ? (() => { const _p = fieldParts(String(rc('build-what', goal)), 400); return `<p class="lede">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })() : ''}
+    ${goal ? (() => { const _p = fieldParts(String(rc('build-what', goal)), 400); return `<p class="lede"${RR}>${txt(_p.shown)}</p>${disclose(_p.rest)}`; })() : ''}
   </div>
-  ${items ? `<div class="card"><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
-  <div class="card"><div class="kicker">Proof &amp; rollback</div>
+  ${items ? `<div class="card"${RR}><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
+  <div class="card"${RR}><div class="kicker">Proof &amp; rollback</div>
     <div class="tl">${(() => {
       // A build that shipped with known open findings MUST say so on its own release page.
       // Derived from the receipt, not written by hand, because "say so" is exactly the thing a
