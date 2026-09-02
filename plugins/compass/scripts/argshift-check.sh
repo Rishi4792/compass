@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # argshift-check — a flag that takes a value must REFUSE to be given none, not spin forever.
 #
 #   usage: argshift-check.sh [repo-root]

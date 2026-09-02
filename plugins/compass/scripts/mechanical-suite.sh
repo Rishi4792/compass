@@ -45,7 +45,26 @@ _current_build() {
 #     That returns 3 and the suite is right to fail on it.
 # So the check distinguishes them itself and the suite needs no change. Written down here rather
 # than left to whoever runs it, because the plan required that choice be recorded.
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check readable-pages-check gold-diff-check argshift-check"
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check readable-pages-check gold-diff-check argshift-check copy-reaches-check"
+
+# THE CHILD LIST MUST NAME EVERY CHECK THAT CLAIMS MEMBERSHIP. INV-CHECKWIRED asserts the list NAMES
+# a check "not merely present on disk", and the only assertion that existed was a file-exists test —
+# so deleting `readable-pages-check` from the line above left the suite printing "11 of 11 checks
+# clean" and the whole smoke suite passing 1031/0. Two independent reviewers found it, one of them by
+# accident while testing something else. Each child now carries a `suite-member: mechanical-suite`
+# line, and the two sets are compared here. Removing a check from CHILDREN and leaving its
+# declaration standing is now an ERR; removing both together is a deliberate removal.
+_sm_declared="$(LC_ALL=C grep -lE '^(#|//) suite-member: mechanical-suite' "$(dirname "${BASH_SOURCE[0]}")"/* 2>/dev/null \
+  | while read -r _f; do basename "$_f" | sed -E 's/\.(sh|mjs)$//'; done | sort -u)"
+_sm_listed="$(printf '%s\n' $CHILDREN | sort -u)"
+_sm_missing="$(comm -23 <(printf '%s\n' "$_sm_declared") <(printf '%s\n' "$_sm_listed") | grep -c . || true)"
+if [ "${_sm_missing:-0}" -gt 0 ]; then
+  echo "mechanical-suite: ERR — ${_sm_missing} check(s) declare membership of this suite but are NOT named in CHILDREN:"
+  comm -23 <(printf '%s\n' "$_sm_declared") <(printf '%s\n' "$_sm_listed") | sed 's/^/    /'
+  echo "  A check the suite does not name is a check the suite does not run. Add it, or delete its"
+  echo "  'suite-member' line to record the removal as deliberate."
+  exit 1
+fi
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'

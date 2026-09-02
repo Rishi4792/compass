@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES
+// this check. Removing the check from CHILDREN while this line stands makes the suite ERR.
 // outside-in-reachable.mjs — measure the rendered page, never ask the generator. (v0.33 S15, C-1)
 //
 // WHAT C-1 IS. v0.32 shipped a reachability check that ran INSIDE the generator's own process and

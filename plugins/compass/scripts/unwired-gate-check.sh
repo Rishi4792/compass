@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # unwired-gate-check — a gate nobody calls is not a gate. (v0.33, INV-NO-UNWIRED-GATE)
 #
 # The rule, from the contract: a command is UNWIRED when its only references are its own definition,

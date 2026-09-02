@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # readable-pages-check.sh — renders the in-scope Compass views over a fixture corpus and reports,
 # per (page, metric), a figure and the population it was counted over.
 #
@@ -115,13 +118,14 @@ fi
 # states. The corpus grew to 11 folders and 4 controls against a contract that still said 10 and 3,
 # and nothing anywhere noticed - a cap nobody enforces is a sentence, not a bound. Rendering cost is
 # what the cap exists to hold down, so exceeding it is an ERR, never a quiet note.
+# THE CAP BELONGS WITH THE THING IT BOUNDS. This globbed `.claude/builds/*/contract.md` and took the
+# FIRST file carrying a `Cap:` line — so an UNRELATED build on the same machine setting `Cap: 2` took
+# this whole check to ERR. Same "wrong SET" class as everything else this round. The cap now lives in
+# the corpus's own MANIFEST, beside the folders it actually bounds, and is read from exactly there.
 _CAPFILE=""
-for _c in .claude/builds/*/contract.md; do
-  [ -f "$_c" ] || continue
-  LC_ALL=C grep -qE '^Cap: [0-9]+ folders' "$_c" && { _CAPFILE="$_c"; break; }
-done
+LC_ALL=C grep -qE '^# Cap: [0-9]+ folders' "$MANIFEST" 2>/dev/null && _CAPFILE="$MANIFEST"
 if [ -n "$_CAPFILE" ]; then
-  _cap="$(LC_ALL=C sed -n 's/^Cap: \([0-9][0-9]*\) folders.*/\1/p' "$_CAPFILE" | head -1)"
+  _cap="$(LC_ALL=C sed -n 's/^# Cap: \([0-9][0-9]*\) folders.*/\1/p' "$_CAPFILE" | head -1)"
   _have="$(printf '%s\n' $FIXTURES | grep -c . || true)"
   if [ -n "$_cap" ] && [ "${_have:-0}" -gt "$_cap" ]; then
     echo "readable-pages-check: ERR - the corpus holds ${_have} folder(s) against a cap of ${_cap} declared in $_CAPFILE."

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # incremental-check — value must not pile up unshipped. (v0.33, INV-INCREMENTAL)
 #
 # v0.32 ran roughly fifty commits on one branch before shipping. A single bad merge would have cost

@@ -3413,19 +3413,20 @@ chk "$?" "2" "v0.34: a value-taking flag given no value exits 2 rather than hang
 bash "$_RP" "$_RPR" --metric zzz >/dev/null 2>&1
 chk "$?" "2" "v0.34: an unknown metric name exits 2 — it used to measure nothing and call that a pass"
 
-# ── the declared corpus cap must BIND, not merely be stated ─────────────────────────────────────
-# The corpus grew to 11 folders and 4 controls against a contract still saying 10 and 3, and nothing
-# noticed. The cap is read from the contract, from one place, so it cannot drift from the number
-# stated there.
-_capc="$(LC_ALL=C grep -rlE '^Cap: [0-9]+ folders' "$_ROOT/.claude/builds" 2>/dev/null | head -1)"
-if [ -n "$_capc" ]; then
-  _capb="$(mktemp -d)"; cp "$_capc" "$_capb/c.bak"
-  trap 'cp "$_capb/c.bak" "$_capc" 2>/dev/null; rm -rf "$_capb" 2>/dev/null' EXIT INT TERM
-  LC_ALL=C sed -i.tmp 's/^Cap: [0-9]* folders/Cap: 2 folders/' "$_capc" 2>/dev/null
-  # The cap guard also runs before any render — same path, one fewer full corpus pass.
+# ── the declared corpus cap must BIND, and it lives WITH the corpus ─────────────────────────────
+# The cap used to be read from whichever build contract on the machine carried a `Cap:` line first,
+# so an unrelated build could take this check to ERR. It now lives in the corpus's own MANIFEST,
+# beside the folders it bounds, and this assertion mutates it there.
+_capm="$_ROOT/plugins/compass/scripts/fixtures/pages/MANIFEST"
+if [ -f "$_capm" ]; then
+  _capb="$(mktemp -d)"; cp "$_capm" "$_capb/m.bak"
+  trap 'cp "$_capb/m.bak" "$_capm" 2>/dev/null; rm -rf "$_capb" 2>/dev/null' EXIT INT TERM
+  LC_ALL=C sed -i.tmp 's/^# Cap: [0-9]* folders/# Cap: 2 folders/' "$_capm" 2>/dev/null
   bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _caprc=$?
-  cp "$_capb/c.bak" "$_capc"; rm -rf "$_capb" "$_capc.tmp"; trap - EXIT INT TERM
-  chk "$_caprc" "3" "v0.34: a corpus larger than the cap the contract declares ERRs (exit 3) — the cap binds"
+  cp "$_capb/m.bak" "$_capm"; rm -rf "$_capb" "$_capm.tmp"; trap - EXIT INT TERM
+  chk "$_caprc" "3" "v0.34: a corpus larger than the cap its own MANIFEST declares ERRs (exit 3) — the cap binds"
+  bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1
+  chk "$?" "1" "v0.34: ...and with the cap restored it is healthy again — the assertion measured the change, not the environment"
 fi
 
 # ── the reader-copy key rule must refuse a TYPO'D KEY and accept ordinary prose ──────────────────

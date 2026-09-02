@@ -250,8 +250,12 @@ const GEN = join(ROOT, 'compass/plugins/compass/skills/compass-visual/gen.mjs');
 const gen = readFileSync(GEN, 'utf8');
 for (const fn of ['briefBody', 'releaseCard', 'planMap', 'reviewArtefact']) {
   const m = gen.match(new RegExp(`function ${fn}\\b[\\s\\S]*?\\n\\}`, ''));
-  const n = m ? (m[0].match(/\brc\(|\brcList\(/g) || []).length : -1;
-  fig(`reach.${fn}`, n, `rc()/rcList() call sites inside function ${fn} in gen.mjs — how much of that view reader copy can reach at all`, `count rc( in function ${fn}`);
+  // THE ACCESSOR SET IS THREE, NOT TWO. This counted `rc(` and `rcList(` and missed `rcText(`, so
+  // the reach figure that "carries the whole argument" was itself short. A reviewer found it by
+  // reading the generator rather than trusting this line. Counting the wrong SET again — the same
+  // class as every other defect this round.
+  const n = m ? (m[0].match(/\brc\(|\brcList\(|\brcText\(/g) || []).length : -1;
+  fig(`reach.${fn}`, n, `rc()/rcList()/rcText() call sites inside function ${fn} in gen.mjs — how much of that view reader copy can reach at all`, `count rc(/rcList(/rcText( in function ${fn}`);
 }
 
 // ── v0.34 S15 — THE CORPUS FIGURES, WHICH DO NOT DRIFT ────────────────────────────────────────

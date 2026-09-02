@@ -1,4 +1,6 @@
 # The synthetic page corpus. Every fixture here is AUTHORED, never copied from a real build.
+# Cap: 12 folders. The bound lives HERE, beside the corpus it bounds — it used to be read from
+# whichever build contract on the machine happened to carry a Cap line first.
 # An earlier draft said "copy 4 real build folders verbatim" into this directory, which ships in
 # a public plugin. Two independent reviewers found what that would have published: an environment
 # dump carrying a messaging token and session ids, 31 files with an absolute home path, and other

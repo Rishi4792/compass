@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # gold-diff-check — diff the contract's published figures against the producer that made them.
 #
 #   usage: gold-diff-check.sh [repo-root] [--contract <file>]
@@ -39,10 +42,19 @@ PRODUCER="plugins/compass/scripts/reconcile-pages.mjs"
 if [ -z "$CONTRACT" ]; then
   for c in .claude/builds/*/contract.md; do
     [ -f "$c" ] || continue
-    LC_ALL=C grep -qE '^[a-z_.]+ +=  *[^ ]' "$c" && { CONTRACT="$c"; break; }
+    LC_ALL=C grep -qE '^[A-Za-z_][A-Za-z0-9_.-]* +=  *[^ ]' "$c" && { CONTRACT="$c"; break; }
   done
 fi
-[ -n "$CONTRACT" ] && [ -f "$CONTRACT" ] || { echo "gold-diff-check: ERR — no contract publishes a gold block"; exit 3; }
+# GUARD-FIRST, and this one shipped broken for exactly one commit. `.claude/builds/` is GITIGNORED,
+# so in a fresh clone — which is every consumer project, and the population the perf ceiling is
+# defined over — there is no contract at all. Returning ERR there took `mechanical-suite.sh` to
+# exit 1 for EVERY USER on upgrade. Absent build state is the ordinary case, not a failure, and it
+# N/A-PASSES while SAYING SO. It does not escape scrutiny by that route: where a gold block does
+# exist, every published figure is still compared and a mismatch still exits 1.
+if [ -z "$CONTRACT" ] || [ ! -f "$CONTRACT" ]; then
+  echo "gold-diff-check: N/A — no build in this tree publishes a gold block (.claude/builds is gitignored, so a fresh clone has none). Nothing is claimed about figures that are not here."
+  exit 0
+fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 if ! node "$PRODUCER" > "$TMP/live.txt" 2>"$TMP/err.txt"; then
@@ -51,8 +63,14 @@ fi
 
 # ANY value, not only digits. A first draft matched `[0-9]+` and silently skipped `corpus.sha`,
 # which is the exact defect this check exists to catch, one level up: a figure nobody compares.
-LC_ALL=C sed -nE 's/^([a-z_.]+) +=  *([^ ].*)$/\1 \2/p' "$TMP/live.txt" | sed 's/[[:space:]]*$//' | sort > "$TMP/live.tsv"
-LC_ALL=C sed -nE 's/^([a-z_.]+) +=  *([^ ].*)$/\1 \2/p' "$CONTRACT"     | sed 's/[[:space:]]*$//' | sort > "$TMP/pub.tsv"
+# THE KEY PATTERN ADMITS HYPHENS AND CAPITALS. It did not, so `pages.brief-body`, `pages.plan-map`,
+# `pages.release-card` and ALL FOUR `reach.*` were silently skipped — 7 of 33, including the four
+# figures section 2 says "carry the whole argument on their own". Three independent reviewers found
+# it the same way: set all seven to 9999 and this printed "all 26 reproduce EXACTLY", exit 0. That
+# is the defect this file exists to catch, in this file, one column left of the comment claiming it
+# was fixed. The denominator is asserted below so a silent skip can never be a pass again.
+LC_ALL=C sed -nE 's/^([A-Za-z_][A-Za-z0-9_.-]*) +=  *([^ ].*)$/\1 \2/p' "$TMP/live.txt" | sed 's/[[:space:]]*$//' | sort > "$TMP/live.tsv"
+LC_ALL=C sed -nE 's/^([A-Za-z_][A-Za-z0-9_.-]*) +=  *([^ ].*)$/\1 \2/p' "$CONTRACT"     | sed 's/[[:space:]]*$//' | sort > "$TMP/pub.tsv"
 
 _pub="$(grep -c . "$TMP/pub.tsv" || true)"
 _live="$(grep -c . "$TMP/live.tsv" || true)"
@@ -79,5 +97,12 @@ if [ "$bad" -gt 0 ]; then
   echo "  A figure the producer cannot reproduce is not a figure. Re-derive section 2, or fix the producer."
   exit 1
 fi
-echo "gold-diff-check: all $checked published figure(s) reproduce EXACTLY from $PRODUCER."
+# A CHECK MUST NOT CHOOSE ITS OWN DENOMINATOR. This reported "all 26" while 7 more sat unread and
+# never said so. Now the number CHECKED is asserted equal to the number PUBLISHED.
+if [ "$checked" -ne "$_pub" ]; then
+  echo "gold-diff-check: ERR — $_pub figure(s) are published but only $checked were compared."
+  echo "  $(( _pub - checked )) went unread, so a clean result here would mean nothing. Widen the key pattern."
+  exit 3
+fi
+echo "gold-diff-check: all $checked of $_pub published figure(s) reproduce EXACTLY from $PRODUCER."
 exit 0

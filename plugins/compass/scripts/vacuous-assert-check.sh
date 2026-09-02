@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # vacuous-assert-check — assertions that cannot fail. (v0.33, INV-NO-VACUOUS-ASSERTION)
 #
 # GUARD-FIRST, measured on this repo before a single rule was written, because a check that fires on

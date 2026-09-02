@@ -288,7 +288,14 @@ const allLines = [];
 for (const [f, l] of PAGES) {
   let raw;
   try { raw = readFileSync(f, 'utf8'); }
-  catch { allLines.push(`${l}\tERR\tunreadable\t0\tthe page could not be read`); continue; }
+  // COLUMN ORDER IS LOAD-BEARING. This wrote `label ⇥ ERR ⇥ unreadable ⇥ 0` while every other line
+  // is `label ⇥ metric ⇥ verdict ⇥ figure`, so the shell read column 3 as the verdict, saw
+  // "unreadable", matched neither ERR) nor MEASURE), and counted an UNREAD PAGE AS A CLEAN REPORT.
+  // A reviewer ran the shipped verdict block over 44 pages that do not exist and got
+  // "44 reported and 0 empty-population ERR(s)", exit 0. It also defeated the population pin added
+  // the same day, because that pin asks only whether a page produced A LINE — and a malformed line
+  // is still a line. The metric is named `page` so the dead-metric guard sees it too.
+  catch { allLines.push(`${l}\tpage\tERR\t0\tthe page could not be read, so no metric could run on it`); continue; }
   allLines.push(...measureOne(raw, l));
 }
 process.stdout.write(allLines.join('\n') + (allLines.length ? '\n' : ''));
