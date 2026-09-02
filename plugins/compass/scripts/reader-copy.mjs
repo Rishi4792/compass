@@ -77,11 +77,28 @@ export const READER_COPY_KEYS = ['build-what', 'done-means', 'proof', 'blast-rad
 // and which `assert-invariants.sh:316` requires this gate to PASS — plus a real contract on this
 // machine that omits `later`. A rule that fires on correct work gets switched off within a week,
 // and this build demoted ten of its own rules for exactly that reason.
-export function checkReaderCopyKeys(parsed) {
+// THE SIGNAL IS THE SOURCE CASE, and getting this wrong twice is instructive.
+//
+// `parseReaderCopy` accepts any `Name:` line, because the block is prose with keys in it. So an
+// ordinary sentence starting "Note:" or "Example:" parsed as a key, and the unknown-key rule then
+// HARD-BLOCKED a contract lock over a comma. A reviewer found it live.
+//
+// The first fix asked whether the key "looks like a key" — lowercase and hyphenated. That is
+// exactly backwards: `note` passes that test and IS prose, while `done_means` fails it and IS the
+// misspelled key the rule exists to catch. The distinguishing fact is not the shape of the word,
+// it is that **every real key is written lowercase in the source and a sentence is not**. The
+// parser lowercases before anyone can see that, so this reads the BODY.
+export function checkReaderCopyKeys(parsed, body) {
   const known = new Set(READER_COPY_KEYS);
-  const unknown = Object.keys(parsed || {}).filter((k) => !known.has(k));
+  // names exactly as the author typed them, before parseReaderCopy folded the case
+  const rawNames = [];
+  for (const line of String(body || '').split('\n')) {
+    const m = line.match(/^\s*([A-Za-z][A-Za-z0-9_.-]*)\s*:\s*\S/);
+    if (m) rawNames.push(m[1]);
+  }
+  const unknown = rawNames.filter((n) => n === n.toLowerCase() && !known.has(n.toLowerCase()));
   const missing = READER_COPY_KEYS.filter((k) => !(k in (parsed || {})));
-  return { unknown, missing };
+  return { unknown: [...new Set(unknown)], missing };
 }
 
 export function parseReaderCopy(body) {
@@ -107,7 +124,7 @@ function main(argv) {
     let t; try { t = readFileSync(argv[ki + 1], 'utf8'); } catch { console.error('reader-copy: cannot read'); return 4; }
     const r = extractReaderCopy(t);
     if (r.status !== 'ok') { console.log(`keys: n/a (${r.status})`); return 0; }
-    const { unknown, missing } = checkReaderCopyKeys(parseReaderCopy(r.body));
+    const { unknown, missing } = checkReaderCopyKeys(parseReaderCopy(r.body), r.body);
     if (missing.length) console.log(`missing: ${missing.join(' ')}`);
     if (unknown.length) { console.log(`unknown: ${unknown.join(' ')}`); return 1; }
     console.log('keys: every key is one the generator reads');
