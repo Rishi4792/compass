@@ -111,6 +111,26 @@ fi
   exit 3
 }
 
+# THE CAP IS READ FROM THE CONTRACT, from ONE place, so it cannot drift from the number the contract
+# states. The corpus grew to 11 folders and 4 controls against a contract that still said 10 and 3,
+# and nothing anywhere noticed - a cap nobody enforces is a sentence, not a bound. Rendering cost is
+# what the cap exists to hold down, so exceeding it is an ERR, never a quiet note.
+_CAPFILE=""
+for _c in .claude/builds/*/contract.md; do
+  [ -f "$_c" ] || continue
+  LC_ALL=C grep -qE '^Cap: [0-9]+ folders' "$_c" && { _CAPFILE="$_c"; break; }
+done
+if [ -n "$_CAPFILE" ]; then
+  _cap="$(LC_ALL=C sed -n 's/^Cap: \([0-9][0-9]*\) folders.*/\1/p' "$_CAPFILE" | head -1)"
+  _have="$(printf '%s\n' $FIXTURES | grep -c . || true)"
+  if [ -n "$_cap" ] && [ "${_have:-0}" -gt "$_cap" ]; then
+    echo "readable-pages-check: ERR - the corpus holds ${_have} folder(s) against a cap of ${_cap} declared in $_CAPFILE."
+    echo "  The cap bounds rendering cost. Raise it in the contract deliberately, or shrink the corpus - never let it drift."
+    echo "readable-pages-check: ERR (corpus ${_have} exceeds declared cap ${_cap})"
+    exit 3
+  fi
+fi
+
 # CONTROLS are the fixtures asserted to FAIL. They are NOT in the measured set: an earlier draft put
 # them in one population with the pages being measured, which made a green require the controls to
 # stop failing while the same section said that must ERR — unreachable by construction.

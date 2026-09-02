@@ -96,7 +96,30 @@ export function checkReaderCopyKeys(parsed, body) {
     const m = line.match(/^\s*([A-Za-z][A-Za-z0-9_.-]*)\s*:\s*\S/);
     if (m) rawNames.push(m[1]);
   }
-  const unknown = rawNames.filter((n) => n === n.toLowerCase() && !known.has(n.toLowerCase()));
+  // SOURCE CASE WAS NOT ENOUGH. It fixed `Note:` and nothing else: `note:`, `warning:` and any
+  // wrapped line beginning with a bare URL (`https://…` — `//` is non-space) all still read as keys
+  // and HARD-BLOCKED THE LOCK on correct writing. This rule exists to catch a MISSPELLED KEY, not to
+  // catch every colon, so it now asks the question it actually means: is this name trying to be one
+  // of the eight? A name one or two edits from a real key is a typo worth refusing; a name nowhere
+  // near one is ordinary prose and is none of this rule's business. A false positive here costs a
+  // blocked lock on correct work, which is far worse than missing an exotic misspelling.
+  const dist = (a, b) => {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 0; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  };
+  const nearAKey = (n) => {
+    const flat = n.replace(/[_.]/g, '-');
+    // The tolerance SCALES WITH THE KEY. Two edits against `now` (three letters) reaches `note`,
+    // an ordinary English word, and refusing it would block a lock on correct prose. Two edits
+    // against `blast-radius` reaches nothing anyone would write by accident. Short keys get one.
+    return READER_COPY_KEYS.some((k) => flat === k || dist(flat, k) <= (k.length <= 4 ? 1 : 2));
+  };
+  const unknown = rawNames.filter(
+    (n) => n === n.toLowerCase() && !known.has(n.toLowerCase()) && nearAKey(n));
   const missing = READER_COPY_KEYS.filter((k) => !(k in (parsed || {})));
   return { unknown: [...new Set(unknown)], missing };
 }

@@ -3412,6 +3412,37 @@ chk "$?" "2" "v0.34: a value-taking flag given no value exits 2 rather than hang
 bash "$_RP" "$_RPR" --metric zzz >/dev/null 2>&1
 chk "$?" "2" "v0.34: an unknown metric name exits 2 — it used to measure nothing and call that a pass"
 
+# ── the declared corpus cap must BIND, not merely be stated ─────────────────────────────────────
+# The corpus grew to 11 folders and 4 controls against a contract still saying 10 and 3, and nothing
+# noticed. The cap is read from the contract, from one place, so it cannot drift from the number
+# stated there.
+_capc="$(LC_ALL=C grep -rlE '^Cap: [0-9]+ folders' "$_ROOT/.claude/builds" 2>/dev/null | head -1)"
+if [ -n "$_capc" ]; then
+  _capb="$(mktemp -d)"; cp "$_capc" "$_capb/c.bak"
+  trap 'cp "$_capb/c.bak" "$_capc" 2>/dev/null; rm -rf "$_capb" 2>/dev/null' EXIT INT TERM
+  LC_ALL=C sed -i.tmp 's/^Cap: [0-9]* folders/Cap: 2 folders/' "$_capc" 2>/dev/null
+  bash "$_RP" "$_RPR" >/dev/null 2>&1; _caprc=$?
+  cp "$_capb/c.bak" "$_capc"; rm -rf "$_capb" "$_capc.tmp"; trap - EXIT INT TERM
+  chk "$_caprc" "3" "v0.34: a corpus larger than the cap the contract declares ERRs (exit 3) — the cap binds"
+fi
+
+# ── the reader-copy key rule must refuse a TYPO'D KEY and accept ordinary prose ──────────────────
+# Refusing every colon hard-blocked locks on correct writing: `note:`, `warning:`, and any wrapped
+# line starting with a bare URL. The rule asks whether a name is trying to BE one of the eight.
+_rck() { printf '%s\n' "$1" | node -e "
+import('$PLUGIN_ROOT/scripts/reader-copy.mjs').then(async m => {
+  let s=''; for await (const c of process.stdin) s+=c;
+  process.exit(m.checkReaderCopyKeys({}, s.trim()).unknown.length ? 1 : 0);
+});" >/dev/null 2>&1; }
+_rck 'https://example.com/docs is worth reading'
+chk "$?" "0" "v0.34: a wrapped line starting with a bare URL is prose, not a key — it used to block the lock"
+_rck 'note: an ordinary aside'
+chk "$?" "0" "v0.34: an ordinary word before a colon is prose, not a key"
+_rck 'done_means: x'
+chk "$?" "1" "v0.34: ...but a MISSPELLED key is still refused — the rule kept its teeth"
+_rck 'prof: x'
+chk "$?" "1" "v0.34: ...and so is a truncated one"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a
