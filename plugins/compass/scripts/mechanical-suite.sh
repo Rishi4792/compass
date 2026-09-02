@@ -45,7 +45,7 @@ _current_build() {
 #     That returns 3 and the suite is right to fail on it.
 # So the check distinguishes them itself and the suite needs no change. Written down here rather
 # than left to whoever runs it, because the plan required that choice be recorded.
-CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check readable-pages-check gold-diff-check"
+CHILDREN="dup-fact-check vacuous-assert-check unwired-gate-check shell-trap-check doctrine-wired-check self-arm-check cap-enforce-check outside-in-reachable incremental-check readable-pages-check gold-diff-check argshift-check"
 ran=0; failed=0; missing=""; names_failed=""
 
 printf '── mechanical suite ─────────────────────────────────────────────────\n'

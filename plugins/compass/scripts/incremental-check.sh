@@ -15,8 +15,10 @@ R="${1:-.}"; shift 2>/dev/null || true
 CAP=5; FORCE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --cap)   CAP="${2:-5}"; shift 2 ;;
-    --count) FORCE="${2:-}"; shift 2 ;;
+    --cap) [ $# -ge 2 ] || { echo "incremental-check: --cap needs a value" >&2; exit 2; }
+           CAP="${2:-5}"; shift 2 ;;
+    --count) [ $# -ge 2 ] || { echo "incremental-check: --count needs a value" >&2; exit 2; }
+             FORCE="$2"; shift 2 ;;
     *) shift ;;
   esac
 done

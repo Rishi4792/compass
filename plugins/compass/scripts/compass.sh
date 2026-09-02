@@ -2804,7 +2804,8 @@ cmd_budget_init() { # <build-dir> [--wall N --sessions N --stages N]
   [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh budget-init <build-dir> [--wall N --sessions N --stages N]"
   local wall="$BUDGET_DEFAULT_WALL" sess="$BUDGET_DEFAULT_SESSIONS" stg="$BUDGET_DEFAULT_STAGES"
   while [ $# -gt 0 ]; do case "$1" in
-    --wall) wall="${2:-}"; shift 2 ;; --sessions) sess="${2:-}"; shift 2 ;; --stages) stg="${2:-}"; shift 2 ;;
+    --wall) [ $# -ge 2 ] || { echo "compass: --wall needs a value" >&2; exit 2; }
+            wall="$2"; shift 2 ;; --sessions) sess="$2"; shift 2 ;; --stages) stg="$2"; shift 2 ;;
     *) shift ;; esac; done
   local be; be="$(_be_file "$dir")"
   # RB-04: preserve cumulative spend on re-init (must NOT reset spent_* to 0 and bypass the
@@ -2988,7 +2989,8 @@ cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattende
   local args=""
   while [ $# -gt 0 ]; do case "$1" in
     --unattended) die "auto-start: --auto and --unattended are mutually exclusive — choose one." ;;
-    --wall|--sessions|--stages) args="$args $1 $2"; shift 2 ;;
+    --wall|--sessions|--stages) [ $# -ge 2 ] || { echo "auto-start: $1 needs a value" >&2; exit 2; }
+                                args="$args $1 $2"; shift 2 ;;
     *) shift ;; esac; done
   cmd_auto_precheck --auto >/dev/null || die "auto-start: precheck failed."
   # shellcheck disable=SC2086
@@ -4359,9 +4361,12 @@ cmd_rail() { # <build-dir> [--artefact <view>] [--url <url>] [--local <path>]
   local view="" url="" local_path=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --artefact) view="${2:-}"; shift 2 ;;
-      --url) url="${2:-}"; shift 2 ;;
-      --local) local_path="${2:-}"; shift 2 ;;
+      --artefact) [ $# -ge 2 ] || { echo "compass: --artefact needs a value" >&2; exit 2; }
+                  view="$2"; shift 2 ;;
+      --url) [ $# -ge 2 ] || { echo "compass: --url needs a value" >&2; exit 2; }
+             url="$2"; shift 2 ;;
+      --local) [ $# -ge 2 ] || { echo "compass: --local needs a value" >&2; exit 2; }
+               local_path="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
@@ -4411,8 +4416,10 @@ cmd_artefact_publish() { # <html> [--url <artifact-url>] [--dir <build-dir>]
   local url="" dir=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --url) url="${2:-}"; shift 2 ;;
-      --dir) dir="${2:-}"; shift 2 ;;
+      --url) [ $# -ge 2 ] || { echo "compass: --url needs a value" >&2; exit 2; }
+             url="$2"; shift 2 ;;
+      --dir) [ $# -ge 2 ] || { echo "compass: --dir needs a value" >&2; exit 2; }
+             dir="$2"; shift 2 ;;
       *) shift ;;
     esac
   done

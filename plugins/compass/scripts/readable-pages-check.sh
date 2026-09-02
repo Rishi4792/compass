@@ -137,14 +137,15 @@ fi
 is_control() { case "$1" in ctl-*) return 0 ;; *) return 1 ;; esac; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+SPEC="$TMP/spec.tsv"; : > "$SPEC"
 rendered=0; render_failed=0; err_pairs=0; measured_pairs=0; measure_failed=0
 ctl_total=0; ctl_still_failing=0
 OUT="$TMP/lines.tsv"; : > "$OUT"
 
 # THE ONLY MEASURE MUST COVER EVERY VIEW IT RENDERS. Deleting one row of the measurer's DECISION map
 # disarmed it silently. Both sets are DERIVED from the measurer itself, so they cannot drift from it.
-_dec_keys="$(LC_ALL=C sed -n "/^const DECISION = {/,/^};/p" "$MEASURE" | sed -n "s/^  '\([a-z-]*\)'.*/\1/p" | sort -u)"
-_dec_exempt="$(LC_ALL=C sed -n "s/^const DECISION_EXEMPT = \[\(.*\)\];/\1/p" "$MEASURE" | tr -d " '" | tr ',' '\n' | grep -v '^$' | sort -u)"
+_dec_keys="$(LC_ALL=C sed -n "/^[[:space:]]*const DECISION = {/,/^[[:space:]]*};/p" "$MEASURE" | sed -n "s/^[[:space:]]*'\([a-z-]*\)'[[:space:]]*:.*/\1/p" | sort -u)"
+_dec_exempt="$(LC_ALL=C sed -n "s/^[[:space:]]*const DECISION_EXEMPT = \[\(.*\)\];/\1/p" "$MEASURE" | tr -d " '" | tr ',' '\n' | grep -v '^$' | sort -u)"
 _dec_uncovered=""
 for _v in $VIEWS; do
   printf '%s\n' "$_dec_keys" | grep -qx "$_v" && continue
@@ -170,13 +171,22 @@ for fx in $FIXTURES; do
       render_failed=$((render_failed+1)); continue
     fi
     rendered=$((rendered+1))
-    if [ -n "$METRIC" ]; then
-      node "$MEASURE" "$page" "$fx/$v" --metric "$METRIC" >> "$OUT" 2>/dev/null || true
-    else
-      node "$MEASURE" "$page" "$fx/$v" >> "$OUT" 2>/dev/null || true
-    fi
+    # ONE measurer process for the whole corpus, not one per page. node costs ~25ms to start and
+    # this spawned it 44 times a run, 14 runs a smoke suite. The pages are collected here and
+    # measured together below; the output is asserted byte-identical to the per-page path.
+    printf '%s\t%s/%s\n' "$page" "$fx" "$v" >> "$SPEC"
   done
 done
+
+# Measure everything in ONE process. If the measurer dies, NO line is written and the population
+# pin below catches it — which is the defect that made 216 measurements collapse to 0 unnoticed.
+if [ -s "$SPEC" ]; then
+  if [ -n "$METRIC" ]; then
+    node "$MEASURE" --batch "$SPEC" --metric "$METRIC" >> "$OUT" 2>/dev/null || true
+  else
+    node "$MEASURE" --batch "$SPEC" >> "$OUT" 2>/dev/null || true
+  fi
+fi
 
 # ── report, one line per (page, metric), figure beside its population ───────────────────────────
 while IFS=$'\t' read -r pg metric verdict figure population; do
