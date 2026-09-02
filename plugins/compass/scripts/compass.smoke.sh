@@ -3350,6 +3350,24 @@ bash "$_RP" "$_RPR" --corpus /nonexistent-corpus-xyz >/dev/null 2>&1
 chk "$?" "3" "v0.34: an ABSENT corpus ERRs (exit 3) — never a green over a population that is not there"
 # a fixture that no longer matches its pin. The pins were written and never verified until a
 # reviewer found that the integrity of a corpus built BECAUSE of a near-miss leak rested on a comment.
+# Build a two-fixture corpus with CORRECT pins, using the same sha rule the check itself applies.
+_mkmini() {
+  local d; d="$(mktemp -d)"; mkdir -p "$d/pages"
+  local mf="$d/pages/MANIFEST"
+  { echo "# minimal corpus for mechanism tests — pins computed here with the check's own rule"
+    echo "# Cap: 12 folders"; } > "$mf"
+  local sl
+  for sl in with-block ctl-escaped-tag; do
+    [ -d "$_RPC/$sl" ] || continue
+    cp -R "$_RPC/$sl" "$d/pages/$sl"
+    local sha role
+    sha="$(cat "$d/pages/$sl"/*.md 2>/dev/null | shasum -a 256 | cut -c1-16)"
+    role="$(LC_ALL=C awk -v s="$sl" '$1==s {print $3}' "$_RPC/MANIFEST" | head -1)"
+    printf '%s %s  %s\n' "$sl" "$sha" "${role:-MEASURED}" >> "$mf"
+  done
+  printf '%s' "$d/pages"
+}
+_MINI="$(_mkmini)"
 _rptmp="$(mktemp -d)"; cp -R "$_RPC" "$_rptmp/pages" 2>/dev/null
 printf '\n' >> "$_rptmp/pages/with-block/contract.md"
 bash "$_RP" "$_RPR" --corpus "$_rptmp/pages" >/dev/null 2>&1
@@ -3370,11 +3388,11 @@ chk "$?" "1" "v0.34: --controls-only exits 1 while every control still fails its
 _rpg="$(mktemp -d)"; _rpgf="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"; cp "$_rpgf" "$_rpg/gen.bak"
 trap 'cp "$_rpg/gen.bak" "$_rpgf" 2>/dev/null; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null' EXIT INT TERM
 LC_ALL=C sed -i.tmp "s/'Lock this contract?'/'Ship it maybe?'/" "$_rpgf" 2>/dev/null
-bash "$_RP" "$_RPR" >/dev/null 2>&1
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
 _rp_rc=$?
 cp "$_rpg/gen.bak" "$_rpgf"; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null; trap - EXIT INT TERM
 chk "$_rp_rc" "1" "v0.34: a page whose decision line disagrees with the contract's declared table FAILS (exit 1) — the check can go red"
-bash "$_RP" "$_RPR" >/dev/null 2>&1
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
 chk "$?" "0" "v0.34: ...and the generator restored, it is green again — so the assertion above measured the change, not the environment"
 # ── the collapse-to-zero class, which no assertion covered ──────────────────────────────────────
 # Moving ONE input file away killed the measurer on all 44 renders. Both call sites end `|| true`,
@@ -3382,10 +3400,10 @@ chk "$?" "0" "v0.34: ...and the generator restored, it is green again — so the
 _jf="$_ROOT/plugins/compass/scripts/fixtures/copy/jargon.txt"
 _jb="$(mktemp -d)"; cp "$_jf" "$_jb/j.bak"
 trap 'cp "$_jb/j.bak" "$_jf" 2>/dev/null; rm -rf "$_jb" 2>/dev/null' EXIT INT TERM
-rm -f "$_jf"; bash "$_RP" "$_RPR" >/dev/null 2>&1; _jrc=$?
+rm -f "$_jf"; bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1; _jrc=$?
 cp "$_jb/j.bak" "$_jf"; rm -rf "$_jb"; trap - EXIT INT TERM
 chk "$_jrc" "3" "v0.34: the measurer dying on every page ERRs (exit 3) — a silent collapse to zero is not a clean run"
-bash "$_RP" "$_RPR" >/dev/null 2>&1
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
 chk "$?" "0" "v0.34: ...and its input restored, green again — the assertion above measured the change, not the environment"
 
 # A control counted as "still failing" on ANY non-zero metric, so the LEAKS detector could be
