@@ -1406,6 +1406,18 @@ function fieldPartsOwn(v, max = 150) {
     }
     const hidden = parts.length - kept.length;
     const joined = kept.join('; ');
+    // THE CAP DID NOT BIND THE FIRST SEGMENT. `kept.length` is 0 on the first pass, so the loop's
+    // guard cannot fire and the first part is kept WHOLE however long it is. INV-BLOCKCOVERS
+    // rendered 865 characters against a declared cap of 150, beside siblings of 86-173; two more
+    // fields ran 659 and 369. A cap that one value can walk straight past is not a cap. When the
+    // kept text still exceeds the cap it is shortened by the prose rules below — at a sentence end
+    // where there is one — and whatever that drops joins the rest behind the same control, so
+    // nothing is lost, only moved to where the reader can open it.
+    if (joined.length > max && kept.length === 1) {
+      const inner = fieldPartsOwn(kept[0], max);
+      const tail = hidden > 0 ? parts.slice(kept.length).join('; ') : '';
+      return { shown: inner.shown, rest: [inner.rest, tail].filter(Boolean).join('; ') };
+    }
     // P1. THE PATH THE FIRST TWO GOLD FIGURES MISSED. `nCt()` wraps the count in a
     // `<span data-prov="counted">`, so a plain text search of the rendered page returns 0 for this
     // path and reports it as absent rather than as unmeasured.

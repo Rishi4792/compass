@@ -3443,6 +3443,27 @@ chk "$?" "1" "v0.34: ...but a MISSPELLED key is still refused — the rule kept 
 _rck 'prof: x'
 chk "$?" "1" "v0.34: ...and so is a truncated one"
 
+# ── the 150-char field cap must BIND, including on the first segment ────────────────────────────
+# `kept.length` is 0 on the loop's first pass, so its guard could not fire and the FIRST segment was
+# kept whole however long it was: 865 characters against a declared cap of 150.
+#
+# THE FIXTURE HAD TO BE BUILT TWICE. The first one used long prose with full stops, which the
+# sentence-boundary path shortens correctly — so it read 125 characters WITH the fix and 125 WITHOUT,
+# an assertion that could not fail. The bug lives on the SEMICOLON path, so the value here is one
+# very long clause with no full stop, followed by two short segments. Measured: 156 with the fix,
+# 558 without. Nothing may be LOST either — what the cap moves stays behind the row's own control.
+_capd="$(mktemp -d)"; mkdir -p "$_capd/b"
+_capfirst="$(printf 'a long clause with no full stop in it whatsoever and it keeps going %.0s' 1 2 3 4 5 6 7 8)"
+{ printf '# c\n\n## Goal\nA thing.\n\n## Invariants\n'
+  printf -- '- **INV-LONGONE** — %s; second bit; third bit\n' "$_capfirst"; } > "$_capd/b/contract.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_capd/b" brief --out "$_capd/p.html" >/dev/null 2>&1
+_caprow="$(LC_ALL=C tr '\n' ' ' < "$_capd/p.html" | LC_ALL=C sed -e 's/.*INV-LONGONE<\/td><td>//' -e 's/<\/td><\/tr>.*//')"
+_capshown="$(printf '%s' "$_caprow" | LC_ALL=C sed -e 's/<details.*//' -e 's/<[^>]*>//g' | tr -s ' ' | LC_ALL=C awk '{ print length($0) }' | head -1)"
+chk "$([ "${_capshown:-9999}" -lt 300 ] && echo 1 || echo 0)" "1" "v0.34: a long first segment is CAPPED (${_capshown:-?} chars shown) — it used to walk past the cap whole"
+_capfull="$(printf '%s' "$_caprow" | LC_ALL=C sed 's/<[^>]*>//g' | tr -s ' ' | LC_ALL=C grep -c 'third bit' || true)"
+chk "$([ "${_capfull:-0}" -ge 1 ] && echo 1 || echo 0)" "1" "v0.34: ...and what the cap moved is still on the page behind the control — capped, not lost"
+rm -rf "$_capd"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a
