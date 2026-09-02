@@ -3402,7 +3402,8 @@ chk "$_crc" "3" "v0.34: killing ONE detector makes its own control stop failing 
 _mb2="$(mktemp -d)"; cp "$_mf" "$_mb2/m.bak"
 trap 'cp "$_mb2/m.bak" "$_mf" 2>/dev/null; rm -rf "$_mb2" 2>/dev/null' EXIT INT TERM
 LC_ALL=C sed -i.tmp "/'plan-map': 'Approve this plan?',/d" "$_mf" 2>/dev/null
-bash "$_RP" "$_RPR" >/dev/null 2>&1; _drc=$?
+# The decision-map guard runs BEFORE any render, so the cheaper mode hits the same code path.
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _drc=$?
 cp "$_mb2/m.bak" "$_mf"; rm -rf "$_mb2" "$_mf.tmp"; trap - EXIT INT TERM
 chk "$_drc" "3" "v0.34: a view the decision MEASURE neither covers nor exempts ERRs (exit 3) — the map's coverage is pinned"
 
@@ -3421,7 +3422,8 @@ if [ -n "$_capc" ]; then
   _capb="$(mktemp -d)"; cp "$_capc" "$_capb/c.bak"
   trap 'cp "$_capb/c.bak" "$_capc" 2>/dev/null; rm -rf "$_capb" 2>/dev/null' EXIT INT TERM
   LC_ALL=C sed -i.tmp 's/^Cap: [0-9]* folders/Cap: 2 folders/' "$_capc" 2>/dev/null
-  bash "$_RP" "$_RPR" >/dev/null 2>&1; _caprc=$?
+  # The cap guard also runs before any render — same path, one fewer full corpus pass.
+  bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _caprc=$?
   cp "$_capb/c.bak" "$_capc"; rm -rf "$_capb" "$_capc.tmp"; trap - EXIT INT TERM
   chk "$_caprc" "3" "v0.34: a corpus larger than the cap the contract declares ERRs (exit 3) — the cap binds"
 fi
