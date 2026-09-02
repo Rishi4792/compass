@@ -18,7 +18,9 @@
 #
 # Exit codes, defined here because an earlier draft used one code for three meanings:
 #   0  ran; every MEASURE line passed (today every line is REPORT, so a clean run is 0)
-#   1  a MEASURE line failed, or --controls-only found a control that stopped failing
+#   1  a MEASURE line failed. With --controls-only it is the HEALTHY answer: every control still
+#      fails its own class. A control that STOPPED failing is exit 3, not 1 - it is an ERR,
+#      because a check that stopped checking produces no verdict at all.
 #   2  usage
 #   3  ERR — no verdict could be produced: the corpus is absent or empty, or a fixture would not
 #      render. NOT a pass. See mechanical-suite wiring in the build plan: the suite has no ERR
@@ -32,8 +34,12 @@ while [ $# -gt 0 ]; do
     --help|-h)
       sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    --corpus)        CORPUS="${2:-}"; shift 2 ;;
-    --metric)        METRIC="${2:-}"; shift 2 ;;
+    # `shift 2` with a single arg remaining CANNOT shift, so `while [ $# -gt 0 ]` spun forever:
+    # `--metric cuts --corpus` hung until it was killed. A flag needing a value must say so and stop.
+    --corpus)        [ $# -ge 2 ] || { echo "readable-pages-check: --corpus needs a directory" >&2; exit 2; }
+                     CORPUS="$2"; shift 2 ;;
+    --metric)        [ $# -ge 2 ] || { echo "readable-pages-check: --metric needs a metric name" >&2; exit 2; }
+                     METRIC="$2"; shift 2 ;;
     --controls-only) CONTROLS_ONLY=1; shift ;;
     --*)             echo "readable-pages-check: unknown flag '$1'" >&2; exit 2 ;;
     *)               ROOT="$1"; shift ;;
@@ -67,6 +73,15 @@ if [ ! -d "$CORPUS" ]; then
 fi
 
 MANIFEST="$CORPUS/MANIFEST"
+# A typo'd metric measured NOTHING and reported "0 reported ... exit 0" — a green over an empty set.
+# The valid names are DERIVED from the measurer's own emit() calls, so they cannot drift from it.
+if [ -n "$METRIC" ]; then
+  _valid="$(LC_ALL=C grep -oE "emit\('[a-z]+'" "$MEASURE" | sed "s/emit('//;s/'//" | sort -u)"
+  if ! printf '%s\n' "$_valid" | grep -qx "$METRIC"; then
+    echo "readable-pages-check: unknown metric '$METRIC'. The measurer emits: $(printf '%s' "$_valid" | tr '\n' ' ')" >&2
+    exit 2
+  fi
+fi
 FIXTURES=""
 if [ -f "$MANIFEST" ]; then
   FIXTURES="$(LC_ALL=C sed -nE 's/^([a-z0-9-]+)[[:space:]]+[0-9a-f]{16}.*$/\1/p' "$MANIFEST")"
@@ -106,6 +121,22 @@ rendered=0; render_failed=0; err_pairs=0; measured_pairs=0; measure_failed=0
 ctl_total=0; ctl_still_failing=0
 OUT="$TMP/lines.tsv"; : > "$OUT"
 
+# THE ONLY MEASURE MUST COVER EVERY VIEW IT RENDERS. Deleting one row of the measurer's DECISION map
+# disarmed it silently. Both sets are DERIVED from the measurer itself, so they cannot drift from it.
+_dec_keys="$(LC_ALL=C sed -n "/^const DECISION = {/,/^};/p" "$MEASURE" | sed -n "s/^  '\([a-z-]*\)'.*/\1/p" | sort -u)"
+_dec_exempt="$(LC_ALL=C sed -n "s/^const DECISION_EXEMPT = \[\(.*\)\];/\1/p" "$MEASURE" | tr -d " '" | tr ',' '\n' | grep -v '^$' | sort -u)"
+_dec_uncovered=""
+for _v in $VIEWS; do
+  printf '%s\n' "$_dec_keys" | grep -qx "$_v" && continue
+  printf '%s\n' "$_dec_exempt" | grep -qx "$_v" && continue
+  _dec_uncovered="$_dec_uncovered $_v"
+done
+if [ -n "$_dec_uncovered" ]; then
+  echo "readable-pages-check: ERR — the decision MEASURE neither covers nor exempts:$_dec_uncovered"
+  echo "  Every rendered view must be measured or explicitly exempt; a missing row disarms the check."
+  echo "readable-pages-check: ERR (decision map does not cover:$_dec_uncovered)"
+  exit 3
+fi
 printf '── readable pages ───────────────────────────────────────────────────\n'
 for fx in $FIXTURES; do
   dir="$CORPUS/$fx"
@@ -141,6 +172,17 @@ while IFS=$'\t' read -r pg metric verdict figure population; do
   esac
 done < "$OUT"
 
+# EVERY RENDERED PAGE MUST PRODUCE AT LEAST ONE LINE. Moving one input file away killed the measurer
+# on all 44 renders; both call sites end `|| true`, so 216 measurements became 0 and the run still
+# said "0 reported ... over 44 render(s)", exit 0, suite 10 of 10. A figure nothing reads is not a
+# measurement. This pins the POPULATION, so a collapse to zero can no longer pass as a clean run.
+_pages_seen="$(LC_ALL=C awk -F'\t' '$1!="" {print $1}' "$OUT" | sort -u | grep -c . || true)"
+if [ "$rendered" -gt 0 ] && [ "${_pages_seen:-0}" -lt "$rendered" ]; then
+  echo "readable-pages-check: ERR — $rendered page(s) rendered but only ${_pages_seen:-0} produced any measurement."
+  echo "  The measurer died on $((rendered - ${_pages_seen:-0})) of them. A silent collapse to zero is not a clean run."
+  echo "readable-pages-check: ERR (measurer produced nothing for $((rendered - ${_pages_seen:-0})) page(s))"
+  exit 3
+fi
 printf '─────────────────────────────────────────────────────────────────────\n'
 
 # ── verdict ─────────────────────────────────────────────────────────────────────────────────────
@@ -149,15 +191,37 @@ if [ "$CONTROLS_ONLY" = 1 ]; then
   # two of three controls left the third's lines carrying the total and the run still said "as
   # required" — and a control DELETED FROM DISK did the same, because render_failed was never read.
   _want_ctl="$(printf '%s\n' $FIXTURES | grep -c '^ctl-' || true)"
-  _got_ctl="$(LC_ALL=C awk -F'\t' '$4+0 > 0 {split($1,a,"/"); print a[1]}' "$OUT" | grep '^ctl-' | sort -u | grep -c . || true)"
+  # OWN CLASS, NOT ANY CLASS. This counted a control as "still failing" when ANY metric moved on it.
+  # ctl-escaped-tag carries an incidental `cuts 1`, so the LEAKS detector could be deleted outright
+  # and this still printed "all 4 control(s) still fail their own class". The class each control
+  # exists to prove is now NAMED in the MANIFEST (CONTROL:<metric>) and read from there, not assumed.
+  _got_ctl=0; _lost=""
+  for _c in $(printf '%s\n' $FIXTURES | grep '^ctl-' || true); do
+    _cls="$(LC_ALL=C awk -v c="$_c" '$1==c {print $3}' "$MANIFEST" | sed -n 's/^CONTROL:\([a-z][a-z]*\).*/\1/p' | head -1)"
+    if [ -z "$_cls" ]; then
+      echo "readable-pages-check: ERR - control '$_c' does not name the class it proves (want CONTROL:<metric> in MANIFEST)."
+      exit 3
+    fi
+    if LC_ALL=C awk -F'\t' -v c="$_c" -v m="$_cls" '$2==m && $4+0>0 {split($1,a,"/"); if(a[1]==c) f=1} END{exit !f}' "$OUT"; then
+      _got_ctl=$((_got_ctl+1))
+    else
+      _lost="$_lost $_c(class:$_cls)"
+    fi
+  done
   if [ "$render_failed" -gt 0 ]; then
     echo "readable-pages-check: ERR — $render_failed control render(s) failed; a control that will not render proves nothing."
     echo "readable-pages-check: ERR (control render failure)"
     exit 3
   fi
   if [ "${_got_ctl:-0}" != "${_want_ctl:-0}" ]; then
-    echo "readable-pages-check: ERR — ${_got_ctl:-0} of ${_want_ctl:-0} control(s) still fail their class. A control that stopped failing is a check that stopped checking."
-    echo "readable-pages-check: ERR (${_got_ctl:-0} of ${_want_ctl:-0} controls failing)"
+    echo "readable-pages-check: ERR — ${_got_ctl:-0} of ${_want_ctl:-0} control(s) still fail their OWN class; stopped failing:$_lost"
+    echo "  A control that stopped failing is a check that stopped checking."
+    echo "readable-pages-check: ERR (${_got_ctl:-0} of ${_want_ctl:-0} controls failing their own class)"
+    exit 3
+  fi
+  # An EMPTY control population exited 1 saying "all 0 control(s) still fail" - a pass over nothing.
+  if [ "${_want_ctl:-0}" -eq 0 ] || [ "$rendered" -eq 0 ]; then
+    echo "readable-pages-check: ERR — no controls rendered. An empty population is not a pass."
     exit 3
   fi
   echo "readable-pages-check: all ${_want_ctl} control(s) still fail their own class, each counted once, over $rendered render(s)."

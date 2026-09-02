@@ -87,3 +87,25 @@ unescaped-variable row above, and the reason the table has a "not scanned" colum
 3. Decide MEASURES or REPORTS honestly. If a line scan cannot separate the defect from correct code,
    it REPORTS.
 4. Add the row above, with the real defect it came from.
+
+## `grep -q` at the end of a pipeline, under `pipefail` — a red that means nothing
+**Found:** v0.34 review-build round 2, from a smoke run that went `1023 passed, 1 failed` and could not
+be reproduced in 20 consecutive tries afterwards.
+
+`grep -q` exits the moment it matches and closes the pipe beneath it. The upstream command is then
+killed by SIGPIPE and exits 141, and `set -o pipefail` promotes that to the pipeline's status. The
+assertion goes red while the property it tests is perfectly satisfied — and it does so only under
+load, which is the worst possible timing, because that is when somebody is trying to ship.
+
+**Why it is not owned by a script here:** deciding whether a given pipeline can race needs to know
+whether the upstream writes more than a pipe buffer before the match, which is a runtime property.
+A grep for the shape finds **20 occurrences in `compass.smoke.sh` alone**; one is fixed (v0.30 v11's
+truncation assertion, which flattens to a file first). The rest are latent.
+
+**What to do instead:** write the flattened output to a file and grep the file. It removes the race
+without weakening the assertion by a single character. Do NOT reach for `|| true` — that is the
+vacuous-assertion class wearing a different hat, and it switches the test off for good rather than
+for a moment.
+
+**Related:** a spuriously red gate is one somebody switches off, which is the same reasoning that
+demoted five MEASURE rules to REPORT in this release. A false positive costs more than a miss.

@@ -100,6 +100,21 @@ const inCode = (s, i) => {
 
 const CUT = /\(continues\)|—\s*and\s+\d+\s+more|\+\s*\d+\s+more/g;
 
+// `\b` sits between `/` and `A`, so `png=N/A.` and `Result: N/A.` were read as ending on a dangling
+// "a" and flagged as stumps. 5 of 6 live flags were false, and a check that fires on correct prose
+// is one somebody switches off. A function word only dangles if it STANDS ALONE - preceded by
+// whitespace or starting the line, never glued to a slash or a letter.
+const DANGLING = /(^|\s)(a|an|the|who|whom|whose|is|are|was|were|to|of|and|or|but|with|in|on|at|for|from|by|its|their)\.\s*$/i;
+// An UNCLOSED OPENER means the unit cannot be complete, whatever punctuation precedes the cut.
+const unclosed = (t) => {
+  for (const [o, c] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+    const no = (t.match(new RegExp('\\' + o, 'g')) || []).length;
+    const nc = (t.match(new RegExp('\\' + c, 'g')) || []).length;
+    if (no > nc) return true;
+  }
+  return false;
+};
+
 // ── the metrics ─────────────────────────────────────────────────────────────────────────────────
 // line format:  <label>\t<metric>\t<verdict>\t<figure>\t<population and what it means>
 const lines = [];
@@ -134,9 +149,19 @@ if (cuts.length === 0) {
     //                                flagged 63 of 208 correct cuts.
     //   `(continues)`                prose was shortened. This one has to land on a sentence end or
     //                                the close of a bracketed run, and is the only one worth counting.
-    if (!/\(continues\)/.test(m[0])) continue;
-    const before = openText.slice(Math.max(0, m.index - 90), m.index).trimEnd();
-    if (!/[.!?]$|[)\]}]$/.test(before)) bad++;
+    const before = openText.slice(Math.max(0, m.index - 120), m.index).trimEnd();
+    if (/\(continues\)/.test(m[0])) {
+      // prose was shortened: it must land on a sentence end or the close of a bracketed run.
+      if (!/[.!?]$|[)\]}]$/.test(before)) bad++;
+    } else {
+      // A LIST was shortened. Round 1 caught this branch being skipped WHOLESALE on the excuse that
+      // the marker proves a clean boundary; the author's first fix renamed the excuse and kept the
+      // exclusion, and 12 of 77 excluded cuts were then shown to be mid-unit anyway. So JUDGE IT.
+      // Requiring a full stop here would be wrong — a list item rarely ends in one, and an earlier
+      // draft that demanded it would have flagged 63 of 208 correct cuts. The honest unit test is
+      // narrower: the text may not end on a dangling function word, and no bracket may be left open.
+      if (DANGLING.test(before) || unclosed(before)) bad++;
+    }
   }
   emit('cuts', 'REPORT', bad, `of ${cuts.length} truncation control(s) on this page, not at a sentence end or a closing bracket`);
 }
@@ -156,6 +181,12 @@ const DECISION = {
   'brief-body': 'Lock this contract?',
   'plan-map': 'Approve this plan?',
 };
+// The exemption above is now MACHINE-READABLE, because prose could not stop a deletion. An
+// independent reviewer deleted the 'plan-map' row and broke the generator's headline: the run
+// exited 0 with the suite at 10 of 10, since the else-branch ERR quietly absorbed the missing row
+// and nothing pinned the map's size. readable-pages-check derives both of these and asserts that
+// every view it renders is either MEASURED here or listed here as exempt.
+const DECISION_EXEMPT = ['release-card'];
 const view = String(label).split('/').pop();
 if (view in DECISION) {
   const h1 = (raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || [, ''])[1].replace(/<[^>]*>/g, '').trim();
@@ -201,7 +232,6 @@ emit('leaks', 'REPORT', leaks,
 // Demonstratives and relatives (that, this, these, those, which) legitimately end a sentence, so
 // they are out. What remains cannot end English prose: an article, a preposition, a conjunction,
 // a bare copula, a possessive.
-const DANGLING = /\b(a|an|the|who|whom|whose|is|are|was|were|to|of|and|or|but|with|in|on|at|for|from|by|its|their)\.\s*$/i;
 const units = [...raw.matchAll(/<(td|div|p|li)\b[^>]*>([\s\S]*?)<\/\1>/gi)]
   .map((m) => ({ html: m[0], text: visible(m[2], { includeDetails: false }) }))
   .filter((u) => u.text.length >= 25);

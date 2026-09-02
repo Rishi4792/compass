@@ -176,18 +176,39 @@ const CUT = /\(continues\)|—\s*and\s+\d+\s+more|\+\s*\d+\s+more/g;
 //   2. A boundary is a sentence end or a closing bracket/brace. `:` and `;` were the producer's
 //      additions and appear in the glossary nowhere. Zero real cuts are preceded by either, so
 //      removing them changes no verdict — but a rule nobody can re-derive is not a measurement.
-let cuts = 0, mid = 0, listCuts = 0;
+//   3. CORRECTION 1 WAS ITSELF WRONG, and this is the round-2 finding. "The marker names the kind"
+//      was the SAME wholesale exclusion as the "clean by construction" wording it replaced — the
+//      words changed and the classification did not. A reviewer then showed 12 of the 77 excluded
+//      cuts are not clean boundaries at all. So every marker is now JUDGED, and the two paths get
+//      the test that actually fits them: prose must end a sentence or close a bracket; a list must
+//      merely leave a COMPLETE UNIT — no dangling function word, no opener left unclosed. Demanding
+//      a full stop of a list would still be wrong, and is still not done.
+const DANGLING = /(^|\s)(a|an|the|who|whom|whose|is|are|was|were|to|of|and|or|but|with|in|on|at|for|from|by|its|their)\.\s*$/i;
+const unclosed = (t) => {
+  for (const [o, c] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+    const no = (t.match(new RegExp('\\' + o, 'g')) || []).length;
+    const nc = (t.match(new RegExp('\\' + c, 'g')) || []).length;
+    if (no > nc) return true;
+  }
+  return false;
+};
+let cuts = 0, mid = 0, listCuts = 0, listBad = 0;
 for (const p of PAGES) {
   const t = visible(readFileSync(p, 'utf8'), { includeDetails: true });
   for (const m of t.matchAll(CUT)) {
     cuts++;
-    if (!/\(continues\)/.test(m[0])) { listCuts++; continue; }
-    const before = t.slice(Math.max(0, m.index - 90), m.index).trimEnd();
-    if (!/[.!?]$|[)\]}]$/.test(before)) mid++;
+    const before = t.slice(Math.max(0, m.index - 120), m.index).trimEnd();
+    if (/\(continues\)/.test(m[0])) {
+      if (!/[.!?]$|[)\]}]$/.test(before)) mid++;
+    } else {
+      listCuts++;
+      if (DANGLING.test(before) || unclosed(before)) listBad++;
+    }
   }
 }
 fig('cuts.total', cuts, 'every truncation control in open visible text over pages.total: (continues), — and N more, + N more', 'CUT regex');
-fig('cuts.list_boundary', listCuts, 'cuts.total that shortened a LIST at an item boundary — clean by construction, and excluded from mid_clause', 'the marker names the kind');
+fig('cuts.list_boundary', listCuts, 'cuts.total carrying a list marker (— and N more, + N more). NOT excluded from the defect count any more — each one is judged below', 'the CUT regex, by marker');
+fig('cuts.list_mid_unit', listBad, 'cuts.list_boundary whose preceding 120 chars end on a dangling function word or leave a bracket unclosed — a list marker does NOT prove a clean boundary, and this is the count the wholesale exclusion was hiding', 'the same pass');
 fig('cuts.mid_clause', mid, 'the (continues) cuts whose preceding 90 chars end at neither a sentence end (. ! ?) nor a closing bracket ()  ]  }) — the glossary definition, not the producer\'s own', 'the same pass');
 
 // markup leaks — the tag set is DECLARED, because v1 published "9" with no reproducible population

@@ -1486,7 +1486,11 @@ printf -- '- [x] **1 · A step.** There is nothing to verify (the common case) a
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/p" plan-map --out "$_v11/pv.html" >/dev/null 2>&1
 # Strip tags first: the step's text is legitimately split across its title and detail divs, so a
 # grep for the joined phrase tests the layout, not the property.
-sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' | grep -q 'the rest of this sentence must survive'
+# `grep -q` exits on its FIRST match and closes the pipe under it, so `tr` dies of SIGPIPE and
+# pipefail reports 141 — a red that says nothing about the property. It fired once in three runs
+# here. Flattening to a file first removes the race without weakening what is asserted.
+sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' > "$_v11/pv.flat"
+grep -q 'the rest of this sentence must survive' "$_v11/pv.flat"
 chk "$?" "0" "v0.30 v11: the word 'verify' in prose does not truncate a step (only a literal VERIFY: marker does)"
 psays "$_v11/pv.html" 'cmd 1'
 chk "$?" "0" "v0.30 v11: the real VERIFY command is still extracted from the step line"
@@ -3358,14 +3362,56 @@ chk "$?" "1" "v0.34: --controls-only exits 1 while every control still fails its
 # This is the code-level red-first for a check that used to read `h1 === want ? 'REPORT' : 'REPORT'`
 # — two identical branches, so it could not fail. A reviewer set the headline to "Ship it maybe?"
 # and the whole suite stayed green.
-_rpg="$(mktemp -d)"; cp "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_rpg/gen.bak"
-LC_ALL=C sed -i.tmp "s/'Lock this contract?'/'Ship it maybe?'/" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" 2>/dev/null
+# THIS MUTATES SHIPPED SOURCE IN THE LIVE PLUGIN. It is the only assertion that must, because the
+# string is generated rather than authored, so no fixture can carry it. It previously ran with NO
+# trap: polled during a run, the shipped generator read "Ship it maybe?" for 2727 observations, and
+# a Ctrl-C or an overlapping run would have left it that way on disk. The restore is now bound to
+# EXIT, INT and TERM, so an interrupted run puts the file back before the shell dies.
+_rpg="$(mktemp -d)"; _rpgf="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"; cp "$_rpgf" "$_rpg/gen.bak"
+trap 'cp "$_rpg/gen.bak" "$_rpgf" 2>/dev/null; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "s/'Lock this contract?'/'Ship it maybe?'/" "$_rpgf" 2>/dev/null
 bash "$_RP" "$_RPR" >/dev/null 2>&1
 _rp_rc=$?
-cp "$_rpg/gen.bak" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs"; rm -rf "$_rpg" "$PLUGIN_ROOT/skills/compass-visual/gen.mjs.tmp" 2>/dev/null
+cp "$_rpg/gen.bak" "$_rpgf"; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null; trap - EXIT INT TERM
 chk "$_rp_rc" "1" "v0.34: a page whose decision line disagrees with the contract's declared table FAILS (exit 1) — the check can go red"
 bash "$_RP" "$_RPR" >/dev/null 2>&1
 chk "$?" "0" "v0.34: ...and the generator restored, it is green again — so the assertion above measured the change, not the environment"
+# ── the collapse-to-zero class, which no assertion covered ──────────────────────────────────────
+# Moving ONE input file away killed the measurer on all 44 renders. Both call sites end `|| true`,
+# so 216 measurements became 0 and the run still reported a clean pass, exit 0, suite 10 of 10.
+_jf="$_ROOT/plugins/compass/scripts/fixtures/copy/jargon.txt"
+_jb="$(mktemp -d)"; cp "$_jf" "$_jb/j.bak"
+trap 'cp "$_jb/j.bak" "$_jf" 2>/dev/null; rm -rf "$_jb" 2>/dev/null' EXIT INT TERM
+rm -f "$_jf"; bash "$_RP" "$_RPR" >/dev/null 2>&1; _jrc=$?
+cp "$_jb/j.bak" "$_jf"; rm -rf "$_jb"; trap - EXIT INT TERM
+chk "$_jrc" "3" "v0.34: the measurer dying on every page ERRs (exit 3) — a silent collapse to zero is not a clean run"
+bash "$_RP" "$_RPR" >/dev/null 2>&1
+chk "$?" "0" "v0.34: ...and its input restored, green again — the assertion above measured the change, not the environment"
+
+# A control counted as "still failing" on ANY non-zero metric, so the LEAKS detector could be
+# deleted outright while the run still said "all 4 control(s) still fail their own class".
+_mf="$_ROOT/plugins/compass/scripts/readable-pages-measure.mjs"
+_mb="$(mktemp -d)"; cp "$_mf" "$_mb/m.bak"
+trap 'cp "$_mb/m.bak" "$_mf" 2>/dev/null; rm -rf "$_mb" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "s/emit('leaks'/emit('leaks_OFF'/" "$_mf" 2>/dev/null
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _crc=$?
+cp "$_mb/m.bak" "$_mf"; rm -rf "$_mb" "$_mf.tmp"; trap - EXIT INT TERM
+chk "$_crc" "3" "v0.34: killing ONE detector makes its own control stop failing (exit 3) — controls are bound to the class they name, not to any metric"
+
+# Deleting one row of the measurer's DECISION map disarmed the tool's only MEASURE, silently.
+_mb2="$(mktemp -d)"; cp "$_mf" "$_mb2/m.bak"
+trap 'cp "$_mb2/m.bak" "$_mf" 2>/dev/null; rm -rf "$_mb2" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "/'plan-map': 'Approve this plan?',/d" "$_mf" 2>/dev/null
+bash "$_RP" "$_RPR" >/dev/null 2>&1; _drc=$?
+cp "$_mb2/m.bak" "$_mf"; rm -rf "$_mb2" "$_mf.tmp"; trap - EXIT INT TERM
+chk "$_drc" "3" "v0.34: a view the decision MEASURE neither covers nor exempts ERRs (exit 3) — the map's coverage is pinned"
+
+# A flag that needs a value used to spin forever: `shift 2` with one arg left cannot shift.
+bash "$_RP" --metric cuts --corpus >/dev/null 2>&1
+chk "$?" "2" "v0.34: a value-taking flag given no value exits 2 rather than hanging forever"
+bash "$_RP" "$_RPR" --metric zzz >/dev/null 2>&1
+chk "$?" "2" "v0.34: an unknown metric name exits 2 — it used to measure nothing and call that a pass"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a

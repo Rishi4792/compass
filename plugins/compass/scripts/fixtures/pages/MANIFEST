@@ -5,9 +5,9 @@
 # projects' client names and financial figures. A fixture never needed real data.
 #
 # <slug> <sha16 of the fixture's files>  role
-ctl-code-in-region 12e96066d71ec29c  CONTROL — asserted to FAIL its class
-ctl-escaped-tag ff27844fb5f3d567  CONTROL — asserted to FAIL its class
-ctl-mid-unit-cut 506d253b41ddc83a  CONTROL — asserted to FAIL its class
+ctl-code-in-region 12e96066d71ec29c  CONTROL:codes — asserted to FAIL this named class
+ctl-escaped-tag ff27844fb5f3d567  CONTROL:leaks — asserted to FAIL this named class
+ctl-mid-unit-cut 506d253b41ddc83a  CONTROL:cuts — asserted to FAIL this named class
 edge-no-plan e02ead47edbd6f86  EDGE
 edge-no-truncation 82c00244e5cf5026  EDGE
 edge-zero-row-ledger cf84a263c86c3788  EDGE
@@ -15,4 +15,4 @@ empty-ledger 36ab2ed4221ba1a8  MEASURED
 no-block 3c06cfd9db1fd490  MEASURED
 open-findings efaeac39c527c20f  MEASURED
 with-block 9d0853beee9b1393  MEASURED
-ctl-unmarked-stump c841a2d042253b1d  CONTROL — asserted to FAIL its class
+ctl-unmarked-stump c841a2d042253b1d  CONTROL:unmarked — asserted to FAIL this named class
