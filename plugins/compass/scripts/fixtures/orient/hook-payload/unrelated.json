@@ -1,1 +1,1 @@
-{"session_id": "fixture", "prompt_id": "fixture", "transcript_path": "/dev/null", "permission_mode": "default", "hook_event_name": "UserPromptSubmit", "prompt_text": "fix the login bug", "cwd": "/Users/rishi/Desktop/Claude Code Projects/Compass"}
+{"session_id": "fixture", "prompt_id": "fixture", "transcript_path": "/dev/null", "permission_mode": "default", "hook_event_name": "UserPromptSubmit", "prompt_text": "fix the login bug", "cwd": "/tmp/compass-fixture-repo"}

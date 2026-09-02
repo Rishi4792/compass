@@ -3,6 +3,37 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.34.0] — 2026-09-02
+
+Pages a stranger can read, and the checks that prove it.
+
+Every page Compass renders was the spec re-arranged: internal codes visible to the reader,
+sentences stopping mid-thought, and plain words that reached one view and not the others. This
+release changes what the generator EXTRACTS, so a person's own words reach the page.
+
+- **`compass-reader-copy`** — eight keys of plain English that override the spec text on every
+  in-scope view, checked at the moment a contract locks.
+- **`readable-pages-check.sh`** — renders a capped, authored fixture corpus through four views and
+  reports six metrics beside their populations. Four control fixtures must FAIL the class each one
+  NAMES, so a detector cannot be deleted while the run still reports health.
+- **`gold-diff-check.sh`** — the contract's published figures are diffed value by value against the
+  producer that made them.
+- **`copy-reaches-check.sh`** — the thesis tested behaviourally, by marking the block and requiring
+  the mark in the page's visible text.
+- **`argshift-check.sh`** — a flag that takes a value must refuse to be given none rather than spin
+  forever. Twenty-four call sites were unguarded; two of them hung a real command.
+- The mechanical suite now verifies its own child list, so it can no longer report every check clean
+  after one has been unwired.
+
+**Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files, present
+since at least v0.33.5.
+
+**Shipped un-converged.** review-contract rounds 1-3 carry no valid nonce: that rule was adopted
+mid-build and back-filling one would forge the single field that makes evidence unforgeable. The
+evidence gate remains armed and RED. Signed by Rishi Kapoor, 2026-09-02.
+
+**Speed:** +5.2s against an 8s budget, measured on fresh clones. The 61s ceiling was never raised.
+
 ## [0.33.5] — 2026-08-25
 
 **A gate signed off with a finding it never made.**
