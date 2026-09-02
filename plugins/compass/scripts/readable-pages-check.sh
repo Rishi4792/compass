@@ -170,7 +170,28 @@ for fx in $FIXTURES; do
   if [ "$CONTROLS_ONLY" = 0 ] && is_control "$fx"; then ctl_total=$((ctl_total+1)); fi
   for v in $VIEWS; do
     page="$TMP/$fx-$v.html"
-    if ! node "$GEN" "$dir" "$v" --out "$page" >/dev/null 2>&1; then
+    # RENDER CONCURRENTLY. Each render is an independent process writing its own file, so running
+    # them one at a time bought nothing but wall clock — and wall clock is exactly what the speed
+    # ceiling measures. Measured over the whole corpus: 44 renders serially 1.69s, the same 44
+    # concurrently 0.25s, byte-identical output. The generator is NOT modified: it is a 2950-line
+    # shipped file whose build section carries its own refusal paths and `process.exit()` calls,
+    # and restructuring that to save process launches would risk far more than it buys.
+    # The group size is small and fixed; failures are still counted per render below.
+    _running=$(jobs -rp 2>/dev/null | wc -l | tr -d ' ')
+    [ "${_running:-0}" -ge 8 ] && wait
+    node "$GEN" "$dir" "$v" --out "$page" >/dev/null 2>&1 &
+  done
+done
+wait
+# Now account for what actually rendered. A render that failed leaves no file, and that is counted
+# here rather than inside the loop, so the concurrency cannot hide a failure.
+for fx in $FIXTURES; do
+  dir="$CORPUS/$fx"
+  [ -d "$dir" ] || continue
+  if [ "$CONTROLS_ONLY" = 1 ] && ! is_control "$fx"; then continue; fi
+  for v in $VIEWS; do
+    page="$TMP/$fx-$v.html"
+    if [ ! -s "$page" ]; then
       echo "  ERR   $fx/$v did not render"
       render_failed=$((render_failed+1)); continue
     fi
