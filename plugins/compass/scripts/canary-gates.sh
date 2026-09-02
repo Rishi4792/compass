@@ -19,13 +19,16 @@ ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || { echo "canary-gates: cannot resolve 
 REC=""; SAMPLE=0
 while [ $# -gt 0 ]; do
   case "${1:-}" in
-    --record) REC="${2:-}"; shift 2 ;;
+    --record) [ $# -ge 2 ] || { echo "canary-gates: --record needs a value" >&2; exit 2; }
+              REC="$2"; shift 2 ;;
     # A SAMPLE, for the suite. The full run is 374 gate calls and 41.7 seconds — it pushed the smoke
     # suite from 39s to 59.1s, past the 50.2s ceiling the contract states. Coverage is MOVED, not
     # deleted: the suite runs a sample every time and the RELEASE runs all of it. A sample says so
     # in its own output, so nobody can read it as the complete canary.
-    --sample) SAMPLE="${2:-6}"; shift 2 ;;
-    --builds) BUILDS_OVERRIDE="${2:-}"; export BUILDS_OVERRIDE; shift 2 ;;
+    --sample) [ $# -ge 2 ] || { echo "canary-gates: --sample needs a value" >&2; exit 2; }
+              SAMPLE="${2:-6}"; shift 2 ;;
+    --builds) [ $# -ge 2 ] || { echo "canary-gates: --builds needs a value" >&2; exit 2; }
+              BUILDS_OVERRIDE="$2"; export BUILDS_OVERRIDE; shift 2 ;;
     --self-check) SELFCHECK=1; shift ;;
     *) shift ;;
   esac
@@ -120,8 +123,14 @@ done < "$_ordf"
 rm -f "$_ordf"
 
 # copy-gate over real FILES — the argument it actually takes. Every reader-copy block on the tree.
+#
+# THE POPULATION WAS THE WHOLE PROBLEM. This said "every reader-copy block on the tree" and globbed
+# ONE level of fixtures plus SKILL.md, so it graded 3 files and reported "0 refused" for a change
+# that refuses SIXTEEN build contracts. A canary whose population excludes the thing that changed
+# cannot see the change — it was green by construction. Real contracts live in .claude/builds, which
+# is where the reader-copy blocks actually are, so they are swept here too.
 cg_n=0; cg_bad=0
-for f in "$ROOT/plugins/compass/scripts/fixtures"/*/*.md "$ROOT/plugins/compass/skills"/*/SKILL.md; do
+for f in "$ROOT/plugins/compass/scripts/fixtures"/*/*.md "$ROOT/plugins/compass/skills"/*/SKILL.md "$ROOT/.claude/builds"/*/contract.md; do
   [ -f "$f" ] || continue
   grep -q 'compass-format\|reader-copy\|## Reader copy' "$f" 2>/dev/null || continue
   cg_n=$((cg_n+1)); calls=$((calls+1))

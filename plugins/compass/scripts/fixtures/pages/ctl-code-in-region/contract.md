@@ -1,0 +1,20 @@
+# Contract — ctl-code-in-region
+compass-format: v0.30
+Facets: library
+pii: no
+
+## Goal & scope
+A CONTROL fixture. Its plain words deliberately carry an internal code, INV-EXAMPLE, so the code check has something it must catch.
+
+## Non-goals
+This fixture ships no behaviour. It exists so a check has a real page to measure.
+
+
+```compass-reader-copy
+build-what: A control fixture whose copy names INV-EXAMPLE and cmd_example on purpose, so the check has a defect to find. A fixture page that a check can measure, written in plain words so the check has something real to read.
+done-means: The page renders and every figure on it names the set it was counted over.
+proof: Three of three fixture pages render today. Target: all four in-scope views render for every fixture.
+blast-radius: Nothing outside this fixture folder. It ships as test data and changes no behaviour.
+now: The page renders for all four views in scope.
+never: Copying anything from a real build folder into this fixture.
+```

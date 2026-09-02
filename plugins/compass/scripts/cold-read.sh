@@ -122,8 +122,10 @@ shift
 VIEW=brief; EMIT=""
 while [ $# -gt 0 ]; do
   case "${1:-}" in
-    --view) VIEW="${2:-review}"; shift 2 ;;
-    --emit) EMIT="${2:-}"; shift 2 ;;
+    --view) [ $# -ge 2 ] || { echo "cold-read: --view needs a value" >&2; exit 2; }
+            VIEW="${2:-review}"; shift 2 ;;
+    --emit) [ $# -ge 2 ] || { echo "cold-read: --emit needs a value" >&2; exit 2; }
+            EMIT="$2"; shift 2 ;;
     *) shift ;;
   esac
 done

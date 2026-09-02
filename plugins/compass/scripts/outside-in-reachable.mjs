@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES
+// this check. Removing the check from CHILDREN while this line stands makes the suite ERR.
 // outside-in-reachable.mjs — measure the rendered page, never ask the generator. (v0.33 S15, C-1)
 //
 // WHAT C-1 IS. v0.32 shipped a reachability check that ran INSIDE the generator's own process and
@@ -75,7 +77,9 @@ function stripTags(s) { return decode(s.replace(/<[^>]*>/g, '')).replace(/\s+/g,
 const TERMINAL = ['.', '!', '?', ':', ';', ')', ']', '"', "'", '\u201d'];
 function unmarked(html) {
   const out = [];
-  const pats = [/<div class="v">([\s\S]*?)<\/div>\s*<\/div>/g, /<li[^>]*>([\s\S]*?)<\/li>/g, /<div class="b-det">([\s\S]*?)<\/div>/g];
+  // ATTRIBUTE-TOLERANT. These were literal-string matches, so any new attribute on the element
+  // — v0.34 adds data-reader-region — made them match nothing and report a silent clean.
+  const pats = [/<div class="v"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g, /<li[^>]*>([\s\S]*?)<\/li>/g, /<div class="b-det"[^>]*>([\s\S]*?)<\/div>/g];
   for (const re of pats) {
     let m;
     while ((m = re.exec(html)) !== null) {
@@ -110,7 +114,7 @@ function units(html) {
     const inner = m[2] || '';
     const clipped = /line-clamp|max-height|overflow\s*:\s*hidden/i.test(openAttrs);
     let body = null, bodyRaw = null;
-    const bStart = inner.indexOf('class="rest-body"');
+    const bStart = inner.indexOf('class="rest-body"');   // class-only, already attribute-tolerant
     if (bStart >= 0) {
       const tStart = inner.indexOf('>', bStart) + 1;
       const tEnd = inner.lastIndexOf('</div>');

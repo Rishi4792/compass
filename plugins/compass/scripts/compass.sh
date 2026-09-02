@@ -958,6 +958,19 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
     if type cmd_mode_gate >/dev/null 2>&1; then
       cmd_mode_gate "$dir" >/dev/null || die "gate: mode-gate FAILED for '$dir' (see stderr)."
     fi
+    # ── v0.34 S10 — "NO BLOCK, NO LOCK" NEEDS A LOCK TO ATTACH TO ─────────────────────────────
+    # copy-gate has existed and worked since v0.32.0 S14, and until now its ONLY callers were two
+    # prose lines inside skill files. A reviewer put it plainly: the flagship rule asserted the gate
+    # in isolation and never at the moment that matters, which is the exact shape this build's own
+    # contract records four times over as "the check exists and nothing calls it".
+    #
+    # It rides the CONTRACT arm because that is where a contract locks. It answers a contract
+    # predating the format in bash, without node, so wiring it here adds no prerequisite to a lock
+    # (see cmd_copy_gate). Blast radius measured over every build folder on this machine before the
+    # change, not after.
+    if type cmd_copy_gate >/dev/null 2>&1 && [ -f "$dir/contract.md" ]; then
+      cmd_copy_gate "$dir/contract.md" >/dev/null || die "gate: copy-gate FAILED for '$dir/contract.md' (see stderr)."
+    fi
   fi
 
   # v0.32.0 S17 — a gate nobody runs is not a gate, so the engine check rides the same seam as
@@ -2791,7 +2804,8 @@ cmd_budget_init() { # <build-dir> [--wall N --sessions N --stages N]
   [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh budget-init <build-dir> [--wall N --sessions N --stages N]"
   local wall="$BUDGET_DEFAULT_WALL" sess="$BUDGET_DEFAULT_SESSIONS" stg="$BUDGET_DEFAULT_STAGES"
   while [ $# -gt 0 ]; do case "$1" in
-    --wall) wall="${2:-}"; shift 2 ;; --sessions) sess="${2:-}"; shift 2 ;; --stages) stg="${2:-}"; shift 2 ;;
+    --wall) [ $# -ge 2 ] || { echo "compass: --wall needs a value" >&2; exit 2; }
+            wall="$2"; shift 2 ;; --sessions) sess="$2"; shift 2 ;; --stages) stg="$2"; shift 2 ;;
     *) shift ;; esac; done
   local be; be="$(_be_file "$dir")"
   # RB-04: preserve cumulative spend on re-init (must NOT reset spent_* to 0 and bypass the
@@ -2975,7 +2989,8 @@ cmd_auto_start() { # <build-dir> [--wall S --sessions N --stages N] [--unattende
   local args=""
   while [ $# -gt 0 ]; do case "$1" in
     --unattended) die "auto-start: --auto and --unattended are mutually exclusive — choose one." ;;
-    --wall|--sessions|--stages) args="$args $1 $2"; shift 2 ;;
+    --wall|--sessions|--stages) [ $# -ge 2 ] || { echo "auto-start: $1 needs a value" >&2; exit 2; }
+                                args="$args $1 $2"; shift 2 ;;
     *) shift ;; esac; done
   cmd_auto_precheck --auto >/dev/null || die "auto-start: precheck failed."
   # shellcheck disable=SC2086
@@ -4346,9 +4361,12 @@ cmd_rail() { # <build-dir> [--artefact <view>] [--url <url>] [--local <path>]
   local view="" url="" local_path=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --artefact) view="${2:-}"; shift 2 ;;
-      --url) url="${2:-}"; shift 2 ;;
-      --local) local_path="${2:-}"; shift 2 ;;
+      --artefact) [ $# -ge 2 ] || { echo "compass: --artefact needs a value" >&2; exit 2; }
+                  view="$2"; shift 2 ;;
+      --url) [ $# -ge 2 ] || { echo "compass: --url needs a value" >&2; exit 2; }
+             url="$2"; shift 2 ;;
+      --local) [ $# -ge 2 ] || { echo "compass: --local needs a value" >&2; exit 2; }
+               local_path="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
@@ -4398,8 +4416,10 @@ cmd_artefact_publish() { # <html> [--url <artifact-url>] [--dir <build-dir>]
   local url="" dir=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --url) url="${2:-}"; shift 2 ;;
-      --dir) dir="${2:-}"; shift 2 ;;
+      --url) [ $# -ge 2 ] || { echo "compass: --url needs a value" >&2; exit 2; }
+             url="$2"; shift 2 ;;
+      --dir) [ $# -ge 2 ] || { echo "compass: --dir needs a value" >&2; exit 2; }
+             dir="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
@@ -4752,7 +4772,33 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
   # fence line made gen.mjs render copy that the gate reported as absent. Silent in both directions.
   local rc_ex; rc_ex="$(dirname "${BASH_SOURCE[0]}")/reader-copy.mjs"
   [ -f "$rc_ex" ] || die "copy-gate: the shared extractor is missing at $rc_ex"
-  command -v node >/dev/null 2>&1 || die "copy-gate: node is required to read the reader-copy block."
+  # ── v0.34 S10 — THE OLDER-CONTRACT BRANCH IS DECIDED IN BASH, BEFORE NODE IS REQUIRED ─────────
+  # v0.34 wires this gate into the contract-lock seam, so whatever it requires becomes a
+  # requirement of EVERY contract lock in EVERY project. None of the other gates on that seam
+  # reference node at all.
+  #
+  # The naive fix — "move the node check below the branch that lets an older contract through" —
+  # does NOT work, and a reviewer proved it: that branch is computed BY running node, so with node
+  # absent an older contract died "block cannot be parsed: node: command not found". The branch has
+  # to be decided WITHOUT node, which means in bash, which means here.
+  #
+  # A file with neither a `compass-format:` line nor a reader-copy fence has nothing for the
+  # extractor to read, so it is answered here and never reaches node.
+  # TWO ORACLES WAS THE BUG. Every other gate on this seam decides "is this a modern build?" from the
+  # `.compass-format` STAMP FILE that `new-build` writes. This gate alone read a `compass-format:`
+  # TEXT LINE inside contract.md — chosen because it was greppable without node, which is convenient
+  # rather than correct. An independent reviewer measured the cost: 14 build folders carry the stamp
+  # and no line, so this gate told them "predates the reader-copy format" — untrue — and the rule was
+  # silently OFF for them. Two were their project's CURRENT build.
+  #
+  # The stamp is also the CHEAPER test: a file-existence check, not a grep. Armed on the UNION, so
+  # nothing that was armed before is disarmed now.
+  _rc_stamp="$(dirname "$f")/.compass-format"
+  if [ ! -f "$_rc_stamp" ] && ! grep -qE '^compass-format:' "$f" 2>/dev/null && ! grep -qE '^[[:space:]]{0,3}```+[[:space:]]*compass-reader-copy' "$f" 2>/dev/null; then
+    ok "copy-gate: N/A — '$(basename "$f")' predates the reader-copy format (no 'compass-format:' line) and carries no block, so there is nothing to read. Answered without node, because this gate now runs at every contract lock."
+    return 0
+  fi
+  command -v node >/dev/null 2>&1 || die "copy-gate: node is required to read the reader-copy block in '$(basename "$f")', which declares the reader-copy format. A contract predating the format is answered without node."
   # set -e: a bare \`body="$(node …)"\` whose substitution exits 3 aborts the whole script BEFORE the
   # N/A branch below can run — the unguarded-read-under-set-e class. Assign inside an if-condition.
   local body rcx
@@ -4769,7 +4815,10 @@ cmd_copy_gate() { # <file> [--block <fence-name>]
        # marker is the `compass-format:` line `compass.sh new-build` writes. Measured over all 30
        # build folders before the change: the three carrying that line are EXACTLY the three
        # carrying a block, so this refuses none of them.
-       if grep -qE '^compass-format:' "$f" 2>/dev/null; then
+       # SAME ORACLE AS THE ARMING ABOVE. This read only the text line while the arming now also
+       # accepts the stamp, so a stamp-only build was armed and then waved through — the rule
+       # switched on and immediately off again. Union here too, or the two halves disagree.
+       if [ -f "$_rc_stamp" ] || grep -qE '^compass-format:' "$f" 2>/dev/null; then
          echo "refuse: reader-copy" >&2
          die "copy-gate: '$(basename "$f")' declares a compass-format but carries NO compass-reader-copy block.
   A contract written to this format states its own reader copy; without it there is nothing to check
@@ -4784,6 +4833,29 @@ $(node "$rc_ex" --extract "$f" 2>&1 >/dev/null | sed 's/^/    /')
   A block this gate cannot read is a block it did not check. Fix the fence — do not ship it unchecked." ;;
   esac
   [ -n "$body" ] || die "copy-gate: the compass-reader-copy block in $(basename "$f") is empty."
+  # ── v0.34 S9 — THE KEY VOCABULARY ──────────────────────────────────────────────────────────────
+  # Wiring this gate to the lock proves a block EXISTS, not that it reaches the page. A reviewer
+  # cut a real contract's block down to one key: the gate PASSED and the rendered brief got WORSE,
+  # 16 internal codes becoming 17, because every key the block omits silently falls back to the
+  # spec's own prose. A misspelled key does the same thing and says nothing.
+  #
+  # UNKNOWN KEY REFUSES — structural, decidable, and the silent one.
+  # A MISSING KEY IS REPORTED, never refused: omitting a key falls back on purpose, and demanding
+  # all eight would refuse the shipped `fixtures/copy/clean.txt` (zero keys, and INV-9 requires this
+  # gate to pass it) and a real contract that omits `later`. A rule that fires on correct work is a
+  # rule somebody switches off.
+  local _keys_out _keys_rc
+  if _keys_out="$(node "$rc_ex" --keys "$f" 2>/dev/null)"; then _keys_rc=0; else _keys_rc=$?; fi
+  case "$_keys_out" in
+    *unknown:*) echo "refuse: reader-copy-key" >&2
+      die "copy-gate: '$(basename "$f")' names a key the generator does not read — $(printf '%s' "$_keys_out" | sed -n 's/^unknown: //p').
+  That key renders nothing. Its heading falls back to the spec's own words, so the page reads as the
+  spec while the block claims plain copy. The keys the generator reads are:
+  build-what done-means proof blast-radius now later never rollback" ;;
+  esac
+  case "$_keys_out" in
+    *missing:*) printf 'copy-gate: REPORTING — this block omits %s. Each falls back to the spec text; that is allowed and is said here rather than left silent.\n' "$(printf '%s' "$_keys_out" | sed -n 's/^missing: //p')" >&2 ;;
+  esac
   # Case-INSENSITIVE, and dashes normalised. Reader copy is sentences, so the terms appear
   # capitalised at the start of one — `Self-computed`, `Guard-first`, `Byte-inert` all passed a
   # case-sensitive match while their lowercase forms failed. gold-gate already normalises the

@@ -906,7 +906,7 @@ node "$GENJS" "$FXB" brief-body --out "$V26T/body.html" >/dev/null 2>&1
 _hero="$(awk '/class="ba"/{exit} {print}' "$V26T/body.html")"
 # v0.30: the goal moved out of the lede into the Build-what fact card (it used to render in
 # both, one directly under the other). Same property, new home — rewritten, not deleted.
-_lede="$(grep -o 'Build what</div><div class="v">[^<]*' "$V26T/body.html" | head -1)"
+_lede="$(grep -oE 'Build what</div><div class="v"[^>]*>[^<]*' "$V26T/body.html" | head -1)"
 chk "$([ "$(printf '%s' "$_lede" | grep -c 'revenue')" -ge 1 ] && [ "$(printf '%s' "$_hero" | grep -c 'NONGOAL-SENTINEL')" -eq 0 ] && echo 1 || echo 0)" "1" "v0.26 INV-GEN-PARSE: the lede shows the real Goal (an empty goal reddens it) + hero carries no Non-goals sentinel"
 # exercise sec('Goal') ITSELF (a contract with NO **Goal:** header falls through to sec) — this is what bites the anchored-sec fix
 node "$GENJS" "$PLUGIN_ROOT/scripts/fixtures/brief-contract-nohdr" brief-body --out "$V26T/nohdr.html" >/dev/null 2>&1
@@ -1486,7 +1486,11 @@ printf -- '- [x] **1 · A step.** There is nothing to verify (the common case) a
 node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_v11/p" plan-map --out "$_v11/pv.html" >/dev/null 2>&1
 # Strip tags first: the step's text is legitimately split across its title and detail divs, so a
 # grep for the joined phrase tests the layout, not the property.
-sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' | grep -q 'the rest of this sentence must survive'
+# `grep -q` exits on its FIRST match and closes the pipe under it, so `tr` dies of SIGPIPE and
+# pipefail reports 141 — a red that says nothing about the property. It fired once in three runs
+# here. Flattening to a file first removes the race without weakening what is asserted.
+sed -e 's/<[^>]*>/ /g' "$_v11/pv.html" | tr -s ' ' > "$_v11/pv.flat"
+grep -q 'the rest of this sentence must survive' "$_v11/pv.flat"
 chk "$?" "0" "v0.30 v11: the word 'verify' in prose does not truncate a step (only a literal VERIFY: marker does)"
 psays "$_v11/pv.html" 'cmd 1'
 chk "$?" "0" "v0.30 v11: the real VERIFY command is still extracted from the step line"
@@ -1707,8 +1711,47 @@ printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: ask
 # locked, because the work has not started — so arming redfirst-check at the CONTRACT seam made it
 # impossible for any new build to lock its own contract. It belongs where INV-0's own words put it:
 # "before its step is ticked".
+# v0.34 S10 — REWRITTEN FOR MEANING, not weakened. This fixture carried a `compass-format:` line
+# and no reader-copy block, and v0.34 wires copy-gate onto this seam, so it started failing.
+#
+# The assertion's MEANING is "do not put a check on the contract seam that a new build CANNOT
+# satisfy". Red-first evidence genuinely cannot exist at contract time — the work has not started.
+# Reader copy CAN: writing it is part of writing the contract. So the fixture now does what the
+# contract stage requires, and the original meaning is asserted unchanged below it.
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n\n```compass-reader-copy\nbuild-what: A short plain sentence about what this build changes.\n```\n' > "$_ps/b/contract.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
 chk "$?" "0" "v0.30 post-ship: a NEW build can lock its contract (redfirst-check is not on the contract seam)"
+# ...and the ORIGINAL meaning, asserted directly rather than as a side effect of the fixture:
+# no red-first evidence exists here, and the seam still passes.
+chk "$([ -f "$_ps/b/red-first-evidence.md" ] && echo 1 || echo 0)" "0" "v0.30 post-ship: ...and it locks with NO red-first evidence on disk, which is the point"
+# ── v0.34 S10 — AND THE NEW RULE BITES: format declared, block absent, lock REFUSED ─────────────
+# Without this, the change above would be indistinguishable from deleting the rule.
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n' > "$_ps/b/contract.md"
+bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
+chk "$?" "1" "v0.34 S10: a contract DECLARING the reader-copy format with NO block is REFUSED at the lock seam — 'no block, no lock' now has a lock to attach to"
+# ...and a contract that predates the format still locks, with node absent from the PATH, because
+# that branch is decided in bash. Wiring this gate must not make node a prerequisite of every lock.
+# v0.34 FIX ROUND — REWRITTEN FOR MEANING after the oracle fix, not weakened.
+# This fixture carries a `.compass-format` STAMP FILE (written at the top of this block), so it is
+# NOT a build that predates the format — it is a modern build whose contract happens to lack the
+# header line. The gate now reads the stamp, like every other gate on this seam, so this fixture
+# correctly requires node.
+#
+# "Predates the format" means NO STAMP. That case is asserted below, on a dir that genuinely has
+# none — and the consequence for stamped builds is asserted directly rather than left implied.
+_ps_legacy="$(mktemp -d)"; mkdir -p "$_ps_legacy/b"
+printf -- '# c\n\n## Goal\nA thing.\n' > "$_ps_legacy/b/contract.md"
+printf '## RECEIPT — contract · b · PASS\n- [x] done\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > "$_ps_legacy/b/receipts.md"
+env PATH=/usr/bin:/bin bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps_legacy/b" contract >/dev/null 2>&1
+chk "$?" "0" "v0.34 S10: a contract that genuinely PREDATES the format (no stamp file) still locks with node OFF the PATH"
+rm -rf "$_ps_legacy"
+# ...and the honest consequence, asserted rather than implied: a build `new-build` created DOES
+# require node at its lock, because the stamp arms the reader-copy check. A reviewer flagged this
+# prerequisite as real and undisclosed; this is the disclosure, in a test.
+printf -- '# c\n\n## Goal\nA thing.\n' > "$_ps/b/contract.md"
+env PATH=/usr/bin:/bin bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" contract >/dev/null 2>&1
+chk "$?" "1" "v0.34 FIX: a STAMPED build requires node at its lock — the prerequisite is real, and stating it in a test is the disclosure"
+printf -- '---\ncompass-format: v0.30\n---\n# c\n\n## Goal\nA thing.\n\n## INVARIANTs\n- **INV-1:** a thing that must hold.\n\n```compass-reader-copy\nbuild-what: A short plain sentence about what this build changes.\n```\n' > "$_ps/b/contract.md"
 printf '## RECEIPT — build · b · PASS\n- [x] done\n' >> "$_ps/b/receipts.md"
 bash "$PLUGIN_ROOT/scripts/compass.sh" gate "$_ps/b" build >/dev/null 2>&1
 chk "$?" "1" "v0.30 post-ship: redfirst-check STILL bites at the build seam (no evidence = refused)"
@@ -3292,6 +3335,156 @@ chk "$(printf '%s' "$_msout" | grep -c '  ok    outside-in-reachable:')" "1" "v0
 chk "$([ -x "$_MS/figures-check.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: figures-check.sh ships and is executable"
 chk "$([ -x "$_MS/mechanical-suite.sh" ] && echo 1 || echo 0)" "1" "v0.33 S21: mechanical-suite.sh ships and is executable"
 chk "$([ -f "$_MS/mechanical-suite-classes.md" ] && echo 1 || echo 0)" "1" "v0.33 S21: the class registry ships — the promise that the suite grows"
+
+# ── v0.34 — readable-pages-check had ZERO assertions of its own ────────────────────────────────
+# Its v0.32 analogue got four. A reviewer pointed out that the newest check in the suite was the
+# only one nothing tested, and then proved why it mattered: four of its verdict paths passed while
+# broken. Each assertion below plants the defect the path exists to catch.
+_RP="$PLUGIN_ROOT/scripts/readable-pages-check.sh"
+_RPC="$PLUGIN_ROOT/scripts/fixtures/pages"
+_RPR="$PLUGIN_ROOT/../.."   # the repo root; the suite does not run from it
+chk "$([ -f "$_RP" ] && echo 1 || echo 0)" "1" "v0.34: readable-pages-check ships"
+bash "$_RP" --help >/dev/null 2>&1
+chk "$?" "0" "v0.34: --help exits 0 (an earlier draft could not be invoked at all: exit 127)"
+bash "$_RP" "$_RPR" --corpus /nonexistent-corpus-xyz >/dev/null 2>&1
+chk "$?" "3" "v0.34: an ABSENT corpus ERRs (exit 3) — never a green over a population that is not there"
+# a fixture that no longer matches its pin. The pins were written and never verified until a
+# reviewer found that the integrity of a corpus built BECAUSE of a near-miss leak rested on a comment.
+# Build a two-fixture corpus with CORRECT pins, using the same sha rule the check itself applies.
+_mkmini() {
+  local d; d="$(mktemp -d)"; mkdir -p "$d/pages"
+  local mf="$d/pages/MANIFEST"
+  { echo "# minimal corpus for mechanism tests — pins computed here with the check's own rule"
+    echo "# Cap: 12 folders"; } > "$mf"
+  local sl
+  for sl in with-block ctl-escaped-tag; do
+    [ -d "$_RPC/$sl" ] || continue
+    cp -R "$_RPC/$sl" "$d/pages/$sl"
+    local sha role
+    sha="$(cat "$d/pages/$sl"/*.md 2>/dev/null | shasum -a 256 | cut -c1-16)"
+    role="$(LC_ALL=C awk -v s="$sl" '$1==s {print $3}' "$_RPC/MANIFEST" | head -1)"
+    printf '%s %s  %s\n' "$sl" "$sha" "${role:-MEASURED}" >> "$mf"
+  done
+  printf '%s' "$d/pages"
+}
+_MINI="$(_mkmini)"
+_rptmp="$(mktemp -d)"; cp -R "$_RPC" "$_rptmp/pages" 2>/dev/null
+printf '\n' >> "$_rptmp/pages/with-block/contract.md"
+bash "$_RP" "$_RPR" --corpus "$_rptmp/pages" >/dev/null 2>&1
+chk "$?" "3" "v0.34: a fixture that no longer matches its MANIFEST pin ERRs (exit 3) — the pin is checked, not decoration"
+rm -rf "$_rptmp"
+# every control must still fail its own class, counted as CONTROLS not as lines
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1
+chk "$?" "1" "v0.34: --controls-only exits 1 while every control still fails its own class"
+# THE DECISION CONTROL, which no fixture can provide because the string is generated, not authored.
+# This is the code-level red-first for a check that used to read `h1 === want ? 'REPORT' : 'REPORT'`
+# — two identical branches, so it could not fail. A reviewer set the headline to "Ship it maybe?"
+# and the whole suite stayed green.
+# THIS MUTATES SHIPPED SOURCE IN THE LIVE PLUGIN. It is the only assertion that must, because the
+# string is generated rather than authored, so no fixture can carry it. It previously ran with NO
+# trap: polled during a run, the shipped generator read "Ship it maybe?" for 2727 observations, and
+# a Ctrl-C or an overlapping run would have left it that way on disk. The restore is now bound to
+# EXIT, INT and TERM, so an interrupted run puts the file back before the shell dies.
+_rpg="$(mktemp -d)"; _rpgf="$PLUGIN_ROOT/skills/compass-visual/gen.mjs"; cp "$_rpgf" "$_rpg/gen.bak"
+trap 'cp "$_rpg/gen.bak" "$_rpgf" 2>/dev/null; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "s/'Lock this contract?'/'Ship it maybe?'/" "$_rpgf" 2>/dev/null
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
+_rp_rc=$?
+cp "$_rpg/gen.bak" "$_rpgf"; rm -rf "$_rpg" "$_rpgf.tmp" 2>/dev/null; trap - EXIT INT TERM
+chk "$_rp_rc" "1" "v0.34: a page whose decision line disagrees with the contract's declared table FAILS (exit 1) — the check can go red"
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
+chk "$?" "0" "v0.34: ...and the generator restored, it is green again — so the assertion above measured the change, not the environment"
+# ── the collapse-to-zero class, which no assertion covered ──────────────────────────────────────
+# Moving ONE input file away killed the measurer on all 44 renders. Both call sites end `|| true`,
+# so 216 measurements became 0 and the run still reported a clean pass, exit 0, suite 10 of 10.
+_jf="$_ROOT/plugins/compass/scripts/fixtures/copy/jargon.txt"
+_jb="$(mktemp -d)"; cp "$_jf" "$_jb/j.bak"
+trap 'cp "$_jb/j.bak" "$_jf" 2>/dev/null; rm -rf "$_jb" 2>/dev/null' EXIT INT TERM
+rm -f "$_jf"; bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1; _jrc=$?
+cp "$_jb/j.bak" "$_jf"; rm -rf "$_jb"; trap - EXIT INT TERM
+chk "$_jrc" "3" "v0.34: the measurer dying on every page ERRs (exit 3) — a silent collapse to zero is not a clean run"
+bash "$_RP" "$_RPR" --corpus "$_MINI" >/dev/null 2>&1
+chk "$?" "0" "v0.34: ...and its input restored, green again — the assertion above measured the change, not the environment"
+
+# A control counted as "still failing" on ANY non-zero metric, so the LEAKS detector could be
+# deleted outright while the run still said "all 4 control(s) still fail their own class".
+_mf="$_ROOT/plugins/compass/scripts/readable-pages-measure.mjs"
+_mb="$(mktemp -d)"; cp "$_mf" "$_mb/m.bak"
+trap 'cp "$_mb/m.bak" "$_mf" 2>/dev/null; rm -rf "$_mb" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "s/emit('leaks'/emit('leaks_OFF'/" "$_mf" 2>/dev/null
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _crc=$?
+cp "$_mb/m.bak" "$_mf"; rm -rf "$_mb" "$_mf.tmp"; trap - EXIT INT TERM
+chk "$_crc" "3" "v0.34: killing ONE detector makes its own control stop failing (exit 3) — controls are bound to the class they name, not to any metric"
+
+# Deleting one row of the measurer's DECISION map disarmed the tool's only MEASURE, silently.
+_mb2="$(mktemp -d)"; cp "$_mf" "$_mb2/m.bak"
+trap 'cp "$_mb2/m.bak" "$_mf" 2>/dev/null; rm -rf "$_mb2" 2>/dev/null' EXIT INT TERM
+LC_ALL=C sed -i.tmp "/'plan-map': 'Approve this plan?',/d" "$_mf" 2>/dev/null
+# The decision-map guard runs BEFORE any render, so the cheaper mode hits the same code path.
+bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _drc=$?
+cp "$_mb2/m.bak" "$_mf"; rm -rf "$_mb2" "$_mf.tmp"; trap - EXIT INT TERM
+chk "$_drc" "3" "v0.34: a view the decision MEASURE neither covers nor exempts ERRs (exit 3) — the map's coverage is pinned"
+
+# A flag that needs a value used to spin forever: `shift 2` with one arg left cannot shift.
+bash "$_RP" --metric cuts --corpus >/dev/null 2>&1
+chk "$?" "2" "v0.34: a value-taking flag given no value exits 2 rather than hanging forever"
+bash "$_RP" "$_RPR" --metric zzz >/dev/null 2>&1
+chk "$?" "2" "v0.34: an unknown metric name exits 2 — it used to measure nothing and call that a pass"
+
+# ── the declared corpus cap must BIND, and it lives WITH the corpus ─────────────────────────────
+# The cap used to be read from whichever build contract on the machine carried a `Cap:` line first,
+# so an unrelated build could take this check to ERR. It now lives in the corpus's own MANIFEST,
+# beside the folders it bounds, and this assertion mutates it there.
+_capm="$_ROOT/plugins/compass/scripts/fixtures/pages/MANIFEST"
+if [ -f "$_capm" ]; then
+  _capb="$(mktemp -d)"; cp "$_capm" "$_capb/m.bak"
+  trap 'cp "$_capb/m.bak" "$_capm" 2>/dev/null; rm -rf "$_capb" 2>/dev/null' EXIT INT TERM
+  LC_ALL=C sed -i.tmp 's/^# Cap: [0-9]* folders/# Cap: 2 folders/' "$_capm" 2>/dev/null
+  bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1; _caprc=$?
+  cp "$_capb/m.bak" "$_capm"; rm -rf "$_capb" "$_capm.tmp"; trap - EXIT INT TERM
+  chk "$_caprc" "3" "v0.34: a corpus larger than the cap its own MANIFEST declares ERRs (exit 3) — the cap binds"
+  bash "$_RP" "$_RPR" --controls-only >/dev/null 2>&1
+  chk "$?" "1" "v0.34: ...and with the cap restored it is healthy again — the assertion measured the change, not the environment"
+fi
+
+# ── the reader-copy key rule must refuse a TYPO'D KEY and accept ordinary prose ──────────────────
+# Refusing every colon hard-blocked locks on correct writing: `note:`, `warning:`, and any wrapped
+# line starting with a bare URL. The rule asks whether a name is trying to BE one of the eight.
+_rck() { printf '%s\n' "$1" | node -e "
+import('$PLUGIN_ROOT/scripts/reader-copy.mjs').then(async m => {
+  let s=''; for await (const c of process.stdin) s+=c;
+  process.exit(m.checkReaderCopyKeys({}, s.trim()).unknown.length ? 1 : 0);
+});" >/dev/null 2>&1; }
+_rck 'https://example.com/docs is worth reading'
+chk "$?" "0" "v0.34: a wrapped line starting with a bare URL is prose, not a key — it used to block the lock"
+_rck 'note: an ordinary aside'
+chk "$?" "0" "v0.34: an ordinary word before a colon is prose, not a key"
+_rck 'done_means: x'
+chk "$?" "1" "v0.34: ...but a MISSPELLED key is still refused — the rule kept its teeth"
+_rck 'prof: x'
+chk "$?" "1" "v0.34: ...and so is a truncated one"
+
+# ── the 150-char field cap must BIND, including on the first segment ────────────────────────────
+# `kept.length` is 0 on the loop's first pass, so its guard could not fire and the FIRST segment was
+# kept whole however long it was: 865 characters against a declared cap of 150.
+#
+# THE FIXTURE HAD TO BE BUILT TWICE. The first one used long prose with full stops, which the
+# sentence-boundary path shortens correctly — so it read 125 characters WITH the fix and 125 WITHOUT,
+# an assertion that could not fail. The bug lives on the SEMICOLON path, so the value here is one
+# very long clause with no full stop, followed by two short segments. Measured: 156 with the fix,
+# 558 without. Nothing may be LOST either — what the cap moves stays behind the row's own control.
+_capd="$(mktemp -d)"; mkdir -p "$_capd/b"
+_capfirst="$(printf 'a long clause with no full stop in it whatsoever and it keeps going %.0s' 1 2 3 4 5 6 7 8)"
+{ printf '# c\n\n## Goal\nA thing.\n\n## Invariants\n'
+  printf -- '- **INV-LONGONE** — %s; second bit; third bit\n' "$_capfirst"; } > "$_capd/b/contract.md"
+node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_capd/b" brief --out "$_capd/p.html" >/dev/null 2>&1
+_caprow="$(LC_ALL=C tr '\n' ' ' < "$_capd/p.html" | LC_ALL=C sed -e 's/.*INV-LONGONE<\/td><td>//' -e 's/<\/td><\/tr>.*//')"
+_capshown="$(printf '%s' "$_caprow" | LC_ALL=C sed -e 's/<details.*//' -e 's/<[^>]*>//g' | tr -s ' ' | LC_ALL=C awk '{ print length($0) }' | head -1)"
+chk "$([ "${_capshown:-9999}" -lt 300 ] && echo 1 || echo 0)" "1" "v0.34: a long first segment is CAPPED (${_capshown:-?} chars shown) — it used to walk past the cap whole"
+_capfull="$(printf '%s' "$_caprow" | LC_ALL=C sed 's/<[^>]*>//g' | tr -s ' ' | LC_ALL=C grep -c 'third bit' || true)"
+chk "$([ "${_capfull:-0}" -ge 1 ] && echo 1 || echo 0)" "1" "v0.34: ...and what the cap moved is still on the page behind the control — capped, not lost"
+rm -rf "$_capd"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a

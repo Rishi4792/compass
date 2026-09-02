@@ -33,7 +33,33 @@ classes have a judgment core, and a check that fires on correct work gets disabl
 | a stated cap exceeded with no recorded decision | cap-enforce-check | MEASURES | a recorded raise naming who and when is allowed |
 | text present on a page but not reachable by a reader | outside-in-reachable | MEASURES | measured from the rendered page, never from the generator's own account |
 | unshipped commits piling up past the cap | incremental-check | MEASURES | v0.32 ran ~50 on one branch before shipping |
+| a ternary whose two branches are identical | not yet owned | not scanned | v0.34: `h1 === want ? 'REPORT' : 'REPORT'` — the verdict could not depend on the comparison, so the check could not fail. See below |
+| a counter that is incremented, printed, and never tested | not yet owned | not scanned | v0.34: an ERR total that let the whole mechanism be deleted while four suites stayed green |
+| two gates deciding the same question from different signals | not yet owned | not scanned | v0.34: one gate read a text line while every other read a stamp file — the rule was silently off on 14 folders |
 | a gate message naming a finding the gate did not make | not yet owned | not scanned | v0.33.5: `engine-gate` passed with "Skill found at ." because the path variable is empty when nothing is found. See below — this one is SAID, not scanned |
+
+## Three more classes with no owner, all from v0.34, all the same family
+
+**A ternary whose two branches are identical.** `h1 === want ? 'REPORT' : 'REPORT'` shipped inside
+the check built to catch vacuous assertions. `vacuous-assert-check.sh` could not see it **because it
+scans shell suite files and this was a `.mjs`** — the population, again, not the logic. It is
+mechanically detectable in principle (an AST or even a careful regex can spot a conditional whose
+arms are byte-identical) and nobody has written it.
+
+**A counter that is incremented, printed, and never tested.** `err_pairs` was reported on every run
+and read by nothing, so deleting the entire mechanism it counted left four suites green. The
+scannable shape is narrow and real: a shell variable assigned with `$((x+1))` that never appears in
+a `[ ]`, `test`, or `case`. Not written.
+
+**Two gates deciding the same question from different signals.** Every gate on the contract seam
+asks "is this a modern build?"; one asked a text line and the rest asked a stamp file. The one that
+disagreed was silently inert on 14 of 21 folders. Detecting this needs a notion of "the same
+question", which is judgment — but a weaker version is not: two gates on one seam reading two
+different files to make a guard-first decision is a shape worth printing.
+
+**All three were found by independent reviewers running the code, not by any script here.** They are
+recorded rather than fixed because guard-first has not been done on any of them, and this build has
+already demoted ten rules for firing on correct work.
 
 ## The one class recorded here with no owner
 
@@ -61,3 +87,25 @@ unescaped-variable row above, and the reason the table has a "not scanned" colum
 3. Decide MEASURES or REPORTS honestly. If a line scan cannot separate the defect from correct code,
    it REPORTS.
 4. Add the row above, with the real defect it came from.
+
+## `grep -q` at the end of a pipeline, under `pipefail` — a red that means nothing
+**Found:** v0.34 review-build round 2, from a smoke run that went `1023 passed, 1 failed` and could not
+be reproduced in 20 consecutive tries afterwards.
+
+`grep -q` exits the moment it matches and closes the pipe beneath it. The upstream command is then
+killed by SIGPIPE and exits 141, and `set -o pipefail` promotes that to the pipeline's status. The
+assertion goes red while the property it tests is perfectly satisfied — and it does so only under
+load, which is the worst possible timing, because that is when somebody is trying to ship.
+
+**Why it is not owned by a script here:** deciding whether a given pipeline can race needs to know
+whether the upstream writes more than a pipe buffer before the match, which is a runtime property.
+A grep for the shape finds **20 occurrences in `compass.smoke.sh` alone**; one is fixed (v0.30 v11's
+truncation assertion, which flattens to a file first). The rest are latent.
+
+**What to do instead:** write the flattened output to a file and grep the file. It removes the race
+without weakening the assertion by a single character. Do NOT reach for `|| true` — that is the
+vacuous-assertion class wearing a different hat, and it switches the test off for good rather than
+for a moment.
+
+**Related:** a spuriously red gate is one somebody switches off, which is the same reasoning that
+demoted five MEASURE rules to REPORT in this release. A false positive costs more than a miss.

@@ -23,8 +23,10 @@ R="${1:-.}"; shift 2>/dev/null || true
 CEIL=""; RUNS=3; HERE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --ceiling) CEIL="${2:-}"; shift 2 ;;
-    --runs)    RUNS="${2:-3}"; shift 2 ;;
+    --ceiling) [ $# -ge 2 ] || { echo "perf-cap-check: --ceiling needs a value" >&2; exit 2; }
+               CEIL="$2"; shift 2 ;;
+    --runs) [ $# -ge 2 ] || { echo "perf-cap-check: --runs needs a value" >&2; exit 2; }
+            RUNS="$2"; shift 2 ;;
     --here)    HERE=1; shift ;;
     *) shift ;;
   esac

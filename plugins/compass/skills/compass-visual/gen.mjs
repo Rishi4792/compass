@@ -310,6 +310,17 @@ const rc = (key, fallback) => {
   if (out !== fallback) { const up = droppedFor(fallback); if (up) noteDropped(out, up); noteOrigin(out, originOf(fallback)); }
   return out;
 };
+// rcText(key, markupFallback) — for a row whose FALLBACK is generator-built markup.
+//
+// `rc()` returns its value unescaped, which is right when the fallback wins (the generator built
+// that markup deliberately) and WRONG when the reader-copy block wins, because a block is
+// hand-written prose and a stray `<` in it would render as markup. Wiring reader copy into a
+// markup row without this is a leak the author introduced one step earlier and caught here.
+const rcText = (key, markupFallback) => {
+  const v = READER_COPY && READER_COPY[key];
+  const raw = Array.isArray(v) ? v[0] : v;
+  return raw ? txt(rc(key, '')) : markupFallback;
+};
 // rcList('now', fallback) — the block's plain-language list where it speaks, the contract's own
 // scope ladder where it does not. Guard-first, exactly like rc().
 const rcList = (key, fallback) => {
@@ -543,7 +554,28 @@ function bullets(body, re) {
 function invariants() {
   const body = sec('INVARIANT') || sec('Acceptance');
   const rows = [];
-  for (const l of body.split('\n')) {
+  // ── v0.34 S16 — A WRAPPED BULLET LOSES ITS TAIL, AND THIS IS THE SECOND FUNCTION IT BIT ───────
+  // This loop read ONE LINE per invariant. A bullet wrapped onto a second line — which is ordinary
+  // in any hand-written contract — had everything after the wrap silently dropped, and a full stop
+  // was then welded onto the stump. TWO INDEPENDENT COLD READERS found the result before any script
+  // did: eleven of fourteen promises rendered as "carries a.", "at least two readers who.",
+  // "names the." — with NO disclosure control, because nothing had been marked as removed. They
+  // LOOK finished, so a reader never knows to click. That is worse than a visible cut, and it is
+  // invisible to a checker that counts truncation markers, because there is no marker to count.
+  //
+  // The identical defect was found and fixed in `bullets()` for v0.33.1 and never generalised.
+  // Third appearance of "fix the shape, not the instance" in this build.
+  //
+  // Join continuation lines first: a line that is indented, non-empty, and is not itself a new
+  // bullet, heading or table row belongs to the bullet above it.
+  const joined = [];
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    const isNewUnit = /^[-*|]\s/.test(line) || /^#{1,6}\s/.test(line) || line === '';
+    if (!isNewUnit && joined.length && /^\s+\S/.test(raw)) { joined[joined.length - 1] += ' ' + line; continue; }
+    joined.push(raw);
+  }
+  for (const l of joined) {
     // v0.32.0 S19 (§17-6): TWO shapes, not one. A contract may write its invariants as bullets
     // OR as a table, and this parser only knew bullets — so a contract with a 12-row invariant
     // table rendered "this contract pins no INVARIANTs" in the panel while the header, fed from
@@ -1203,12 +1235,27 @@ const indexTouches = () => {
   } catch { return ''; }
 };
 
+// ── v0.34 NOW-3 — THE READER-FACING REGION IS A STAMP, NEVER A DESCRIPTION ────────────────────
+// Three independent reviewers killed the prose definition in one round: its two clauses were
+// DISJOINT on one view, the band it excluded could not be identified in the output at all (every
+// band emits an identical `b-sec`), and under one reading the code check read CLEAN on a brief
+// showing the reader fifteen internal codes — this build's own carried defect, reproduced inside
+// the contract that records it. A region a checker cannot identify is not a definition.
+//
+// So the generator marks it. The set is DERIVED from the choke points rather than hand-named:
+// every reader-facing card comes through band1Decision, band2Facts or bandSection, and the one
+// band addressed to a reviewer rather than a reader opts out explicitly at its call site.
+const RR = ' data-reader-region="1"';
+
 function band1Decision(ask, question, idParts) {
-  return `<div class="b-decide"><div class="ask">${txt(ask)}</div><h1>${txt(question)}</h1>` +
+  return `<div class="b-decide"${RR}><div class="ask">${txt(ask)}</div><h1>${txt(question)}</h1>` +
          `<div class="b-id">${idParts.filter(Boolean).join(' &nbsp;·&nbsp; ')}</div></div>`;
 }
 function band2Facts(label, facts) {
-  const cards = facts.map((f) => `<div class="b-fact"><div class="k">${txt(f.k)}</div><div class="v">${f.v}</div></div>`).join('');
+  // the VALUE carries the stamp, not the card: the key is a label the generator writes, the value
+  // is what a reader actually reads, and a disclosure body nests inside it so a balanced scan from
+  // here reaches the whole unit.
+  const cards = facts.map((f) => `<div class="b-fact"><div class="k">${txt(f.k)}</div><div class="v"${RR}>${f.v}</div></div>`).join('');
   return `<div class="b-label">${txt(label)}</div><div class="b-facts">${cards}</div>`;
 }
 function band3Flow(svg, purpose, legend) {
@@ -1216,12 +1263,12 @@ function band3Flow(svg, purpose, legend) {
          (purpose ? `<div class="b-purpose">${txt(purpose)}</div>` : '') + svg +
          (legend ? `<div class="b-legend">${legend.map((l) => `<span>${txt(l)}</span>`).join('')}</div>` : '') + `</div>`;
 }
-function bandSection(title, purpose, inner, raw = false) {
+function bandSection(title, purpose, inner, raw = false, region = true) {
   // `raw` = the caller has already rendered its own HTML (because it contains provenance markers).
   // Escaping it here printed the markup to the reader on every plan map.
   const T = raw ? title : txt(title);
   const P = raw ? purpose : txt(purpose);
-  return `<div class="b-sec"><h2>${T}</h2>` +
+  return `<div class="b-sec"${region ? RR : ''}><h2>${T}</h2>` +
          (purpose ? `<div class="b-purpose">${P}</div>` : '') + inner + `</div>`;
 }
 // INV-COMPLETE-PLAN: a section with nothing in the source says so, in the reader's
@@ -1359,6 +1406,18 @@ function fieldPartsOwn(v, max = 150) {
     }
     const hidden = parts.length - kept.length;
     const joined = kept.join('; ');
+    // THE CAP DID NOT BIND THE FIRST SEGMENT. `kept.length` is 0 on the first pass, so the loop's
+    // guard cannot fire and the first part is kept WHOLE however long it is. INV-BLOCKCOVERS
+    // rendered 865 characters against a declared cap of 150, beside siblings of 86-173; two more
+    // fields ran 659 and 369. A cap that one value can walk straight past is not a cap. When the
+    // kept text still exceeds the cap it is shortened by the prose rules below — at a sentence end
+    // where there is one — and whatever that drops joins the rest behind the same control, so
+    // nothing is lost, only moved to where the reader can open it.
+    if (joined.length > max && kept.length === 1) {
+      const inner = fieldPartsOwn(kept[0], max);
+      const tail = hidden > 0 ? parts.slice(kept.length).join('; ') : '';
+      return { shown: inner.shown, rest: [inner.rest, tail].filter(Boolean).join('; ') };
+    }
     // P1. THE PATH THE FIRST TWO GOLD FIGURES MISSED. `nCt()` wraps the count in a
     // `<span data-prov="counted">`, so a plain text search of the rendered page returns 0 for this
     // path and reports it as absent rather than as unmeasured.
@@ -1405,6 +1464,19 @@ function splitLead(text, softMax = 92) {
   // was `t.length` — "do not cut at all". Downstream the field was still clipped, and it landed
   // mid-filename ("…CHANGELOG.md,RE") with nothing to say it continued. Fall back to a comma or a
   // slash before giving up, and always hand back the remainder so the caller can mark it.
+  // ── v0.34 S7 — PREFER A UNIT BOUNDARY BEFORE FALLING BACK TO A WORD ───────────────────────────
+  // A cut should land where a unit really ends. Three endings count, and this function can see two
+  // of them: a sentence (handled above) and the close of a bracketed or braced run. The third — a
+  // list item — is handled one level up by the semicolon path, which is the only place list
+  // structure still exists; by the time text reaches here it has been flattened and `</li>` is
+  // indistinguishable from an ordinary space, so pretending to detect it here would be a rule that
+  // cannot fire.
+  //
+  // A closing bracket is a real boundary and the old code walked straight past it: a value ending
+  // `…(measured over 92 pages)` was cut at the last SPACE, landing on "over", when a complete
+  // clause ended four characters later.
+  const close = Math.max(t.lastIndexOf(')', softMax + 20), t.lastIndexOf(']', softMax + 20), t.lastIndexOf('}', softMax + 20));
+  if (close > softMax * 0.5) return { lead: t.slice(0, close + 1).trim(), rest: t.slice(close + 1).trim() };
   const sp = t.lastIndexOf(' ', softMax);
   const cm = Math.max(t.lastIndexOf(',', softMax), t.lastIndexOf(';', softMax));
   const cut = sp > 20 ? sp : (cm > 20 ? cm + 1 : (softMax > 20 ? softMax : t.length));
@@ -1506,12 +1578,17 @@ function briefBody() {
     : bandNA('What\u2019s in scope', 'this contract declares no scope ladder');
 
   const invCard = inv.length
+    // NOT a reader region, and this is the ONE exception. This band exists to show a reviewer the
+    // assertion ids; the ids are its content, so counting them as reader-facing shorthand would
+    // demand deleting the thing the band is for. It opts out here, at its call site, where the
+    // reason is visible — never by a rule in a glossary that no checker can apply.
     ? bandSection('The promises that can\u2019t break', 'Each is asserted by a command, and each has a recipe proving that test goes red when broken.',
         `<table class="t"><tr><th>Invariant</th><th>What it asserts</th></tr>` +
         inv.map((i) => { const _p = fieldParts(i.summary, 150);
           // ONE control for this row, holding everything this row lost: the field's own remainder
           // AND the assert recipe / original wording that `invariants()` split off upstream.
-          return `<tr><td class="k">${txt(i.name)}</td><td>${txt(_p.shown)}${disclose([_p.rest, i.dropped].filter(Boolean).join('\n\n'))}</td></tr>`; }).join('') + `</table>`)
+          return `<tr><td class="k">${txt(i.name)}</td><td>${txt(_p.shown)}${disclose([_p.rest, i.dropped].filter(Boolean).join('\n\n'))}</td></tr>`; }).join('') + `</table>`,
+        false, /* region = */ false)
     : (ARTEFACT_DATA && Number.isFinite(ARTEFACT_DATA['invariants.total']) && ARTEFACT_DATA['invariants.total'] > 0
         // v0.32.0 S19b: "pins no INVARIANTs" is a CLAIM, and it was false on any contract whose
         // invariant shape this parser does not know — it printed it beside a header stating a
@@ -1820,16 +1897,32 @@ function planMap() {
     // you need to decide" — on the page asking "Approve this plan?" — rendered as a blank box, and
     // the gate could not see it because an empty string trips no rule. Widen the chain, then say
     // plainly that the plan does not state it.
-    { k: 'What changes', v: fieldDisclosed(firstNonEmpty([
+    // ── v0.34 NOW-1 — THE PLAN MAP GETS A READER-COPY PATH ──────────────────────────────────
+    // This view had ZERO `rc()` call sites. Reader copy could not reach one word of it, so the
+    // whole page was the spec re-arranged, and "require the block and pages become readable" was
+    // false here by construction. Three of these four rows map onto keys the format ALREADY has,
+    // and only `rollback` is new — a vocabulary of seven grows to eight rather than sprouting six
+    // invented names nobody declared.
+    //
+    // The fallback is the previous behaviour, verbatim. A build with no block renders exactly what
+    // it rendered before, which is what keeps 163 existing builds unchanged.
+    { k: 'What changes', v: fieldDisclosed(rc('build-what', firstNonEmpty([
         firstPara(psecGet('The approach')), firstPara(psecGet('Approach')),
         firstPara(sec('Goal & scope')), firstPara(sec('Goal')), hdr('Goal'),
         firstPara(psecGet('What changes')), firstPara(psecGet('Files to change')),
-        steps.length ? `${nC(steps.length)} steps, beginning: ${txt(steps[0].title)}` : '',
+        // PLAIN TEXT on purpose. Every other candidate in this chain is plain, and the whole
+        // chain is escaped by fieldDisclosed below — so a candidate that builds markup has its
+        // markup printed to the reader as text. That is the defect, and it shipped on a real page
+        // reading `<span data-prov="counted">34</span> steps, beginning: ...`.
+        // The number here is marked QUOTED rather than COUNTED as a result. That is a real loss of
+        // provenance and it is the honest trade: a counted marker cannot survive an escaping path,
+        // and printing the marker to the reader is worse than a weaker label.
+        steps.length ? `${steps.length} steps, beginning: ${steps[0].title}` : '',
         'not stated in this plan — read plan.md before approving',
-      ]), 150) },
-    { k: "How it's proven", v: `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}` },
-    { k: 'What it touches', v: fieldDisclosed(firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.']), 150) },
-    { k: 'Rollback', v: fieldDisclosed(firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.']), 150) },
+      ])), 150) },
+    { k: "How it's proven", v: rcText('proof', `${nF('invariants.total', invariants().length)} ${txt("invariants, each a command; every step carries its VERIFY.")}`) },
+    { k: 'What it touches', v: fieldDisclosed(rc('blast-radius', firstNonEmpty([hdr('touches'), indexTouches(), 'declared above.'])), 150) },
+    { k: 'Rollback', v: fieldDisclosed(rc('rollback', firstNonEmpty([firstBullet(psecGet('Going live')), firstPara(sec('Rollback')), 'rollback declared in the contract.'])), 150) },
   ]);
 
   const b3 = band3Flow(logicBlockFor('plan'),
@@ -2460,10 +2553,10 @@ function releaseCard() {
   <div class="card vr-hero"><div class="kicker">Shipped</div>
     <h1>${txt(slug)}</h1>
     <div class="big">v${txt(ver)}<span class="badge">SHIPPED</span></div>
-    ${goal ? (() => { const _p = fieldParts(String(rc('build-what', goal)), 400); return `<p class="lede">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })() : ''}
+    ${goal ? (() => { const _p = fieldParts(String(rc('build-what', goal)), 400); return `<p class="lede"${RR}>${txt(_p.shown)}</p>${disclose(_p.rest)}`; })() : ''}
   </div>
-  ${items ? `<div class="card"><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
-  <div class="card"><div class="kicker">Proof &amp; rollback</div>
+  ${items ? `<div class="card"${RR}><div class="kicker">What changed — ${nC(nowItems.length)} in this release</div><ul>${items}</ul></div>` : ''}
+  <div class="card"${RR}><div class="kicker">Proof &amp; rollback</div>
     <div class="tl">${(() => {
       // A build that shipped with known open findings MUST say so on its own release page.
       // Derived from the receipt, not written by hand, because "say so" is exactly the thing a

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # shell-trap-check — the five shell mistakes v0.32's reviewers found BY HAND. (v0.33)
 #
 # Every one of these cost an expensive adversarial reviewer's attention in v0.32 and none of them

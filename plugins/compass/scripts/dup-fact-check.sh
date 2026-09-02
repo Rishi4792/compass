@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# suite-member: mechanical-suite — this line is how the suite proves its child list still NAMES this
+# check. Removing the check from CHILDREN while this line stands makes the suite ERR. Delete both
+# together and that is a deliberate removal, not an accident nobody noticed.
 # dup-fact-check — one fact, one source. (v0.33, INV-NO-DUPLICATED-FACT)
 #
 # WHAT COUNTS AS A DUPLICATED FACT is enumerated by the contract, not decided here: a version
