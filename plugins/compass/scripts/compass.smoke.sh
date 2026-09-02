@@ -3485,6 +3485,21 @@ _capfull="$(printf '%s' "$_caprow" | LC_ALL=C sed 's/<[^>]*>//g' | tr -s ' ' | L
 chk "$([ "${_capfull:-0}" -ge 1 ] && echo 1 || echo 0)" "1" "v0.34: ...and what the cap moved is still on the page behind the control — capped, not lost"
 rm -rf "$_capd"
 
+# ── a gold block belongs to its build, and a moved POPULATION is one cause not N symptoms ───────
+# gold-diff-check took whichever contract it found first, so it re-checked a SHIPPED build's
+# historical figures for ever. Those figures count over every build folder on the machine, so the
+# NEXT build starting moved them: 17 of 33 went red on work that was correct when measured.
+_gdd="$(mktemp -d)"; mkdir -p "$_gdd/r/plugins/compass/scripts" "$_gdd/r/.claude/builds/live"
+cp "$PLUGIN_ROOT/scripts/gold-diff-check.sh" "$_gdd/r/plugins/compass/scripts/" 2>/dev/null
+cp "$PLUGIN_ROOT/scripts/reconcile-pages.mjs" "$_gdd/r/plugins/compass/scripts/" 2>/dev/null
+printf 'live\n' > "$_gdd/r/.claude/builds/CURRENT"
+printf '# no gold block here\n' > "$_gdd/r/.claude/builds/live/contract.md"
+( cd "$_gdd/r" && bash plugins/compass/scripts/gold-diff-check.sh . >/dev/null 2>&1 )
+chk "$?" "0" "v0.34.1: a current build with no gold block N/A-passes — an older build's figures are not re-checked"
+_gdout="$( cd "$_gdd/r" && bash plugins/compass/scripts/gold-diff-check.sh . 2>&1 || true )"
+chk "$(printf '%s' "$_gdout" | grep -c 'N/A')" "1" "v0.34.1: ...and it SAYS so, rather than passing silently"
+rm -rf "$_gdd"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a

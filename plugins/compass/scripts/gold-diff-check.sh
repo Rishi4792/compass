@@ -40,10 +40,20 @@ PRODUCER="plugins/compass/scripts/reconcile-pages.mjs"
 
 # Find the contract that publishes a gold block, unless one was named.
 if [ -z "$CONTRACT" ]; then
-  for c in .claude/builds/*/contract.md; do
-    [ -f "$c" ] || continue
-    LC_ALL=C grep -qE '^[A-Za-z_][A-Za-z0-9_.-]* +=  *[^ ]' "$c" && { CONTRACT="$c"; break; }
-  done
+  # A GOLD BLOCK BELONGS TO ITS BUILD. This took whichever contract it found FIRST, which meant it
+  # went on re-checking a SHIPPED build's historical figures for ever — and those figures are counted
+  # over every build folder on the machine, so the next build starting moved them and 17 of 33 went
+  # red on work that was correct when it was measured. The CURRENT build is checked; an older one's
+  # gold is a record of what was true then, not a claim about today.
+  _cur=""; [ -f .claude/builds/CURRENT ] && _cur="$(cat .claude/builds/CURRENT 2>/dev/null || true)"
+  if [ -n "$_cur" ] && [ -f ".claude/builds/$_cur/contract.md" ] \
+     && LC_ALL=C grep -qE '^[A-Za-z_][A-Za-z0-9_.-]* +=  *[^ ]' ".claude/builds/$_cur/contract.md"; then
+    CONTRACT=".claude/builds/$_cur/contract.md"
+  fi
+fi
+if [ -z "$CONTRACT" ] && [ -n "${_cur:-}" ] && [ -f ".claude/builds/$_cur/contract.md" ]; then
+  echo "gold-diff-check: N/A — the current build ($_cur) publishes no gold block. An older build's figures are a record of what was true when they were measured, not a claim about today, so they are not re-checked here."
+  exit 0
 fi
 # GUARD-FIRST, and this one shipped broken for exactly one commit. `.claude/builds/` is GITIGNORED,
 # so in a fresh clone — which is every consumer project, and the population the perf ceiling is
@@ -93,7 +103,25 @@ done < "$TMP/pub.tsv"
 printf '─────────────────────────────────────────────────────────────────────\n'
 
 if [ "$bad" -gt 0 ]; then
-  echo "gold-diff-check: $bad of $_pub published figure(s) do not match the producer ($absent no longer emitted)."
+  # NAME THE CAUSE, NOT THE SYMPTOMS. These figures are counted over every build folder on the
+  # machine, so CREATING A NEW BUILD moves the population and every dependent figure with it —
+  # 17 of 33 went red the moment the next build rendered its first page. Listing 17 mismatches
+  # invites re-deriving 17 numbers when only ONE thing happened. If the population figure itself
+  # moved, say that first and say what it means, because the honest answer is usually
+  # "this gold was pinned to a set that no longer exists", not "the producer is broken".
+  _pop_pub="$(LC_ALL=C awk '$1=="pages.total"{print $2}' "$TMP/pub.tsv" | head -1)"
+  _pop_live="$(LC_ALL=C awk '$1=="pages.total"{print $2}' "$TMP/live.tsv" | head -1)"
+  if [ -n "$_pop_pub" ] && [ -n "$_pop_live" ] && [ "$_pop_pub" != "$_pop_live" ]; then
+    echo "gold-diff-check: THE POPULATION MOVED — this gold was measured over ${_pop_pub} page(s) and there are now ${_pop_live}."
+    echo "  $bad of $_pub published figure(s) disagree, and most of them follow from that one change"
+    echo "  rather than from $bad separate errors. These counts are taken over EVERY build folder on"
+    echo "  this machine, so starting a new build moves them. Re-derive the block against the current"
+    echo "  set, or scope the producer to a fixed corpus — do not patch the figures one at a time."
+    echo "gold-diff-check: ERR (population ${_pop_pub} -> ${_pop_live}; $bad of $_pub figures moved with it)"
+    exit 1
+  fi
+  echo "gold-diff-check: $bad of $_pub published figure(s) do not match the producer ($absent no longer emitted),"
+  echo "  and the population is UNCHANGED at ${_pop_live:-?} page(s) — so these are real disagreements, not drift."
   echo "  A figure the producer cannot reproduce is not a figure. Re-derive section 2, or fix the producer."
   exit 1
 fi
