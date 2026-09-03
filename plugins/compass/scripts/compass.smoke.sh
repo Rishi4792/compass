@@ -264,6 +264,55 @@ chk "$(_sgfx human --orphan)"   "{}" "v0.35: a build with no owner returns {}"
 chk "$(printf '{"session_id":"x","stop_hook_active":true}' | bash "$SH" stop-guard 2>/dev/null)" "{}" "v0.35: stop_hook_active short-circuits — the platform's anti-deadlock escape still works"
 chk "$(grep -c 'is_mid_build "\$sr/\$slug" || continue' "$SH")" "0" "v0.35: the gated refusal is GONE from stop-guard, not merely bypassed"
 
+# ── v0.35 P5 — the walk reaches EVERY build, and acts at most once ───────────────────────────────
+# The autonomous branch used to end `printf '{}'; return 0`, and that return sat OUTSIDE the
+# ownership test above it. So the first INDEX row with `.auto-mode` and a non-terminal status ended
+# the walk whether or not this session owned it. Measured on this repository by tracing the real
+# function: rows 1-26 of 34 were read and the rest were never examined. Row 34 is this build.
+_sgwalk() {   # <rows> <owners: one|many> → "<spawns for the LAST build> <total spawns>"
+  local rows="${1:-4}" owners="${2:-one}"
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks; : > .claude/builds/INDEX
+    _mk() { local sl="$1" ow="$2"
+      mkdir -p ".claude/builds/$sl"
+      printf '%s · fixture · status=build · facets=library · touches=x\n' "$sl" >> .claude/builds/INDEX
+      printf '# %s\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** next\n' "$sl" > ".claude/builds/$sl/progress.md"
+      printf '## RECEIPT — contract · %s · PASS\nok\n\n## RECEIPT — build · %s · IN-PROGRESS step 2/5\nok\n' "$sl" "$sl" > ".claude/builds/$sl/receipts.md"
+      printf -- '- [x] S1\n- [ ] S2\n' > ".claude/builds/$sl/plan.md"
+      printf 'session=%s\n' "$ow" > ".claude/builds/.locks/$sl.owner"
+      : > ".claude/builds/$sl/.auto-mode"
+      printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > ".claude/builds/$sl/budget.env"; }
+    local i=1 ow
+    while [ "$i" -lt "$rows" ]; do
+      if [ "$owners" = "many" ]; then ow="$sid"; else ow="somebody-else"; fi
+      _mk "$(printf 'other%02d' "$i")" "$ow"; i=$((i+1))
+    done
+    _mk "mine" "$sid"
+    printf '{"session_id":"%s","stop_hook_active":false}' "$sid" \
+      | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1
+    local n t
+    n="$(grep -h '|spawn|' .claude/builds/mine/session-chain.log 2>/dev/null | grep -c . || true)"
+    t="$(cat .claude/builds/*/session-chain.log 2>/dev/null | grep -c '|spawn|' || true)"
+    printf '%s %s' "${n:-0}" "${t:-0}" )
+  rm -rf "$r"
+}
+chk "$(_sgwalk 1)"  "1 1" "v0.35 P5: one row, owned → the hook acts (the control: it acted before this change too)"
+chk "$(_sgwalk 2)"  "1 1" "v0.35 P5: an owned build BEHIND one foreign autonomous build is reached — before this change the walk returned at row 1"
+chk "$(_sgwalk 10)" "1 1" "v0.35 P5: ...and behind nine of them"
+chk "$(_sgwalk 30)" "1 1" "v0.35 P5: ...and behind twenty-nine, which is the shape of a real INDEX that only grows"
+chk "$(_sgwalk 3 many)" "0 1" "v0.35 P5: three OWNED autonomous builds produce exactly ONE spawn — walking every row must not fan out one attempt per row"
+# The structural half: the autonomous branch must not RETURN. Behaviour is asserted above; this
+# catches a future edit that reinstates the early exit while the fixtures still happen to pass.
+_p5br="$(awk '/^cmd_stop_guard\(\) \{/{g=1} g && /sr\/\$slug\/\.auto-mode/{f=1} f{print} f&&/^    fi$/{exit}' "$SH")"
+chk "$([ -n "$_p5br" ] && echo 1 || echo 0)" "1" "v0.35 P5: the autonomous branch is findable (no vacuous match)"
+# Comments are stripped first. The branch EXPLAINS why the return is gone, so a naive grep counts
+# the explanation and reports the defect it documents — the same trap as a note that quotes a banned
+# sentence. Only executable lines are counted.
+_p5code="$(printf '%s' "$_p5br" | grep -vE '^[[:space:]]*#' || true)"
+chk "$(printf '%s' "$_p5code" | grep -c 'return')" "0" "v0.35 P5: ...and no executable line in it returns — the walk continues to the next INDEX row instead of ending there"
+chk "$(printf '%s' "$_p5code" | grep -c 'continue')" "1" "v0.35 P5: ...it continues, exactly once"
+
 # ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
 # Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a
 # user reads could not name a successor at all — it said only what would NOT happen. P4 needs one

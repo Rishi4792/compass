@@ -2512,7 +2512,8 @@ cmd_stop_guard() {
   fi
   [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
   local ld="$sr/.locks"
-  local line slug status stage next owner fp prev
+  local line slug status stage next owner
+  local acted=0            # v0.35 P5: at most one autonomous action per turn, however many rows match
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
@@ -2531,11 +2532,36 @@ cmd_stop_guard() {
     # `.auto-mode` is set. Emits no stray stdout (only the final {}). Gated mode (no marker) falls
     # through UNCHANGED below — INV-BC.
     if [ -f "$sr/$slug/.auto-mode" ]; then
-      owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
-      if [ -n "$owner" ] && [ "$owner" = "$sid" ] && is_stage_continuable "$sr/$slug"; then
-        _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
+      # ── v0.35 P5: THE WALK REACHES EVERY BUILD ──────────────────────────────────────────────────
+      # This branch used to end `printf '{}'; return 0` — and that `return` was OUTSIDE the ownership
+      # test directly above it. So the first row in the INDEX carrying `.auto-mode` and a
+      # non-terminal status ended the walk, whether or not this session owned it, and every build
+      # below it was invisible.
+      #
+      # Measured on this repository by adding one trace line to a copy of this function and running
+      # it against the real INDEX: the walk read rows 1 through 26 of 34 and returned. Row 26 is a
+      # build parked at a budget gate — `gate-wait-*` is deliberately NOT terminal, so it survives
+      # the status filter, reaches this branch, and stops everything behind it. Rows 27 to 34 were
+      # never examined, and row 34 is the build that wrote this comment. The Stop hook had never
+      # once looked at it.
+      #
+      # (An earlier review round recorded "the walk stops at row 8". That was wrong, and the trace
+      # showed why: row 8 does carry `.auto-mode`, but its status is SHIPPED, so the filter skips it
+      # several lines before this branch is reached. The marker alone stops nothing; a non-terminal
+      # status plus the marker does.)
+      #
+      # `continue`, not `return`. And AT MOST ONE spawn per turn: walking every row means every
+      # owned, continuable, autonomous build would otherwise get a spawn attempt in the same turn,
+      # which is a fan-out nobody asked for. The first one that qualifies is acted on; the rest are
+      # still WALKED — that matters for what P6 adds at this seam — but not acted on twice.
+      if [ "$acted" = "0" ]; then
+        owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+        if [ -n "$owner" ] && [ "$owner" = "$sid" ] && is_stage_continuable "$sr/$slug"; then
+          _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
+          acted=1
+        fi
       fi
-      printf '{}\n'; return 0
+      continue
     fi
     # ── HUMAN-GATED: never refuses. This is v0.35's off switch, and it is the whole reason the
     # mode question is asked with buttons on every build. ──────────────────────────────────────
