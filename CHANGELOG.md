@@ -3,6 +3,27 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — choosing Autonomous now actually arms it
+
+`compass.sh auto-init` refuses to arm a build that has no declared budget. That refusal is the only
+thing standing between "the user chose Autonomous" and a loop with no ceiling. It is also trivially
+bypassed, because arming is just a marker file: write it by hand and the budget check never runs.
+
+**Nothing detected that, and this project's own build was in exactly that state** while it was
+building the mechanism that depends on it. The consequence is not cosmetic: every bound reads the
+budget file, so a hand-armed build has no time limit, no session limit and no refusal limit — and
+the new end-of-turn check reads the budget before it refuses, so it stayed **silently inert**. You
+chose Autonomous and got nothing, with no error anywhere.
+
+`armed-check` grades the build you are working on: if it answered Autonomous, it must carry both the
+marker and a real budget. Every other build is **named but never failed** — a finished build records
+what was true when it shipped, and re-grading history is how a check starts refusing things nobody
+can fix. One build is named that way today.
+
+The check's first run reported "no build in flight" for a live build, because the status line reads
+`build — … P1 CLOSED …` and a search for "closed" anywhere in it matched. A status is what it starts
+with; everything after the dash is prose about the build, not its state.
+
 ## [Unreleased] — a stale fingerprint had been hiding real failures since v0.32
 
 Compass pins the fingerprints of the two programs that produce and audit every number on its pages,

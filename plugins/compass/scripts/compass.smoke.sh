@@ -3973,6 +3973,42 @@ rm -rf "$_lk"
 bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_ROOT" >/dev/null 2>&1
 chk "$?" "0" "v0.34.1: leak-scan-check ships and the shipped tree is clean"
 chk "$(grep -c 'leak-scan-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.34.1: ...and the suite NAMES it, so the class has an owner"
+
+# ── v0.35 item 7 — INV-ARMED-THROUGH-AUTO-INIT ───────────────────────────────────────────────────
+# `auto-init` refuses to arm a build with no declared budget, and that refusal is the only thing
+# between "the user chose Autonomous" and an unbounded loop. It is also trivially bypassed, because
+# arming is a marker file: write `.auto-mode` by hand and the budget guard never runs. Nothing
+# detected that — and this build's own folder was in exactly that state while it built the mechanism
+# that depends on it. Every bound reads budget.env, so a hand-armed build has no wall ceiling, no
+# session ceiling and no refusal ceiling, and the Stop hook stays silently inert on it. The user
+# chose Autonomous and got nothing, with no error anywhere.
+_armfx() {   # <case: armed|marker-only|no-budget-key|not-auto> → "<exit> <verdict>"
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p plugins/compass .claude/builds/b
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > .claude/builds/b/receipts.md
+    case "$c" in
+      armed)         : > .claude/builds/b/.auto-mode
+                     printf 'ceiling_wall=3600\nceiling_sessions=6\nceiling_stages=40\n' > .claude/builds/b/budget.env ;;
+      marker-only)   : > .claude/builds/b/.auto-mode ;;
+      no-budget-key) : > .claude/builds/b/.auto-mode; printf 'spent_wall=0\n' > .claude/builds/b/budget.env ;;
+      not-auto)      printf '## RECEIPT — contract · b · PASS\n- [x] mode choice: asked=yes · answer=Human-gated · source=question\n' > .claude/builds/b/receipts.md ;;
+    esac
+    bash "$PLUGIN_ROOT/scripts/armed-check.sh" . >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_armfx armed)"         "0" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a build that answered Autonomous WITH a declared budget passes"
+chk "$(_armfx marker-only)"   "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: the marker written by hand, with NO budget, FAILS — the state this build's own folder was in while it built the mechanism that depends on it"
+chk "$(_armfx no-budget-key)" "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a budget.env with no declared ceiling is not a budget"
+chk "$(_armfx not-auto)"      "0" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a Human-gated build has nothing to arm, and says so rather than passing silently"
+chk "$(grep -c 'armed-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: ...and the suite NAMES the check, so the class has an owner"
+# auto-init itself must keep refusing — the check exists because this guard can be bypassed, not
+# because it is absent, and a bypassable guard that stopped guarding would be worse than both.
+_armai() { local r; r="$(mktemp -d)"; mkdir -p "$r/b"
+  bash "$PLUGIN_ROOT/scripts/compass.sh" auto-init "$r/b" >/dev/null 2>&1; local rc=$?
+  local m; m=$([ -f "$r/b/.auto-mode" ] && echo marker || echo none); rm -rf "$r"; printf '%s %s' "$rc" "$m"; }
+chk "$(_armai)" "1 none" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: auto-init REFUSES a build with no budget, and writes no marker when it refuses"
 # F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
 # and docs/ are public too, and the first version of this check reported them clean while a reviewer's
 # planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the
