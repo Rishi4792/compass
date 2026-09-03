@@ -1136,100 +1136,141 @@ cmd_reconcile() { # <actual> <gold> <tol>
 
 cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   local first="${1:-}"
-  # Pattern with NO embedded ASCII single-quote (a literal ' in the _SECRET class used to terminate
-  # the xargs sh -c string — a pre-existing latent bug; the value side now just excludes whitespace).
+  # ── TWO CLASSES OF PATTERN, because one class was the wrong shape for both jobs ────────────────
+  # v0.34.3, round 2. The single-pattern design had the allow-list apply to EVERYTHING, and the
+  # filter drops a whole MATCH. `_SECRET=<value>` and a postgres URL both have value fields wide
+  # enough to swallow a placeholder INSIDE one match, so a key written `API_<S>=hunter2/Users/alice/`
+  # was caught before v0.34.1 and still passed after the round-1 fix. The `<S>` stands for the word
+  # SECRET: spelling it here would make this comment a finding, which is the check working. Splitting the patterns fixes that
+  # by construction rather than by another exception:
   #
-  # v0.34.1 — the two classes this scanner could not see, and they were the only classes that have
-  # ever actually leaked from this repository. An absolute home path shipped inside this PUBLIC
-  # plugin in four fixture files across FIFTEEN tagged releases, v0.28.0 through v0.33.5, and this
-  # scanner returned PASS on the very commit that published it. (The first version of this comment
-  # said "six releases". That was counted from minor version numbers instead of tags; the corrected
-  # figure is 15, produced by walking every tag and counting files.)
-  #
-  #   · an absolute home path — `/Users/<name>` and the Linux `/home/<name>` form. NO trailing slash
-  #     is required: a hook payload writes `{"cwd": "/Users/<name>"}` with none, which is exactly the
-  #     shape that leaked. The match must begin at a path boundary, so `https://host/home/x/` — a URL
-  #     with a `/home/` segment — is not a finding.
-  #   · a session UUID (8-4-4-4-12), either case. The lowercase-only form missed the uppercase
-  #     spelling of the same id.
-  #   · a Claude session token (`session_<token>`), the other identifier a transcript path carries.
-  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+|session_[A-Za-z0-9]{20,}|(^|[^A-Za-z0-9._~-])/(Users|home)/[A-Za-z0-9._-]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'
-  # AUTHORED PLACEHOLDERS ARE NOT LEAKS. A fixture MUST be able to show the shape of the thing it
-  # guards against, so the documented stand-ins are allowed BY NAME. The list is deliberately the
-  # names people actually reach for, because a scanner that refuses an obvious placeholder is one
-  # somebody switches off — and it is PRINTED in the refusal (see _ss_hit) so a contributor who hits
-  # it is told the route out instead of just being stopped. A name that merely BEGINS with an allowed
-  # name is NOT allowed — the placeholder `alice` passes, a real person called `alicent` does not,
-  # because each name must be followed by a path separator or the end of the match.
-  # (This comment names those two people WITHOUT writing either as a home path. The first draft wrote
-  # both out in full, and the widened check caught its own author's example on the next run.)
-  local allow='/(Users|home)/(alice|bob|jane|jdoe|USER|user|username|testuser|test|you|example|me|dev|foo|runner|ubuntu|root|Shared)([^A-Za-z0-9._-]|$)|9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx|f81d4fae-7dec-11d0-a765-00a0c91e6bf6|123e4567-e89b-12d3-a456-426614174000'
-  local found=""
-  _ss_hit() { [ -z "$1" ] || die "possible secret — remove it / read from env instead:
-$1
-  If this is a FIXTURE that has to show the shape it guards against, use an authored placeholder:
-  a home path under alice · bob · jane · jdoe · user · testuser · test · example · you · Shared,
-  or the placeholder id 9999dead-0000-0000-0000-000000000000. Those are allowed by name."; }
-  # ── ONE filter, used by every entry point ──────────────────────────────────────────────────────
-  # v0.34.2, found by two independent reviewers in the same round. The first version filtered with
-  # `grep -Ev "$allow"`, which drops the WHOLE OUTPUT LINE when any part of it looks allowed. Two
-  # consequences, both proven by construction:
-  #   · a real AWS key sitting on the same line as `/Users/alice/` was CAUGHT before v0.34.1 and
-  #     passed after it — so the change WEAKENED the six patterns it claimed to leave untouched;
-  #   · the allow-list was tested against `path:lineno:content`, so a checkout under `/Users/alice/`
-  #     allowed every line in the repository and the scanner failed green.
-  # This filter extracts the matches from the CONTENT only and drops the allowed ones individually,
-  # so a placeholder can mask nothing but itself, and the path can never be read as content.
-  # Cost is one subshell per CANDIDATE line — the recursive grep pre-filters, so a clean tree runs
-  # the loop body zero times.
+  #   HARD — a value that is a secret whatever surrounds it. The placeholder list NEVER applies.
+  #          Only an obviously-unset value (changeme, xxxxxxxx, ${...}, <...>) is excused.
+  #   SOFT — a shape that is a leak only when the value is real. A fixture has to be able to show
+  #          these, so the placeholder names apply HERE and nowhere else.
+  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+)'
+  # A home path needs no trailing slash on macOS — `{"cwd": "/Users/<name>"}` is the shape that
+  # actually leaked. The Linux form DOES require a second segment, because `/home/<one-word>` is far
+  # more often a URL route (`router.get('/home/dashboard')`, `[Home](/home/index)`) than a person.
+  # The two forms need DIFFERENT boundaries, and one shared boundary lost real leaks. `/Users/`
+  # takes none: a compiler flag writes `-I/Users/<name>/inc`, an ellipsis writes `.../Users/<name>`,
+  # and JSON escapes it `\/Users\/<name>` — a leading-boundary test threw all three away, and the
+  # last of those is the exact file class that leaked here. `/home/` keeps its boundary, because a
+  # URL really does carry `/home/` as a path segment, and additionally requires a SECOND segment,
+  # because `/home/<one-word>` is far more often a route than a person.
+  local soft='(/Users\\?/[A-Za-z0-9._-]+|(^|[^A-Za-z0-9._~-])/home\\?/[A-Za-z0-9._-]+\\?/|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|session_[A-Za-z0-9]{20,})'
+  # Placeholder NAMES, for soft matches only. Two kinds, and both are enumerable, which is why this
+  # works where a list of personal names never could: authored stand-ins, and the service accounts
+  # that containers and CI runners really use. A name that merely BEGINS with one of these is not
+  # allowed, because each must be followed by a separator or the end of the match.
+  local ph_auth='alice|bob|jane|jdoe|john|USER|USERNAME|user|username|testuser|test|example|you|me'
+  local ph_svc='node|vscode|runner|circleci|jenkins|travis|buildkite|linuxbrew|appuser|ubuntu|ec2-user|gitpod|coder|devcontainer|app|web|git|docker|root|admin|Shared|nobody'
+  local ph_uuid='9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx|f81d4fae-7dec-11d0-a765-00a0c91e6bf6|123e4567-e89b-12d3-a456-426614174000|550e8400-e29b-41d4-a716-446655440000'
+  local allow="/(Users|home)\\\\?/(${ph_auth}|${ph_svc})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
+  # Placeholder VALUES, for hard matches only: a key that is visibly unset.
+  local hardallow='(changeme|CHANGEME|xxxxxxxx|XXXXXXXX|placeholder|PLACEHOLDER|your[-_]|YOUR[-_]|<[^>]*>|\$\{|\$\(|REPLACE|redacted|REDACTED|dummy|DUMMY|example|EXAMPLE|\*\*\*)'
+  # The escape hatch, in the shape this repo already uses for `unwired-allow.txt`: a declared,
+  # reasoned exception rather than a silent one. Put it in a comment on the offending line:
+  #     foo = "…"   # compass-allow-secret: this is the vendor's published sample key
+  # The reason is REQUIRED, and every use is counted in the summary so exceptions cannot quietly
+  # accumulate. Round 2 found three sibling checks in this suite ship an escape hatch and this one
+  # did not, so a contributor who hit a false positive had a refusal and no route.
+  local pragma='compass-allow-secret:[[:space:]]*[^[:space:]]'
+  local found="" nph=0
+  _ss_hit() {
+    # Display is truncated at 300 columns per line; MATCHING never is. A single `-a` hit inside a
+    # media file would otherwise print a screenful of bytes and bury the finding above it.
+    [ -z "$1" ] || die "possible secret — remove it / read from env instead:
+$(printf '%s' "$1" | cut -c1-300)
+  A FIXTURE that has to show one of these shapes may use an authored placeholder name —
+  /Users/{${ph_auth}}/ — or a placeholder id such as 9999dead-0000-0000-0000-000000000000.
+  Service accounts (${ph_svc}) are allowed too.
+  Anything else that is genuinely not a secret: add a reason on the line, e.g.
+      # compass-allow-secret: vendor's published sample key
+  The reason is required and every use is counted."
+  }
+  # ONE filter, used by every entry point. Matches come from the CONTENT only — never the path, and
+  # never the whole line — so a placeholder can mask nothing but itself.
   _ss_keep() {
     local ln body
     while IFS= read -r ln; do
       body="$(printf '%s' "$ln" | sed -E 's|^[^:]*:[0-9]+:||' 2>/dev/null || printf '%s' "$ln")"
-      if printf '%s' "$body" | grep -oE "$pat" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+      case "$body" in *compass-allow-secret:*)
+        if printf '%s' "$body" | grep -qE "$pragma"; then nph=$((nph+1)); continue; fi ;;
+      esac
+      if printf '%s' "$body" | grep -oE "$hard" 2>/dev/null | grep -qEv "$hardallow"; then printf '%s\n' "$ln"; continue; fi
+      if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
     done
     return 0
   }
+  local pat="($hard|$soft)"          # one expression for the CANDIDATE sweep; _ss_keep decides
   if [ "$first" = "--commits" ]; then
     local range="${2:-}"; [ -n "$range" ] || die "usage: compass.sh secret-scan --commits <range>"
     git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --commits: not a git repo."
     git rev-list --quiet "$range" -- >/dev/null 2>&1 || die "secret-scan --commits: bad range '$range'."
-    found="$(git log -p "$range" -- 2>/dev/null | grep -E '^\+' | grep -EnI "$pat" | _ss_keep || true)"
-    _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits."; return 0
+    local nc; nc="$(git rev-list --count "$range" 2>/dev/null || echo 0)"
+    # ATTRIBUTE each added line to its file. The first version numbered lines with `grep -n` over
+    # the whole `git log -p` stream, so it reported an offset into a diff and no file name at all —
+    # a finding you could not go and look at. awk carries the `+++ b/<path>` header forward instead.
+    found="$(git log -p -U0 "$range" -- 2>/dev/null | awk '
+        /^\+\+\+ b\// { f=substr($0,7); next }
+        /^@@/         { if (match($0, /\+[0-9]+/)) { n=substr($0,RSTART+1,RLENGTH-1)+0 } ; next }
+        /^\+/         { if (f!="") printf "%s:%d:%s\n", f, n, substr($0,2); n++ }
+      ' | _ss_keep || true)"
+    _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
-  # --tracked: the population that actually SHIPS is the set git tracks. A directory walk with a
-  # hand-written exclude list got this wrong twice — it scanned `plugins/` only, so a home path in
-  # README.md, CHANGELOG.md or docs/ was public and unscanned; and it excluded `.claude` on the
-  # claim that the directory is gitignored, which is true of `.claude/builds/` and of nothing else,
-  # so a tracked `.claude/settings.json` shipped unscanned. `git ls-files` needs no exclude list:
-  # gitignored state is absent by construction and anything tracked is in scope.
+  # --tracked: what SHIPS is what git knows about — the index, plus files that are present and not
+  # ignored. Round 2 broke the previous xargs version three ways: one NUL byte made `grep -I` skip a
+  # file whose text was plainly readable; a tracked file named `-q` became a grep flag and turned the
+  # scan off; and pointing it at a subdirectory silently climbed to the enclosing repo and reported
+  # that instead. `git grep` needs no xargs, has no filename-as-flag hole, and `-a` reads the file
+  # git itself calls binary. The root is checked, and zero files is an ERR, never a pass.
   if [ "$first" = "--tracked" ]; then
     git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --tracked: not a git repo."
-    local root n; root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    local root n u; root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
     [ -n "$root" ] || die "secret-scan --tracked: cannot resolve the repo root."
-    found="$( cd "$root" && git ls-files -z 2>/dev/null | xargs -0 grep -EnI "$pat" 2>/dev/null | _ss_keep || true )"
-    n="$( cd "$root" && git ls-files 2>/dev/null | grep -c . || true )"
-    _ss_hit "$found"; ok "secret scan (--tracked): 0 hits in ${n:-0} tracked files."; return 0
+    local here; here="$(pwd -P 2>/dev/null || pwd)"
+    [ "$(cd "$root" && pwd -P 2>/dev/null || pwd)" = "$here" ] || die "secret-scan --tracked: run me at the repo root. You are in '$here'; the repository root is '$root'. Scanning from here would report that repository, not this directory."
+    n="$(git ls-files 2>/dev/null | grep -c . || true)"; n="${n:-0}"
+    [ "$n" -gt 0 ] || die "secret-scan --tracked: 0 tracked files. An empty population is not a pass."
+    # `tr -d` strips NUL first: bash `read` STOPS at a NUL byte, so one such byte in the middle of a
+    # readable line hid everything after it — including the home path. `-a` makes git read the file
+    # git itself calls binary; without both halves the bypass stays open.
+    # BOTH the working tree and the index. `--cached` alone reads the INDEX, so an edit that has not
+    # been `git add`ed yet is invisible — a contributor running this before staging would be told
+    # their tree is clean while the leak sat in the file in front of them. The two answers are
+    # combined and de-duplicated; each pass costs about 0.07s over 475 files.
+    found="$(git grep -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    found="$found
+$(git grep --cached -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    # files that are present and not ignored but never added — the shape the original leak had
+    u="$( git ls-files -z --others --exclude-standard 2>/dev/null | tr '\0' '\n' | grep -c . || true )"; u="${u:-0}"
+    if [ "$u" -gt 0 ]; then
+      found="$found
+$( git ls-files -z --others --exclude-standard 2>/dev/null \
+        | xargs -0 git grep --no-index -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true )"
+    fi
+    found="$(printf '%s\n' "$found" | grep -v '^$' | sort -u || true)"
+    _ss_hit "$found"; ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -d "$first" ]; then
-    # Dir mode is the convenience form and is scanned from INSIDE the directory, so reported paths
-    # are relative. That is deliberate twice over: the scan target's own absolute path can no longer
-    # take part in the match, and the refusal message no longer prints the reader's home directory.
-    # `.claude` is skipped here because local build state is full of real paths by design; `--tracked`
-    # is the mode that decides what SHIPS, and it makes no such assumption.
+    # Dir mode is the convenience form, scanned from INSIDE so reported paths are relative: the scan
+    # target's own absolute path can no longer take part in a match, and the refusal no longer prints
+    # the reader's home directory. `.claude` is skipped because local build state is full of real
+    # paths by design; `--tracked` is the mode that decides what SHIPS and makes no such assumption.
     found="$( cd "$first" && grep -REnI --exclude-dir='.git' --exclude-dir='.claude' "$pat" . 2>/dev/null | _ss_keep || true )"
-    _ss_hit "$found"; ok "secret scan ($first): 0 hits."; return 0
+    _ss_hit "$found"; ok "secret scan ($first): 0 hits${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -n "$first" ]; then   # explicit file list
-    found="$(grep -EnI "$pat" "$@" 2>/dev/null | _ss_keep || true)"
-    _ss_hit "$found"; ok "secret scan: 0 hits in $# file(s)."; return 0
+    found="$(grep -EnI "$pat" -- "$@" 2>/dev/null | _ss_keep || true)"
+    _ss_hit "$found"; ok "secret scan: 0 hits in $# file(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   # legacy no-arg: staged + working-tree-modified files (while-read loop, no sh -c pattern splice)
   if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
     local f
     while IFS= read -r f; do
       [ -f "$f" ] || continue
-      local h; h="$(grep -EnI "$pat" "$f" 2>/dev/null | _ss_keep || true)"
+      local h; h="$(grep -EnI "$pat" -- "$f" 2>/dev/null | _ss_keep || true)"
       [ -n "$h" ] && found="$found$f: $h
 "
     done <<EOF

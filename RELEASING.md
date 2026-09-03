@@ -16,10 +16,11 @@ How every update reaches users on GitHub and the Claude community marketplace. F
 3. **Add a CHANGELOG.md entry** under a new `## [x.y.z] — YYYY-MM-DD` heading — say **what changed and why** (Added / Changed / Fixed / Removed). This is the user-facing "what's new."
 4. **Scan for anything private BEFORE the merge** — this is a gate, not a reminder:
    ```sh
-   bash plugins/compass/scripts/compass.sh secret-scan --tracked        # every file git tracks
-   bash plugins/compass/scripts/compass.sh secret-scan --commits main..HEAD   # every line this branch adds
+   bash plugins/compass/scripts/compass.sh secret-scan --tracked     # run at the repo root
+   # ...and every line this branch adds. A fresh clone has no local `main`, so name the remote:
+   bash plugins/compass/scripts/compass.sh secret-scan --commits origin/main..HEAD
    ```
-   Both must exit 0. An absolute home path shipped inside this public plugin across **15 tagged
+   Both must exit 0. An absolute home path shipped inside this public plugin across **14 tagged
    releases**, v0.28.0 through v0.33.5, and it was found by a person reading files by hand during a
    release soak. There was no CI, no git hook, and no scan step here. `mechanical-suite.sh` runs the
    first of these two commands as `leak-scan-check`, but the suite is not the release path — this is.

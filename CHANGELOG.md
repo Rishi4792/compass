@@ -27,10 +27,12 @@ release changes what the generator EXTRACTS, so a person's own words reach the p
 
 **Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files.
 
-**The exposure window, counted rather than estimated.** This entry first said "since at least
-v0.33.5". That was wrong by fourteen releases. Walking every tag and counting the files that contain
-the path gives: clean through v0.27.0, then **four files in every one of the 15 tagged releases from
-v0.28.0 to v0.33.5**, then clean again at v0.34.0. The path is still present in public git history
+**The exposure window, counted rather than estimated — and the first count was also wrong.** This
+entry first said "since at least v0.33.5", which was wrong by thirteen releases. The correction then
+said 15 tags, which was wrong by one: the mistake was counting the tags that CONTAIN the leaking
+commit, and v0.34.0 contains it while being clean, because the fix landed before the tag. Counting
+the tags whose TREE holds the path gives: clean through v0.27.0, then **four files in every one of
+the 14 tagged releases from v0.28.0 to v0.33.5**, then clean again at v0.34.0. The path is still present in public git history
 and in the v0.33.5 tag on the remote, so the remediation here is forward-only — v0.34.0 onward does
 not carry it, and earlier tags still do.
 

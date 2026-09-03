@@ -3501,9 +3501,10 @@ chk "$(printf '%s' "$_gdout" | grep -c 'N/A')" "1" "v0.34.1: ...and it SAYS so, 
 rm -rf "$_gdd"
 
 # ── v0.34.1: the leak scanner can see the only class that has ever leaked here ───────────────────
-# An absolute home path shipped in this public plugin in four files across 15 tagged releases,
+# An absolute home path shipped in this public plugin in four files across 14 tagged releases,
 # v0.28.0 through v0.33.5, and `secret-scan` returned PASS on the very commit that published it.
-# (This comment first said "six releases", counted from minor version numbers instead of tags.)
+# (Two earlier figures here were wrong: "six", counted from minor version numbers, and "15", counted
+# from the tags CONTAINING the leaking commit — v0.34.0 contains it and is clean.)
 #
 # THE TEST STRINGS ARE ASSEMBLED AT RUNTIME, and that is not a trick — it is the rule. Written as
 # literals, these assertions made the scanner flag THIS FILE, because test data for a leak scanner
@@ -3511,7 +3512,13 @@ rm -rf "$_gdd"
 # values" and the author broke it within minutes of adding the check. Assembling the value means the
 # shipped file never contains the shape, while the scanner still sees it at run time.
 _lk="$(mktemp -d)"
-_lkrun() { printf '%s\n' "$1" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" >/dev/null 2>&1; local r=$?; rm -f "$_lk/f.txt"; return $r; }
+# The harness REFUSES to run against a fixture directory that is not there. The first version of the
+# v0.34.3 block was accidentally placed after `rm -rf "$_lk"`, so every assertion scanned a directory
+# that did not exist: `secret-scan` fell through to file-list mode, found nothing, and returned 0 —
+# six "want 1" assertions failed and every "want 0" one passed for no reason at all. An absent
+# population is not a pass, and a test harness has to hold itself to that before it holds anything else.
+_lkrun() { [ -d "$_lk" ] || { echo "smoke: fixture dir $_lk is gone — refusing to score" >&2; return 99; }
+           printf '%s\n' "$1" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" >/dev/null 2>&1; local r=$?; rm -f "$_lk/f.txt"; return $r; }
 _lkfile() { printf '%s\n' "$1" > "$_lk/g.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk/g.txt" >/dev/null 2>&1; local r=$?; rm -f "$_lk/g.txt"; return $r; }
 _U="Us""ers"; _H="ho""me"; _SK="s""k-"; _AK="AK""IA"
 # v0.34.2 — THE FIXTURE ID IS NOT A REAL ONE ANY MORE. The v0.34.1 version assembled the AUTHOR'S
@@ -3519,7 +3526,7 @@ _U="Us""ers"; _H="ho""me"; _SK="s""k-"; _AK="AK""IA"
 # public plugin. Splitting a string is a legitimate way to hide a shape from the scanner; using it
 # on a real value is the exact class this check exists to stop. This id is invented.
 _ID1="1a2b""3c4d"; _ID2="-0000-4000-8000-00000000f00d"
-_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for 15 tagged releases while this scanner passed it"
+_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for 14 tagged releases while this scanner passed it"
 _lkrun "/$_H/someone/x";          chk "$?" "1" "v0.34.1: the Linux home form is caught too"
 _lkrun "id $_ID1$_ID2";           chk "$?" "1" "v0.34.1: a bare session id is CAUGHT"
 _lkrun "/$_U/alice/project";      chk "$?" "0" "v0.34.1: an AUTHORED placeholder is allowed — a fixture must be able to show the shape it guards"
@@ -3554,7 +3561,71 @@ _lkrun "run it from /$_H/user/app";                       chk "$?" "0" "v0.34.2 
 _lkrun "/$_U/alicent/x";                                  chk "$?" "1" "v0.34.2: a real name that merely BEGINS with a placeholder name is NOT allowed"
 # M-6: a refusal that names no route out is a refusal a contributor cannot act on.
 _lkmsg="$(printf '/%s/someone/x\n' "$_U" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" 2>&1 || true)"; rm -f "$_lk/f.txt"
-chk "$(printf '%s' "$_lkmsg" | grep -c 'allowed by name')" "1" "v0.34.2 M-6: the refusal PRINTS the placeholder names, so the route out is discoverable"
+chk "$( { printf '%s' "$_lkmsg" | grep -q 'alice' && printf '%s' "$_lkmsg" | grep -q 'compass-allow-secret' && echo 1 || echo 0; } )" "1" "v0.34.2 M-6: the refusal PRINTS a placeholder name AND the escape hatch, so the route out is discoverable"
+# ── v0.34.3 · round 2 found five more Criticals. Each gets the exact shape that defeated round 2 ──
+# C-1 was only HALF fixed: the filter drops a whole MATCH, and two patterns have value fields wide
+# enough to swallow a placeholder INSIDE one match. So the patterns are now split — HARD values the
+# placeholder list never touches, SOFT shapes where it applies.
+# Assembled at run time for the same reason as everything else in this block: written whole, these
+# two strings ARE the shapes the scanner hunts, so the file would flag itself.
+_SEC="_SEC""RET"; _PG="post""gresql"
+_lkrun "API${_SEC}=hunter2/$_U/alice/";                    chk "$?" "1" "v0.34.3 C-1b: a placeholder INSIDE a secret's value cannot excuse it (hard patterns ignore the allow-list)"
+_lkrun "$_PG://admin/$_U/alice/x:hunter2@db.example.net/app"; chk "$?" "1" "v0.34.3 C-1b: ...and the same for a connection string"
+# The three shapes a leading-boundary test threw away. The JSON-escaped one is the exact file class
+# that leaked from this repository.
+_lkrun "cc -I/$_U/someone/inc -c x.c";                     chk "$?" "1" "v0.34.3: a home path after a compiler flag is caught (no leading boundary on /Users/)"
+_lkrun "run from .../$_U/someone/Desktop";                 chk "$?" "1" "v0.34.3: ...after an ellipsis too"
+_lkrun "{\"transcript_path\":\"\\/$_U\\/someone\\/x.jsonl\"}"; chk "$?" "1" "v0.34.3: ...and JSON-escaped, which is the shape that actually leaked here"
+# FALSE POSITIVES ARE THE WHOLE RISK. Round 2 measured 28 of 57 ordinary strings refused — 49% — on a
+# check that review-build runs over a USER's commits and treats any hit as blocking. Every string
+# below is something a real contributor writes.
+_fp=0
+_fpchk() { _lkrun "$1" || _fp=$((_fp+1)); }
+_fpchk "WORKDIR /$_H/node/app"
+_fpchk "ENV PATH=/$_H/linuxbrew/.linuxbrew/bin:\$PATH"
+_fpchk "volumes: - ./data:/$_H/appuser/data"
+_fpchk "- /$_H/runner/work/repo/repo"
+_fpchk "cache: /$_H/circleci/.m2"
+_fpchk "router.get('/$_H/dashboard', handler)"
+_fpchk "[Home](/$_H/index)"
+_fpchk "docs at https://example.com/$_H/getting-started"
+_fpchk "uuid 550e8400-e29b-41d4-a716-446655440000"
+_fpchk "sha 6f1d2c3b4a5968778899aabbccddeeff00112233"
+_fpchk "C:\\${_U}\\Public\\Documents"
+_fpchk "task-a1b2c3d4e5f6a7b8"
+_fpchk "export JWT_SECRET=changeme"
+_fpchk "APP_SECRET=\${{ secrets.APP_SECRET }}"
+_fpchk "key = ${_SK}xxxxxxxxxxxxxxxxxxxxxxxx"
+_fpchk "/$_U/USERNAME/project"
+chk "$_fp" "0" "v0.34.3: 0 of 16 ordinary contributor strings are refused — a scanner that cries wolf is one somebody switches off"
+# The escape hatch, in the shape unwired-allow.txt already uses: declared and reasoned, never silent.
+_lkrun "k = /$_U/someone/x  # compass-allow-secret: this path is the documented example";  chk "$?" "0" "v0.34.3: a declared exception WITH a reason is allowed"
+_lkrun "k = /$_U/someone/x  # compass-allow-secret:";      chk "$?" "1" "v0.34.3: ...and one with NO reason is not — the reason is the whole point"
+# --tracked: three ways round 2 turned the release gate off, and two population holes.
+_tk="$(mktemp -d)"
+( cd "$_tk" && git init -q . && printf 'ok\n' > a.txt && printf 'x\000y /%s/someone/Desktop/n\n' "$_U" > n.txt && git add -A ) >/dev/null 2>&1
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-1: ONE NUL byte no longer hides a readable home path"
+rm -f "$_tk/n.txt"; ( cd "$_tk" && git rm -q --cached n.txt ) >/dev/null 2>&1
+( cd "$_tk" && printf '/%s/someone/Desktop/q\n' "$_U" > ./-q && git add -A ) >/dev/null 2>&1
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-2: a tracked file NAMED like a grep flag no longer turns the scan off"
+( cd "$_tk" && git rm -q --cached ./-q ) >/dev/null 2>&1; rm -f "$_tk/-q"
+mkdir -p "$_tk/sub"
+( cd "$_tk/sub" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-3: run from a subdirectory it REFUSES rather than reporting the enclosing repo"
+_tke="$(mktemp -d)"; ( cd "$_tke" && git init -q . && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3: 0 tracked files is an ERR — an empty population is not a pass"; rm -rf "$_tke"
+( cd "$_tk" && printf 'note /%s/someone/Desktop/z\n' "$_U" > fresh.md ) 
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3: a NEW, never-added file is scanned too — that is the shape the original leak had"
+rm -f "$_tk/fresh.md"
+# --commits used to number lines against the whole `git log -p` stream and name no file at all.
+( cd "$_tk" && git add -A && git commit -qm base && printf 'l1\nl2\nleak /%s/someone/Desktop/w\n' "$_U" > b.md && git add -A && git commit -qm adds ) >/dev/null 2>&1
+_cmsg="$( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --commits 'HEAD^..HEAD' 2>&1 || true )"
+chk "$(printf '%s' "$_cmsg" | grep -c 'b\.md:3:')" "1" "v0.34.3: --commits names the FILE and the file's own line number, not an offset into a diff stream"
+rm -rf "$_tk"
+
 rm -rf "$_lk"
 bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_ROOT" >/dev/null 2>&1
 chk "$?" "0" "v0.34.1: leak-scan-check ships and the shipped tree is clean"
