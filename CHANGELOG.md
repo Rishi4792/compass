@@ -3,6 +3,38 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the gate now says what to do next, and a new command works out what that is
+
+**`compass.sh next-stage <build-dir>`** prints the one stage that has not passed yet. Compass named
+seven stages from its first release and nothing could answer "which comes next?" on demand, so every
+caller re-derived it and the text a user reads could not name a successor at all. Exit 0 with the
+stage name · exit 3 when the build is finished, including a build whose contract declares
+`deploy: out-of-scope` · exit 2 when the state cannot be read. **Branch on the code, never on the
+output**: finished and unreadable both print nothing.
+
+**The gate text changed in all eight places it lives.** It used to forbid invoking the next skill and
+name nothing in its place — it told the reader what would not happen and never what would, so an
+approved stage ended in silence. It now says: on Approve, run `next-stage` and invoke that stage with
+the Skill tool. The block stays byte-identical across all seven stage skills, which is why it names
+one command that works out the successor rather than a command per stage.
+
+**A speed bug in `stage_pass`, found by an independent reviewer and worth its own line.** Reading a
+receipt's first line through `printf | head -n1 | grep` under `pipefail` reads the plumbing as a
+verdict: on a large receipt block `head` exits early, `printf` dies of SIGPIPE, and a receipt headed
+PASS is reported as NOT passed. Reproduced at about 100 KB of receipt — reachable by any build with
+several rounds of review evidence. `stage_pass` is what `cockpit`, `statusline`, `orient` and
+`next-stage` all use to answer "which stage are we on", so a long-running build could be told it was
+back at the beginning. It reads the first line with a shell parameter expansion now: no pipe, no
+second process, no exit status to misread.
+
+**Two mutation tests, because two reviewers proved the old checks could not tell the fix from its
+opposite.** Replacing the whole Stop hook with three lines that print `{}` passed every assertion.
+Rewriting the gate to say "do NOT run it; end the turn in silence", keeping the words the checks
+grep for, also passed everything. Both now fail: one assertion requires a real Autonomous build to
+leave a spawn event on disk, and another refuses a negation attached to the instruction. The gate
+block is prose for a model, and the suite says so in as many words — presence, placement and the
+absence of a negation are measured; comprehension is not, and no script can measure it.
+
 ## [Unreleased] — the Stop hook's two modes were the wrong way round
 
 **A behaviour change for every existing install, stated plainly.** Until now a build with no

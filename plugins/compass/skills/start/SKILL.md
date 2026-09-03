@@ -6,7 +6,7 @@ user-invocable: false
 
 # compass:start — the lifecycle orchestrator
 
-Compass builds software **true to spec, with zero drift**. The contract is the invariant; every stage is checked against it. This skill sequences the stage skills, but **never auto-advances** in gated mode — each transition is a user-driven gate, AND each downstream stage runs a real script gate that blocks on missing proof.
+Compass builds software **true to spec, with zero drift**. The contract is the invariant; every stage is checked against it. This skill sequences the stage skills. It **never advances without being asked** — each transition is a user-driven gate — and since v0.35 an answer of **Approve** is acted on rather than described, so the build continues instead of stopping in silence. Each downstream stage still runs a real script gate that blocks on missing proof.
 
 > The whole lifecycle is driven through the single front door **`/compass:go`**, which reads state and routes into each stage skill (`compass:contract`, `compass:review-contract`, `compass:plan`, `compass:review-plan`, `compass:build`, `compass:review-build`, `compass:ship`). Resume from a fresh terminal with **`/compass:resume`**. The per-stage skills are hidden from the `/` menu (`user-invocable: false`) but Compass invokes them for you — you never have to remember which one.
 
@@ -89,7 +89,7 @@ The orchestrator loop in `--auto`:
 - **review-build requires a human sign-off** on the receipt's command+output evidence before CLOSED.
 - **Ship is mandatory (v0.7.0).** CLOSED is NOT a final resting state unless the contract waives deploy. The terminal-status guard (`compass.sh close` runs `lifecycle-audit CLOSED`; ship runs `lifecycle-audit SHIPPED`) and the **Stop hook** (`compass.sh stop-guard`, fires every time the agent tries to stop) block going quiet, skipping a gate, or forgetting ship while a build is mid-lifecycle. Enforcement is script + hook, not discretion.
 
-## The gate (between every stage — owned by the stage, never auto-advance)
+## The gate (between every stage — owned by the stage; it ASKS, and acts on the answer)
 **The gate is owned by each stage's skill.** Every stage skill ends by presenting the canonical 4-button gate (single source: `shared/gate.md`, smoke-enforced byte-identical across the 7 stage skills). As the orchestrator you **sequence** the stages and advance only when the user picks **Approve** or **Amend** — you do **not** present a second gate of your own. On detected drift from `contract.md`, STOP and surface. (The gate's transition footer now points the user at **`/compass:go`**, the one front door that reads state and routes on to the correct next stage.)
 
 ## Standalone / budget

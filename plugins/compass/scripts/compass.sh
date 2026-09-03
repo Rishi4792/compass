@@ -2295,9 +2295,22 @@ prisma_canonical_dir() { # <repo-root>
 stage_pass() { # <build-dir> <stage>
   local block; block="$(last_block "$1/receipts.md" "$2" 2>/dev/null)"
   [ -n "$block" ] || return 1
-  printf '%s' "$block" | head -n1 | grep -q 'SUPERSEDED' && return 1
-  printf '%s' "$block" | head -n1 | grep -q 'PASS' || return 1
-  printf '%s' "$block" | grep -q '^- \[ \]' && return 1
+  # THE HEADER IS TAKEN WITH PARAMETER EXPANSION, NOT `head -n1`, and the reason is a real bug an
+  # independent reviewer found by construction. `printf '%s' "$block" | head -n1 | grep -q PASS`
+  # under `set -o pipefail` reads its own plumbing as a verdict: on a large receipt block `head`
+  # exits after the first line, `printf` is killed by SIGPIPE with status 141, pipefail propagates
+  # that, and a receipt headed PASS is reported as NOT passed. Reproduced here at about 100 KB of
+  # receipt — big, but a build with many rounds of review evidence gets there.
+  #
+  # The consequence was not cosmetic. `stage_pass` is what `cockpit`, `statusline`, `orient` and
+  # `next-stage` all use to answer "which stage are we on", so a long-running build could be told it
+  # was back at `contract` — and v0.35's gate now tells the model to INVOKE whatever stage that
+  # names. A shell parameter expansion reads the first line with no pipe, no second process and no
+  # exit status to misread.
+  local first="${block%%$'\n'*}"
+  case "$first" in *SUPERSEDED*) return 1 ;; esac
+  case "$first" in *PASS*) : ;; *) return 1 ;; esac
+  case "$block" in *"$(printf '\n')- [ ] "*|"- [ ] "*) return 1 ;; esac
   return 0
 }
 
@@ -2473,20 +2486,9 @@ is_mid_build() { # <build-dir>
 # on true mid-build abandonment (is_mid_build) — quiet at every gate/clean checkpoint, so
 # the harness's red "Stop hook error" no longer fires on normal pauses. Honors
 # stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks signal via JSON); fail-open.
-# _step_counter: a monotonic build-progress signal for the loop backstop (v0.9.0). The `k`
-# from the latest build receipt's `step k/n`, else the count of checked plan.md boxes (the
-# plan.md-half-checked path). Both advance only on real progress → cosmetic churn won't
-# re-arm the guard; a genuine step flip will. Never errors.
-_step_counter() { # <build-dir>
-  local dir="$1" k=""
-  if [ -f "$dir/receipts.md" ]; then
-    k="$(grep -oE 'step[[:space:]]*[0-9]+/[0-9]+' "$dir/receipts.md" 2>/dev/null | tail -1 | sed -nE 's/.*step[[:space:]]*([0-9]+)\/[0-9]+.*/\1/p' || true)"
-  fi
-  if [ -z "$k" ] && [ -f "$dir/plan.md" ]; then
-    k="$(grep -cE '^- \[x\]' "$dir/plan.md" 2>/dev/null || true)"
-  fi
-  printf '%s' "${k:-0}"
-}
+# _step_counter WAS HERE and is deleted. It fed the fingerprint that let the Human-gated refusal
+# block at most once per build-step, and P2 deleted that refusal, so the function had no caller left.
+# A helper kept "in case P6 wants it" is dead code with an alibi; P6 can write what P6 needs.
 
 # stop-guard (v0.9.0 — window/session-scoped): blocks ONLY the session that OWNS a mid-build
 # in THIS project. A no-build session, a foreign build's session, an orphaned build (owner
@@ -3416,8 +3418,11 @@ cmd_auto_spawn() { # <build-dir>
 # ── v0.35 P3: next-stage — the successor, from ONE place ────────────────────────────────────────
 # WHY THIS EXISTS. Compass names seven stages in `LIFECYCLE` and, until now, nothing could answer
 # "which one comes next?" on demand. Every caller that needed the answer re-derived it, and the gate
-# text the user actually reads could not name a successor at all — it said only "Never auto-invoke
-# the next skill", which tells a reader what will not happen and never what will.
+# text the user actually reads could not name a successor at all: it forbade invoking the next skill
+# and named nothing in its place, which tells a reader what will not happen and never what will.
+# (The old sentence is described, not quoted. Quoting it here put it back into the repository in a
+# form the line-anchored check could not see, because the quote wrapped across two comment lines.
+# Third time in this build that writing out the thing being removed re-introduced it.)
 #
 # The walk is the one `cmd_cockpit` already uses, and it is REUSED rather than rewritten: three
 # parties in this build's review rounds got three different answers by reimplementing a walk. The
@@ -3443,6 +3448,14 @@ cmd_next_stage() { # <build-dir>
   for s in $LIFECYCLE; do
     if stage_pass "$dir" "$s" 2>/dev/null; then :; else cur="$s"; break; fi
   done
+  # A BUILD THAT DECLARES `deploy: out-of-scope` HAS NO SHIP STAGE. Compass already honours that
+  # header everywhere else — `lifecycle-audit` calls such a chain complete — but this walk did not,
+  # so it answered `ship` for a build that will never ship. That was harmless while nothing read the
+  # answer; P4 turns it into an instruction to INVOKE the ship skill. Same header, same reading.
+  if [ "$cur" = "ship" ] && [ -f "$dir/contract.md" ] \
+     && grep -qiE '^[[:space:]]*[*_`]*deploy[*_`]*[[:space:]]*:[[:space:]]*out-of-scope' "$dir/contract.md" 2>/dev/null; then
+    echo "next-stage: every stage up to review-build has passed, and this contract declares deploy out-of-scope — there is no ship stage to advance to." >&2; return 3
+  fi
   if [ -z "$cur" ]; then
     echo "next-stage: every stage in LIFECYCLE has passed for '$(basename "$dir")'." >&2; return 3
   fi

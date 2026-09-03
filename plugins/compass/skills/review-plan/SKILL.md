@@ -168,9 +168,14 @@ does **not** present a second gate — the stage owns it.
 
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
-   `<next stage>` is not guessed: `compass.sh next-stage <build-dir>` prints it, and prints nothing
-   at all when every stage has passed. (For the terminal `ship` stage, Next is `done — build
-   SHIPPED`.)
+   That footer line is for the READER: it names where they are and the door they can take if they
+   want to steer. It is not your instruction — yours is the Approve branch at the end of this block.
+
+   `<next stage>` is not guessed. Run `compass.sh next-stage <build-dir>` and branch on its EXIT
+   CODE, never on its output, because two different states both print nothing:
+   **0** → the stage it named · **3** → every stage has passed, so Next is `done — build SHIPPED` ·
+   **anything else** → the build state could not be read; say exactly that and stop, rather than
+   guessing a stage or reporting the build finished.
 
    Then PUSH the RAIL when this stage produced an artefact — run
    `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
@@ -199,13 +204,16 @@ does **not** present a second gate — the stage owns it.
    - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
 
 Only **Approve** or **Amend** advances — and on **Approve** you CONTINUE, you do not stop to ask a
-second time. Run `compass.sh next-stage <build-dir>`: it prints the one stage that has not passed
-yet, read from the same stage order every gate here uses. Then invoke that stage's skill. The user
-has already said yes; the silence after that yes is the stall this gate exists to end.
+second time. Run `compass.sh next-stage <build-dir>` — the build directory is the one this stage has
+been working in — and on exit 0 **invoke the named stage with the Skill tool**, whose skill name is
+`compass:` followed by that stage, exactly the way this stage was invoked. On exit 3 the build is
+finished; on any other code, say the state could not be read and stop. The user has already said
+yes; the silence after that yes is the stall this gate exists to end.
 
-Name the successor, and name what a person can type. The seven stage skills are hidden from the `/`
-menu, so **`/compass:resume`** is the command that reaches the next stage — a `/compass:` name for a
-stage is not a command anybody has, and offering one sends the reader to a door that is not there.
+The seven stage skills are hidden from the `/` menu, and that is not an obstacle — it is a division
+of labour. A person types **`/compass:resume`**; a model uses the Skill tool. Both reach the same
+stage. What nobody has is a `/compass:` slash command named after a stage, so never print one: it
+sends the reader to a door that is not there.
 
 On **Revise**, re-run this stage with the change. On **Pause**, stop cleanly. On any detected drift
 from `contract.md`, STOP and surface instead of advancing.

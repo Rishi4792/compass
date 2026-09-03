@@ -17,7 +17,7 @@ Result:
 
 | Situation | Stop hook |
 |---|---|
-| You own a mid-build, you stop | **block** (don't abandon half-applied work) |
+| You own a mid-build, you stop, mode is Human-gated | **quiet** — v0.35: Human-gated is the off switch and never refuses. Run `/compass:status` to see the step you are on. |
 | A *different* session owns the only mid-build | quiet `{}` |
 | You own nothing mid-build | quiet `{}` |
 | Orphan build (owning terminal closed) | quiet for **everyone** — until someone resumes it and re-binds |

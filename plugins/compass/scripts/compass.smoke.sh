@@ -233,6 +233,30 @@ _sgfx() {   # <mode: human|auto> [--foreign|--orphan] → prints the hook's raw 
       | bash "$SH" stop-guard 2>/dev/null )
   rm -rf "$r"
 }
+# A STUB PASSES EVERY ASSERTION BELOW, and an independent reviewer proved it: replacing all 63 lines
+# of cmd_stop_guard with `cat >/dev/null; printf '{}\n'` left smoke at 1090 passed, 0 failed. That is
+# the shape of the trap — once the invariant is "always return {}", every check for {} is satisfied by
+# a hook that does nothing at all. So the FIRST assertion is one only a working hook can pass: an
+# Autonomous, owned, continuable build must make the hook walk the INDEX, find it, and attempt the
+# cross-session spawn, which leaves a `spawn` event on disk. The spawn command is overridden to `true`
+# so nothing is really launched.
+_sgauto_trace() {
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/fixauto .claude/builds/.locks
+    printf 'fixauto · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# fixauto\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** the next step\n' > .claude/builds/fixauto/progress.md
+    printf '## RECEIPT — contract · fixauto · PASS\nok\n\n## RECEIPT — build · fixauto · IN-PROGRESS step 2/5\nok\n' > .claude/builds/fixauto/receipts.md
+    printf -- '- [x] S1\n- [ ] S2\n' > .claude/builds/fixauto/plan.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/fixauto.owner
+    : > .claude/builds/fixauto/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/fixauto/budget.env
+    printf '{"session_id":"%s","stop_hook_active":false}' "$sid" \
+      | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1
+    grep -c '|spawn|' .claude/builds/fixauto/session-chain.log 2>/dev/null || echo 0 )
+  rm -rf "$r"
+}
+chk "$(_sgauto_trace)" "1" "v0.35 THE HOOK REALLY RAN: an Autonomous owned build leaves a spawn event — a stub that only prints {} fails this and passes every other stop-guard assertion here"
 chk "$(_sgfx human)"            "{}" "v0.35 INV-HUMAN-GATED-NEVER-REFUSES: a Human-gated build mid-step, owned by this session, returns {} — the off switch is off"
 chk "$(_sgfx auto)"             "{}" "v0.35: an Autonomous build still returns {} at this stage (P6 adds the refusal, and only under eight conditions)"
 chk "$(_sgfx human --foreign)"  "{}" "v0.35: a build owned by another session returns {}"
@@ -276,6 +300,20 @@ _banned="Never auto-""invoke the next skill"
 chk "$(grep -rl "$_banned" "$PLUGIN_ROOT" 2>/dev/null | grep -c .)" "0" "v0.35 INV-APPROVE-INVOKES: the prohibition is GONE from every file in the plugin"
 chk "$(printf '%s' "$_gate" | grep -c 'compass.sh next-stage')" "2" "v0.35 INV-APPROVE-INVOKES: ...and the gate block names the command that yields the successor — in the footer and at the Approve branch"
 chk "$(printf '%s' "$_gate" | grep -ci 'on \*\*Approve\*\* you CONTINUE')" "1" "v0.35 INV-APPROVE-INVOKES: Approve is acted on, not merely described"
+# A STRING COUNT CANNOT TELL AN INSTRUCTION FROM ITS NEGATION. A reviewer rewrote this block to say
+# "You must NOT act on it. Do NOT run compass.sh next-stage… End the turn in silence", kept the four
+# literals the assertions grep for, and smoke stayed at 1090/0 with the suite 15 of 15. So the
+# sentence that carries the instruction is extracted and checked for a negation inside it.
+_gsent="$(printf '%s' "$_gate" | tr '\n' ' ' | sed -E 's/.*(Only \*\*Approve\*\*[^.]*\.[^.]*\.).*/\1/')"
+# The negation has to be attached to the ACTION, not merely present: "you do not stop to ask a second
+# time" is a negation and is exactly right. What must never appear is a negation of the instruction —
+# do not run it, must not act, never invoke, end in silence.
+chk "$(printf '%s' "$_gate" | grep -ciE '(do (NOT|not) (run|invoke|act)|must (NOT|not) (run|invoke|act)|never (run|invoke)|end the turn in silence|do not advance)')" "0" "v0.35 INV-APPROVE-INVOKES: no negation is attached to the instruction — a grep for four literals cannot tell 'run it' from 'do NOT run it'"
+# REPORT, not MEASURE, and it says so: no script can read prose for meaning. What is measured above is
+# that the words are present, in the right sentence, un-negated, naming commands that exist. Whether a
+# model then does the right thing is settled by the cold read at review-build, not here.
+printf '  REPORT  the gate block is INSTRUCTIONS FOR A MODEL. The assertions above measure presence,\n'
+printf '          sentence placement and the absence of a negation; they cannot measure comprehension.\n'
 chk "$(printf '%s' "$_gate" | grep -c '/compass:resume')" "1" "v0.35 INV-APPROVE-INVOKES: ...and it names the command a person can actually type, since the 7 stage skills are hidden from the / menu"
 # The successor command in the text must be one this script really dispatches — a gate that names a
 # command nobody has is the defect it replaced, wearing different words.
@@ -291,6 +329,24 @@ _d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED\nbo
 chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a SUPERSEDED last block is not a pass"; rm -rf "$_d"
 _d="$(mktemp -d)"; printf '## RECEIPT — contract · fix · PASS\n- [ ] an unchecked box\n\n' > "$_d/receipts.md"
 chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a PASS carrying an unchecked box is not a pass"; rm -rf "$_d"
+# v0.35 P3b — the three defects an independent reviewer found in the first version.
+# (a) `stage_pass` read its own plumbing as a verdict: `printf | head -n1 | grep -q PASS` under
+#     pipefail turns SIGPIPE (141) into "not passed" on a large receipt block, so a long-running
+#     build was told it was back at `contract` — and P4 now tells the model to INVOKE that.
+_d="$(mktemp -d)"; { printf '## RECEIPT — contract · fix · PASS\n'; head -c 300000 /dev/zero | tr '\0' 'x' | fold -w 100; printf '\n\n'; } > "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "review-contract" "v0.35 P3b: a 300 KB receipt block still reads as PASS — no head|grep pipeline, so SIGPIPE cannot be mistaken for a verdict"; rm -rf "$_d"
+# (b) a build whose contract declares deploy out-of-scope has no ship stage to advance to.
+_d="$(_nsfx contract review-contract plan review-plan build review-build)"
+printf 'deploy: out-of-scope — nothing is deployed by this build\n' > "$_d/contract.md"
+bash "$SH" next-stage "$_d" >/dev/null 2>&1; chk "$?" "3" "v0.35 P3b: deploy out-of-scope → finished, not 'ship' — the header Compass honours everywhere else"
+printf 'deploy: in scope\n' > "$_d/contract.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "ship" "v0.35 P3b: ...and an ordinary build still advances to ship"; rm -rf "$_d"
+# (c) exit 2 and exit 3 both print nothing, so a caller MUST branch on the code. Asserted so the
+#     distinction cannot quietly collapse into "empty means finished".
+_d="$(_nsfx contract review-contract plan review-plan build review-build ship)"
+_ns3="$(bash "$SH" next-stage "$_d" 2>/dev/null)"; bash "$SH" next-stage "$_d" >/dev/null 2>&1; _rc3=$?
+_ns2="$(bash "$SH" next-stage /no/such/dir 2>/dev/null)"; bash "$SH" next-stage /no/such/dir >/dev/null 2>&1; _rc2=$?
+chk "$([ "$_ns3" = "$_ns2" ] && [ "$_rc3" != "$_rc2" ] && echo 1 || echo 0)" "1" "v0.35 P3b: finished and unreadable print the SAME empty output and DIFFERENT exit codes — the code is the answer, not the silence"; rm -rf "$_d"
 chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the Gated/Autonomous at-lock choice"
 chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the auto-start one-command trigger"
 
