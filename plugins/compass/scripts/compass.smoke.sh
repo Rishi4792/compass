@@ -239,6 +239,33 @@ chk "$(_sgfx human --foreign)"  "{}" "v0.35: a build owned by another session re
 chk "$(_sgfx human --orphan)"   "{}" "v0.35: a build with no owner returns {}"
 chk "$(printf '{"session_id":"x","stop_hook_active":true}' | bash "$SH" stop-guard 2>/dev/null)" "{}" "v0.35: stop_hook_active short-circuits — the platform's anti-deadlock escape still works"
 chk "$(grep -c 'is_mid_build "\$sr/\$slug" || continue' "$SH")" "0" "v0.35: the gated refusal is GONE from stop-guard, not merely bypassed"
+
+# ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
+# Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a
+# user reads could not name a successor at all — it said only what would NOT happen. P4 needs one
+# command that works wherever the build is, because smoke requires that gate block to be
+# byte-identical across all seven stage skills and so it cannot name a per-stage command.
+_nsfx() {   # <stage…> → a build dir whose receipts record those stages as PASS
+  local d; d="$(mktemp -d)"; : > "$d/receipts.md"
+  local st; for st in "$@"; do printf '## RECEIPT — %s · fix · PASS\nbody\n\n' "$st" >> "$d/receipts.md"; done
+  printf '%s' "$d"
+}
+_d="$(_nsfx contract)";                        chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "review-contract" "v0.35 P3: contract passed → next-stage says review-contract"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract)";        chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "plan" "v0.35 P3: ...and then plan"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract plan review-plan)"; chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "build" "v0.35 P3: ...and then build — the walk is LIFECYCLE's, not a second copy of it"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract plan review-plan build review-build ship)"
+bash "$SH" next-stage "$_d" >/dev/null 2>&1;   chk "$?" "3" "v0.35 P3: every stage passed → exit 3 (finished), and it is NOT an error"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "" "v0.35 P3: ...with nothing on stdout, so a caller cannot mistake a message for a stage name"; rm -rf "$_d"
+_d="$(mktemp -d)"; bash "$SH" next-stage "$_d" >/dev/null 2>&1; chk "$?" "2" "v0.35 P3: no receipts.md → exit 2 (unknown), fail closed"; rm -rf "$_d"
+bash "$SH" next-stage /no/such/dir >/dev/null 2>&1; chk "$?" "2" "v0.35 P3: no such directory → exit 2, not a crash"
+bash "$SH" next-stage >/dev/null 2>&1;         chk "$?" "2" "v0.35 P3: no argument → exit 2, not a crash"
+# The one that matters most: the Stop hook calls this, and `die()` is `exit 1`. A hook that exits
+# kills the session — a failure this build already made once.
+chk "$(sed -n '/^cmd_next_stage()/,/^}/p' "$SH" | grep -c 'die ')" "0" "v0.35 P3: next-stage never calls die — a hook that exits crashes the session"
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a SUPERSEDED last block is not a pass"; rm -rf "$_d"
+_d="$(mktemp -d)"; printf '## RECEIPT — contract · fix · PASS\n- [ ] an unchecked box\n\n' > "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a PASS carrying an unchecked box is not a pass"; rm -rf "$_d"
 chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the Gated/Autonomous at-lock choice"
 chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the auto-start one-command trigger"
 
@@ -3559,8 +3586,10 @@ _U="Us""ers"; _H="ho""me"; _SK="s""k-"; _AK="AK""IA"
 # on a real value is the exact class this check exists to stop. This id is invented.
 _ID1="1a2b""3c4d"; _ID2="-0000-4000-8000-00000000f00d"
 _lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for 14 tagged releases while this scanner passed it"
-_lkrun "/$_H/someone/x";          chk "$?" "1" "v0.34.1: the Linux home form is caught too"
-_lkrun "id $_ID1$_ID2";           chk "$?" "1" "v0.34.1: a bare session id is CAUGHT"
+_lkrun "cwd /$_H/someone/x";      chk "$?" "1" "v0.34.5: the Linux home form is caught WITH a filesystem cue"
+_lkrun "/$_H/someone/x";          chk "$?" "0" "v0.34.5: ...and WITHOUT one it is not, because /home/<word> is a URL route far more often than a person — a reviewer refused ten route words in a row"
+_lkrun "\"session_id\":\"$_ID1$_ID2\""; chk "$?" "1" "v0.34.5: a session id is CAUGHT when the line says it is one"
+_lkrun "trace_id $_ID1$_ID2";     chk "$?" "0" "v0.34.5: ...and a BARE uuid is not a leak — trace ids, tenant ids and test rows are all this shape, and every one of them was being refused"
 _lkrun "/$_U/alice/project";      chk "$?" "0" "v0.34.1: an AUTHORED placeholder is allowed — a fixture must be able to show the shape it guards"
 _lkrun "id 9999dead-0000-0000-0000-000000000000"; chk "$?" "0" "v0.34.1: the authored placeholder uuid is allowed"
 _lkrun "k = ${_SK}abcdefghijklmnopqrstuvwx"; chk "$?" "1" "v0.34.1: the pre-existing key patterns still bite — the fix ADDED, it did not replace"
@@ -3584,7 +3613,7 @@ _lkfile "KEY=${_AK}ABCDEFGHIJKLMN  # see /$_U/alice/n.md"; chk "$?" "1" "v0.34.2
 # F6: the two pattern holes. A hook payload writes a cwd with NO trailing slash — the shape that
 # actually leaked — and an id can be written in either case.
 _lkrun "{\"cwd\": \"/$_U/someone\"}";                     chk "$?" "1" "v0.34.2 F6: a home path with NO trailing slash is caught (the hook-payload shape)"
-_lkrun "id $(printf '%s' "$_ID1$_ID2" | tr 'a-f' 'A-F')"; chk "$?" "1" "v0.34.2 F6: an UPPERCASE session id is caught"
+_lkrun "transcript $(printf '%s' "$_ID1$_ID2" | tr 'a-f' 'A-F').jsonl"; chk "$?" "1" "v0.34.2 F6: an UPPERCASE session id is caught, in context"
 # False positives are the whole risk: a scanner that cries wolf is one somebody switches off.
 _lkrun "see https://example.com/$_H/user/index.html";     chk "$?" "0" "v0.34.2 FP: a /home/ segment inside a URL is not a leak"
 _lkrun "uuid f81d4fae-7dec-11d0-a765-00a0c91e6bf6";       chk "$?" "0" "v0.34.2 FP: the RFC 4122 example uuid is not a leak"

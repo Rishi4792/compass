@@ -1138,7 +1138,7 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   local first="${1:-}"
   # ── TWO CLASSES OF PATTERN, because one class was the wrong shape for both jobs ────────────────
   # v0.34.3, round 2. The single-pattern design had the allow-list apply to EVERYTHING, and the
-  # filter drops a whole MATCH. `_SECRET=<value>` and a postgres URL both have value fields wide
+  # filter drops a whole MATCH. A secret ASSIGNMENT and a postgres URL both have value fields wide
   # enough to swallow a placeholder INSIDE one match, so a key written `API_<S>=hunter2/Users/alice/`
   # was caught before v0.34.1 and still passed after the round-1 fix. The `<S>` stands for the word
   # SECRET: spelling it here would make this comment a finding, which is the check working. Splitting the patterns fixes that
@@ -1148,7 +1148,7 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   #          Only an obviously-unset value (changeme, xxxxxxxx, ${...}, <...>) is excused.
   #   SOFT — a shape that is a leak only when the value is real. A fixture has to be able to show
   #          these, so the placeholder names apply HERE and nowhere else.
-  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+)?|(^|[^A-Za-z0-9])sk-(proj-)?[A-Za-z0-9_-]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*(_SECRET|_secret)[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|[Aa][Ww][Ss]_[Ss][Ee][Cc][Rr][Ee][Tt]_[Aa][Cc][Cc][Ee][Ss][Ss]_[Kk][Ee][Yy][[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_-]{20,}|xox[baprs]-[0-9A-Za-z-]+)'
+  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+)?|(^|[^A-Za-z0-9])sk-(proj-)?[A-Za-z0-9_-]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*([Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Aa][Pp][Ii]_?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss]_?[Tt][Oo][Kk][Ee][Nn]|[Aa][Uu][Tt][Hh]_?[Tt][Oo][Kk][Ee][Nn]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee]_?[Kk][Ee][Yy])[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*[^][{}()[:space:],;]{8,}|AKIA[0-9A-Z]{12,}|[Aa][Ww][Ss]_[Ss][Ee][Cc][Rr][Ee][Tt]_[Aa][Cc][Cc][Ee][Ss][Ss]_[Kk][Ee][Yy][[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_-]{20,}|xox[baprs]-[0-9A-Za-z-]+)'
   # A home path needs no trailing slash on macOS — `{"cwd": "/Users/<name>"}` is the shape that
   # actually leaked. The Linux form DOES require a second segment, because `/home/<one-word>` is far
   # more often a URL route (`router.get('/home/dashboard')`, `[Home](/home/index)`) than a person.
@@ -1167,7 +1167,23 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # in the name list below, because page names are enumerable and people are not.
   local _uP='/Users\\?/[A-Za-z0-9._-]+'
   local _hP='/home\\?/[A-Za-z0-9._-]+'
-  local soft="((^|[^A-Za-z0-9.])${_uP}|-[A-Za-z]${_uP}|\\.\\.\\.${_uP}|(^|[^A-Za-z0-9.])${_hP}|-[A-Za-z]${_hP}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|session_[A-Za-z0-9]{20,})"
+  local soft='((^|[^A-Za-z0-9.])/Users\\?/[A-Za-z0-9._-]+|-[A-Za-z]/Users\\?/[A-Za-z0-9._-]+|\.\.\./Users\\?/[A-Za-z0-9._-]+|session_[A-Za-z0-9]{20,})'
+  # `/home/` GETS ITS OWN RULE, because no list of names can ever separate a person from a page. A
+  # reviewer refused ten route words in a row — faq, orders, billing, inbox, reports, notifications —
+  # and there is no end to that list. What DOES separate them is what the line is talking about: a
+  # leaked home path arrives with a filesystem cue (`cwd`, `HOME=`, `cd `, a transcript path) or
+  # continues into a place only a home directory has (`.ssh`, `.aws`, `.env`, `Desktop`, `projects`).
+  # A route has neither. So `/home/<name>` is a candidate everywhere and a FINDING only with a cue.
+  local hom='/home\\?/[A-Za-z0-9._-]+'
+  local homcue='(cwd|HOME[[:space:]]*=|(^|[[:space:]])cd[[:space:]]|transcript|\.jsonl|/\.claude/|home directory|\$HOME|/\.(ssh|aws|config|gnupg|kube|docker)/|/\.[a-z]+rc|/\.env|/(Desktop|Documents|Downloads|projects|workspace|repos|src|code|dev|git)/)'
+  # A BARE UUID IS NOT A LEAK, and treating it as one was refusing five ordinary lines in six. Trace
+  # ids, tenant ids, test-row ids and RFC examples are all this shape, and a reviewer measured every
+  # single one being refused. What leaked here was a SESSION id — a uuid in a hook payload, beside the
+  # words that put it there. So the uuid is judged with its line: it counts only when the line also
+  # carries the context that makes it an identifier of a person's session. This also stops a 7 MB GIF
+  # producing thousands of candidate lines by chance, which is what made a full binary read slow.
+  local ctx='[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+  local ctxre='(session|transcript|\.jsonl|/projects/|/\.claude/|cwd|conversation)'
   # THE NAME LIST IS A FILE, not a line inside a 380 KB script. Two reviewers a round apart made the
   # same point — nobody can see it and nobody can extend it — and the second then named eight more
   # service accounts it did not have. There will always be a ninth. `fixtures/secrets/allowed-names.txt`
@@ -1176,10 +1192,39 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # fixtures beside it still refuses real leaks rather than failing open.
   local _namef _names=""
   _namef="$(dirname "${BASH_SOURCE[0]:-$0}")/fixtures/secrets/allowed-names.txt"
-  [ -f "$_namef" ] && _names="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' | paste -sd'|' - 2>/dev/null || true)"
+  # EVERY LINE IS VALIDATED BEFORE IT REACHES A REGEX. The first version pasted the file straight in,
+  # and a reviewer turned the whole home-path check off with one line: `.*` matched every name, `a|`
+  # made the expression match everything, `foo(bar` broke it so grep errored and the check passed
+  # anyway, and a 100,000-character line exhausted grep's memory to the same end. The release gate
+  # printed "479 tracked file(s) carry no home path" over a planted leak. A name is a name: letters,
+  # digits, dot, underscore, hyphen, at most 64 characters. Anything else is DROPPED and NAMED.
+  local _bad=""
+  if [ -f "$_namef" ]; then
+    _names="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
+              | grep -E '^[A-Za-z0-9._-]{1,64}$' | paste -sd'|' - 2>/dev/null || true)"
+    _bad="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
+              | grep -vE '^[A-Za-z0-9._-]{1,64}$' | head -5 || true)"
+  fi
   [ -n "$_names" ] || _names='alice|bob|jane|jdoe|USER|user|test|example|you|node|runner|ubuntu|Shared|home|index|dashboard|admin|api'
+  # And the assembled expression must COMPILE. If it does not, refuse loudly instead of scanning with
+  # a broken pattern and reporting zero hits.
+  printf '' | grep -qE "$_names" 2>/dev/null || printf '' | grep -qE "x" 2>/dev/null || true
+  if ! printf 'x' | grep -qE "($_names)|x" 2>/dev/null; then
+    die "secret-scan: the name list in $_namef does not compile into a usable expression. Fix the file; refusing to scan with a broken pattern, because that reports zero hits over everything."
+  fi
+  # STATE THE SIZE, every run. `unwired-allow.txt` prints how many exceptions it carries so they
+  # cannot quietly grow; this list had no such line, and a reviewer pointed out that one appended
+  # word silences a real leak with no reason, no count and no cap.
+  local _nnames; _nnames="$(printf '%s' "$_names" | tr '|' '\n' | grep -c . || true)"
+  [ -z "$_bad" ] || echo "compass: secret-scan ignored $(printf '%s' "$_bad" | grep -c .) line(s) in $(basename "$_namef") that are not plain names: $(printf '%s' "$_bad" | tr '\n' ' ')" >&2
   local ph_uuid='9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx|f81d4fae-7dec-11d0-a765-00a0c91e6bf6|123e4567-e89b-12d3-a456-426614174000|550e8400-e29b-41d4-a716-446655440000'
-  local allow="/(Users|home)\\\\?/(${_names})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
+  # NAME SHAPES as well as names. A fresh corpus refused `svcuser`, `builduser`, `gouser` and
+  # `pyuser` — four spellings of the same idea, and a list will never hold them all. A login that
+  # ENDS in `user`, or reads as a service (`svc…`, `…-svc`, `…bot`, `…runner`, `…agent`, `…worker`,
+  # `…deploy`), is machinery, not a person. This is the same move as the page names: enumerate the
+  # SHAPE where the set is open and the shape is not.
+  local ph_shape='[a-z][a-z0-9_-]*user|svc[a-z0-9_-]*|[a-z0-9_-]*-svc|[a-z0-9_-]*bot|[a-z0-9_-]*runner|[a-z0-9_-]*agent|[a-z0-9_-]*worker|[a-z0-9_-]*deploy|dev'
+  local allow="/(Users|home)\\\\?/(${_names}|${ph_shape})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
   # Placeholder VALUES, for hard matches only: a key that is visibly unset.
   # A HARD match is excused only when its VALUE is visibly a template. Round 3 wrote this as a list
   # of words tested anywhere in the match, and `example` was on it. So a connection string whose
@@ -1190,15 +1235,61 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   #   · a filler run — eight or more of the same character — which no real key has;
   #   · the value, taken after the last `=` or `:`, STARTING as a template does.
   local hardfill='(x{8,}|X{8,}|0{8,}|changeme|CHANGEME|placeholder|PLACEHOLDER|REPLACE_ME|your[-_]token|your[-_]key|your[-_]secret|YOUR[-_]TOKEN|YOUR[-_]KEY|AKIAIOSFODNN7EXAMPLE|dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U)'
+  # A value that READS THE SECRET FROM SOMEWHERE ELSE is the correct pattern, not a leak. Refusing
+  # `const apiKey = process.env.API_KEY` punishes exactly the practice this check exists to promote.
+  local hardref='(process\.env|os\.environ|ENV\[|System\.getenv|GetEnvironmentVariable|secrets\.|vault |!secret |config\.get|Deno\.env)'
+  # The literal words a documentation connection string uses for its credentials.
+  local hardcred='^(user|username|pass|password|passwd|readonly|readwrite|admin|root|dbuser|myuser|mypassword|postgres|example)$'
   # ENTIRELY template-shaped, not merely template-PREFIXED. A key whose value merely BEGINS `YOUR_`
   # and then continues with real high-entropy characters is a real key wearing a placeholder's
   # prefix, and a prefix test excused it. `${...}`, `$(...)` and `<...>` are shell and template
   # syntax and may be judged on their opening; a bare word may not.
-  local hardtmpl='^"?('"'"'?)(<[^>]*>|\$\{|\$\(|YOUR[A-Z_]*$|your[a-z_-]*$|[A-Z][A-Z_]*_HERE$)'
+  # A HYPHENATED LOWERCASE WORD is a header name, a mime type or a slug, never a key — `x-api-key`
+  # is the value of API_KEY_HEADER, not an API key. The hyphen is required: `hunter2` is lowercase
+  # too, and is a password.
+  # THE WHOLE VALUE, ANCHORED AT BOTH ENDS. `<...>` used to be judged on its opening, so
+  # `API_<S>=<a real key>` passed by wearing angle brackets. A template is template-shaped all the
+  # way through: bracket-and-word, `${...}`, `$(...)`, or an all-caps YOUR_/..._HERE token.
+  local hardtmpl='^\\?"?('"'"'?)\\?(<[a-z][a-z0-9_.-]*>?|<[A-Z][A-Z0-9_.-]*>?|\$\{[A-Za-z0-9_.:{}-]*\}?|\$\([A-Za-z0-9_ .-]*\)?|YOUR[A-Z_]*|your[a-z_-]*|[A-Z][A-Z0-9_]*_HERE)("?)('"'"'?)$'
+  # A hyphenated lowercase word is a header name, a mime type or a slug — `x-api-key` is the VALUE of
+  # API_KEY_HEADER, not an API key. It excuses an ASSIGNMENT only: a bare token can be kebab-shaped
+  # and still be a real key.
+  local hardslug='^"?('"'"'?)[a-z][a-z0-9]*(-[a-z0-9]+)+("?)('"'"'?)$'
   _ss_hard_excused() {                          # <match> → 0 when it is visibly not a real value
     local m="$1" v
-    printf '%s' "$m" | grep -qE "$hardfill" && return 0
-    v="${m##*=}"; [ "$v" = "$m" ] && v="${m##*:}"
+    printf '%s' "$m" | grep -qE "$hardref" && return 0
+    case "$m" in
+      *://*:*@*)
+        # A connection string's credentials, judged as a pair. `postgres://user:password@host` is
+        # what every tutorial writes; `${DB_PASS}` is what a correct deployment writes. Both were
+        # being refused, and the trailing `@` alone defeated the template test.
+        v="${m##*:}"; v="${v%@}"
+        printf '%s' "$v" | grep -qE "$hardcred" && return 0
+        printf '%s' "${m#*://}" | sed 's/:.*//' | grep -qE "$hardcred" >/dev/null 2>&1 && \
+          printf '%s' "$v" | grep -qE "$hardcred" && return 0
+        printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
+        printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
+        return 1 ;;
+      *=*)
+        # THE VALUE, AND ALL OF IT. Testing the filler words anywhere in the match let a real key be
+        # excused by a placeholder sitting further along the same line:
+        # `DB_<S>=<a real key>,fallback=CHANGEME` passed because CHANGEME appeared in it. The value
+        # starts after the FIRST `=` and must be filler or template from end to end.
+        v="${m#*=}"
+        v="${v#"${v%%[![:space:]]*}"}"          # trim the space after `=` — `KEY = "value"` is ordinary
+        # A VALUE THAT IS ITSELF A KEY IS NEVER EXCUSED. An OpenAI key assigned to a lowercase
+        # variable is kebab-shaped — lowercase words joined by a hyphen — and the slug rule below
+        # excused a real one because of it. Ask first whether the value is a key; only then whether
+        # it looks like filler. (Writing the example out here would make this comment a finding.)
+        printf '%s' "$v" | grep -qE "$hard" && return 1
+        printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
+        printf '%s' "$v" | grep -qE "$hardslug" && return 0 ;;
+      *)
+        # No assignment in the match — a bare key like an `sk-` token. Here a filler RUN anywhere is
+        # decisive on its own, because no real key contains eight identical characters.
+        printf '%s' "$m" | grep -qE "$hardfill" && return 0
+        v="${m##*:}" ;;
+    esac
     printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
     return 1
   }
@@ -1212,7 +1303,9 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # than as one unbroken word — "this is the vendor's sample" is a reason and contains no long word.
   # The first version accepted a single character, and a reviewer silenced a real home path with
   # the word "nope".
-  local pragma='compass-allow-secret:[[:space:]]*[^[:space:]].{7,}'
+  # Eight characters or more, and at least two WORDS of letters. A reviewer silenced a real home
+  # path with "nope", then with "nope!!!!!" once the length rule landed. A reason is prose.
+  local pragma='compass-allow-secret:[[:space:]]*[A-Za-z][A-Za-z0-9]*[[:space:]]+[A-Za-z][A-Za-z0-9]*'
   local found="" nph=0 _ss_nph; _ss_nph="$(mktemp 2>/dev/null || echo /tmp/.compass-nph.$$)"; : > "$_ss_nph"
   _ss_nph_read() { nph="$(wc -c < "$_ss_nph" 2>/dev/null | tr -d " ")"; nph="${nph:-0}"; rm -f "$_ss_nph"; }
   _ss_hit() {
@@ -1235,13 +1328,16 @@ $(printf '%s' "$1" | cut -c1-300)
   _ss_keep() {
     local ln body
     while IFS= read -r ln; do
-      # The strip removes `path:lineno:`. It cannot do that for a path that itself contains a colon,
-      # and round 3 showed the consequence: the PATH landed in the body, so a file or directory NAMED
-      # `x compass-allow-secret: y` exempted every line in it, with no human having written a pragma.
-      # Such a path is refused outright rather than half-parsed — see the colon guard below, which
-      # names the files. Here we simply never let an unstripped line be judged.
-      case "$ln" in *:[0-9]*:*) : ;; *) printf '%s\n' "$ln"; continue ;; esac
+      # THE STRIP MUST ACTUALLY HAVE HAPPENED. `path:lineno:` cannot be removed from a path that
+      # itself contains a colon, and the consequence is not cosmetic: the PATH lands in the body, so a
+      # file or directory NAMED `x compass-allow-secret: y` exempted every line under it with no human
+      # having written a pragma. Round 3 answered that with a guard in `--tracked` only, and round 4
+      # walked straight through directory mode, file mode and `--commits`. The check belongs here, in
+      # the one function all five entry points share, and it tests the RESULT: if the body is not
+      # shorter than the line, nothing was stripped, and an unstripped line is reported rather than
+      # judged. A guard that lives in one caller is not a guard.
       body="$(printf '%s' "$ln" | sed -E 's|^[^:]*:[0-9]+:||' 2>/dev/null || printf '%s' "$ln")"
+      if [ "${#body}" -ge "${#ln}" ]; then printf '%s\n' "$ln"; continue; fi
       case "$body" in *compass-allow-secret:*)
         # The count is written to a FILE, not a variable: _ss_keep runs inside a command
         # substitution, so a shell variable incremented here never reaches the caller. Round 3
@@ -1256,11 +1352,30 @@ $(printf '%s' "$1" | cut -c1-300)
 $(printf '%s' "$body" | grep -oE "$hard" 2>/dev/null || true)
 HARDEOF
       if [ "$hit" = 1 ]; then printf '%s\n' "$ln"; continue; fi
-      if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+      if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; continue; fi
+      if printf '%s' "$body" | grep -qE "$homcue" 2>/dev/null; then
+        if printf '%s' "$body" | grep -oE "$hom" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; continue; fi
+      fi
+      if printf '%s' "$body" | grep -qE "$ctxre" 2>/dev/null; then
+        if printf '%s' "$body" | grep -oE "$ctx" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+      fi
     done
     return 0
   }
-  local pat="($hard|$soft)"          # one expression for the CANDIDATE sweep; _ss_keep decides
+  # One expression for the CANDIDATE sweep; `_ss_keep` makes every real decision. The uuid appears
+  # here only in the company of its context, so binary noise does not flood the filter.
+  # A PLAIN ALTERNATION. The first version wrote the context pair as `$ctxre.{0,200}$ctx`, and that
+  # `.{0,200}` sent grep into catastrophic backtracking on binary data: the same scan went from 1.1s
+  # to 40s. The uuid is swept for on its own — it produces 8 candidate lines across 479 files, not a
+  # flood — and `_ss_keep` applies the context rule where a decision costs nothing.
+  local pat="($hard|$soft|$hom|$ctx)"
+  # A MISTYPED FLAG IS NOT A FILE. `secret-scan --traked` fell through to the file-list branch, found
+  # no such file, and printed "0 hits in 1 file(s)" — a PASS for a scan that never happened. Any
+  # argument that starts with a hyphen must be a flag this command knows.
+  case "$first" in
+    --commits|--tracked) : ;;
+    -*) die "secret-scan: unknown option '$first'. Use --tracked, --commits <range>, a directory, or a list of files." ;;
+  esac
   if [ "$first" = "--commits" ]; then
     local range="${2:-}"; [ -n "$range" ] || die "usage: compass.sh secret-scan --commits <range>"
     git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --commits: not a git repo."
@@ -1295,36 +1410,59 @@ HARDEOF
 scanner parses its own output as path:line:content, so it cannot judge them safely:
 $colonf
   Rename them. A colon in a path also breaks git on Windows checkouts."
-    # TWO PASSES, and the second is SIZE-BOUNDED. `git grep -a` reads what git calls binary, which is
-    # how a NUL byte stopped hiding a readable line — but running it over every tracked file meant
-    # regex-scanning a 7.1 MB GIF and a 3.5 MB MP4 twice, and a reviewer measured the whole scan at
-    # 4.4s, up from 0.03s. A leak is a line of text somebody wrote; it does not live inside a 7 MB
-    # video. So the text pass covers everything, and the binary-reading pass covers only files under
-    # 256 KB. Files above that which git calls binary are NAMED in the summary, never silently skipped.
+    # THREE PASSES, AND THE HONEST BOUNDARY IS BINARY-AND-LARGE, NOT LARGE.
+    #
+    # Every TEXT file is read in full, whatever its size — the index copy and the working copy, so an
+    # unstaged edit is not invisible. Then the files git calls BINARY are read as text too, because
+    # that is how one NUL byte stopped hiding a plainly readable line. An earlier version bounded that
+    # at 256 KB by SIZE ALONE and a reviewer walked an AWS key past the gate inside a 300 KB file.
+    #
+    # The bound that survives scrutiny is different: a text file that git has MISCLASSIFIED because of
+    # one stray byte is small; an actual video is not. So the binary pass covers binary files under
+    # 1 MB, and anything larger is NAMED — not counted, named — so a reader can see exactly what was
+    # not read. Measured here: reading 11 MB of committed GIF and MP4 with this expression costs about
+    # 4.8s of a 1.1s scan, and buys protection against a leak deliberately hidden inside a video,
+    # which is not the accident this check exists for.
+    #
     # `tr -d` strips NUL before the filter, because bash `read` stops at one.
     found="$(git grep --cached -n -I -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
     found="$found
 $(git grep -n -I -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
-    local _small _big=""
-    # ONE `wc -c` pass over the whole list, not one `sh -c` per file. The per-file version spawned
-    # 478 processes and cost more than the scan it was protecting.
-    local _sizes; _sizes="$(git ls-files -z 2>/dev/null | xargs -0 wc -c 2>/dev/null | sed '$d' || true)"
-    _small="$(printf '%s\n' "$_sizes" | awk '$1<=262144 { $1=""; sub(/^ +/,""); if (length($0)) print }' || true)"
-    if [ -n "$_small" ]; then
-      found="$found
-$(printf '%s\n' "$_small" | tr '\n' '\0' | xargs -0 git grep --no-index -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    local _txt _bin _binsmall _binbig=""
+    _txt="$(git ls-files -z 2>/dev/null | xargs -0 grep -lI '' 2>/dev/null || true)"
+    _bin="$(comm -23 <(git ls-files 2>/dev/null | sort) <(printf '%s\n' "$_txt" | sort) 2>/dev/null || true)"
+    _binsmall=""; _binbig=""
+    if [ -n "$_bin" ]; then
+      local _f _sz
+      while IFS= read -r _f; do
+        [ -n "$_f" ] && [ -f "$_f" ] || continue
+        _sz="$(wc -c < "$_f" 2>/dev/null | tr -d ' ')"; _sz="${_sz:-0}"
+        if [ "$_sz" -le 1048576 ]; then _binsmall="$_binsmall$_f
+"; else _binbig="$_binbig$_f
+"; fi
+      done <<BINEOF
+$_bin
+BINEOF
     fi
-    _big="$(printf '%s\n' "$_sizes" | awk '$1>262144 && NF>1' | grep -c . || true)"; _big="${_big:-0}"
+    if [ -n "$_binsmall" ]; then
+      found="$found
+$(printf '%s' "$_binsmall" | grep -v '^$' | tr '\n' '\0' | xargs -0 grep -anEH "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    fi
     # files that are present and not ignored but never added — the shape the original leak had
     u="$( git ls-files -z --others --exclude-standard 2>/dev/null | tr '\0' '\n' | grep -c . || true )"; u="${u:-0}"
     if [ "$u" -gt 0 ]; then
       found="$found
 $( git ls-files -z --others --exclude-standard 2>/dev/null \
-        | xargs -0 git grep --no-index -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true )"
+        | xargs -0 grep -anEH "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true )"
     fi
     found="$(printf '%s\n' "$found" | grep -v '^$' | sort -u || true)"
+    local _nbig; _nbig="$(printf '%s' "$_binbig" | grep -c . || true)"; _nbig="${_nbig:-0}"
     _ss_nph_read; _ss_hit "$found"
-    ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s); $_big file(s) over 256 KB read as text only${nph:+; $nph declared exception(s)}."; return 0
+    if [ "$_nbig" -gt 0 ]; then
+      echo "compass: secret-scan read every text file and every binary file under 1 MB. NOT read, because they are binary and larger:" >&2
+      printf '%s' "$_binbig" | grep -v '^$' | sed 's/^/  · /' >&2
+    fi
+    ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s); ${_nnames:-0} allowed name(s); $_nbig binary file(s) over 1 MB named above and not read${nph:+; $nph declared exception(s)}."; return 0
   fi
   if [ -d "$first" ]; then
     # LOCAL BUILD STATE IS A DIFFERENT QUESTION. `review-build` runs `secret-scan <build-dir>` over a
@@ -1347,6 +1485,9 @@ $( git ls-files -z --others --exclude-standard 2>/dev/null \
     _ss_nph_read; _ss_hit "$found"; ok "secret scan ($first): 0 hits, $_scope${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -n "$first" ]; then   # explicit file list
+    local _f _missing=""
+    for _f in "$@"; do [ -e "$_f" ] || _missing="$_missing $_f"; done
+    [ -z "$_missing" ] || die "secret-scan: no such file(s):$_missing. A scan of nothing is not a pass."
     # -H forces the filename even for a SINGLE file. Without it grep emits `lineno:content`, the
     # `path:lineno:` strip has nothing to strip, and the guard above — which treats an unstripped
     # line as a finding rather than judging it half-parsed — turned every single-file scan into a
@@ -3272,6 +3413,43 @@ cmd_auto_spawn() { # <build-dir>
 }
 
 # S7: may the loop auto-advance? exit 0 only if NO gate-lock and status is not gate-wait-*.
+# ── v0.35 P3: next-stage — the successor, from ONE place ────────────────────────────────────────
+# WHY THIS EXISTS. Compass names seven stages in `LIFECYCLE` and, until now, nothing could answer
+# "which one comes next?" on demand. Every caller that needed the answer re-derived it, and the gate
+# text the user actually reads could not name a successor at all — it said only "Never auto-invoke
+# the next skill", which tells a reader what will not happen and never what will.
+#
+# The walk is the one `cmd_cockpit` already uses, and it is REUSED rather than rewritten: three
+# parties in this build's review rounds got three different answers by reimplementing a walk. The
+# first stage that has not passed IS the next thing to do, because `stage_pass` requires the stage's
+# last receipt block to be headed PASS, unsuperseded, with no unchecked box.
+#
+# IT MUST NEVER `die`. `die()` is `exit 1`, and the Stop hook calls this: a hook that exits crashes
+# the session, which is a failure this build already made once (see the note at cmd_stop_guard).
+# Every outcome is an exit code and a message on stderr, never an exit from inside a hook.
+#
+#   a stage is next      → the stage name on stdout, exit 0
+#   every stage passed   → nothing on stdout, exit 3   (finished — not an error)
+#   unreadable state     → nothing on stdout, exit 2   (unknown — fail closed)
+cmd_next_stage() { # <build-dir>
+  local dir="${1:-}"
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    echo "next-stage: usage: compass.sh next-stage <build-dir>" >&2; return 2
+  fi
+  if [ ! -f "$dir/receipts.md" ]; then
+    echo "next-stage: no receipts.md in '$dir' — cannot say which stage is next." >&2; return 2
+  fi
+  local s cur=""
+  for s in $LIFECYCLE; do
+    if stage_pass "$dir" "$s" 2>/dev/null; then :; else cur="$s"; break; fi
+  done
+  if [ -z "$cur" ]; then
+    echo "next-stage: every stage in LIFECYCLE has passed for '$(basename "$dir")'." >&2; return 3
+  fi
+  printf '%s\n' "$cur"
+  return 0
+}
+
 cmd_can_advance() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh can-advance <build-dir>"
   local slug; slug="$(basename "$dir")"
@@ -5462,6 +5640,7 @@ main() {
     auto-start)        cmd_auto_start "$@" ;;
     auto-spawn)        cmd_auto_spawn "$@" ;;
     can-advance)       cmd_can_advance "$@" ;;
+    next-stage)        cmd_next_stage "$@" ;;
     program-init)      cmd_program_init "$@" ;;
     program-ledger)    cmd_program_ledger "$@" ;;
     program-next)      cmd_program_next "$@" ;;

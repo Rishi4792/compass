@@ -41,8 +41,19 @@ by a new suite child, `secret-corpus-check`. Every version of the scanner, again
   round 2                             18 of 48                       7 of 22
   round 3                              5 of 48                       6 of 22
   round 4                              0 of 48                       0 of 22
-  round 5 (corpus now 68 / 27)         0 of 68                       0 of 27
+  round 5 (corpus now 112 / 45)        0 of 112                      0 of 45
 ```
+
+A reviewer made the fair point that a corpus written by the author can flatter itself, so round 5 was
+also checked against forty lines written fresh from real Dockerfiles, systemd units, CI configs,
+nginx, Terraform, Rails, Laravel, ASP.NET, SCIM and `.env.example` files: **seven refused before that
+round's rules, none after**, with none of thirteen real leaks missed. All forty are in the fixture now.
+
+**What is NOT fixed is written down.** Ten open items — UTF-16 files, `.gitattributes -diff`,
+rename-only commits, commit messages, symlinks, binaries over 1 MB, review transcripts under
+`.claude/`, the absence of CI, an unwired speed check, and a test run that is over its last published
+ceiling — each with the reason it was left. A leak scanner is never finished; a list of what it cannot
+see is the honest substitute for pretending otherwise.
 
 Rounds 1 and 2 made the scanner **worse at ordinary code than the version that could not see the leak
 at all**. Nothing showed that until the population stopped moving.

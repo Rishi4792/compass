@@ -32,13 +32,20 @@ SH=plugins/compass/scripts/compass.sh
 [ -f "$F/leaks.txt" ] && [ -f "$F/not-leaks.txt" ] && [ -f "$SH" ] || {
   echo "secret-corpus-check: fixtures or scanner missing under '$ROOT'" >&2; exit 2; }
 
-# The substitutions. Assembled from halves so this script is not a leak either.
-_U="Us""ers"; _H="ho""me"; _N="rk""apoor"; _AK="AK""IA"; _SK="s""k-"; _SEC="_SEC""RET"
-_PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"; _sec="_sec""ret"
-_ID="5647""da6a-06af-49a5-b4bd-5556082b708a"; _IDU="$(printf '%s' "$_ID" | tr 'a-f' 'A-F')"
+# The substitutions. Assembled from halves so this script is not a leak either — and every VALUE is
+# invented. The first version used a login name one letter away from the repository owner's, which
+# is the same mistake as shipping the real one: a fixture must not read as anybody's identity.
+_U="Us""ers"; _H="ho""me"; _N="fixture""person"; _AK="AK""IA"; _SK="s""k-"; _SEC="_SEC""RET"
+_PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"; _sec="_sec""ret"; _KEY="K""EY"; _PW="PASS""WORD"
+# AN INVENTED ID. The first version of this line assembled the AUTHOR'S REAL session id at run time
+# — the same defect this project has now found three times, in three different files, twice after
+# declaring it fixed. Splitting a string hides a value from the scanner; it does not make the value
+# safe to ship. This one is made up, and it is checked against the real thing by nothing, which is
+# the point.
+_ID="1a2b""3c4d-0000-4000-8000-00000000f00d"; _IDU="$(printf '%s' "$_ID" | tr 'a-f' 'A-F')"
 subst() { sed -e "s|<U>|$_U|g" -e "s|<H>|$_H|g" -e "s|<N>|$_N|g" -e "s|<AK>|$_AK|g" \
               -e "s|<SK>|$_SK|g" -e "s|<SEC>|$_SEC|g" -e "s|<PG>|$_PG|g" -e "s|<XO>|$_XO|g" \
-              -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<sec>|$_sec|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
+              -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<sec>|$_sec|g" -e "s|<KEY>|$_KEY|g" -e "s|<PW>|$_PW|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
 
 D="$(mktemp -d)"; mkdir -p "$D/d"
 one() { printf '%s\n' "$1" > "$D/d/f.txt"; bash "$SH" secret-scan "$D/d" >/dev/null 2>&1; local r=$?; rm -f "$D/d/f.txt"; return $r; }
