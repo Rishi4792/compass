@@ -3,6 +3,57 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the leak scanner, four review rounds
+
+**This is behaviour change and it is written down here because three earlier rounds were not.** A
+reviewer pointed out that `plugin.json` still said 0.34.0 while the scanner had been rewritten three
+times, and this project's own RELEASING.md calls that a broken release. The version bump belongs to
+whoever ships; the record belongs here.
+
+**What changed.** `compass.sh secret-scan` can now see the only class that has ever leaked from this
+repository — an absolute home path and a session id — and it no longer refuses ordinary code to do
+it. Along the way it gained a `--tracked` mode that scans the working tree, the index and files
+present but not ignored; per-match rather than per-line filtering; file and line attribution in
+`--commits`; and two declared routes past a false positive.
+
+**How it is measured, which is the part that matters.** Four rounds each reported a good score
+against a list written after the rule was chosen, and each had a hole its own list contained no
+example of. The corpus is now a fixture — `scripts/fixtures/secrets/{leaks,not-leaks}.txt` — scored
+by a new suite child, `secret-corpus-check`. Every version of the scanner, against that one corpus:
+
+```
+                              ordinary lines wrongly refused    real leaks missed
+  before this work                     7 of 48                      14 of 22
+  round 1                             20 of 48                      11 of 22
+  round 2                             18 of 48                       7 of 22
+  round 3                              5 of 48                       6 of 22
+  round 4                              0 of 48                       0 of 22
+  round 5 (corpus now 68 / 27)         0 of 68                       0 of 27
+```
+
+Rounds 1 and 2 made the scanner **worse at ordinary code than the version that could not see the leak
+at all**. Nothing showed that until the population stopped moving.
+
+**Two routes past a false positive, both deliberate.** A home-directory name that is not a person —
+a fixture stand-in, a container account, a CI runner, a URL segment — goes in
+`scripts/fixtures/secrets/allowed-names.txt`, one line, visible and reviewable. Anything else takes
+`# compass-allow-secret: <reason>` on the line, at least eight characters, counted in the summary.
+A finding in a committed patch cannot be cleared either way.
+
+**Inside a `.claude/` path only keys are checked.** `review-build` scans a build's own folder and
+treats any hit as blocking; once the scanner learned to see home paths it returned 320 hits on this
+build and would have blocked every Compass build anybody runs. Local build state records the
+operator's real paths by design. The question worth asking of it is whether it contains a key.
+
+**Speed.** `secret-scan --tracked` reads files git calls binary, which is how a single NUL byte
+stopped hiding a readable line — but only for files under 256 KB. Reading a 7.1 MB GIF and a 3.5 MB
+MP4 as text twice per run cost 4.4s; it is 1.1s now, and files above the limit are named in the
+summary rather than silently skipped.
+
+**The exposure window, counted three times.** The path shipped in **14 tagged releases**, v0.28.0
+through v0.33.5. Earlier figures of "six" and "15" were both wrong, and both are corrected in place
+with the reason stated.
+
 ## [0.34.0] — 2026-09-02
 
 Pages a stranger can read, and the checks that prove it.

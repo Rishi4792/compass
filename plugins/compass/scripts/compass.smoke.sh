@@ -3561,7 +3561,7 @@ _lkrun "run it from /$_H/user/app";                       chk "$?" "0" "v0.34.2 
 _lkrun "/$_U/alicent/x";                                  chk "$?" "1" "v0.34.2: a real name that merely BEGINS with a placeholder name is NOT allowed"
 # M-6: a refusal that names no route out is a refusal a contributor cannot act on.
 _lkmsg="$(printf '/%s/someone/x\n' "$_U" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" 2>&1 || true)"; rm -f "$_lk/f.txt"
-chk "$( { printf '%s' "$_lkmsg" | grep -q 'alice' && printf '%s' "$_lkmsg" | grep -q 'compass-allow-secret' && echo 1 || echo 0; } )" "1" "v0.34.2 M-6: the refusal PRINTS a placeholder name AND the escape hatch, so the route out is discoverable"
+chk "$( { printf '%s' "$_lkmsg" | grep -q 'allowed-names.txt' && printf '%s' "$_lkmsg" | grep -q 'compass-allow-secret' && echo 1 || echo 0; } )" "1" "v0.34.5 M-6: the refusal names BOTH routes out — the names file and the per-line reason"
 # ── v0.34.3 · round 2 found five more Criticals. Each gets the exact shape that defeated round 2 ──
 # C-1 was only HALF fixed: the filter drops a whole MATCH, and two patterns have value fields wide
 # enough to swallow a placeholder INSIDE one match. So the patterns are now split — HARD values the

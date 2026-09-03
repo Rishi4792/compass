@@ -24,7 +24,14 @@ How every update reaches users on GitHub and the Claude community marketplace. F
    releases**, v0.28.0 through v0.33.5, and it was found by a person reading files by hand during a
    release soak. There was no CI, no git hook, and no scan step here. `mechanical-suite.sh` runs the
    first of these two commands as `leak-scan-check`, but the suite is not the release path — this is.
-   If it refuses, the message names the authored placeholder values you may use in a fixture.
+   If it refuses, it prints both routes out. A home-directory name that is not a person — a fixture
+   stand-in, a container account, a CI runner, a URL segment — goes in
+   `plugins/compass/scripts/fixtures/secrets/allowed-names.txt`, one per line with a comment.
+   Anything else takes `# compass-allow-secret: <reason>` on the line itself, at least eight
+   characters, and declared exceptions are counted in the summary so they cannot quietly pile up.
+   A finding in a COMMITTED patch cannot be cleared either way — fix the file and commit again.
+   `secret-corpus-check` scores the scanner against a fixed corpus of real leaks and ordinary code;
+   if you find a case it gets wrong, add a LINE to `fixtures/secrets/{leaks,not-leaks}.txt`.
 5. **Commit** with a clear message; **merge to `main`**.
 6. **Tag + GitHub Release:**
    ```

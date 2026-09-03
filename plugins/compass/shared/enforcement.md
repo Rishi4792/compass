@@ -15,7 +15,7 @@
 | `scan-receipt <build-dir> <stage>` | Self-check the receipt you just emitted: PASS + no empty box. Run it right after emitting. |
 | `supersede <build-dir> <from-stage>` | On escalation / re-run: voids `<from-stage>` and **all later** receipts so the stages they gate must re-run. Run it whenever you escalate UP or re-run a stage. |
 | `reconcile <actual> <gold> <tol>` | Deterministic numeric gate. `tol` = `0`, an absolute (`0.1`), or percent (`1%`). Non-zero exit = build cannot close. Removes model discretion over PASS/FAIL. |
-| `secret-scan --tracked \| --commits <range> \| <dir> \| <files…>` | Fails if a key, connection string, absolute home path or session id reached the code. `--tracked` scans every file git tracks — the set that actually ships. Authored placeholder names are allowed and the refusal prints them. |
+| `secret-scan --tracked \| --commits <range> \| <dir> \| <files…>` | Fails if a key, connection string, absolute home path or session id reached the code. `--tracked` scans the working tree, the index and files present but not ignored — run it at the repo root. Inside a `.claude/` path only KEYS are checked, because build state records real paths by design. A home-directory name that is not a person goes in `scripts/fixtures/secrets/allowed-names.txt`; anything else takes `# compass-allow-secret: <reason, 8+ chars>` on the line, and declared exceptions are counted in the summary. |
 | `close <build-dir> <slug>` | Clears `CURRENT` so a closed build can't leak its gate to the next standalone run. |
 
 ## Receipts (`receipts.md`, append-only)

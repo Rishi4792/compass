@@ -1,6 +1,9 @@
 node_modules/
 .DS_Store
-.claude/builds/
+.claude/
+# (was `.claude/builds/` only. Nothing under .claude/ is tracked, and a reviewer showed that the
+# rest was hidden by a LOCAL `.git/info/exclude`, which no clone gets — so `secret-scan --tracked`
+# was green here and would have had files to judge on anyone else's machine.)
 
 # Local session catch-up — never publish
 CONTEXT.md

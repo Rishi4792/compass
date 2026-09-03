@@ -34,11 +34,11 @@ SH=plugins/compass/scripts/compass.sh
 
 # The substitutions. Assembled from halves so this script is not a leak either.
 _U="Us""ers"; _H="ho""me"; _N="rk""apoor"; _AK="AK""IA"; _SK="s""k-"; _SEC="_SEC""RET"
-_PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"
+_PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"; _sec="_sec""ret"
 _ID="5647""da6a-06af-49a5-b4bd-5556082b708a"; _IDU="$(printf '%s' "$_ID" | tr 'a-f' 'A-F')"
 subst() { sed -e "s|<U>|$_U|g" -e "s|<H>|$_H|g" -e "s|<N>|$_N|g" -e "s|<AK>|$_AK|g" \
               -e "s|<SK>|$_SK|g" -e "s|<SEC>|$_SEC|g" -e "s|<PG>|$_PG|g" -e "s|<XO>|$_XO|g" \
-              -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
+              -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<sec>|$_sec|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
 
 D="$(mktemp -d)"; mkdir -p "$D/d"
 one() { printf '%s\n' "$1" > "$D/d/f.txt"; bash "$SH" secret-scan "$D/d" >/dev/null 2>&1; local r=$?; rm -f "$D/d/f.txt"; return $r; }
