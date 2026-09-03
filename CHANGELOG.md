@@ -3,6 +3,19 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the Stop hook's two modes were the wrong way round
+
+**A behaviour change for every existing install, stated plainly.** Until now a build with no
+`.auto-mode` marker — which is every build in the field, because only `auto-init` writes that marker
+— was REFUSED when a turn tried to end mid-step: *"build X is mid-BUILD with a step in progress …
+finish the build step before stopping"*. An Autonomous build was never refused. The setting that
+means "do not drive me" was the only one that refused anything.
+
+That warning is now gone for Human-gated builds. A Stop hook can say exactly two things — allow, or
+refuse with a reason — so "warn without refusing" was never available, and the contract chose allow:
+Human-gated is the off switch. If you relied on that warning, the equivalent is `/compass:status`,
+which prints the same stage and next action without stopping you.
+
 ## [Unreleased] — the leak scanner, four review rounds
 
 **This is behaviour change and it is written down here because three earlier rounds were not.** A

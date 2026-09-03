@@ -2394,29 +2394,29 @@ cmd_stop_guard() {
       fi
       printf '{}\n'; return 0
     fi
-    # ── gated mode (no .auto-mode) — UNCHANGED from v0.10 ──
-    # §3d: only TRUE mid-build is a risky stop; gates/*-LOCKED/CONVERGED/CLOSED-awaiting-ship → quiet.
-    is_mid_build "$sr/$slug" || continue
-    # v0.9.0 OWNERSHIP: block ONLY the session that owns this mid-build. Orphan (no owner) or
-    # a foreign session → quiet. Exact POSIX compare (no glob); owner_of never errors.
-    owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
-    [ -n "$owner" ] && [ "$owner" = "$sid" ] || continue
-    # Loop backstop: block at most once per build-step. Inline mkdir-mutex, FAILS OPEN.
-    fp="${sid}|${slug}|$(_step_counter "$sr/$slug" 2>/dev/null || true)"
-    mkdir -p "$ld" 2>/dev/null || true
-    mkdir "$ld/.$slug.bl.lock" 2>/dev/null || true                                # best-effort; proceed either way
-    prev="$(cat "$ld/$slug.blocked" 2>/dev/null || true)"
-    if [ "$prev" = "$fp" ]; then
-      rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
-      printf '{}\n'; return 0                                                      # same build-step already blocked once → allow
-    fi
-    printf '%s' "$fp" | atomic_write "$ld/$slug.blocked" 2>/dev/null || printf '%s' "$fp" > "$ld/$slug.blocked" 2>/dev/null || true
-    rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
-    stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
-    next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
-    stage="$(printf '%s' "${stage:-?}" | sed 's/"/\\"/g')"; next="$(printf '%s' "${next:-?}" | sed 's/"/\\"/g')"
-    printf '{"decision":"block","reason":"Compass: build %s is mid-BUILD with a step in progress (stage: %s). Next: %s. Finish the build step (or write a clean pause to progress.md) before stopping — work can be left half-applied."}\n' "$slug" "$stage" "$next"
-    return 0
+    # ── HUMAN-GATED: never refuses. This is v0.35's off switch, and it is the whole reason the
+    # mode question is asked with buttons on every build. ──────────────────────────────────────
+    #
+    # From v0.8.0 to v0.34.x this branch did the opposite. A build with no `.auto-mode` marker —
+    # which is every build in the field, because only `auto-init` writes that marker — was REFUSED
+    # at a mid-build stop, while an Autonomous build was always allowed to end its turn. The two
+    # positions were the wrong way round: the setting that means "do not drive me" was the only one
+    # that refused anything, and the setting that means "drive" never did.
+    #
+    # A Stop hook can say exactly two things: `{}` or `{"decision":"block","reason":…}`. There is no
+    # third form that shows text without refusing, so "warn but allow" was never available. The
+    # contract chose which of the two Human-gated gets, and it chose `{}`:
+    #
+    #   "Human-gated is the off switch, and INV-HUMAN-GATED-NEVER-REFUSES is what makes that true
+    #    rather than merely claimed."
+    #
+    # THE COST, NAMED RATHER THAN HIDDEN: everyone on a Human-gated build loses the warning "build X
+    # is mid-BUILD with a step in progress — finish the step before stopping". That is a real
+    # behaviour change for existing installs and it is in the changelog in those words.
+    #
+    # `continue`, not `return`: the walk carries on to the next INDEX row. Returning here would end
+    # the walk at the first Human-gated build, which is the defect P5 fixes on the autonomous side.
+    continue
   done < "$sr/INDEX"
   printf '{}\n'; return 0
 }

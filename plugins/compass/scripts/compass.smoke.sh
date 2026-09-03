@@ -204,9 +204,41 @@ chk "$(grep -lq 'budget.env\|NO JSON\|line-oriented' "$PLUGIN_ROOT/scripts/compa
 # ── v0.11.0 autonomous self-spawn wiring ──
 d11=0; for c in fire-g1 gate-clear auto-start stage-continuable; do grep -qE "^[[:space:]]+$c\)" "$SH" && d11=$((d11+1)); done
 chk "$d11" "4" "v0.11 all 4 new subcommands wired in dispatch (fire-g1/gate-clear/auto-start/stage-continuable)"
-# the reorder: the .auto-mode branch must appear BEFORE the gated `is_mid_build || continue` in stop-guard
-am=$(grep -n 'sr/\$slug/.auto-mode' "$SH" | head -1 | cut -d: -f1); im=$(grep -n 'is_mid_build "\$sr/\$slug" || continue' "$SH" | head -1 | cut -d: -f1)
-chk "$([ -n "$am" ] && [ -n "$im" ] && [ "$am" -lt "$im" ] && echo 1 || echo 0)" "1" "v0.11 stop-guard: .auto-mode branch is BEFORE is_mid_build (fires at all stages — the fix)"
+# ── v0.35 P2 — the Stop hook, tested by RUNNING IT rather than by comparing two line numbers ─────
+# The v0.11 assertion here compared the line number of the `.auto-mode` branch with the line number
+# of the gated `is_mid_build` check. It was the ONLY line in 1073 assertions that mentioned
+# stop-guard, and it could not see what the hook actually returns. That is why the two modes stayed
+# the wrong way round for twenty-four releases: a Human-gated build — which is every build in the
+# field, because only `auto-init` writes the marker — was REFUSED at a mid-build stop, while an
+# Autonomous build was always allowed to end its turn.
+_sgfx() {   # <mode: human|auto> [--foreign|--orphan] → prints the hook's raw JSON
+  local mode="$1"; shift
+  local own="self"; case "${1:-}" in --foreign) own=foreign ;; --orphan) own=orphan ;; esac
+  # The documented placeholder id, not an invented one: P1's scanner caught the first version of
+  # this fixture on the very next run, which is the check earning its place.
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/fixbuild .claude/builds/.locks
+    printf 'fixbuild · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# fixbuild\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** the next step\n' > .claude/builds/fixbuild/progress.md
+    printf '## RECEIPT — contract\nPASS\n\n## RECEIPT — build\nIN-PROGRESS step 2/5\n' > .claude/builds/fixbuild/receipts.md
+    printf -- '- [x] S1 done\n- [ ] S2 pending\n' > .claude/builds/fixbuild/plan.md
+    case "$own" in
+      self)    printf 'session=%s\n' "$sid" > .claude/builds/.locks/fixbuild.owner ;;
+      foreign) printf 'session=%s\n' "someone-else" > .claude/builds/.locks/fixbuild.owner ;;
+      orphan)  : ;;
+    esac
+    [ "$mode" = auto ] && : > .claude/builds/fixbuild/.auto-mode
+    printf '{"session_id":"%s","stop_hook_active":false,"transcript_path":"/x/y.jsonl"}' "$sid" \
+      | bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+chk "$(_sgfx human)"            "{}" "v0.35 INV-HUMAN-GATED-NEVER-REFUSES: a Human-gated build mid-step, owned by this session, returns {} — the off switch is off"
+chk "$(_sgfx auto)"             "{}" "v0.35: an Autonomous build still returns {} at this stage (P6 adds the refusal, and only under eight conditions)"
+chk "$(_sgfx human --foreign)"  "{}" "v0.35: a build owned by another session returns {}"
+chk "$(_sgfx human --orphan)"   "{}" "v0.35: a build with no owner returns {}"
+chk "$(printf '{"session_id":"x","stop_hook_active":true}' | bash "$SH" stop-guard 2>/dev/null)" "{}" "v0.35: stop_hook_active short-circuits — the platform's anti-deadlock escape still works"
+chk "$(grep -c 'is_mid_build "\$sr/\$slug" || continue' "$SH")" "0" "v0.35: the gated refusal is GONE from stop-guard, not merely bypassed"
 chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the Gated/Autonomous at-lock choice"
 chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the auto-start one-command trigger"
 
