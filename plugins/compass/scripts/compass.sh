@@ -2496,6 +2496,53 @@ is_mid_build() { # <build-dir>
 # never contaminate each other. `stop_hook_active` is the primary anti-deadlock; a
 # session|slug|step-counter fingerprint is the backstop (block at most once per build-step).
 # Honors set -euo pipefail throughout: every read guarded → never crashes a session (fail-open).
+# ── v0.35 P6: THE REFUSAL — eight conditions, cheapest first ─────────────────────────────────────
+# A Stop hook can say exactly two things: `{}`, or block-with-a-reason. It cannot invoke anything —
+# that was established by experiment in this build's review rounds and it is why this whole design
+# changed shape twice. What it CAN do is decline to let a turn end quietly and put the next command
+# in front of the model, in the one place that sees the moment the build would otherwise go silent.
+#
+# EIGHT CONDITIONS, ALL OF THEM. A hook that blocks on seven of eight is a runaway, so each is
+# checked and the first failure ends the test. They are ordered by cost: two file tests, then a file
+# read, then three subprocesses, so the common case (a build that is not autonomous, or not yours)
+# costs almost nothing at the end of every turn.
+#
+#   1 Autonomous            `.auto-mode` present
+#   2 not suspended         `.auto-suspended` absent — `auto-suspend` is the command Compass offers
+#                           for "make it stop", and a reviewer proved `can-advance` never reads it,
+#                           so without this the one off-switch would leave the user still refused
+#   3 owned by this session an unrelated turn must never be interrupted
+#   4 no human gate held    a gate-lock means a person owes an answer
+#   5 can-advance passes    the status is not parked at a human gate
+#   6 a successor exists    `next-stage` exits 0
+#   7 not the ship seam     ship is the user's, in either mode (contract, F-SHIP)
+#   8 budget has room       and the SAME call bumps it, because a counter that only reads is not a
+#                           bound — a reviewer ran `budget-check` six times and it never moved
+#
+# Every subprocess runs in a SUBSHELL. `can-advance` and `budget-check` both end in `die`, which is
+# `exit 1`; called directly they would take the hook — and the session — down with them.
+# On success it sets _SG_NEXT to the successor stage. Never prints to stdout.
+_sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
+  local dir="$1" slug="$2" sid="$3" ld="$4"
+  _SG_NEXT=""
+  [ -f "$dir/.auto-mode" ] || return 1
+  [ -f "$dir/.auto-suspended" ] && return 1
+  local owner; owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+  [ -n "$owner" ] && [ "$owner" = "$sid" ] || return 1
+  [ -d "$ld/$slug.gate-lock" ] && return 1
+  ( cmd_can_advance "$dir" ) >/dev/null 2>&1 || return 1
+  local nxt; nxt="$( ( cmd_next_stage "$dir" ) 2>/dev/null || true )"
+  [ -n "$nxt" ] || return 1
+  [ "$nxt" = "ship" ] && return 1
+  # CHECK, THEN BUMP — and they are two calls on purpose. `budget-check --bump-stage` increments
+  # BEFORE it tests the ceiling, so using the bumping form as the test spent a stage slot on a
+  # refusal that never happened: a build sitting at its ceiling kept counting up on every turn end
+  # for ever. The plain form tests; the bump happens once the refusal is certain, in the caller.
+  ( cmd_budget_check "$dir" ) >/dev/null 2>&1 || return 1
+  _SG_NEXT="$nxt"
+  return 0
+}
+
 cmd_stop_guard() {
   local input; input="$(cat 2>/dev/null || true)"
   case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
@@ -2514,6 +2561,7 @@ cmd_stop_guard() {
   local ld="$sr/.locks"
   local line slug status stage next owner
   local acted=0            # v0.35 P5: at most one autonomous action per turn, however many rows match
+  local refuse_slug="" refuse_next=""   # v0.35 P6: decided during the walk, emitted after it
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
@@ -2555,11 +2603,24 @@ cmd_stop_guard() {
       # which is a fan-out nobody asked for. The first one that qualifies is acted on; the rest are
       # still WALKED — that matters for what P6 adds at this seam — but not acted on twice.
       if [ "$acted" = "0" ]; then
-        owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
-        if [ -n "$owner" ] && [ "$owner" = "$sid" ] && is_stage_continuable "$sr/$slug"; then
-          _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
-          acted=1
+        # THE REFUSAL COMES FIRST, AND IT EXCLUDES THE SPAWN. Both drive the build forward; doing
+        # both would drive it twice, from two sessions, over one budget slot. When the eight
+        # conditions hold this session continues the work itself and no second session is started.
+        # When they do not, the older cross-session spawn path runs exactly as it did before.
+        if _sg_refuse_ok "$sr/$slug" "$slug" "$sid" "$ld"; then
+          # The bump is what makes the budget a BOUND rather than a reading. It happens here, at the
+          # moment the refusal is certain, so a declined refusal never spends a slot.
+          ( cmd_budget_check "$sr/$slug" --bump-stage ) >/dev/null 2>&1 || true
+          refuse_slug="$slug"; refuse_next="$_SG_NEXT"; acted=1
         fi
+        # NO SPAWN HERE ANY MORE, and the reason is that every way the test above can decline is
+        # also a reason not to start a second session: not autonomous, suspended by the user, owned
+        # by somebody else, a human gate held, parked at a gate, nothing left to do, the ship seam,
+        # or out of budget. The cross-session spawn used to fire on a much weaker test — owned and
+        # continuable — so a build parked at a human gate, or sitting at the ship seam, got a fresh
+        # session started on it. Driving the build from this turn and driving it from a new session
+        # are alternatives, never both, and the eight conditions decide which. `compass.sh
+        # auto-spawn` still exists for anyone who wants the old behaviour deliberately.
       fi
       continue
     fi
@@ -2587,6 +2648,17 @@ cmd_stop_guard() {
     # the walk at the first Human-gated build, which is the defect P5 fixes on the autonomous side.
     continue
   done < "$sr/INDEX"
+  # EMITTED AFTER THE WALK, not inside it. Returning from the branch would end the read at the
+  # deciding row and reinstate exactly the defect P5 removed, so the decision is recorded during the
+  # walk and stated once here.
+  if [ -n "$refuse_slug" ]; then
+    # The reason names the command to CONTINUE and the command to STOP. Both, always: a mechanism
+    # that declines to let a turn end and does not say how to switch it off is a trap, and this
+    # build's own contract names that hazard rather than dismissing it.
+    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run /compass:resume to continue it. To stop: compass.sh auto-suspend .claude/builds/%s — or answer Human-gated on the next build and nothing will ever refuse."}\n' \
+      "$refuse_slug" "$refuse_next" "$refuse_slug"
+    return 0
+  fi
   printf '{}\n'; return 0
 }
 

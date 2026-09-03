@@ -251,12 +251,12 @@ _sgauto_trace() {
     printf 'session=%s\n' "$sid" > .claude/builds/.locks/fixauto.owner
     : > .claude/builds/fixauto/.auto-mode
     printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/fixauto/budget.env
-    printf '{"session_id":"%s","stop_hook_active":false}' "$sid" \
-      | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1
-    grep -c '|spawn|' .claude/builds/fixauto/session-chain.log 2>/dev/null || echo 0 )
+    _j='{"session_id":"SID","stop_hook_active":false}'; _j="${_j/SID/$sid}"
+    printf '%s' "$_j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null \
+      | grep -c '"decision":"block"' || true )
   rm -rf "$r"
 }
-chk "$(_sgauto_trace)" "1" "v0.35 THE HOOK REALLY RAN: an Autonomous owned build leaves a spawn event — a stub that only prints {} fails this and passes every other stop-guard assertion here"
+chk "$(_sgauto_trace)" "1" "v0.35 THE HOOK REALLY RAN: an Autonomous owned build is REFUSED — a stub that only prints {} fails this and passes every other stop-guard assertion here"
 chk "$(_sgfx human)"            "{}" "v0.35 INV-HUMAN-GATED-NEVER-REFUSES: a Human-gated build mid-step, owned by this session, returns {} — the off switch is off"
 chk "$(_sgfx auto)"             "{}" "v0.35: an Autonomous build still returns {} at this stage (P6 adds the refusal, and only under eight conditions)"
 chk "$(_sgfx human --foreign)"  "{}" "v0.35: a build owned by another session returns {}"
@@ -289,19 +289,21 @@ _sgwalk() {   # <rows> <owners: one|many> → "<spawns for the LAST build> <tota
       _mk "$(printf 'other%02d' "$i")" "$ow"; i=$((i+1))
     done
     _mk "mine" "$sid"
-    printf '{"session_id":"%s","stop_hook_active":false}' "$sid" \
-      | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1
-    local n t
-    n="$(grep -h '|spawn|' .claude/builds/mine/session-chain.log 2>/dev/null | grep -c . || true)"
-    t="$(cat .claude/builds/*/session-chain.log 2>/dev/null | grep -c '|spawn|' || true)"
-    printf '%s %s' "${n:-0}" "${t:-0}" )
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    # Two numbers: did the refusal name the DEEP build (so the walk reached it), and how many
+    # refusals were emitted (exactly one decision per turn, however many rows qualify).
+    local named blocks
+    named="$(printf '%s' "$o" | grep -c 'Compass: mine ' || true)"
+    blocks="$(printf '%s' "$o" | grep -c '"decision":"block"' || true)"
+    printf '%s %s' "${named:-0}" "${blocks:-0}" )
   rm -rf "$r"
 }
-chk "$(_sgwalk 1)"  "1 1" "v0.35 P5: one row, owned → the hook acts (the control: it acted before this change too)"
+chk "$(_sgwalk 1)"  "1 1" "v0.35 P5: one row, owned → the hook acts on it (the control)"
 chk "$(_sgwalk 2)"  "1 1" "v0.35 P5: an owned build BEHIND one foreign autonomous build is reached — before this change the walk returned at row 1"
 chk "$(_sgwalk 10)" "1 1" "v0.35 P5: ...and behind nine of them"
 chk "$(_sgwalk 30)" "1 1" "v0.35 P5: ...and behind twenty-nine, which is the shape of a real INDEX that only grows"
-chk "$(_sgwalk 3 many)" "0 1" "v0.35 P5: three OWNED autonomous builds produce exactly ONE spawn — walking every row must not fan out one attempt per row"
+chk "$(_sgwalk 3 many)" "0 1" "v0.35 P5: three OWNED autonomous builds produce exactly ONE decision, and it is for the FIRST of them — walking every row must not fan out one action per row"
 # The structural half: the autonomous branch must not RETURN. Behaviour is asserted above; this
 # catches a future edit that reinstates the early exit while the fixtures still happen to pass.
 _p5br="$(awk '/^cmd_stop_guard\(\) \{/{g=1} g && /sr\/\$slug\/\.auto-mode/{f=1} f{print} f&&/^    fi$/{exit}' "$SH")"
@@ -312,6 +314,69 @@ chk "$([ -n "$_p5br" ] && echo 1 || echo 0)" "1" "v0.35 P5: the autonomous branc
 _p5code="$(printf '%s' "$_p5br" | grep -vE '^[[:space:]]*#' || true)"
 chk "$(printf '%s' "$_p5code" | grep -c 'return')" "0" "v0.35 P5: ...and no executable line in it returns — the walk continues to the next INDEX row instead of ending there"
 chk "$(printf '%s' "$_p5code" | grep -c 'continue')" "1" "v0.35 P5: ...it continues, exactly once"
+
+# ── v0.35 P6 — THE REFUSAL: eight conditions, each one falsified in turn ─────────────────────────
+# A hook that blocks on seven of eight is a runaway. So the fixture below meets all eight and then
+# breaks exactly one at a time, and every break must produce {} — not a softer refusal, not a
+# warning, {}.
+_p6fx() {   # <break: none|mode|suspended|owner|gatelock|advance|successor|ship|budget>
+  local brk="${1:-none}" sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** write the plan\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf -- '- [x] S1\n' > .claude/builds/b/plan.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    case "$brk" in
+      mode)      rm -f .claude/builds/b/.auto-mode ;;
+      suspended) : > .claude/builds/b/.auto-suspended ;;
+      owner)     printf 'session=somebody-else\n' > .claude/builds/.locks/b.owner ;;
+      gatelock)  mkdir -p .claude/builds/.locks/b.gate-lock ;;
+      advance)   printf '# b\n\n**Status:** gate-wait-G1 waiting on a person\n**Stage:** plan\n**Next:** answer\n' > .claude/builds/b/progress.md ;;
+      successor) for _st in plan review-plan build review-build ship; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
+      ship)      for _st in plan review-plan build review-build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
+      budget)    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=0\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+    esac
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    local v sp sg
+    case "$o" in *'"decision":"block"'*) v=BLOCK ;; '{}') v=ALLOW ;; *) v=OTHER ;; esac
+    sg="$(sed -nE 's/^spent_stages=(.*)$/\1/p' .claude/builds/b/budget.env 2>/dev/null | tail -1)"
+    sp="$(grep -c '|spawn|' .claude/builds/b/session-chain.log 2>/dev/null || true)"
+    printf '%s %s %s' "$v" "${sg:-?}" "${sp:-0}" )
+  rm -rf "$r"
+}
+chk "$(_p6fx none)"      "BLOCK 1 0" "v0.35 INV-REFUSES-QUIET-STOP: all eight conditions met → the hook REFUSES, the budget MOVES, and no second session is spawned"
+chk "$(_p6fx mode)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 1/8: not Autonomous → {} (this is INV-HUMAN-GATED-NEVER-REFUSES seen from the other side)"
+chk "$(_p6fx suspended)" "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 2/8: .auto-suspended present → {} — the one command Compass offers for 'make it stop' actually stops it"
+chk "$(_p6fx owner)"     "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 3/8: owned by another session → {} — an unrelated turn is never interrupted"
+chk "$(_p6fx gatelock)"  "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 4/8: a human gate-lock is held → {}"
+chk "$(_p6fx advance)"   "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 5/8: parked at a gate-wait status → {}"
+chk "$(_p6fx successor)" "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 6/8: every stage has passed, no successor → {}"
+chk "$(_p6fx ship)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 7/8 (INV-SHIP-SEAM-NEVER-REFUSES): the successor is ship → {} — ship is the user's, in either mode"
+chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the budget ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
+# The reason has to be actionable: the successor by name, the command to continue, the command to stop.
+_p6msg() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** write the plan\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+_p6m="$(_p6msg)"
+chk "$(printf '%s' "$_p6m" | grep -c 'the next one is plan')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: the reason names the SUCCESSOR the walk worked out — not a stage typed into a string"
+chk "$(printf '%s' "$_p6m" | grep -c '/compass:resume')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: ...and the exact command to continue"
+chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend')" "1" "v0.35: ...and the exact command to make it STOP — a mechanism that refuses to let a turn end and does not say how to switch it off is a trap"
+chk "$(printf '%s' "$_p6m" | grep -c 'Human-gated')" "1" "v0.35: ...and the setting that means it never refuses again"
 
 # ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
 # Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a

@@ -3,6 +3,34 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the end-of-turn check reads every build, and refuses a silent stop
+
+**It read 26 of 34 and never once saw the build being worked on.** When a turn ends Compass reads its
+list of builds top to bottom. The branch handling an autonomous build ended by returning, and that
+return sat outside the ownership test above it — so the first row with the autonomous marker and a
+non-terminal status ended the read, owned or not. Measured by tracing the real function against the
+real list: rows 1 to 26 of 34, then nothing. Row 34 was the build doing the work.
+
+**And now it refuses a quiet stop, under eight conditions, all of them.** Autonomous · owned by this
+session · not suspended · no human gate held · `can-advance` passes · a successor exists · not the
+ship seam · budget remaining. Any one absent and the turn ends normally. A hook that blocks on seven
+of eight is a runaway, so each is tested by a fixture that breaks exactly that one.
+
+The refusal names the successor `next-stage` worked out, the command to continue (`/compass:resume`),
+**and the command to stop** (`compass.sh auto-suspend`). A mechanism that will not let a turn end and
+does not say how to switch it off is a trap.
+
+**The bound is the budget, and it moves.** An earlier attempt at this shipped a loop bound that
+bounded nothing — 39 refusals went straight through it. With `ceiling_stages=3` you now get exactly
+three refusals and then quiet for ever. A counter that only reads is not a bound.
+
+**The Stop hook no longer starts a second session.** The old cross-session spawn ran on a much weaker
+test — owned and continuable — so a build parked at a human gate, or sitting at the ship seam, got a
+fresh session started on it. Driving the build from this turn and starting a second session are
+alternatives, never both. `compass.sh auto-spawn` still exists for anyone who wants that on purpose.
+
+**Human-gated still never refuses.** That is the off switch, and none of this reaches it.
+
 ## [Unreleased] — the gate now says what to do next, and a new command works out what that is
 
 **`compass.sh next-stage <build-dir>`** prints the one stage that has not passed yet. Compass named
