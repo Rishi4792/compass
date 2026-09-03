@@ -3500,6 +3500,30 @@ _gdout="$( cd "$_gdd/r" && bash plugins/compass/scripts/gold-diff-check.sh . 2>&
 chk "$(printf '%s' "$_gdout" | grep -c 'N/A')" "1" "v0.34.1: ...and it SAYS so, rather than passing silently"
 rm -rf "$_gdd"
 
+# ── v0.34.1: the leak scanner can see the only class that has ever leaked here ───────────────────
+# An absolute home path shipped in this public plugin from v0.28.0 to v0.34.0 — six releases — and
+# `secret-scan` returned PASS on the very commit that published it.
+#
+# THE TEST STRINGS ARE ASSEMBLED AT RUNTIME, and that is not a trick — it is the rule. Written as
+# literals, these assertions made the scanner flag THIS FILE, because test data for a leak scanner
+# looks exactly like a leak. Three review rounds asked for "fixtures are authored with neutral
+# values" and the author broke it within minutes of adding the check. Assembling the value means the
+# shipped file never contains the shape, while the scanner still sees it at run time.
+_lk="$(mktemp -d)"
+_lkrun() { printf '%s\n' "$1" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" >/dev/null 2>&1; local r=$?; rm -f "$_lk/f.txt"; return $r; }
+_U="Us""ers"; _H="ho""me"; _HEX8="5647""da6a"; _SK="s""k-"
+_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for six releases while this scanner passed it"
+_lkrun "/$_H/someone/x";          chk "$?" "1" "v0.34.1: the Linux home form is caught too"
+_lkrun "id $_HEX8-06af-49a5-b4bd-5556082b708a"; chk "$?" "1" "v0.34.1: a bare session id is CAUGHT"
+_lkrun "/$_U/alice/project";      chk "$?" "0" "v0.34.1: an AUTHORED placeholder is allowed — a fixture must be able to show the shape it guards"
+_lkrun "id 9999dead-0000-0000-0000-000000000000"; chk "$?" "0" "v0.34.1: the authored placeholder uuid is allowed"
+_lkrun "k = ${_SK}abcdefghijklmnopqrstuvwx"; chk "$?" "1" "v0.34.1: the pre-existing key patterns still bite — the fix ADDED, it did not replace"
+_lkrun "the quick brown fox";     chk "$?" "0" "v0.34.1: ordinary prose is not a leak"
+rm -rf "$_lk"
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_ROOT" >/dev/null 2>&1
+chk "$?" "0" "v0.34.1: leak-scan-check ships and the shipped tree is clean"
+chk "$(grep -c 'leak-scan-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.34.1: ...and the suite NAMES it, so the class has an owner"
+
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"
 # The suite must ERR when a child is MISSING rather than report a green it did not earn. Proven on a

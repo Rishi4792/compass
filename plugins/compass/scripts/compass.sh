@@ -1138,7 +1138,19 @@ cmd_secret_scan() { # <build-dir|--commits <range>|files...>
   local first="${1:-}"
   # Pattern with NO embedded ASCII single-quote (a literal ' in the _SECRET class used to terminate
   # the xargs sh -c string — a pre-existing latent bug; the value side now just excludes whitespace).
-  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+)'
+  # v0.34.1 — THE TWO PATTERNS THIS SCANNER WAS MISSING, and it was missing the only class that has
+  # ever actually leaked from this repo. An absolute home path shipped in four fixture files from
+  # v0.28.0 to v0.34.0 — six releases — and this scanner returns PASS on the very commit that
+  # published it (`secret-scan --commits f0dd7f1^..f0dd7f1` → "0 hits"). `INV-NO-LEAK` in smoke is
+  # implemented by CALLING this function, so it inherited the blindness exactly. Found by an
+  # independent reviewer who ran the gate against the real commit instead of a planted string.
+  #   · an absolute home path — `/Users/<name>/` and the Linux `/home/<name>/` form
+  #   · a bare session UUID (8-4-4-4-12), the other half of what a hook payload carries
+  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+|/(Users|home)/[A-Za-z0-9._-]+/|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+  # AUTHORED PLACEHOLDERS ARE NOT LEAKS. A fixture MUST be able to show the shape of the thing it
+  # guards against, so the documented stand-ins are allowed by name. Anything not on this list is a
+  # finding — the list is short, explicit, and grep-able on purpose.
+  local allow='/(Users|home)/(alice|bob|jdoe|jane|USER|you|example)/|9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   local found=""
   _ss_hit() { [ -z "$1" ] || die "possible secret — remove it / read from env instead:
 $1"; }
@@ -1146,11 +1158,13 @@ $1"; }
     local range="${2:-}"; [ -n "$range" ] || die "usage: compass.sh secret-scan --commits <range>"
     git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --commits: not a git repo."
     git rev-list --quiet "$range" -- >/dev/null 2>&1 || die "secret-scan --commits: bad range '$range'."
-    found="$(git log -p "$range" -- 2>/dev/null | grep -E '^\+' | grep -EnI "$pat" || true)"
+    found="$(git log -p "$range" -- 2>/dev/null | grep -E '^\+' | grep -EnI "$pat" | grep -Ev "$allow" || true)"
     _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits."; return 0
   fi
   if [ -d "$first" ]; then
-    found="$(grep -REnI --exclude-dir='.git' "$pat" "$first" 2>/dev/null || true)"
+    # `.claude/` is local build state: gitignored, never shipped, and full of real paths and ids by
+      # design. Scanning it would drown the signal in false positives and teach people to ignore this.
+      found="$(grep -REnI --exclude-dir='.git' --exclude-dir='.claude' "$pat" "$first" 2>/dev/null | grep -Ev "$allow" || true)"
     _ss_hit "$found"; ok "secret scan ($first): 0 hits."; return 0
   fi
   if [ -n "$first" ]; then   # explicit file list
