@@ -16,4 +16,3 @@ budget-init         # orchestrator setup, invoked by auto-start, not standalone
 auto-resume         # entered by the resume command's prose, not by a script
 auto-spawn          # entered by the Stop hook's cross-session path
 dora-ledger         # CLI: a read-only report a person runs to see the delivery ledger
-next-stage          # KNOWN-OPEN: v0.35 P3 built it; P4 wires it into the shared gate text, which is the only place that can name a successor byte-identically across seven skills. Unwired for exactly one phase, and this line comes out when P4 lands.

@@ -168,7 +168,9 @@ does **not** present a second gate — the stage owns it.
 
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
-   (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+   `<next stage>` is not guessed: `compass.sh next-stage <build-dir>` prints it, and prints nothing
+   at all when every stage has passed. (For the terminal `ship` stage, Next is `done — build
+   SHIPPED`.)
 
    Then PUSH the RAIL when this stage produced an artefact — run
    `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
@@ -196,7 +198,22 @@ does **not** present a second gate — the stage owns it.
      run a mini review-contract on the delta, `supersede` downstream, re-baseline.
    - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
 
-Only **Approve** or **Amend** advances. **Never auto-invoke the next skill** — the gate ASKS;
-it does not advance by itself. On any detected drift from `contract.md`, STOP and surface
-instead of advancing.
+Only **Approve** or **Amend** advances — and on **Approve** you CONTINUE, you do not stop to ask a
+second time. Run `compass.sh next-stage <build-dir>`: it prints the one stage that has not passed
+yet, read from the same stage order every gate here uses. Then invoke that stage's skill. The user
+has already said yes; the silence after that yes is the stall this gate exists to end.
+
+Name the successor, and name what a person can type. The seven stage skills are hidden from the `/`
+menu, so **`/compass:resume`** is the command that reaches the next stage — a `/compass:` name for a
+stage is not a command anybody has, and offering one sends the reader to a door that is not there.
+
+On **Revise**, re-run this stage with the change. On **Pause**, stop cleanly. On any detected drift
+from `contract.md`, STOP and surface instead of advancing.
+
+*(Until v0.35 this paragraph forbade invoking the next skill at all. It told the reader what would
+NOT happen and never what would, so an approved stage ended in silence and the build waited for a
+human to remember the next command. The old sentence is not quoted here, because the check that
+proves it is gone greps for it — a note about a banned string that contains the banned string keeps
+the defect alive in the file that fixed it. The gate still ASKS. What changed is that an answer of
+Approve is now acted on rather than described.)*
 <!-- GATE:END -->

@@ -262,6 +262,31 @@ bash "$SH" next-stage >/dev/null 2>&1;         chk "$?" "2" "v0.35 P3: no argume
 # The one that matters most: the Stop hook calls this, and `die()` is `exit 1`. A hook that exits
 # kills the session — a failure this build already made once.
 chk "$(sed -n '/^cmd_next_stage()/,/^}/p' "$SH" | grep -c 'die ')" "0" "v0.35 P3: next-stage never calls die — a hook that exits crashes the session"
+
+# ── v0.35 P4 — INV-APPROVE-INVOKES: the gate names the successor ─────────────────────────────────
+# The sentence this replaces told a reader what would NOT happen and never what would. An approved
+# stage therefore ended in silence, and the build waited for a person to remember the next command —
+# the exact failure this whole release was raised to fix. The replacement must be BYTE-IDENTICAL
+# across all seven stage skills (INV-7 above), so it cannot name a per-stage command; it names ONE
+# command that works out the successor wherever the build is, which is why P3 had to come first.
+_gate="$(xblk "$GATE")"
+# Assembled at run time, or this file would be the ninth carrying the phrase and the assertion would
+# refuse the fix that removed it. Same rule as the leak fixtures: never write the shape you hunt.
+_banned="Never auto-""invoke the next skill"
+chk "$(grep -rl "$_banned" "$PLUGIN_ROOT" 2>/dev/null | grep -c .)" "0" "v0.35 INV-APPROVE-INVOKES: the prohibition is GONE from every file in the plugin"
+chk "$(printf '%s' "$_gate" | grep -c 'compass.sh next-stage')" "2" "v0.35 INV-APPROVE-INVOKES: ...and the gate block names the command that yields the successor — in the footer and at the Approve branch"
+chk "$(printf '%s' "$_gate" | grep -ci 'on \*\*Approve\*\* you CONTINUE')" "1" "v0.35 INV-APPROVE-INVOKES: Approve is acted on, not merely described"
+chk "$(printf '%s' "$_gate" | grep -c '/compass:resume')" "1" "v0.35 INV-APPROVE-INVOKES: ...and it names the command a person can actually type, since the 7 stage skills are hidden from the / menu"
+# The successor command in the text must be one this script really dispatches — a gate that names a
+# command nobody has is the defect it replaced, wearing different words.
+_ns="$(printf '%s' "$_gate" | grep -oE 'compass\.sh [a-z-]+' | sed 's/compass.sh //' | sort -u)"
+_nsbad=0; for _c in $_ns; do grep -qE "^[[:space:]]+$_c\)" "$SH" || _nsbad=$((_nsbad+1)); done
+chk "$_nsbad" "0" "v0.35 INV-APPROVE-INVOKES: every compass.sh command the gate block names is really dispatched"
+# And the whole block still travels as one unit — asserted above by INV-7, re-stated here against the
+# NEW text so a future edit to one skill cannot drift while the old assertion still passes.
+_p4=0; for _t in contract review-contract plan review-plan build review-build ship; do
+  [ "$(xblk "$PLUGIN_ROOT/skills/$_t/SKILL.md")" = "$_gate" ] && _p4=$((_p4+1)); done
+chk "$_p4" "7" "v0.35 INV-APPROVE-INVOKES: the new text is byte-identical across all seven stage skills"
 _d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED\nbody\n\n' >> "$_d/receipts.md"
 chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a SUPERSEDED last block is not a pass"; rm -rf "$_d"
 _d="$(mktemp -d)"; printf '## RECEIPT — contract · fix · PASS\n- [ ] an unchecked box\n\n' > "$_d/receipts.md"
