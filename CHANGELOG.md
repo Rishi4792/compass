@@ -3,6 +3,35 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the stop instruction now runs, and the end-of-turn check got four times faster
+
+Three independent reviewers went at the two new phases. The behaviour held up — every condition, the
+bound, ownership, the walk — and the things they broke were the parts a person actually touches.
+
+**The printed way to stop it did not run.** The refusal tells you how to switch it off. Copied into a
+shell it said `command not found`: the script is not on your PATH. Given the full path it still failed,
+because this project lives in a folder whose name contains a space and the path was unquoted. Both
+fixed, and the test now RUNS the printed commands instead of checking that the words appear — which is
+what let two broken versions ship in a row.
+
+**`compass.sh abort` did not stop it.** The most obviously named stop command in the tool, whose own
+message says the build "halts before its next step", was not one of the conditions. It is now.
+
+**It got four times faster, not slower.** Walking the whole list cost 19–21ms per build, so 34 builds
+meant about 700ms at the end of every turn. Nearly all of it was two subprocesses per row spent on
+builds that could not produce a decision. Two file tests and one built-in read decide that now:
+**536ms before any of this work, 658ms after the walk changed, 129ms now**, on a real 34-build list.
+
+**The cockpit was reading the wrong source for the mode.** It read a line of prose in `progress.md`
+while the hook reads a marker file, and printed "mode: not set" for 14 of 17 autonomous builds —
+including the live one. It reads the marker now: 33 of 33 builds report a real mode.
+
+**One redundant condition removed.** A separate gate-lock test duplicated what `can-advance` already
+does, so no fixture could break one without breaking the other. A condition no test can isolate is a
+duplicate, not a condition.
+
+**And the refusal says how many refusals are left** — the bound was 40 by default and written nowhere.
+
 ## [Unreleased] — the end-of-turn check reads every build, and refuses a silent stop
 
 **It read 26 of 34 and never once saw the build being worked on.** When a turn ends Compass reads its

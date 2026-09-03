@@ -313,7 +313,11 @@ chk "$([ -n "$_p5br" ] && echo 1 || echo 0)" "1" "v0.35 P5: the autonomous branc
 # sentence. Only executable lines are counted.
 _p5code="$(printf '%s' "$_p5br" | grep -vE '^[[:space:]]*#' || true)"
 chk "$(printf '%s' "$_p5code" | grep -c 'return')" "0" "v0.35 P5: ...and no executable line in it returns — the walk continues to the next INDEX row instead of ending there"
-chk "$(printf '%s' "$_p5code" | grep -c 'continue')" "1" "v0.35 P5: ...it continues, exactly once"
+# The branch now skips cheaply BEFORE it does anything expensive, so it carries several `continue`s
+# — the point is that it carries no `return`, asserted above. What used to be one `continue` at the
+# end is now a set of early exits that cost no subprocess; the count is not the property worth
+# pinning, the absence of an early RETURN is.
+chk "$([ "$(printf '%s' "$_p5code" | grep -c 'continue')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 P5: ...and it continues rather than returning, at every exit it has"
 
 # ── v0.35 P6 — THE REFUSAL: eight conditions, each one falsified in turn ─────────────────────────
 # A hook that blocks on seven of eight is a runaway. So the fixture below meets all eight and then
@@ -364,6 +368,25 @@ chk "$(_p6fx ship)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 7/8 (INV-SHIP-S
 chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the refusal ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
 # ── the round-1 reviewer's findings, each with the fixture that found it ─────────────────────────
 chk "$(_p6fx wall)"       "ALLOW 0 0" "v0.35 P6b: the WALL ceiling still binds independently of the refusal counter — two bounds, not one"
+# `is_mid_build` lost its only hook caller when P2 deleted the gated refusal, and a reviewer replaced
+# it with `return 1` with every suite still green. It is still what `stage-continuable` — and
+# therefore `auto-spawn` — decides on, so it is tested through the command that uses it.
+_p6mid() {   # <case: inprogress|halfplan|neither> → stage-continuable's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1; mkdir -p .claude/builds/b
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    case "$c" in
+      inprogress) printf '## RECEIPT — build · b · IN-PROGRESS step 2/5\nok\n' > .claude/builds/b/receipts.md ;;
+      halfplan)   printf '## RECEIPT — contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+                  printf -- '- [x] S1\n- [ ] S2\n' > .claude/builds/b/plan.md ;;
+      neither)    printf '## RECEIPT — contract · b · PASS\nok\n' > .claude/builds/b/receipts.md ;;
+    esac
+    bash "$SH" stage-continuable .claude/builds/b >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_p6mid inprogress)" "0" "v0.35 P6c: is_mid_build route (a) — an IN-PROGRESS build receipt makes a build continuable"
+chk "$(_p6mid halfplan)"   "0" "v0.35 P6c: is_mid_build route (b) — a plan.md with both a checked and an unchecked box does too"
+chk "$(_p6mid neither)"    "0" "v0.35 P6c: ...and a clean contract PASS is continuable by the LATER rule, not by is_mid_build — the two routes are distinguishable"
 chk "$(_p6fx unwritable)" "ALLOW 0 0" "v0.35 P6b: a build directory it cannot write to → {} — the first version discarded the bump's failure and refused FOR EVER with the counter frozen at 1"
 # A bound whose counter is its OWN. INV-REFUSAL-BUMPS-BUDGET names `spent_stages`, and a reviewer
 # proved that cannot be right: `spent_stages` is bumped once per STAGE ENTRY and reported by
@@ -424,7 +447,37 @@ chk "$(printf '%s' "$_p6m" | grep -c 'the next one is plan')" "1" "v0.35 INV-REA
 chk "$(printf '%s' "$_p6m" | grep -c '/compass:resume')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: ...and the exact command to continue"
 chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend')" "1" "v0.35: ...and the exact command to make it STOP — a mechanism that refuses to let a turn end and does not say how to switch it off is a trap"
 chk "$(printf '%s' "$_p6m" | grep -c 'Human-gated')" "1" "v0.35: ...and the setting that means it never refuses again"
-chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend /')" "1" "v0.35 P6b: the printed stop command is an ABSOLUTE path — the relative form was wrong inside a git worktree, and .claude/ is gitignored so following it produced a usage error while the refusals continued"
+# ── v0.35 P6c — the printed commands are RUN, not grepped for ────────────────────────────────────
+# The previous assertion checked that the string `auto-suspend` appeared in the reason. A reviewer
+# copied the line into a shell and got `command not found`: the script is not on PATH. The fix put
+# the full path in, and it STILL did not run, because this repository lives under a directory with a
+# space in its name. Grepping for a command name cannot see either failure. This runs them.
+_p6cmds() {   # → "<json-valid> <suspend-rc> <abort-rc> <after-suspend>"
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    # valid JSON? node is already a dependency of this suite.
+    local vj; vj="$(printf '%s' "$o" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{JSON.parse(d);console.log(1)}catch(e){console.log(0)}})' 2>/dev/null || echo 0)"
+    local sc ac after
+    sc="$(printf '%s' "$o" | sed -nE "s/.*run as written: (bash .*) [·].*/\\1/p")"
+    ac="$(printf '%s' "$o" | sed -nE "s/.*[·]  (bash [^.]*)\\. Or answer.*/\\1/p")"
+    CLAUDE_CODE_SESSION_ID="$sid" eval "$sc" >/dev/null 2>&1; local scrc=$?
+    after="$(printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" auto-resume .claude/builds/b >/dev/null 2>&1
+    CLAUDE_CODE_SESSION_ID="$sid" eval "$ac" >/dev/null 2>&1; local acrc=$?
+    printf '%s %s %s %s' "${vj:-0}" "$scrc" "$acrc" "$after" )
+  rm -rf "$r"
+}
+chk "$(_p6cmds)" "1 0 0 {}" "v0.35 P6c: the refusal is valid JSON, and BOTH printed stop commands run verbatim and actually stop it — grepping for a command name saw neither the missing PATH nor the space in the directory name"
+chk "$(printf '%s' "$_p6m" | grep -cE "auto-suspend '/")" "1" "v0.35 P6b: the printed stop path is ABSOLUTE and QUOTED — relative was wrong inside a git worktree, and unquoted broke on a directory name containing a space"
 
 # ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
 # Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a

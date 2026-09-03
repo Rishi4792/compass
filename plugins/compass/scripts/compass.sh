@@ -2512,8 +2512,13 @@ is_mid_build() { # <build-dir>
 #                           for "make it stop", and a reviewer proved `can-advance` never reads it,
 #                           so without this the one off-switch would leave the user still refused
 #   3 owned by this session an unrelated turn must never be interrupted
-#   4 no human gate held    a gate-lock means a person owes an answer
-#   5 can-advance passes    the status is not parked at a human gate
+#   4 not aborted           `compass.sh abort` is the most obviously named stop command in the tool
+#                           and its own message says the build halts — a reviewer set it and the
+#                           refusals carried on
+#   5 can-advance passes    no gate-lock held and the status is not parked at a human gate. It owns
+#                           the human-gate question outright: an earlier version tested the
+#                           gate-lock separately as well, and no fixture could break one without
+#                           breaking the other
 #   6 a successor exists    `next-stage` exits 0
 #   7 not the ship seam     ship is the user's, in either mode (contract, F-SHIP)
 #   8 budget has room       and the SAME call bumps it, because a counter that only reads is not a
@@ -2527,9 +2532,18 @@ _sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
   _SG_NEXT=""
   [ -f "$dir/.auto-mode" ] || return 1
   [ -f "$dir/.auto-suspended" ] && return 1
+  # `compass.sh abort` is the most obviously named stop command in the whole tool, and its own
+  # message says the build "halts before its next step". A reviewer set it and the refusals carried
+  # on. Nine conditions now, not eight — the contract's eight plus this, because a stop command that
+  # does not stop is worse than no stop command.
+  [ -e "$(_abort_file "$dir")" ] && return 1
   local owner; owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
   [ -n "$owner" ] && [ "$owner" = "$sid" ] || return 1
-  [ -d "$ld/$slug.gate-lock" ] && return 1
+  # NO SEPARATE GATE-LOCK TEST. There was one, and a reviewer showed it was redundant: `can-advance`
+  # performs the identical `[ -d "$(locks_dir)/$slug.gate-lock" ]` check, so the fixture that
+  # "breaks the gate-lock condition" was breaking two at once and neither could be tested alone.
+  # A condition that no fixture can isolate is not a condition, it is a duplicate. `can-advance`
+  # owns the human-gate question — one check, one owner.
   ( cmd_can_advance "$dir" ) >/dev/null 2>&1 || return 1
   local nxt; nxt="$( ( cmd_next_stage "$dir" ) 2>/dev/null || true )"
   [ -n "$nxt" ] || return 1
@@ -2574,6 +2588,11 @@ _sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
   _be_set "$be" spent_refusals "$((sr+1))" 2>/dev/null || return 1
   [ "$(_be_get "$be" spent_refusals)" = "$((sr+1))" ] || return 1
   _SG_NEXT="$nxt"
+  # HOW MANY REFUSALS ARE LEFT, said out loud. A reviewer measured the default at 40 by being refused
+  # forty times, and found the number written nowhere; the 80% warning that exists is swallowed by
+  # the hook's own output redirection, and the bound simply ends in silence. A bound a person cannot
+  # see coming is a bound they experience as a fault.
+  _SG_CAP="$cr"; _SG_LEFT="$(( cr - sr - 1 ))"
   return 0
 }
 
@@ -2599,12 +2618,32 @@ cmd_stop_guard() {
   fi
   [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
   local ld="$sr/.locks"
-  local line slug status stage next owner
+  local line slug status stage next owner _own
   local acted=0            # v0.35 P5: at most one autonomous action per turn, however many rows match
-  local refuse_slug="" refuse_next=""   # v0.35 P6: decided during the walk, emitted after it
+  local refuse_slug="" refuse_next="" refuse_left="" refuse_cap=""   # v0.35 P6: decided during the walk, emitted after it
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
+    # ── COST FIRST. This runs at the end of EVERY turn, and P5 turned a walk that returned at the
+    # first marker into one that reads the whole list. A reviewer measured the consequence: 19-21ms
+    # per row, so 34 builds cost ~700ms and 100 cost ~2s, every time a turn ends. Almost all of it
+    # was two subprocesses per row — a grep over receipts.md and a sed over progress.md — spent on
+    # rows that cannot produce a decision.
+    #
+    # Two file tests, no subprocess, decide that. A build with no `.auto-mode` is Human-gated, and
+    # since P2 the Human-gated path does nothing at all: there is no question left to ask about it.
+    # And once a decision has been made there is nothing left to decide, so the rest of the list
+    # costs nothing either. What P5 fixed is intact — the walk still reaches an owned build wherever
+    # it sits, because it only stops once it has acted, never at a build it is not acting on.
+    [ "$acted" = "0" ] || continue
+    [ -f "$sr/$slug/.auto-mode" ] || continue
+    # OWNERSHIP, TESTED WITHOUT A SUBPROCESS. A session can only ever act on a build it owns, and on
+    # a real machine that is one row out of thirty-four. `read` is a shell builtin; `owner_of` runs
+    # `sed`. This is a PRE-test only — the authoritative comparison, with its CR and whitespace
+    # trimming, still happens inside `_sg_refuse_ok`. A prefix match here is deliberately generous:
+    # its only job is to skip rows that cannot possibly qualify, never to approve one.
+    _own=""; [ -f "$ld/$slug.owner" ] && { IFS= read -r _own < "$ld/$slug.owner" || true; }
+    case "$_own" in "session=$sid"*) : ;; *) continue ;; esac
     [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
     status="$(status_line "$sr/$slug/progress.md" --token)"   # v0.32 S24 (path stays inline: RB-02, never state_root)
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
@@ -2657,6 +2696,7 @@ cmd_stop_guard() {
           *[!A-Za-z0-9._-]*|..|.) : ;;
           *) if _sg_refuse_ok "$sr/$slug" "$slug" "$sid" "$ld"; then
                refuse_slug="$slug"; refuse_next="$_SG_NEXT"; acted=1
+               refuse_left="$_SG_LEFT"; refuse_cap="$_SG_CAP"
              fi ;;
         esac
         # NO SPAWN HERE ANY MORE, and the reason is that every way the test above can decline is
@@ -2705,8 +2745,26 @@ cmd_stop_guard() {
     # worktree — the state root is resolved through git-common-dir precisely because the hook may be
     # in one, and `.claude/` is gitignored, so following the printed instruction produced a usage
     # error and the refusals continued. The off switch has to work from where the reader is standing.
-    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run /compass:resume to continue it. To stop: compass.sh auto-suspend %s — or answer Human-gated on the next build and nothing will ever refuse."}\n' \
-      "$refuse_slug" "$refuse_next" "$sr/$refuse_slug"
+    # THE PRINTED COMMANDS HAVE TO RUN AS PRINTED, and getting there took three tries. A reviewer
+    # copied this line into a shell and got `compass.sh: command not found` — the script is not on
+    # PATH and `CLAUDE_PLUGIN_ROOT` is unset outside a hook, so the full path is printed. Then the
+    # full path did not run either, because this repository lives under a directory with a space in
+    # its name and the path was unquoted: `bash: /Users/…/Desktop/Claude: No such file or directory`.
+    # The paths are single-quoted now. `/compass:resume` alone failed too — this repository has three
+    # active builds and resume refuses to guess — so the slug is part of that command.
+    # (A path containing a single quote would still break the quoting. Stated, not fixed: no such
+    # path exists here, and the slug itself is validated to [A-Za-z0-9._-] before it gets this far.)
+    local _self; _self="${BASH_SOURCE[0]:-$0}"
+    case "$_self" in /*) : ;; *) _self="$(cd "$(dirname "$_self")" 2>/dev/null && pwd || echo .)/$(basename "$_self")" ;; esac
+    # The quotes are carried by the ARGUMENTS, not written into the format string: this printf
+    # format is itself single-quoted, so a `'` inside it would close the quote and disappear from
+    # the output — which is exactly what happened on the first attempt at fixing the spaces.
+    local _q="'" _selfq _dirq
+    _selfq="${_q}${_self}${_q}"; _dirq="${_q}${sr}/${refuse_slug}${_q}"
+    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run: /compass:resume %s. To stop it refusing, either of these, run as written: bash %s auto-suspend %s  ·  bash %s abort %s. Or answer Human-gated on the next build and nothing will ever refuse. This build has %s of %s refusals left."}\n' \
+      "$refuse_slug" "$refuse_next" "$refuse_slug" \
+      "$_selfq" "$_dirq" "$_selfq" "$refuse_slug" \
+      "$refuse_left" "$refuse_cap"
     return 0
   fi
   printf '{}\n'; return 0
@@ -4714,7 +4772,18 @@ COMPASS_ORIENT_NEW
 # Read the declared run-mode. INV-MODE-VISIBLE: the user must always be able to
 # see whether Compass will stop for them, not just have it recorded on disk.
 _orient_mode() { # <build-dir>
-  local m; m="$(sed -nE 's/^mode:[[:space:]]*([A-Za-z-]+).*/\1/p' "${1:-}/progress.md" 2>/dev/null | head -1)"
+  # THE MARKER FILE IS THE AUTHORITY, because it is what actually decides behaviour. This read a
+  # `mode:` line in progress.md while `stop-guard` reads `.auto-mode`, and a reviewer found the
+  # cockpit printing "mode: not set" for fourteen of seventeen autonomous builds — including the
+  # live one, whose every turn end the hook was treating as Autonomous. One fact, two sources, and
+  # the display was reading the one with no consequences. The prose line is still honoured as a
+  # fallback, and `.auto-suspended` is shown because a suspended build behaves like neither.
+  local d="${1:-}"
+  if [ -f "$d/.auto-mode" ]; then
+    if [ -f "$d/.auto-suspended" ]; then printf 'Autonomous (suspended)'; else printf 'Autonomous'; fi
+    return 0
+  fi
+  local m; m="$(sed -nE 's/^mode:[[:space:]]*([A-Za-z-]+).*/\1/p' "$d/progress.md" 2>/dev/null | head -1)"
   case "$(printf '%s' "${m:-}" | tr 'A-Z' 'a-z')" in
     autonomous|auto) printf 'Autonomous' ;;
     human-gated|gated|human) printf 'Human-gated' ;;

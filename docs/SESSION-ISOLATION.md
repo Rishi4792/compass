@@ -18,6 +18,8 @@ Result:
 | Situation | Stop hook |
 |---|---|
 | You own a mid-build, you stop, mode is Human-gated | **quiet** — v0.35: Human-gated is the off switch and never refuses. Run `/compass:status` to see the step you are on. |
+| You own a build, you stop, mode is **Autonomous** | **refused, with a reason** — v0.35: the turn is not allowed to end quietly. The reason names the next stage, the command to continue, and two commands to stop (`auto-suspend`, `abort`), and says how many refusals are left. Nine conditions must all hold; any one absent and the turn ends normally. |
+| You own an Autonomous build and you want it to stop | `auto-suspend` makes it dormant, `abort` halts it, and answering Human-gated on the next build means it never refuses at all. All three are printed in the refusal itself. |
 | A *different* session owns the only mid-build | quiet `{}` |
 | You own nothing mid-build | quiet `{}` |
 | Orphan build (owning terminal closed) | quiet for **everyone** — until someone resumes it and re-binds |
