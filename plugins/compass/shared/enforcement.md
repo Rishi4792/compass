@@ -15,7 +15,7 @@
 | `scan-receipt <build-dir> <stage>` | Self-check the receipt you just emitted: PASS + no empty box. Run it right after emitting. |
 | `supersede <build-dir> <from-stage>` | On escalation / re-run: voids `<from-stage>` and **all later** receipts so the stages they gate must re-run. Run it whenever you escalate UP or re-run a stage. |
 | `reconcile <actual> <gold> <tol>` | Deterministic numeric gate. `tol` = `0`, an absolute (`0.1`), or percent (`1%`). Non-zero exit = build cannot close. Removes model discretion over PASS/FAIL. |
-| `secret-scan <build-dir> [files…]` | Fails if a cookie/JWT/key/connection-string looks committed (scans the git diff, or given files). |
+| `secret-scan --tracked \| --commits <range> \| <dir> \| <files…>` | Fails if a key, connection string, absolute home path or session id reached the code. `--tracked` scans every file git tracks — the set that actually ships. Authored placeholder names are allowed and the refusal prints them. |
 | `close <build-dir> <slug>` | Clears `CURRENT` so a closed build can't leak its gate to the next standalone run. |
 
 ## Receipts (`receipts.md`, append-only)

@@ -25,8 +25,14 @@ release changes what the generator EXTRACTS, so a person's own words reach the p
 - The mechanical suite now verifies its own child list, so it can no longer report every check clean
   after one has been unwired.
 
-**Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files, present
-since at least v0.33.5.
+**Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files.
+
+**The exposure window, counted rather than estimated.** This entry first said "since at least
+v0.33.5". That was wrong by fourteen releases. Walking every tag and counting the files that contain
+the path gives: clean through v0.27.0, then **four files in every one of the 15 tagged releases from
+v0.28.0 to v0.33.5**, then clean again at v0.34.0. The path is still present in public git history
+and in the v0.33.5 tag on the remote, so the remediation here is forward-only — v0.34.0 onward does
+not carry it, and earlier tags still do.
 
 **Shipped un-converged.** review-contract rounds 1-3 carry no valid nonce: that rule was adopted
 mid-build and back-filling one would forge the single field that makes evidence unforgeable. The

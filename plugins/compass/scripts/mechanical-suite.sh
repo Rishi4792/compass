@@ -87,7 +87,16 @@ for c in $CHILDREN; do
     failed=$((failed+1)); names_failed="$names_failed $c"; continue
   fi
   if [ "$rc" -eq 0 ]; then printf '  ok    %s\n' "$summary"
-  else printf '  FAIL  %s\n' "$summary"; failed=$((failed+1)); names_failed="$names_failed $c"; fi
+  else
+    printf '  FAIL  %s\n' "$summary"
+    # v0.34.2 — a FAILING child prints its WHOLE output, indented. The selective printing below
+    # keeps only lines starting with one of six known markers, and an independent reviewer showed a
+    # child whose detail used none of them: the suite printed the headline and threw the file names
+    # and line numbers away, so the one path people actually run told them least. A fixed list of
+    # accepted detail prefixes is the wrong population for "what a failing check needs to say".
+    printf '%s\n' "$out" | sed 's/^/        /'
+    failed=$((failed+1)); names_failed="$names_failed $c"
+  fi
   # ── v0.33 S18 — the kill switch's REPORTING half, which v0.32 documented and never built ──────
   # COMPASS_V32_STRICT=0 silences REPORTING output — the advisory lines a check prints about things
   # it cannot decide. It NEVER touches a MEASUREMENT: every child still runs, every verdict still

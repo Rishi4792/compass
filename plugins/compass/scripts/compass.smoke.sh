@@ -3501,8 +3501,9 @@ chk "$(printf '%s' "$_gdout" | grep -c 'N/A')" "1" "v0.34.1: ...and it SAYS so, 
 rm -rf "$_gdd"
 
 # ── v0.34.1: the leak scanner can see the only class that has ever leaked here ───────────────────
-# An absolute home path shipped in this public plugin from v0.28.0 to v0.34.0 — six releases — and
-# `secret-scan` returned PASS on the very commit that published it.
+# An absolute home path shipped in this public plugin in four files across 15 tagged releases,
+# v0.28.0 through v0.33.5, and `secret-scan` returned PASS on the very commit that published it.
+# (This comment first said "six releases", counted from minor version numbers instead of tags.)
 #
 # THE TEST STRINGS ARE ASSEMBLED AT RUNTIME, and that is not a trick — it is the rule. Written as
 # literals, these assertions made the scanner flag THIS FILE, because test data for a leak scanner
@@ -3511,18 +3512,71 @@ rm -rf "$_gdd"
 # shipped file never contains the shape, while the scanner still sees it at run time.
 _lk="$(mktemp -d)"
 _lkrun() { printf '%s\n' "$1" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" >/dev/null 2>&1; local r=$?; rm -f "$_lk/f.txt"; return $r; }
-_U="Us""ers"; _H="ho""me"; _HEX8="5647""da6a"; _SK="s""k-"
-_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for six releases while this scanner passed it"
+_lkfile() { printf '%s\n' "$1" > "$_lk/g.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk/g.txt" >/dev/null 2>&1; local r=$?; rm -f "$_lk/g.txt"; return $r; }
+_U="Us""ers"; _H="ho""me"; _SK="s""k-"; _AK="AK""IA"
+# v0.34.2 — THE FIXTURE ID IS NOT A REAL ONE ANY MORE. The v0.34.1 version assembled the AUTHOR'S
+# LIVE session id at run time, so 28 of its 36 characters sat verbatim in a file that ships in a
+# public plugin. Splitting a string is a legitimate way to hide a shape from the scanner; using it
+# on a real value is the exact class this check exists to stop. This id is invented.
+_ID1="1a2b""3c4d"; _ID2="-0000-4000-8000-00000000f00d"
+_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for 15 tagged releases while this scanner passed it"
 _lkrun "/$_H/someone/x";          chk "$?" "1" "v0.34.1: the Linux home form is caught too"
-_lkrun "id $_HEX8-06af-49a5-b4bd-5556082b708a"; chk "$?" "1" "v0.34.1: a bare session id is CAUGHT"
+_lkrun "id $_ID1$_ID2";           chk "$?" "1" "v0.34.1: a bare session id is CAUGHT"
 _lkrun "/$_U/alice/project";      chk "$?" "0" "v0.34.1: an AUTHORED placeholder is allowed — a fixture must be able to show the shape it guards"
 _lkrun "id 9999dead-0000-0000-0000-000000000000"; chk "$?" "0" "v0.34.1: the authored placeholder uuid is allowed"
 _lkrun "k = ${_SK}abcdefghijklmnopqrstuvwx"; chk "$?" "1" "v0.34.1: the pre-existing key patterns still bite — the fix ADDED, it did not replace"
 _lkrun "the quick brown fox";     chk "$?" "0" "v0.34.1: ordinary prose is not a leak"
+# ── v0.34.2 · the round-1 CRITICALs, each with the exact shape that defeated the first fix ───────
+# C-1: `grep -Ev "$allow"` dropped the WHOLE LINE, so an allowed placeholder masked every finding
+# beside it. This one line was CAUGHT at v0.34.0 and PASSED at v0.34.1 — the fix made the scanner
+# weaker at the six patterns its own commit message said it had left alone.
+_lkrun "KEY=${_AK}ABCDEFGHIJKLMN  # see /$_U/alice/n.md"; chk "$?" "1" "v0.34.2 C-1: a real key beside an allowed placeholder is still CAUGHT (per-match filter, not per-line)"
+_lkrun "cwd /$_U/alice/x and id $_ID1$_ID2";             chk "$?" "1" "v0.34.2 C-1: an allowed home path cannot mask a real id on the same line"
+# C-2: the allow-list was tested against `path:lineno:content`, so a checkout under an allowed home
+# path allowed every line in the repository and the scanner failed green.
+mkdir -p "$_lk/$_U/alice/repo"; printf 'KEY=%sABCDEFGHIJKLMN\n' "$_AK" > "$_lk/$_U/alice/repo/x.txt"
+bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk/$_U/alice/repo" >/dev/null 2>&1
+chk "$?" "1" "v0.34.2 C-2: a checkout UNDER an allowed home path is still scanned (the target's own path cannot disarm it)"
+rm -rf "$_lk/$_U"
+# F4: four entry points, one behaviour. The same content gave exit 0 as a directory and exit 1 as a
+# file, because only two of the four applied the allow-list at all.
+_lkfile "/$_U/alice/project";                            chk "$?" "0" "v0.34.2 F4: file mode allows an authored placeholder too (all four entry points agree)"
+_lkfile "KEY=${_AK}ABCDEFGHIJKLMN  # see /$_U/alice/n.md"; chk "$?" "1" "v0.34.2 F4: file mode catches the masked key too"
+# F6: the two pattern holes. A hook payload writes a cwd with NO trailing slash — the shape that
+# actually leaked — and an id can be written in either case.
+_lkrun "{\"cwd\": \"/$_U/someone\"}";                     chk "$?" "1" "v0.34.2 F6: a home path with NO trailing slash is caught (the hook-payload shape)"
+_lkrun "id $(printf '%s' "$_ID1$_ID2" | tr 'a-f' 'A-F')"; chk "$?" "1" "v0.34.2 F6: an UPPERCASE session id is caught"
+# False positives are the whole risk: a scanner that cries wolf is one somebody switches off.
+_lkrun "see https://example.com/$_H/user/index.html";     chk "$?" "0" "v0.34.2 FP: a /home/ segment inside a URL is not a leak"
+_lkrun "uuid f81d4fae-7dec-11d0-a765-00a0c91e6bf6";       chk "$?" "0" "v0.34.2 FP: the RFC 4122 example uuid is not a leak"
+_lkrun "put it in /$_U/Shared/";                          chk "$?" "0" "v0.34.2 FP: /Users/Shared is a system path, not a person"
+_lkrun "run it from /$_H/user/app";                       chk "$?" "0" "v0.34.2 FP: /home/user is the canonical documentation placeholder"
+_lkrun "/$_U/alicent/x";                                  chk "$?" "1" "v0.34.2: a real name that merely BEGINS with a placeholder name is NOT allowed"
+# M-6: a refusal that names no route out is a refusal a contributor cannot act on.
+_lkmsg="$(printf '/%s/someone/x\n' "$_U" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" 2>&1 || true)"; rm -f "$_lk/f.txt"
+chk "$(printf '%s' "$_lkmsg" | grep -c 'allowed by name')" "1" "v0.34.2 M-6: the refusal PRINTS the placeholder names, so the route out is discoverable"
 rm -rf "$_lk"
 bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_ROOT" >/dev/null 2>&1
 chk "$?" "0" "v0.34.1: leak-scan-check ships and the shipped tree is clean"
 chk "$(grep -c 'leak-scan-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.34.1: ...and the suite NAMES it, so the class has an owner"
+# F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
+# and docs/ are public too, and the first version of this check reported them clean while a reviewer's
+# planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the
+# check for a string: a grep for "--tracked" is satisfied by typing it in a comment, which is exactly
+# how the first attempt at this assertion passed for the wrong reason.
+_f3="$(mktemp -d)"; mkdir -p "$_f3/plugins/compass/scripts"
+cp "$PLUGIN_ROOT/scripts/compass.sh" "$_f3/plugins/compass/scripts/"
+printf '# demo
+' > "$_f3/README.md"
+( cd "$_f3" && git init -q . && git add -A >/dev/null 2>&1 ) >/dev/null 2>&1
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_f3" >/dev/null 2>&1
+chk "$?" "0" "v0.34.2 F3: a clean throwaway repo passes (no false alarm on the wider population)"
+printf 'note: /%s/someone/Desktop/x
+' "$_U" >> "$_f3/README.md"
+( cd "$_f3" && git add -A >/dev/null 2>&1 )
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_f3" >/dev/null 2>&1
+chk "$?" "1" "v0.34.2 F3: a home path in README.md is CAUGHT — the shipped tree is what git tracks, not plugins/"
+rm -rf "$_f3"
 
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"

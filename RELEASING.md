@@ -14,13 +14,23 @@ How every update reaches users on GitHub and the Claude community marketplace. F
    - `plugins/compass/.claude-plugin/plugin.json` → `version`
    - `.claude-plugin/marketplace.json` → `metadata.version`
 3. **Add a CHANGELOG.md entry** under a new `## [x.y.z] — YYYY-MM-DD` heading — say **what changed and why** (Added / Changed / Fixed / Removed). This is the user-facing "what's new."
-4. **Commit** with a clear message; **merge to `main`**.
-5. **Tag + GitHub Release:**
+4. **Scan for anything private BEFORE the merge** — this is a gate, not a reminder:
+   ```sh
+   bash plugins/compass/scripts/compass.sh secret-scan --tracked        # every file git tracks
+   bash plugins/compass/scripts/compass.sh secret-scan --commits main..HEAD   # every line this branch adds
+   ```
+   Both must exit 0. An absolute home path shipped inside this public plugin across **15 tagged
+   releases**, v0.28.0 through v0.33.5, and it was found by a person reading files by hand during a
+   release soak. There was no CI, no git hook, and no scan step here. `mechanical-suite.sh` runs the
+   first of these two commands as `leak-scan-check`, but the suite is not the release path — this is.
+   If it refuses, the message names the authored placeholder values you may use in a fixture.
+5. **Commit** with a clear message; **merge to `main`**.
+6. **Tag + GitHub Release:**
    ```
    git tag vX.Y.Z && git push origin main --tags
    gh release create vX.Y.Z --title "Compass vX.Y.Z" --notes-file <(sed -n '/## \[X.Y.Z\]/,/## \[/p' CHANGELOG.md)
    ```
-6. **Marketplace propagation — automatic.** Once Compass is accepted into the Anthropic community marketplace, its CI re-pins to the latest commit on each push and the public catalog syncs nightly. Self-hosted users (`/plugin marketplace add Rishi4792/compass`) get the new version on `/plugin marketplace update compass` (or auto-update if they enabled it). **No manual marketplace step is needed per release** — just push.
+7. **Marketplace propagation — automatic.** Once Compass is accepted into the Anthropic community marketplace, its CI re-pins to the latest commit on each push and the public catalog syncs nightly. Self-hosted users (`/plugin marketplace add Rishi4792/compass`) get the new version on `/plugin marketplace update compass` (or auto-update if they enabled it). **No manual marketplace step is needed per release** — just push.
 
 ## First-time community-marketplace listing (one-time)
 Submit the repo once at **https://claude.ai/settings/plugins/submit** (or https://platform.claude.com/plugins/submit). Anthropic runs `claude plugin validate` + a safety screen; on approval it's pinned and auto-bumped thereafter.
