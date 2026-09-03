@@ -2538,14 +2538,54 @@ _sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
   # BEFORE it tests the ceiling, so using the bumping form as the test spent a stage slot on a
   # refusal that never happened: a build sitting at its ceiling kept counting up on every turn end
   # for ever. The plain form tests; the bump happens once the refusal is certain, in the caller.
-  ( cmd_budget_check "$dir" ) >/dev/null 2>&1 || return 1
+  # THE BOUND IS ITS OWN COUNTER, and this is a DEVIATION FROM THE LOCKED CONTRACT that needs a
+  # signature. INV-REFUSAL-BUMPS-BUDGET says the refusal bumps `spent_stages`. An independent
+  # reviewer showed why that cannot be right: `spent_stages` is the PER-STAGE counter, bumped once
+  # when a stage is entered (`start/SKILL.md:68`) and reported by `dora-record` as `stages=`. A
+  # refusal happens at every TURN end, not at every stage, so five quiet turns inside one `plan`
+  # stage burned five stage slots and the next legitimate stage entry was refused for a budget it
+  # never spent. The bound is real and it must move — but it must move its OWN counter.
+  #
+  # `spent_refusals` / `ceiling_refusals` live in the same budget.env, default 40, and the wall
+  # ceiling still backs them. The contract's wording is not silently ignored: it is recorded as a
+  # deviation for the user to sign, because a locked contract that turns out to be wrong is amended
+  # in the open, not worked around.
+  local be cr sr
+  be="$(_be_file "$dir")"; [ -f "$be" ] || return 1
+  cr="$(_be_get "$be" ceiling_refusals)"; _is_num "$cr" || cr=40
+  sr="$(_be_get "$be" spent_refusals)";   _is_num "$sr" || sr=0
+  [ "$sr" -lt "$cr" ] || return 1
+  # The wall and session ceilings still apply, and they are read INLINE rather than through
+  # `budget-check`. That command takes a mutex and waits up to thirty seconds for it; this code runs
+  # at the end of every turn, so one stale lock would have stalled every turn end by half a minute.
+  # `dora-record` moved off the blocking lock at this same seam for this same reason. Reading a
+  # ceiling needs no lock — the only write here is the refusal counter, and it is this build's own.
+  local cw sw cs ss st now
+  cw="$(_be_get "$be" ceiling_wall)";   _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"
+  cs="$(_be_get "$be" ceiling_sessions)"; _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"
+  sw="$(_be_get "$be" spent_wall)";     _is_num "$sw" || sw=0
+  ss="$(_be_get "$be" spent_sessions)"; _is_num "$ss" || ss=0
+  st="$(_be_get "$be" session_start_ts)"; now="$(_now_epoch 2>/dev/null || echo 0)"; _is_num "$st" || st="$now"
+  [ "$(( sw + $(_elapsed "$now" "$st" 2>/dev/null || echo 0) ))" -lt "$cw" ] || return 1
+  [ "$ss" -lt "$cs" ] || return 1
+  # AND THE BUMP MUST SUCCEED. The first version discarded its result with `|| true` and refused
+  # anyway, so an unwritable build directory gave an ENDLESS refusal with the counter frozen at 1.
+  # A bound that can fail to record is not a bound; if the write does not land, the turn ends.
+  _be_set "$be" spent_refusals "$((sr+1))" 2>/dev/null || return 1
+  [ "$(_be_get "$be" spent_refusals)" = "$((sr+1))" ] || return 1
   _SG_NEXT="$nxt"
   return 0
 }
 
 cmd_stop_guard() {
   local input; input="$(cat 2>/dev/null || true)"
-  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
+  # THE PLATFORM'S OWN ESCAPE, PARSED PROPERLY. This was two literal substrings, so `"stop_hook_active"
+  # : true` — a space before the colon, and perfectly legal JSON — walked straight past it and the
+  # hook refused a turn the platform had already told it not to touch. The whitespace-tolerant,
+  # field-anchored form was sitting two lines below, used for `session_id`, and is used here now.
+  case "$(printf '%s' "$input" | sed -nE 's/.*"stop_hook_active"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' | head -1 || true)" in
+    true) printf '{}\n'; return 0 ;;
+  esac
   # Stopping session id — FIELD-ANCHORED parse (never the uuid embedded in transcript_path),
   # whitespace-tolerant; env fallback. ${:-} keeps set -u happy; || true keeps set -e happy.
   local sid; sid="$(printf '%s' "$input" | sed -nE 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1 || true)"
@@ -2568,7 +2608,9 @@ cmd_stop_guard() {
     [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
     status="$(status_line "$sr/$slug/progress.md" --token)"   # v0.32 S24 (path stays inline: RB-02, never state_root)
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
-    case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
+    # `closed` was missing here while TERMINAL_STATUSES has carried it since v0.1 — so a CLOSED build
+    # was still walked, and after P6 could still be refused for. One list, one meaning.
+    case "$status" in *shipped*|*rolled-back*|*closed*|*paused*) continue ;; esac   # terminal/parked → allow
     # NOTE (v0.10.0): gate-wait-* are resumable human-gate checkpoints, NOT terminal/mid-build —
     # do NOT add them to the skip-case above. In --auto they are handled by _auto_spawn_maybe (which
     # refuses to spawn while a gate-lock is held), and can-advance blocks advancing past them.
@@ -2607,12 +2649,16 @@ cmd_stop_guard() {
         # both would drive it twice, from two sessions, over one budget slot. When the eight
         # conditions hold this session continues the work itself and no second session is started.
         # When they do not, the older cross-session spawn path runs exactly as it did before.
-        if _sg_refuse_ok "$sr/$slug" "$slug" "$sid" "$ld"; then
-          # The bump is what makes the budget a BOUND rather than a reading. It happens here, at the
-          # moment the refusal is certain, so a declined refusal never spends a slot.
-          ( cmd_budget_check "$sr/$slug" --bump-stage ) >/dev/null 2>&1 || true
-          refuse_slug="$slug"; refuse_next="$_SG_NEXT"; acted=1
-        fi
+        # THE SLUG IS VALIDATED BEFORE IT REACHES THE JSON. `_auto_spawn_maybe` has carried this
+        # check since v0.11 with a SECURITY note; the path that replaced it did not, so a slug with
+        # a quote produced invalid JSON and a slug with `..` named a directory outside the state
+        # root. Legit slugs are [A-Za-z0-9._-]+ and `..` is not one.
+        case "$slug" in
+          *[!A-Za-z0-9._-]*|..|.) : ;;
+          *) if _sg_refuse_ok "$sr/$slug" "$slug" "$sid" "$ld"; then
+               refuse_slug="$slug"; refuse_next="$_SG_NEXT"; acted=1
+             fi ;;
+        esac
         # NO SPAWN HERE ANY MORE, and the reason is that every way the test above can decline is
         # also a reason not to start a second session: not autonomous, suspended by the user, owned
         # by somebody else, a human gate held, parked at a gate, nothing left to do, the ship seam,
@@ -2655,8 +2701,12 @@ cmd_stop_guard() {
     # The reason names the command to CONTINUE and the command to STOP. Both, always: a mechanism
     # that declines to let a turn end and does not say how to switch it off is a trap, and this
     # build's own contract names that hazard rather than dismissing it.
-    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run /compass:resume to continue it. To stop: compass.sh auto-suspend .claude/builds/%s — or answer Human-gated on the next build and nothing will ever refuse."}\n' \
-      "$refuse_slug" "$refuse_next" "$refuse_slug"
+    # THE STOP COMMAND IS PRINTED AS AN ABSOLUTE PATH. The relative form was wrong in a git
+    # worktree — the state root is resolved through git-common-dir precisely because the hook may be
+    # in one, and `.claude/` is gitignored, so following the printed instruction produced a usage
+    # error and the refusals continued. The off switch has to work from where the reader is standing.
+    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run /compass:resume to continue it. To stop: compass.sh auto-suspend %s — or answer Human-gated on the next build and nothing will ever refuse."}\n' \
+      "$refuse_slug" "$refuse_next" "$sr/$refuse_slug"
     return 0
   fi
   printf '{}\n'; return 0
@@ -3195,6 +3245,11 @@ cmd_doctor() { # [--migrate]
 # Locks always taken gate-$slug THEN budget-$slug, never the reverse (no deadlock).
 AUTO_EVENTS="start gate-wait-G1 gate-wait-G2 gate-cleared spawn spawn-failed budget-stop auto-suspended auto-resumed"
 BUDGET_DEFAULT_WALL=3600; BUDGET_DEFAULT_SESSIONS=6; BUDGET_DEFAULT_STAGES=40
+# v0.35 P6: how many times the Stop hook may decline a quiet turn-end on one build. Its OWN counter,
+# because `spent_stages` is bumped once per STAGE ENTRY and reported by `dora-record`; refusing at
+# every TURN end on that counter burned stage slots the build never used, and the next legitimate
+# stage entry was then refused for a budget it had not spent. Found by an independent reviewer.
+BUDGET_DEFAULT_REFUSALS=40
 
 _now_epoch() { date +%s 2>/dev/null || echo 0; }
 _be_file() { printf '%s/budget.env' "$1"; }
@@ -3266,15 +3321,17 @@ cmd_budget_check() { # <build-dir> [--bump-stage|--bump-session]
 _is_num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }   # non-negative integer only
 _elapsed() { local e=$(( ${1:-0} - ${2:-0} )); [ "$e" -lt 0 ] && e=0; printf '%s' "$e"; }  # now,start → ≥0 (clock-skew safe)
 _budget_init_locked() { # <be> <wall> <sess> <stg> <now>  (under budget lock) — preserves spend on re-init
-  local be="$1" w="$2" s="$3" g="$4" now="$5" psw=0 pss=1 psg=0 pg2=0 x
+  local be="$1" w="$2" s="$3" g="$4" now="$5" psw=0 pss=1 psg=0 pg2=0 psr=0 x
   if [ -f "$be" ]; then
     x="$(_be_get "$be" spent_wall)";     _is_num "$x" && psw="$x"
     x="$(_be_get "$be" spent_sessions)"; _is_num "$x" && pss="$x"
     x="$(_be_get "$be" spent_stages)";   _is_num "$x" && psg="$x"
     x="$(_be_get "$be" g2_fires)";       _is_num "$x" && pg2="$x"
+    x="$(_be_get "$be" spent_refusals)"; _is_num "$x" && psr="$x"
   fi
   { printf 'ceiling_wall=%s\n' "$w"; printf 'ceiling_sessions=%s\n' "$s"; printf 'ceiling_stages=%s\n' "$g";
     printf 'spent_wall=%s\n' "$psw"; printf 'spent_sessions=%s\n' "$pss"; printf 'spent_stages=%s\n' "$psg";
+    printf 'ceiling_refusals=%s\n' "$BUDGET_DEFAULT_REFUSALS"; printf 'spent_refusals=%s\n' "$psr";
     printf 'tokens_best_effort=0\n'; printf 'g2_fires=%s\n' "$pg2"; printf 'session_start_ts=%s\n' "$now"; } > "$be"
 }
 _budget_check_locked() { # <dir> <be> <bump>  (under lock)

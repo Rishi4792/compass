@@ -561,7 +561,7 @@ _p6mk() { # <repo> <slug> <owner-line> [progress-override]
   printf -- '- [x] S1\n' > "$rp/.claude/builds/$sl/plan.md"
   printf '%s\n' "$ow" > "$rp/.claude/builds/.locks/$sl.owner"
   : > "$rp/.claude/builds/$sl/.auto-mode"
-  printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=99\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > "$rp/.claude/builds/$sl/budget.env"
+  printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=99\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > "$rp/.claude/builds/$sl/budget.env"
 }
 _p6run() { ( cd "$1" && printf '%s' "$2" | CLAUDE_CODE_SESSION_ID="${3:-}" bash "$SH" stop-guard 2>/dev/null ); }
 _SIDA="9999dead-0000-0000-0000-000000000000"
@@ -611,14 +611,15 @@ chk "$([ "${_o#\{}" != "$_o" ] && [ "${_o%\}}" != "$_o" ] && echo 1 || echo 0)" 
 # S12a/S12c — the bound. It is the BUDGET now, not a step fingerprint: N refusals, then quiet for
 # ever. A counter that only reads is not a bound; this one moves, and stops the loop when it fills.
 _p6mk "$_p6r/bd" A "session=$_SIDA"
-printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=2\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > "$_p6r/bd/.claude/builds/A/budget.env"
+printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=99\nceiling_refusals=2\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > "$_p6r/bd/.claude/builds/A/budget.env"
 _seq=""; _i=1
 while [ "$_i" -le 5 ]; do
   case "$(_p6run "$_p6r/bd" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")" in *block*) _seq="${_seq}B" ;; *) _seq="${_seq}a" ;; esac
   _i=$((_i+1))
 done
-chk "$_seq" "BBaaa" "v0.35 P6/S12: the refusal is BOUNDED — ceiling_stages=2 gives exactly two refusals, then quiet for ever"
-chk "$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$_p6r/bd/.claude/builds/A/budget.env" | tail -1)" "2" "v0.35 P6/S12: ...and the counter MOVED, which is what makes it a bound rather than a reading"
+chk "$_seq" "BBaaa" "v0.35 P6/S12: the refusal is BOUNDED — ceiling_refusals=2 gives exactly two refusals, then quiet for ever"
+chk "$(sed -nE 's/^spent_refusals=(.*)$/\1/p' "$_p6r/bd/.claude/builds/A/budget.env" | tail -1)" "2" "v0.35 P6/S12: ...and the counter MOVED, which is what makes it a bound rather than a reading"
+chk "$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$_p6r/bd/.claude/builds/A/budget.env" | tail -1)" "0" "v0.35 P6/S12: ...on its OWN counter — five turn-ends do not spend the per-stage budget the build never used"
 
 # stop_hook_active — the platform's own anti-deadlock escape must still win over all of this.
 _p6json_true='{"session_id":"SID","stop_hook_active":true}'

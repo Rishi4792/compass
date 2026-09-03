@@ -329,7 +329,7 @@ _p6fx() {   # <break: none|mode|suspended|owner|gatelock|advance|successor|ship|
     printf -- '- [x] S1\n' > .claude/builds/b/plan.md
     printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
     : > .claude/builds/b/.auto-mode
-    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
     case "$brk" in
       mode)      rm -f .claude/builds/b/.auto-mode ;;
       suspended) : > .claude/builds/b/.auto-suspended ;;
@@ -338,13 +338,17 @@ _p6fx() {   # <break: none|mode|suspended|owner|gatelock|advance|successor|ship|
       advance)   printf '# b\n\n**Status:** gate-wait-G1 waiting on a person\n**Stage:** plan\n**Next:** answer\n' > .claude/builds/b/progress.md ;;
       successor) for _st in plan review-plan build review-build ship; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
       ship)      for _st in plan review-plan build review-build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
-      budget)    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=0\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      budget)    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=0\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      wall)      printf 'ceiling_wall=1\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=40\nspent_wall=99999\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      unwritable) chmod a-w .claude/builds/b ;;
+      badslug)   : ;;
     esac
     local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
     local o; o="$(printf '%s' "$j" | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
     local v sp sg
     case "$o" in *'"decision":"block"'*) v=BLOCK ;; '{}') v=ALLOW ;; *) v=OTHER ;; esac
-    sg="$(sed -nE 's/^spent_stages=(.*)$/\1/p' .claude/builds/b/budget.env 2>/dev/null | tail -1)"
+    chmod u+w .claude/builds/b 2>/dev/null || true
+    sg="$(sed -nE 's/^spent_refusals=(.*)$/\1/p' .claude/builds/b/budget.env 2>/dev/null | tail -1)"
     sp="$(grep -c '|spawn|' .claude/builds/b/session-chain.log 2>/dev/null || true)"
     printf '%s %s %s' "$v" "${sg:-?}" "${sp:-0}" )
   rm -rf "$r"
@@ -357,7 +361,50 @@ chk "$(_p6fx gatelock)"  "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 4/8: a human ga
 chk "$(_p6fx advance)"   "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 5/8: parked at a gate-wait status → {}"
 chk "$(_p6fx successor)" "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 6/8: every stage has passed, no successor → {}"
 chk "$(_p6fx ship)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 7/8 (INV-SHIP-SEAM-NEVER-REFUSES): the successor is ship → {} — ship is the user's, in either mode"
-chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the budget ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
+chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the refusal ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
+# ── the round-1 reviewer's findings, each with the fixture that found it ─────────────────────────
+chk "$(_p6fx wall)"       "ALLOW 0 0" "v0.35 P6b: the WALL ceiling still binds independently of the refusal counter — two bounds, not one"
+chk "$(_p6fx unwritable)" "ALLOW 0 0" "v0.35 P6b: a build directory it cannot write to → {} — the first version discarded the bump's failure and refused FOR EVER with the counter frozen at 1"
+# A bound whose counter is its OWN. INV-REFUSAL-BUMPS-BUDGET names `spent_stages`, and a reviewer
+# proved that cannot be right: `spent_stages` is bumped once per STAGE ENTRY and reported by
+# `dora-record`, so refusing at every TURN end burned stage slots the build never used and the next
+# legitimate stage entry was refused for a budget it never spent. Recorded as a signed deviation.
+_p6sg() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=5\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local i=1; while [ "$i" -le 5 ]; do printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1; i=$((i+1)); done
+    printf '%s' "$(sed -nE 's/^spent_stages=(.*)$/\1/p' .claude/builds/b/budget.env | tail -1)" )
+  rm -rf "$r"
+}
+chk "$(_p6sg)" "0" "v0.35 P6b: five turn-ends leave spent_stages at ZERO — the refusal counts on its own counter and does not spend the per-stage budget the build has not used"
+# The platform's escape, parsed as a FIELD. `"stop_hook_active" : true` is legal JSON and the first
+# version's two literal substrings walked straight past it.
+_p6sha() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active" : true}'; j="${j/SID/$sid}"
+    printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+chk "$(_p6sha)" "{}" "v0.35 P6b: stop_hook_active is parsed as a FIELD — a space before the colon is legal JSON and used to walk straight past the platform's own escape"
+# The slug reaches the JSON, so it is validated the way the spawn path has validated it since v0.11.
+chk "$([ "$(awk '/^cmd_stop_guard\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$SH" | grep -c 'A-Za-z0-9._-')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 P6b: the slug is validated before it reaches the refusal JSON — a quote made it invalid and .. named a directory outside the state root"
+# The off switch has to work from where the reader stands: an absolute path, not a relative one that
+# is wrong inside a git worktree.
+
 # The reason has to be actionable: the successor by name, the command to continue, the command to stop.
 _p6msg() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
   ( cd "$r" && git init -q . >/dev/null 2>&1
@@ -377,6 +424,7 @@ chk "$(printf '%s' "$_p6m" | grep -c 'the next one is plan')" "1" "v0.35 INV-REA
 chk "$(printf '%s' "$_p6m" | grep -c '/compass:resume')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: ...and the exact command to continue"
 chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend')" "1" "v0.35: ...and the exact command to make it STOP — a mechanism that refuses to let a turn end and does not say how to switch it off is a trap"
 chk "$(printf '%s' "$_p6m" | grep -c 'Human-gated')" "1" "v0.35: ...and the setting that means it never refuses again"
+chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend /')" "1" "v0.35 P6b: the printed stop command is an ABSOLUTE path — the relative form was wrong inside a git worktree, and .claude/ is gitignored so following it produced a usage error while the refusals continued"
 
 # ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
 # Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a
