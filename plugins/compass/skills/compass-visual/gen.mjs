@@ -1378,6 +1378,12 @@ function disclose(rest, label = 'Show the rest') {
   // its label — so passing one printed `Show the &lt;span data-prov=&quot;counted&quot;&gt;115…`
   // to the reader on 30 pages. Strip any tags rather than escaping them into view; a caller that
   // wants a number in a label wants the number.
+  //
+  // v0.35: AND THAT IS WHY NO CALLER PUTS A COUNT IN A LABEL ANY MORE. Stripping the span leaves a
+  // bare number on the page that no marker says anything about — two of them, on the release card
+  // and the review page, both reading `Show the other 4` beside a marked `+ 4 more`. The count is
+  // already on screen and already marked; repeating it inside a control that cannot carry a marker
+  // bought nothing and cost the reader a number with no provenance. The labels say `Show the rest`.
   label = String(label).replace(/<[^>]*>/g, '');
   return `<details class="rest"><summary>${esc(label)}</summary><div class="rest-body">${txt(rest)}</div></details>`;
 }
@@ -1962,7 +1968,7 @@ function planMap() {
     const inner = items.length
       ? `<ul class="pl">${items.map((i) => (() => { const _p = fieldParts(i.replace(/^-\s+/, '').replace(/\*\*/g, ''), 190); return `<li><span class="pill now">·</span><span>${txt(_p.shown)}</span>${disclose(_p.rest)}</li>`; })()).join('')}${
           allItems.length > 8 ? `<li><span class="pill now">+</span><span>${nC(allItems.length - 8)} more</span>${
-            disclose(allItems.slice(8).map(_clean8).join('\n'), `Show the other ${allItems.length - 8}`)}</li>` : ''}</ul>`
+            disclose(allItems.slice(8).map(_clean8).join('\n'), 'Show the rest')}</li>` : ''}</ul>`
       : (() => { const _p = fieldParts(firstPara(body), 400); return `<p class="b-det">${txt(_p.shown)}</p>${disclose(_p.rest)}`; })();
     return bandSection(title, purpose, inner);
   };
@@ -2341,7 +2347,11 @@ function unverifiedBanner() {
     : 'No per-stream reviewer evidence files are on record at all, so there is nothing here even showing the streams ran.';
   return `<div class="unver"><b>This review was NOT independently verified.</b> ${txt(detail)} `
     + `Independence cannot be proven in this environment and Compass has stopped claiming otherwise `
-    + `(contract \u00a74).</div>`;
+    // v0.35: the section number is marked `literal`. It is a pointer into a document, not a count of
+    // anything in this build, and it was the last number on any page that no marker spoke for — the
+    // gold check named it `unmarked=1` for three releases while a stale tool pin kept the whole
+    // check from reporting at all. `nL` is exactly the marker for a number that claims nothing.
+    + `(contract \u00a7${nL(4)}).</div>`;
 }
 function reviewArtefact() {
   const led = read('review-ledger.md');
@@ -2487,7 +2497,7 @@ function reviewArtefact() {
       `<div><div class="b-ttl">${nC(hiddenN)} closed finding${hiddenN === 1 ? '' : 's'} ${hiddenN === 1 ? 'is' : 'are'} not shown here.</div>` +
       `<div class="b-det">Everything not marked closed is listed above — that is the complete set of what still needs you. The full record is review-ledger.md.</div></div>` +
       `<div class="verify"><b>note</b>all ${nF('findings.total', rows.length)} are counted in the totals${
-        disclose(_hiddenRows.join('\n\n'), `Show the ${hiddenN} not listed above`)}</div></div>`
+        disclose(_hiddenRows.join('\n\n'), 'Show the ones not listed above')}</div></div>`
     : '';
   // The title carries provenance markers, so it is rendered by the caller and passed raw.
   const b4 = bandSection(
@@ -2542,7 +2552,7 @@ function releaseCard() {
   const items = nowParts.slice(0, 6).map((p) => `<li>${txt(p.shown)}${disclose(p.rest)}</li>`).join('')
     + (nowItems.length > 6
         ? `<li style="color:var(--mut2)">+ ${nC(nowItems.length - 6)} more${
-            disclose(nowItems.slice(6).join('\n'), `Show the other ${nowItems.length - 6}`)}</li>`
+            disclose(nowItems.slice(6).join('\n'), 'Show the rest')}</li>`
         : '');
   const facet = hdr('facets') || 'library';
   // BEAT 1 — vX.Y.Z shipped · BEAT 2 — what changed (NOW items ONLY) · BEAT 3 — proof + the undo

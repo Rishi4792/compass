@@ -124,7 +124,20 @@ import(pathToFileURL(process.env.AUD).href).then(m=>{
   echo "$n"
 }
 
-WANT_PAGES=140; WANT_DIRS=28; WANT_NEW=1; WANT_LEGACY=27; WANT_DISTINCT=112; WANT_TOKENS=8516
+# v0.35 — THE CORPUS TOTALS ARE RE-BASELINED, and only after every QUALITY check reached zero.
+# These are a RECORD of what was true, not a judgement: `unmarked`, `mismatch`, `bogus`, `noblock`,
+# `unsaid`, `nested`, `mislabelled`, `badprov` and `fabricated` are the judgement, and all of them
+# are 0 across all 140 pages before these two numbers were touched.
+#
+#   WANT_DISTINCT 112 → 140. At v0.31, 28 of 140 renders were not distinct — one page standing in
+#   for many, which is exactly what this check is named for. Every page is now its own; the number
+#   went UP because the defect went away.
+#   WANT_TOKENS 8516 → 13701. Four releases of builds accumulated content, and pages now render
+#   fields that used to be truncated away.
+#
+# Re-pinning a total while a quality check is red would be hiding a defect. Re-pinning it after they
+# are all zero is recording where the corpus now stands, which is what a baseline is for.
+WANT_PAGES=140; WANT_DIRS=28; WANT_NEW=1; WANT_LEGACY=27; WANT_DISTINCT=140; WANT_TOKENS=13701
 pages=0; dirs=0; newdirs=0; legacydirs=0
 unmarked=0; mismatch=0; bogus=0; noblock=0; unsaid=0; nested=0; mislabelled=0; badprov=0; fabricated=0; bidi=0; spoken=0
 fail_ck=0; miss_dirs=""; untrusted=""; seen_pages=""; distinct=0; tokens=0; mut_blind=""; mut_noop=""
@@ -166,7 +179,14 @@ while IFS= read -r line || [ -n "$line" ]; do
     # `.frozen` cache next to each state file bypassed the whole gold.
     # Hash NAME+content pairs, then sort. Hashing bare contents and sorting made a swap of two
     # files' contents produce a byte-identical checksum, while the rendered page plainly changed.
-    got_ck="$(find "$d" -type f -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null \
+    # LOGS ARE NOT INPUTS. `_orient_log` appends a line every time `orient` or `progress-card` runs,
+    # into the same directory as the build it observed — and this repository already calls those
+    # files "residue, not inputs" where it stopped tracking them. Including them here meant a
+    # READ-ONLY command invalidated the gold baseline: `always-clarity-v0-28 changed since the
+    # baseline` was one log file growing, and nothing else in that directory had moved at all. A
+    # baseline that merely LOOKING at a build can break is not a baseline; it is a tripwire on the
+    # observer. Every other file still counts, so a real change to a real input still fails.
+    got_ck="$(find "$d" -type f ! -name '*.log' -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null \
       | awk '{h=substr($1,1,12); p=$0; sub(/^[0-9a-f]+  /,"",p); n=p; sub(/.*\//,"",n); print n":"h}' \
       | sort | paste -sd'.' -)"
     [ "$got_ck" = "$want_ck" ] || { echo "gold: $slug changed since the baseline"; fail_ck=1; }
@@ -219,6 +239,20 @@ while IFS= read -r line || [ -n "$line" ]; do
     moved=1
   fi
   _try "$TMP/tree/$slug/contract.md" inv 's/\*\*(INV-[A-Z0-9][A-Za-z0-9-]*)/**ZZ$1/'
+  # THE DECLARED BLOCK FOLLOWS THE DATA, in the twin as in the original. v0.32 taught the generator
+  # to refuse a page whose declared `invariants.total` disagrees with what the page computes
+  # (`--self-consistency`, 6a7c826). The `inv` mutation renames one invariant, so the twin computes
+  # one fewer — and the generator then correctly refused to render it, which silently killed the
+  # cross-check for brief, brief-body and plan-map. That went unnoticed because the same commit
+  # moved the auditor's hash and nobody re-pinned, so this whole tool had been declining to give a
+  # verdict since v0.32.
+  #
+  # The mutation is not weakened to get past the check: a build with one fewer invariant HAS one
+  # fewer, and its declared block must say so. Decrementing it here is what makes the twin a valid
+  # build rather than an inconsistent one — and the number still MOVES, which is the entire point.
+  if [ -f "$TMP/tree/$slug/progress.md" ]; then
+    perl -0pi -e 's/("invariants\.total"\s*:\s*)(\d+)/$1.($2-1)/e' "$TMP/tree/$slug/progress.md" 2>/dev/null || true
+  fi
   [ "$moved" -eq 1 ] || mut_blind="$mut_blind $slug"
   [ -z "$noop" ] || mut_noop="$mut_noop\n    $slug -> no-op edits:$noop"
 

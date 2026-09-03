@@ -3,6 +3,34 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — a stale fingerprint had been hiding real failures since v0.32
+
+Compass pins the fingerprints of the two programs that produce and audit every number on its pages,
+so that editing one is a visible change rather than a quiet one. Both programs changed in later
+releases and nobody updated the pins — so from v0.32 the check stopped giving a verdict at all. **A
+check that refuses to answer is not a check that passes**, and refreshing the pins showed what the
+silence had covered:
+
+- **Three pages could not be cross-checked at all.** The check proves a number is about your data by
+  rendering the page twice, once from a deliberately altered copy. v0.32 taught the page generator to
+  refuse a page whose declared totals disagree with what it computes — and the alteration changes a
+  total, so the second render was being refused. The altered copy now updates its own declared total,
+  which is what a build with one fewer invariant would really say. The alteration is not weakened.
+- **Two numbers a reader sees that nothing explained.** Both were a count repeated inside a
+  "Show the rest" control — a place that cannot carry a provenance marker, by design, because a
+  control's label is plain text. The count is already on screen right beside it, marked. The labels
+  no longer repeat it.
+- **A read-only command could invalidate the baseline.** One build directory was reported "changed
+  since the baseline" and nothing in it had changed except a log file that grows every time you look
+  at the build. Logs are observability output, not inputs — this project already says so where it
+  stopped tracking them. They are out of the fingerprint now.
+
+**Result: zero unmarked, zero mismatched, zero unsourced numbers across 140 pages and 28 builds.**
+Every quality check reads zero, and only then were the two corpus totals re-recorded — the page count
+went UP, from 112 distinct of 140 to 140 of 140, because a defect where one page stood in for several
+is gone. Re-recording a total while a quality check is red would be hiding a defect; doing it after
+they all read zero is what a baseline is for.
+
 ## [Unreleased] — the stop instruction now runs, and the end-of-turn check got four times faster
 
 Three independent reviewers went at the two new phases. The behaviour held up — every condition, the
