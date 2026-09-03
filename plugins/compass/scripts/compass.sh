@@ -1152,23 +1152,55 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # A home path needs no trailing slash on macOS — `{"cwd": "/Users/<name>"}` is the shape that
   # actually leaked. The Linux form DOES require a second segment, because `/home/<one-word>` is far
   # more often a URL route (`router.get('/home/dashboard')`, `[Home](/home/index)`) than a person.
-  # The two forms need DIFFERENT boundaries, and one shared boundary lost real leaks. `/Users/`
-  # takes none: a compiler flag writes `-I/Users/<name>/inc`, an ellipsis writes `.../Users/<name>`,
-  # and JSON escapes it `\/Users\/<name>` — a leading-boundary test threw all three away, and the
-  # last of those is the exact file class that leaked here. `/home/` keeps its boundary, because a
-  # URL really does carry `/home/` as a path segment, and additionally requires a SECOND segment,
-  # because `/home/<one-word>` is far more often a route than a person.
-  local soft='(/Users\\?/[A-Za-z0-9._-]+|(^|[^A-Za-z0-9._~-])/home\\?/[A-Za-z0-9._-]+\\?/|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|session_[A-Za-z0-9]{20,})'
+  # THE BOUNDARY, third attempt, and the first one scored against a fixed corpus rather than a list
+  # the author wrote after choosing the rule. Round 3 removed the leading boundary from `/Users/` to
+  # catch a compiler flag and a JSON escape, and thereby started refusing `src/Users/model.ts`,
+  # `./Users/index` and `https://host/Users/profile` — a class its own corpus contained none of.
+  # A code path is preceded by a letter, a digit or a dot. A leaked absolute path is preceded by a
+  # quote, a space, an equals sign, a brace, a backslash or nothing. So the boundary excludes the
+  # first set, and the two real shapes it would otherwise lose are spelled out as their own
+  # alternatives: a compiler flag (`-I/Users/<name>`) and an elided path (`.../Users/<name>`).
+  #
+  # `/home/<name>` is back to ONE segment. Requiring a second lost `{"cwd":"/home/<name>"}`,
+  # `HOME=/home/<name>` and `cd /home/<name>` — nine of ten realistic Linux shapes, including the
+  # exact one this check exists for. Routes like `/home/dashboard` are handled where they belong,
+  # in the name list below, because page names are enumerable and people are not.
+  local _uP='/Users\\?/[A-Za-z0-9._-]+'
+  local _hP='/home\\?/[A-Za-z0-9._-]+'
+  local soft="((^|[^A-Za-z0-9.])${_uP}|-[A-Za-z]${_uP}|\\.\\.\\.${_uP}|(^|[^A-Za-z0-9.])${_hP}|-[A-Za-z]${_hP}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|session_[A-Za-z0-9]{20,})"
   # Placeholder NAMES, for soft matches only. Two kinds, and both are enumerable, which is why this
   # works where a list of personal names never could: authored stand-ins, and the service accounts
   # that containers and CI runners really use. A name that merely BEGINS with one of these is not
   # allowed, because each must be followed by a separator or the end of the match.
   local ph_auth='alice|bob|jane|jdoe|john|USER|USERNAME|user|username|testuser|test|example|you|me'
-  local ph_svc='node|vscode|runner|circleci|jenkins|travis|buildkite|linuxbrew|appuser|ubuntu|ec2-user|gitpod|coder|devcontainer|app|web|git|docker|root|admin|Shared|nobody'
+  # Service accounts a container or CI runner really creates. The generic ones an earlier version
+  # carried — app, web, git, root, admin, nobody — are gone. A production env file under a home
+  # directory owned by one of those names is a real leak, and making them permanently unreportable
+  # was too high a price for a rare convenience.
+  local ph_svc='node|vscode|runner|circleci|jenkins|travis|buildkite|linuxbrew|appuser|ubuntu|ec2-user|gitpod|coder|devcontainer|docker|Shared'
+  # Page names, so a URL route is not read as a person. This is the enumerable set the `/home/`
+  # problem actually needs: nobody is called `dashboard`.
+  local ph_route='home|index|dashboard|main|page|view|list|new|edit|show|about|login|logout|signup|profile|settings|account|search|feed|help|contact|pricing|docs|blog|admin|api|assets|static'
   local ph_uuid='9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx|f81d4fae-7dec-11d0-a765-00a0c91e6bf6|123e4567-e89b-12d3-a456-426614174000|550e8400-e29b-41d4-a716-446655440000'
-  local allow="/(Users|home)\\\\?/(${ph_auth}|${ph_svc})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
+  local allow="/(Users|home)\\\\?/(${ph_auth}|${ph_svc}|${ph_route})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
   # Placeholder VALUES, for hard matches only: a key that is visibly unset.
-  local hardallow='(changeme|CHANGEME|xxxxxxxx|XXXXXXXX|placeholder|PLACEHOLDER|your[-_]|YOUR[-_]|<[^>]*>|\$\{|\$\(|REPLACE|redacted|REDACTED|dummy|DUMMY|example|EXAMPLE|\*\*\*)'
+  # A HARD match is excused only when its VALUE is visibly a template. Round 3 wrote this as a list
+  # of words tested anywhere in the match, and `example` was on it. So a connection string whose
+  # USER happened to be `exampleuser` and a key whose value happened to begin `example_` both
+  # passed, carrying a real password and a real key, and both had been caught the round before.
+  # A word that can appear beside a secret cannot be the thing that excuses it. Two tests, and
+  # neither is a bare word:
+  #   · a filler run — eight or more of the same character — which no real key has;
+  #   · the value, taken after the last `=` or `:`, STARTING as a template does.
+  local hardfill='(x{8,}|X{8,}|0{8,}|changeme|CHANGEME|placeholder|PLACEHOLDER|REPLACE_ME|AKIAIOSFODNN7EXAMPLE)'
+  local hardtmpl='^"?('"'"'?)(<[^>]*>|\$\{|\$\(|YOUR_|your-|your_)'
+  _ss_hard_excused() {                          # <match> → 0 when it is visibly not a real value
+    local m="$1" v
+    printf '%s' "$m" | grep -qE "$hardfill" && return 0
+    v="${m##*=}"; [ "$v" = "$m" ] && v="${m##*:}"
+    printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
+    return 1
+  }
   # The escape hatch, in the shape this repo already uses for `unwired-allow.txt`: a declared,
   # reasoned exception rather than a silent one. Put it in a comment on the offending line:
   #     foo = "…"   # compass-allow-secret: this is the vendor's published sample key
@@ -1176,7 +1208,8 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # accumulate. Round 2 found three sibling checks in this suite ship an escape hatch and this one
   # did not, so a contributor who hit a false positive had a refusal and no route.
   local pragma='compass-allow-secret:[[:space:]]*[^[:space:]]'
-  local found="" nph=0
+  local found="" nph=0 _ss_nph; _ss_nph="$(mktemp 2>/dev/null || echo /tmp/.compass-nph.$$)"; : > "$_ss_nph"
+  _ss_nph_read() { nph="$(wc -c < "$_ss_nph" 2>/dev/null | tr -d " ")"; nph="${nph:-0}"; rm -f "$_ss_nph"; }
   _ss_hit() {
     # Display is truncated at 300 columns per line; MATCHING never is. A single `-a` hit inside a
     # media file would otherwise print a screenful of bytes and bury the finding above it.
@@ -1194,11 +1227,27 @@ $(printf '%s' "$1" | cut -c1-300)
   _ss_keep() {
     local ln body
     while IFS= read -r ln; do
+      # The strip removes `path:lineno:`. It cannot do that for a path that itself contains a colon,
+      # and round 3 showed the consequence: the PATH landed in the body, so a file or directory NAMED
+      # `x compass-allow-secret: y` exempted every line in it, with no human having written a pragma.
+      # Such a path is refused outright rather than half-parsed — see the colon guard below, which
+      # names the files. Here we simply never let an unstripped line be judged.
+      case "$ln" in *:[0-9]*:*) : ;; *) printf '%s\n' "$ln"; continue ;; esac
       body="$(printf '%s' "$ln" | sed -E 's|^[^:]*:[0-9]+:||' 2>/dev/null || printf '%s' "$ln")"
       case "$body" in *compass-allow-secret:*)
-        if printf '%s' "$body" | grep -qE "$pragma"; then nph=$((nph+1)); continue; fi ;;
+        # The count is written to a FILE, not a variable: _ss_keep runs inside a command
+        # substitution, so a shell variable incremented here never reaches the caller. Round 3
+        # found the summary reporting "0 declared exception(s)" however many were used.
+        if printf '%s' "$body" | grep -qE "$pragma"; then printf 'x' >> "$_ss_nph"; continue; fi ;;
       esac
-      if printf '%s' "$body" | grep -oE "$hard" 2>/dev/null | grep -qEv "$hardallow"; then printf '%s\n' "$ln"; continue; fi
+      local hm hit=0
+      while IFS= read -r hm; do
+        [ -n "$hm" ] || continue
+        _ss_hard_excused "$hm" || { hit=1; break; }
+      done <<HARDEOF
+$(printf '%s' "$body" | grep -oE "$hard" 2>/dev/null || true)
+HARDEOF
+      if [ "$hit" = 1 ]; then printf '%s\n' "$ln"; continue; fi
       if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
     done
     return 0
@@ -1217,7 +1266,7 @@ $(printf '%s' "$1" | cut -c1-300)
         /^@@/         { if (match($0, /\+[0-9]+/)) { n=substr($0,RSTART+1,RLENGTH-1)+0 } ; next }
         /^\+/         { if (f!="") printf "%s:%d:%s\n", f, n, substr($0,2); n++ }
       ' | _ss_keep || true)"
-    _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}."; return 0
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   # --tracked: what SHIPS is what git knows about — the index, plus files that are present and not
   # ignored. Round 2 broke the previous xargs version three ways: one NUL byte made `grep -I` skip a
@@ -1233,6 +1282,11 @@ $(printf '%s' "$1" | cut -c1-300)
     [ "$(cd "$root" && pwd -P 2>/dev/null || pwd)" = "$here" ] || die "secret-scan --tracked: run me at the repo root. You are in '$here'; the repository root is '$root'. Scanning from here would report that repository, not this directory."
     n="$(git ls-files 2>/dev/null | grep -c . || true)"; n="${n:-0}"
     [ "$n" -gt 0 ] || die "secret-scan --tracked: 0 tracked files. An empty population is not a pass."
+    local colonf; colonf="$(git ls-files 2>/dev/null | grep ':' || true)"
+    [ -z "$colonf" ] || die "secret-scan --tracked: these tracked paths contain a colon, and this
+scanner parses its own output as path:line:content, so it cannot judge them safely:
+$colonf
+  Rename them. A colon in a path also breaks git on Windows checkouts."
     # `tr -d` strips NUL first: bash `read` STOPS at a NUL byte, so one such byte in the middle of a
     # readable line hid everything after it — including the home path. `-a` makes git read the file
     # git itself calls binary; without both halves the bypass stays open.
@@ -1251,33 +1305,37 @@ $( git ls-files -z --others --exclude-standard 2>/dev/null \
         | xargs -0 git grep --no-index -a -n -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true )"
     fi
     found="$(printf '%s\n' "$found" | grep -v '^$' | sort -u || true)"
-    _ss_hit "$found"; ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s)${nph:+, $nph declared exception(s)}."; return 0
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -d "$first" ]; then
     # Dir mode is the convenience form, scanned from INSIDE so reported paths are relative: the scan
     # target's own absolute path can no longer take part in a match, and the refusal no longer prints
     # the reader's home directory. `.claude` is skipped because local build state is full of real
     # paths by design; `--tracked` is the mode that decides what SHIPS and makes no such assumption.
-    found="$( cd "$first" && grep -REnI --exclude-dir='.git' --exclude-dir='.claude' "$pat" . 2>/dev/null | _ss_keep || true )"
-    _ss_hit "$found"; ok "secret scan ($first): 0 hits${nph:+, $nph declared exception(s)}."; return 0
+    found="$( cd "$first" && grep -REnHI --exclude-dir='.git' --exclude-dir='.claude' "$pat" . 2>/dev/null | tr -d '\000' | _ss_keep || true )"
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan ($first): 0 hits${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -n "$first" ]; then   # explicit file list
-    found="$(grep -EnI "$pat" -- "$@" 2>/dev/null | _ss_keep || true)"
-    _ss_hit "$found"; ok "secret scan: 0 hits in $# file(s)${nph:+, $nph declared exception(s)}."; return 0
+    # -H forces the filename even for a SINGLE file. Without it grep emits `lineno:content`, the
+    # `path:lineno:` strip has nothing to strip, and the guard above — which treats an unstripped
+    # line as a finding rather than judging it half-parsed — turned every single-file scan into a
+    # refusal. Every entry point must hand _ss_keep the same three-field shape.
+    found="$(grep -EnHI "$pat" -- "$@" 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan: 0 hits in $# file(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   # legacy no-arg: staged + working-tree-modified files (while-read loop, no sh -c pattern splice)
   if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
     local f
     while IFS= read -r f; do
       [ -f "$f" ] || continue
-      local h; h="$(grep -EnI "$pat" -- "$f" 2>/dev/null | _ss_keep || true)"
+      local h; h="$(grep -EnHI "$pat" -- "$f" 2>/dev/null | tr -d '\000' | _ss_keep || true)"
       [ -n "$h" ] && found="$found$f: $h
 "
     done <<EOF
 $( { git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null; } | sort -u )
 EOF
   fi
-  _ss_hit "$found"; ok "secret scan: 0 hits."
+  _ss_nph_read; _ss_hit "$found"; ok "secret scan: 0 hits."
 }
 
 # ── v0.15.0 prod-safety floor (F-RESTORE / F-PARITY) ──────────────────────────

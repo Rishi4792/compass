@@ -3576,28 +3576,14 @@ _lkrun "$_PG://admin/$_U/alice/x:hunter2@db.example.net/app"; chk "$?" "1" "v0.3
 _lkrun "cc -I/$_U/someone/inc -c x.c";                     chk "$?" "1" "v0.34.3: a home path after a compiler flag is caught (no leading boundary on /Users/)"
 _lkrun "run from .../$_U/someone/Desktop";                 chk "$?" "1" "v0.34.3: ...after an ellipsis too"
 _lkrun "{\"transcript_path\":\"\\/$_U\\/someone\\/x.jsonl\"}"; chk "$?" "1" "v0.34.3: ...and JSON-escaped, which is the shape that actually leaked here"
-# FALSE POSITIVES ARE THE WHOLE RISK. Round 2 measured 28 of 57 ordinary strings refused — 49% — on a
-# check that review-build runs over a USER's commits and treats any hit as blocking. Every string
-# below is something a real contributor writes.
-_fp=0
-_fpchk() { _lkrun "$1" || _fp=$((_fp+1)); }
-_fpchk "WORKDIR /$_H/node/app"
-_fpchk "ENV PATH=/$_H/linuxbrew/.linuxbrew/bin:\$PATH"
-_fpchk "volumes: - ./data:/$_H/appuser/data"
-_fpchk "- /$_H/runner/work/repo/repo"
-_fpchk "cache: /$_H/circleci/.m2"
-_fpchk "router.get('/$_H/dashboard', handler)"
-_fpchk "[Home](/$_H/index)"
-_fpchk "docs at https://example.com/$_H/getting-started"
-_fpchk "uuid 550e8400-e29b-41d4-a716-446655440000"
-_fpchk "sha 6f1d2c3b4a5968778899aabbccddeeff00112233"
-_fpchk "C:\\${_U}\\Public\\Documents"
-_fpchk "task-a1b2c3d4e5f6a7b8"
-_fpchk "export JWT_SECRET=changeme"
-_fpchk "APP_SECRET=\${{ secrets.APP_SECRET }}"
-_fpchk "key = ${_SK}xxxxxxxxxxxxxxxxxxxxxxxx"
-_fpchk "/$_U/USERNAME/project"
-chk "$_fp" "0" "v0.34.3: 0 of 16 ordinary contributor strings are refused — a scanner that cries wolf is one somebody switches off"
+# FALSE POSITIVES ARE THE WHOLE RISK, and the corpus that measures them now lives in the repo as a
+# fixture rather than in this file as a list. Four rounds each scored well against a list written
+# after the rule was chosen, and each had a hole its own list contained no example of. The score is
+# asserted here; the population is `scripts/fixtures/secrets/{leaks,not-leaks}.txt`, and a reviewer
+# who finds a new hole adds a LINE to it instead of writing a paragraph.
+_cor="$(bash "$PLUGIN_ROOT/scripts/secret-corpus-check.sh" "$_ROOT" 2>&1)"; _corrc=$?
+chk "$_corrc" "0" "v0.34.4: every line of the fixed corpus scores correctly — 0 false alarms AND 0 missed leaks"
+chk "$(printf '%s' "$_cor" | grep -cE '^secret-corpus-check: [0-9]+ of [0-9]+ real leaks refused')" "1" "v0.34.4: ...and it STATES both denominators, so a green over an empty corpus is impossible"
 # The escape hatch, in the shape unwired-allow.txt already uses: declared and reasoned, never silent.
 _lkrun "k = /$_U/someone/x  # compass-allow-secret: this path is the documented example";  chk "$?" "0" "v0.34.3: a declared exception WITH a reason is allowed"
 _lkrun "k = /$_U/someone/x  # compass-allow-secret:";      chk "$?" "1" "v0.34.3: ...and one with NO reason is not — the reason is the whole point"
