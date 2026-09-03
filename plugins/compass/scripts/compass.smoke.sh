@@ -259,8 +259,8 @@ _sgauto_trace() {
 chk "$(_sgauto_trace)" "1" "v0.35 THE HOOK REALLY RAN: an Autonomous owned build is REFUSED — a stub that only prints {} fails this and passes every other stop-guard assertion here"
 chk "$(_sgfx human)"            "{}" "v0.35 INV-HUMAN-GATED-NEVER-REFUSES: a Human-gated build mid-step, owned by this session, returns {} — the off switch is off"
 chk "$(_sgfx auto)"             "{}" "v0.35: an Autonomous build still returns {} at this stage (P6 adds the refusal, and only under eight conditions)"
-chk "$(_sgfx human --foreign)"  "{}" "v0.35: a build owned by another session returns {}"
-chk "$(_sgfx human --orphan)"   "{}" "v0.35: a build with no owner returns {}"
+chk "$(_sgfx human --foreign)"  "{}" "v0.35 INV-OWNED-ONLY: a build owned by another session returns {} — an unrelated turn is never interrupted"
+chk "$(_sgfx human --orphan)"   "{}" "v0.35 INV-OWNED-ONLY: an orphan build, whose owning session is gone, returns {}"
 chk "$(printf '{"session_id":"x","stop_hook_active":true}' | bash "$SH" stop-guard 2>/dev/null)" "{}" "v0.35: stop_hook_active short-circuits — the platform's anti-deadlock escape still works"
 chk "$(grep -c 'is_mid_build "\$sr/\$slug" || continue' "$SH")" "0" "v0.35: the gated refusal is GONE from stop-guard, not merely bypassed"
 
@@ -1129,13 +1129,13 @@ COUT="$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null || true)"
 # INV-COCKPIT / INV-PUSH-STAGE — the pushed strip renders
 chk "$(printf '%s' "$COUT" | grep -cE 'BUILD ·')" "1" "v0.24 INV-COCKPIT: cockpit prints the BUILD strip"
 chk "$(printf '%s' "$COUT" | grep -c '▲ plan')" "1" "v0.24 INV-PUSH-STAGE: marker lands on the correct stage from CANONICAL receipts (contract+review-contract PASS → plan) — bites the R1 receipt-format bug"
-chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -cE 'compass\.sh cockpit[^-]')" "1" "v0.24 INV-PUSH-STAGE: the canonical gate block invokes compass.sh cockpit"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -cE 'compass\.sh cockpit[^-]')" "1" "v0.24 INV-PUSH-STAGE / v0.35 INV-COCKPIT-PUSHED: the canonical gate block invokes compass.sh cockpit"
 # v0.33.3 — the push and the GATE are two different invocations and the counter must tell them
 # apart. `compass.sh cockpit-gate` contains `compass.sh cockpit` as a substring, so the unbounded
 # count above read 2 the moment the gate was wired — a boundary bug of exactly the kind this
 # release found in the clip detector's `min-width` rule. The push is matched with a negative class;
 # the gate gets its own assertion so neither can go missing unnoticed.
-chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit-gate')" "1" "v0.33.3 INV-PUSH-STAGE: the canonical gate block also RUNS cockpit-gate on what it just printed"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit-gate')" "1" "v0.33.3 INV-PUSH-STAGE / v0.35 INV-COCKPIT-PUSHED: the block RUNS cockpit-gate on what it just printed — the check that refuses a stage end missing any of its four elements"
 # INV-MULTI-CONTRACT — both contracts render, and a status flip flips the glyph (teeth)
 chk "$([ "$(printf '%s' "$COUT" | grep -c 'p2-a')" -ge 1 ] && [ "$(printf '%s' "$COUT" | grep -c 'p2-b')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-MULTI-CONTRACT: both contracts in phase 2 render"
 sed -i.bak 's/p2-a · status=shipped/p2-a · status=planned/' "$V24/.claude/builds/PROGRAM.md"
@@ -1190,7 +1190,7 @@ if [ -n "$V23" ]; then
   la="$(printf '%s' "$V23" | grep '^LIFECYCLE=')"; lb="$(grep '^LIFECYCLE=' "$CURSH")"
   { [ -n "$la" ] && [ "$la" = "$lb" ]; } || frz=0
 else frz=1; fi   # tag unreachable (shallow/CI clone) → do not false-FAIL
-chk "$frz" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + prod-safety fns byte-identical to v0.23.0"
+chk "$frz" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE / v0.35 INV-NO-LIFECYCLE-CHANGE-HONOURED: LIFECYCLE + prod-safety fns byte-identical to v0.23.0"
 # cmd_gate core: everything from the function head down to the first seam block.
 # This is the part that decides PASS / SUPERSEDED / unchecked-box — the actual
 # gate semantics. It must never drift.
@@ -4009,6 +4009,100 @@ _armai() { local r; r="$(mktemp -d)"; mkdir -p "$r/b"
   bash "$PLUGIN_ROOT/scripts/compass.sh" auto-init "$r/b" >/dev/null 2>&1; local rc=$?
   local m; m=$([ -f "$r/b/.auto-mode" ] && echo marker || echo none); rm -rf "$r"; printf '%s %s' "$rc" "$m"; }
 chk "$(_armai)" "1 none" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: auto-init REFUSES a build with no budget, and writes no marker when it refuses"
+
+# ── v0.35 item 8 — INV-EVIDENCE-AT-THE-SEAM ──────────────────────────────────────────────────────
+# The contract is explicit that a grep will not do: "Not a grep for the gate's name: v1 asserted
+# that, and it is satisfied by typing a string." So this deletes one stream's evidence file and runs
+# the real gate.
+_evfx() {   # <complete|missing-one> → the gate's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p b/agents
+    printf '## RECEIPT — review-contract · b · PASS\n- [x] streams: review-contract r1 -> 8 of 8\n' > b/receipts.md
+    local st first=""
+    for st in $(bash "$SH" review-streams review-contract 2>/dev/null); do
+      [ -n "$first" ] || first="$st"
+      printf 'nonce: aaaabbbbccccddddeeeeffff\nstream: %s\nreview: review-contract\nround: 1\ntarget-sha: 0123456789abcdef\nverdict: CLEAN\n' "$st" > "b/agents/review-contract-r1-$st.md"
+    done
+    [ "$c" = missing-one ] && rm -f "b/agents/review-contract-r1-$first.md"
+    bash "$SH" gate b review-contract >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_evfx complete)"    "0" "v0.35 INV-EVIDENCE-AT-THE-SEAM: a review round with every declared stream's evidence passes its own gate"
+chk "$(_evfx missing-one)" "1" "v0.35 INV-EVIDENCE-AT-THE-SEAM: DELETE one stream's evidence file and the gate REFUSES — run, not grepped for, because a grep is satisfied by typing the gate's name"
+
+# ── v0.35 item 9 — INV-TERMINAL-STATUS-WRITTEN ───────────────────────────────────────────────────
+# Nothing in this file ever wrote `shipped`: every close wrote CLOSED, whether the build had shipped
+# or not, so the 17 lowercase rows in the INDEX came from somewhere else. Asserted on a fixture the
+# test creates, never on the real INDEX, which is gitignored.
+_termfx() {   # <shipped|not> → the status token left on the fixture's INDEX row
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p .claude/builds/b && git init -q . >/dev/null 2>&1
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    : > .claude/builds/b/receipts.md
+    local st
+    for st in contract review-contract plan review-plan build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$st" >> .claude/builds/b/receipts.md; done
+    printf '## RECEIPT — review-build · b · PASS\n- [x] auto-closed: fixture\n\n' >> .claude/builds/b/receipts.md
+    [ "$c" = shipped ] && printf '## RECEIPT — ship · b · PASS\nok\n\n' >> .claude/builds/b/receipts.md
+    bash "$SH" close .claude/builds/b b >/dev/null 2>&1
+    grep -o 'status=[A-Za-z-]*' .claude/builds/INDEX | head -1 )
+  rm -rf "$r"
+}
+chk "$(_termfx shipped)" "status=shipped" "v0.35 INV-TERMINAL-STATUS-WRITTEN: a build that FINISHED carries the terminal literal, lower case — matching the 17 rows already there rather than the 9 that disagree"
+chk "$(_termfx not)"     "status=CLOSED"  "v0.35 INV-TERMINAL-STATUS-WRITTEN: ...and a build closed WITHOUT shipping does not claim it did"
+
+# ── v0.35 item 10 — INV-AUTOFIX-BOUNDED ──────────────────────────────────────────────────────────
+# In Autonomous mode a failing gate should not simply stop — that is the stall. An unattended repair
+# loop is the opposite hazard, and the contract names it: "an unattended repair could rewrite the
+# locked contract." Four fixtures, one per way the bound can break.
+_afx() {   # <case> → the check's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p plugins/compass .claude/builds/b
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf 'the contract\n' > .claude/builds/b/contract.md
+    local sha; sha="$(shasum -a 256 .claude/builds/b/contract.md | cut -c1-16)"
+    printf '## RECEIPT — contract · b · PASS\n- [x] contract-sha: %s\n\n## RECEIPT — build · b · PASS\n' "$sha" > .claude/builds/b/receipts.md
+    [ "$c" = human ] || : > .claude/builds/b/.auto-mode
+    case "$c" in
+      one|human) printf -- '- [x] autofix: copy-gate · reworded one caveat · re-run PASS\n' >> .claude/builds/b/receipts.md ;;
+      twice)     printf -- '- [x] autofix: copy-gate · reworded · re-run PASS\n- [x] autofix: copy-gate · reworded again · re-run PASS\n' >> .claude/builds/b/receipts.md ;;
+      malformed) printf -- '- [x] autofix: copy-gate reworded and re-run\n' >> .claude/builds/b/receipts.md ;;
+      contract)  printf -- '- [x] autofix: copy-gate · reworded · re-run PASS\n' >> .claude/builds/b/receipts.md
+                 printf 'edited\n' > .claude/builds/b/contract.md ;;
+      none)      : ;;
+    esac
+    bash "$PLUGIN_ROOT/scripts/autofix-check.sh" . >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_afx none)"      "0" "v0.35 INV-AUTOFIX-BOUNDED: no repair at all passes — the rule bounds a repair, it does not demand one"
+chk "$(_afx one)"       "0" "v0.35 INV-AUTOFIX-BOUNDED: ONE repair, Autonomous, recorded in the stated shape, contract untouched → allowed"
+chk "$(_afx twice)"     "1" "v0.35 INV-AUTOFIX-BOUNDED: a SECOND attempt at the same sub-gate is a loop, however well each is worded"
+chk "$(_afx human)"     "1" "v0.35 INV-AUTOFIX-BOUNDED: any repair in Human-gated mode — the answer to a failing gate there is the person"
+chk "$(_afx malformed)" "1" "v0.35 INV-AUTOFIX-BOUNDED: a record nobody can read is indistinguishable from a build that quietly edited itself"
+chk "$(_afx contract)"  "1" "v0.35 INV-AUTOFIX-BOUNDED: the contract changed since it locked — five of Compass's own sub-gates fail on contract.md, so this is the repair rewriting the spec its gate reads"
+chk "$(grep -c 'autofix-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the suite NAMES the check"
+chk "$(grep -c 'autofix: <sub-gate>' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the build skill states the rule where the model reads it"
+
+# ── v0.35 — INV-BRIEF-DESCRIBES-THIS-BUILD and INV-NO-SELF-ARM ───────────────────────────────────
+# v2's Contract Brief described v1's build: the words "Stop hook" appeared ZERO times in its reader
+# copy, on a page whose entire subject is a Stop hook. The check is on the RENDERED page, not on the
+# source, because the source can say anything the page never shows.
+_brieffx() { local r; r="$(mktemp -d)"
+  if node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_ROOT/.claude/builds/self-driving-lifecycle-v0-35" brief --out "$r/b.html" >/dev/null 2>&1; then
+    node -e 'const fs=require("fs");const h=fs.readFileSync(process.argv[1],"utf8");
+      const t=h.replace(/<script[\s\S]*?<\/script>/g,"").replace(/<style[\s\S]*?<\/style>/g,"").replace(/<[^>]+>/g," ");
+      console.log((t.toLowerCase().match(/stop hook/g)||[]).length>0?1:0);' "$r/b.html"
+  else echo skip; fi
+  rm -rf "$r"; }
+_bf="$(_brieffx)"
+if [ "$_bf" = "skip" ]; then
+  printf '  REPORT  INV-BRIEF-DESCRIBES-THIS-BUILD: the brief could not be rendered on this tree (no build state), so it was not checked. Stated, not skipped.\n'
+else
+  chk "$_bf" "1" "v0.35 INV-BRIEF-DESCRIBES-THIS-BUILD: the rendered brief NAMES the Stop hook — v2's brief described v1's build and the phrase appeared zero times on a page whose whole subject it is"
+fi
+chk "$(grep -c 'self-arm-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-NO-SELF-ARM: the suite NAMES the self-arm check — the 1.16-billion-token runaway ban is enforced by a check, not by a promise"
+chk "$([ "$(grep -c 'outside-in-reachable' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-BRIEF-TEXT-IS-OPENABLE: ...and the suite NAMES the check that proves every shortened unit has a real control behind it"
 # F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
 # and docs/ are public too, and the first version of this check reported them clean while a reviewer's
 # planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the

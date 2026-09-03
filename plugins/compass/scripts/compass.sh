@@ -2257,7 +2257,19 @@ cmd_close() { # <build-dir> <slug> [--abandon]
     fi
     # Terminal-status guard (v0.7.0): a normal close must pass the CLOSED lifecycle audit.
     cmd_lifecycle_audit "$dir" CLOSED >/dev/null 2>&1 || die "close: lifecycle-audit CLOSED failed — refusing to close an incomplete build. Inspect: compass.sh lifecycle-audit '$dir' CLOSED   (or cancel it: compass.sh close '$dir' '$slug' --abandon)."
-    set_index_status "$slug" CLOSED
+    # v0.35 — A BUILD THAT SHIPPED SAYS SO, in the spelling the INDEX already uses. Every close wrote
+    # `CLOSED`, whether the build had shipped or not, and NOTHING in this file ever wrote `shipped`:
+    # the 17 lowercase rows in the INDEX were put there by hand or by a path that no longer exists.
+    # So the one word a reader scans the INDEX for was the one word the tool could not produce.
+    #
+    # Lower case, deliberately: 17 rows say `shipped` and 9 say `SHIPPED`, and picking the majority
+    # is how that split stops growing. Unifying the 9 is LATER in the contract's own ladder — this
+    # change makes no new ones.
+    if stage_pass "$dir" ship 2>/dev/null; then
+      set_index_status "$slug" shipped
+    else
+      set_index_status "$slug" CLOSED
+    fi
     ( cmd_dora_record "$dir" CLOSED ) >/dev/null 2>&1 || true        # v0.23: DORA record, additive (subshell + >/dev/null: never fails/leaks into the close)
   fi
   # Clear the CURRENT hint in the canonical state root (worktree-safe).

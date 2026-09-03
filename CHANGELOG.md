@@ -3,6 +3,28 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the last three: evidence, the finish line, and a bounded repair
+
+**A review could close without its evidence.** The check for that existed and rode the right seam
+already — what was missing was proof it bites. Deleting one reviewer's file and running the real gate
+now refuses, and the test does exactly that. The contract asked for this in as many words: not a
+search for the check's name, because a search is satisfied by typing it.
+
+**A finished build never said so.** Every close wrote `CLOSED`, whether the build had shipped or not,
+and nothing in Compass ever wrote `shipped` — the lowercase rows in the index came from somewhere
+else entirely. A build that shipped now records it, in the spelling the index already mostly uses.
+A build closed without shipping still says `CLOSED`, because it did not ship.
+
+**A failing gate in autonomous mode gets one repair, then stops.** Without a rule, an unattended
+build either halts at the first failure — the stall this whole release is about — or retries for
+ever. So: one attempt per check, autonomous only, written down in a fixed shape, and **never to the
+contract**. That last one is not hypothetical: five of Compass's own checks read the contract, so an
+unattended repair could edit the spec its own check reads. The contract's fingerprint is recorded
+when it locks and compared afterwards.
+
+**Every one of the seventeen promises in this build's contract now has a test that names it** — and
+each of the three above is proved by running the thing, not by searching for a word.
+
 ## [Unreleased] — choosing Autonomous now actually arms it
 
 `compass.sh auto-init` refuses to arm a build that has no declared budget. That refusal is the only

@@ -75,6 +75,11 @@ Every requirement needs a concrete check. A "resolve in plan" flag is allowed ON
 
 ## 4. Write + emit
 - Write `contract.md` (version it: `v1` + a CHANGELOG section — later **amendments** bump the version and re-lock). Update `progress.md` (stage ① Contract draft).
+- **Record the contract's checksum in the contract receipt**, on its own line:
+  `contract-sha: $(shasum -a 256 <state-root>/<slug>/contract.md | cut -c1-16)`
+  It is what `autofix-check` compares against, and it is the only thing standing between "an
+  unattended repair fixed a gate" and "an unattended repair rewrote the spec the gate reads". An
+  amendment re-records it beside the user's signature; nothing else may change it.
 
 ### Write the artefact-data block (v0.31, INV-DECLARED)
 
