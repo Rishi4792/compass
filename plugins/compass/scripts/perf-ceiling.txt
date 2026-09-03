@@ -1,0 +1,37 @@
+# The speed bound for `compass.smoke.sh`, in one place a fresh clone can read.
+#
+# WHY THIS FILE EXISTS. The bound belongs to the build's contract — that is the authority, and the
+# contract states it in the phrase `perf-cap-check.sh` parses. But a contract lives under
+# `.claude/builds/`, which is gitignored, so `perf-cap-check` could never produce a verdict in a
+# fresh clone — which is the only tree a release is ever cut from. A reviewer measured that: exit 2,
+# "no ceiling found", every time.
+#
+# So: the contract SETS the number, this tracked file CARRIES it, and `perf-cap-check` refuses if
+# the two disagree rather than picking one. One fact, one owner, and a disagreement that is fatal
+# instead of invisible.
+#
+# HOW IT IS MEASURED. Fresh clone, no build state — the set an installer actually has. The working
+# tree here is ~20s slower because several checks walk 34 build folders, and timing that would be
+# measuring a machine nobody ships on.
+#
+# NEVER RAISE THIS TO FIT A CHANGE. If a release is over the bound, make it faster or say so in the
+# CHANGELOG with the measurement. A limit moved to accommodate the thing it limits is not a limit.
+#
+# THE MEASUREMENT THIS NUMBER COMES FROM — v0.35, seven fresh-clone runs, same machine, same hour:
+#   71.3  71.6  72.0  72.7  73.2  73.8  74.3   →  median 72.7s   p95 74.3s   spread 3.0s
+# The bound is 78s: p95 plus about 5%. Tight enough that a real regression turns it red, loose
+# enough that ordinary scheduling noise does not — the spread across those seven runs was 3.0s.
+#
+# AND THE HONEST PART. v0.34 measured 51.2s and published a 61s bound. v0.35 is 21.8s slower, and
+# the bound moved because the SUITE changed, not because the number was inconvenient: 1155
+# assertions against roughly 1066, and 17 mechanical checks against 14. Where the time went,
+# bisected across six commits on fresh clones:
+#     main v0.34                 50.9s
+#     + the leak scanner (P1)    65.2s   +14.3s   ← two thirds of the whole increase
+#     + the gate text (P2-P4)    65.5s    +0.3s
+#     + the end-of-turn work     69.1s    +3.6s
+#     + its review fixes         69.8s    +0.7s
+#     + arming, evidence, close  72.7s    +2.9s
+# The leak scanner is the cost, and it was not in the original ask — it came from a release soak
+# that found a home path shipped in 14 releases. It is the first thing to make faster.
+p95-ceiling-seconds: 78

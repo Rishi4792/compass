@@ -32,13 +32,24 @@ How every update reaches users on GitHub and the Claude community marketplace. F
    A finding in a COMMITTED patch cannot be cleared either way — fix the file and commit again.
    `secret-corpus-check` scores the scanner against a fixed corpus of real leaks and ordinary code;
    if you find a case it gets wrong, add a LINE to `fixtures/secrets/{leaks,not-leaks}.txt`.
-5. **Commit** with a clear message; **merge to `main`**.
-6. **Tag + GitHub Release:**
+5. **Check the speed bound** — it is a release step, not a suite check, because it runs the whole
+   test suite several times over:
+   ```sh
+   bash plugins/compass/scripts/perf-cap-check.sh .          # clones itself and times a clean tree
+   ```
+   Exit 0 is inside the bound. The bound lives in `plugins/compass/scripts/perf-ceiling.txt`, which
+   is tracked so a fresh clone can read it, and in the current build's contract, which is the
+   authority that sets it. If those two disagree the check refuses rather than picking one.
+   **Never raise the bound to fit a change.** If a release is over it, either make it faster or say
+   so in the CHANGELOG with the measurement — a limit moved to accommodate the thing it limits is
+   not a limit.
+6. **Commit** with a clear message; **merge to `main`**.
+7. **Tag + GitHub Release:**
    ```
    git tag vX.Y.Z && git push origin main --tags
    gh release create vX.Y.Z --title "Compass vX.Y.Z" --notes-file <(sed -n '/## \[X.Y.Z\]/,/## \[/p' CHANGELOG.md)
    ```
-7. **Marketplace propagation — automatic.** Once Compass is accepted into the Anthropic community marketplace, its CI re-pins to the latest commit on each push and the public catalog syncs nightly. Self-hosted users (`/plugin marketplace add Rishi4792/compass`) get the new version on `/plugin marketplace update compass` (or auto-update if they enabled it). **No manual marketplace step is needed per release** — just push.
+8. **Marketplace propagation — automatic.** Once Compass is accepted into the Anthropic community marketplace, its CI re-pins to the latest commit on each push and the public catalog syncs nightly. Self-hosted users (`/plugin marketplace add Rishi4792/compass`) get the new version on `/plugin marketplace update compass` (or auto-update if they enabled it). **No manual marketplace step is needed per release** — just push.
 
 ## First-time community-marketplace listing (one-time)
 Submit the repo once at **https://claude.ai/settings/plugins/submit** (or https://platform.claude.com/plugins/submit). Anthropic runs `claude plugin validate` + a safety screen; on approval it's pinned and auto-bumped thereafter.

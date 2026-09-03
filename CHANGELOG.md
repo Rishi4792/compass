@@ -3,6 +3,36 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the speed bound, measured and set, with the cost written down
+
+**This release is 21.8 seconds slower and here is exactly where it went.** Seven runs on fresh clones
+of six commits, same machine, same hour:
+
+```
+  v0.34 as shipped                50.9s
+  + the leak scanner              65.2s   +14.3s   ← two thirds of the whole increase
+  + the gate text                 65.5s    +0.3s
+  + the end-of-turn refusal       69.1s    +3.6s
+  + its review fixes              69.8s    +0.7s
+  + arming, evidence, close       72.7s    +2.9s
+```
+
+The bound is **78 seconds** — the p95 of 74.3s plus about 5%. Tight enough that a real regression
+turns it red; loose enough that scheduling noise does not, since the spread across seven runs was
+3.0 seconds.
+
+**The bound moved because the suite changed, not because the number was inconvenient**: 1155
+assertions against roughly 1066, and 17 mechanical checks against 14. The leak scanner is two thirds
+of the cost and it was not in this build's ask at all — it came from a release soak that found a home
+path shipped in 14 releases. It is named as the first thing to make faster.
+
+**The check was disarmed for this entire release and nobody could see it.** It read its limit from a
+directory that git ignores, so in a fresh clone — the only tree a release is ever cut from — it
+answered "no ceiling found" every time. The limit now lives in a tracked file as well; the contract
+is still the authority that sets it; and if the two ever disagree the check refuses rather than
+picking one. Running it is now a numbered step in the release checklist, which also says in plain
+words that the bound is never raised to fit a change.
+
 ## [Unreleased] — the last three: evidence, the finish line, and a bounded repair
 
 **A review could close without its evidence.** The check for that existed and rode the right seam

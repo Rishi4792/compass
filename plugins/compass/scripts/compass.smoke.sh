@@ -4103,6 +4103,28 @@ else
 fi
 chk "$(grep -c 'self-arm-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-NO-SELF-ARM: the suite NAMES the self-arm check — the 1.16-billion-token runaway ban is enforced by a check, not by a promise"
 chk "$([ "$(grep -c 'outside-in-reachable' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-BRIEF-TEXT-IS-OPENABLE: ...and the suite NAMES the check that proves every shortened unit has a real control behind it"
+
+# ── v0.35 — THE SPEED BOUND, set from a measurement and readable where a release happens ─────────
+# `perf-cap-check` runs the whole suite several times, so it is a RELEASE step, not a suite child —
+# putting it in the mechanical suite would turn a 12-second suite into a four-minute one. What smoke
+# asserts is that the bound exists, that its two carriers agree, and that the release path names the
+# step. A reviewer found the check disarmed for this entire release: it read its ceiling from
+# `.claude/builds/`, which is gitignored, so in a fresh clone — the only tree a release is cut from —
+# it returned "no ceiling found" every time.
+_pcf="$PLUGIN_ROOT/scripts/perf-ceiling.txt"
+chk "$([ -f "$_pcf" ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: the bound is carried in a TRACKED file, so a fresh clone can read it"
+_pcn="$(LC_ALL=C sed -n 's/^p95-ceiling-seconds:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$_pcf" 2>/dev/null | head -1)"
+chk "$([ -n "$_pcn" ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: ...and it states a number, not a placeholder"
+_pccur="$(cat "$_ROOT/.claude/builds/CURRENT" 2>/dev/null | head -1)"
+_pcc=""
+[ -n "$_pccur" ] && _pcc="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' "$_ROOT/.claude/builds/$_pccur/contract.md" 2>/dev/null | head -1)"
+if [ -n "$_pcc" ]; then
+  chk "$_pcn" "$_pcc" "v0.35 INV-PERFBUDGET: the tracked file and the contract state the SAME bound — one fact, one owner, and a disagreement the check refuses rather than resolves"
+else
+  printf '  REPORT  INV-PERFBUDGET: the contract is not on this tree (build state is gitignored), so the two carriers could not be compared here. Stated, not skipped.\n'
+fi
+chk "$([ "$(grep -c 'perf-cap-check.sh' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: the RELEASE path runs the speed check — not the suite, which it would turn from twelve seconds into four minutes"
+chk "$([ "$(grep -c 'Never raise the bound' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: ...and the release doc says plainly that the bound is never raised to fit a change"
 # F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
 # and docs/ are public too, and the first version of this check reported them clean while a reviewer's
 # planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the

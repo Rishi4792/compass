@@ -38,11 +38,29 @@ SUITE=plugins/compass/scripts/compass.smoke.sh
 # The ceiling comes from ONE place — the contract — so it cannot drift from the number the contract
 # states. Review-2 round 4 found this build stating two different ceilings at once after a fix
 # landed in the header and not in the invariant.
+# v0.35 — AND IT HAS TO BE READABLE WHERE A RELEASE HAPPENS. The contract is the authority, but it
+# lives under `.claude/builds/`, which is gitignored — so this check could never produce a verdict in
+# a fresh clone, which is exactly where a release is cut. A reviewer measured that: exit 2, "no
+# ceiling found", every time, on the only tree that matters.
+#
+# So the number lives in TWO places with ONE owner. The contract sets it. `perf-ceiling.txt` is
+# tracked and carries the same figure so a clone can read it. They may never disagree: when both are
+# present and differ, this refuses rather than picking one — that is the "one fact, two sources"
+# failure this repository keeps finding, and the fix is to make the disagreement fatal, not to choose.
+CEIL_CONTRACT=""; CEIL_FILE=""
 if [ -z "$CEIL" ]; then
   C="$(cat .claude/builds/CURRENT 2>/dev/null | head -1)"
-  [ -n "$C" ] && CEIL="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' ".claude/builds/$C/contract.md" 2>/dev/null | head -1)"
+  [ -n "$C" ] && CEIL_CONTRACT="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' ".claude/builds/$C/contract.md" 2>/dev/null | head -1)"
+  CEIL_FILE="$(LC_ALL=C sed -n 's/^p95-ceiling-seconds:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' plugins/compass/scripts/perf-ceiling.txt 2>/dev/null | head -1)"
+  if [ -n "$CEIL_CONTRACT" ] && [ -n "$CEIL_FILE" ] && [ "$CEIL_CONTRACT" != "$CEIL_FILE" ]; then
+    echo "perf-cap-check: ERR — the contract says ${CEIL_CONTRACT}s and perf-ceiling.txt says ${CEIL_FILE}s."
+    echo "  One fact, two sources, and they have drifted. The contract is the authority: correct the file"
+    echo "  to match it. Refusing to pick one — choosing silently is how the drift became invisible."
+    exit 2
+  fi
+  CEIL="${CEIL_CONTRACT:-$CEIL_FILE}"
 fi
-[ -n "$CEIL" ] || { echo "perf-cap-check: ERR — no ceiling found in the contract and none given. Refusing to invent one."; exit 2; }
+[ -n "$CEIL" ] || { echo "perf-cap-check: ERR — no ceiling in the contract, none in plugins/compass/scripts/perf-ceiling.txt, and none given. Refusing to invent one."; exit 2; }
 
 case "${RUNS:-0}" in ''|*[!0-9]*|0) echo "perf-cap-check: ERR — runs must be a positive integer."; exit 2 ;; esac
 
