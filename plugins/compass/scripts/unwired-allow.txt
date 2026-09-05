@@ -14,5 +14,5 @@ abort-clear         # CLI: a person clearing an abort sentinel they set
 auto-init           # orchestrator setup, invoked by auto-start, not standalone
 budget-init         # orchestrator setup, invoked by auto-start, not standalone
 auto-resume         # entered by the resume command's prose, not by a script
-auto-spawn          # entered by the Stop hook's cross-session path
+auto-spawn          # CLI: a person deliberately starting a second session on a build. v0.35 P6 removed the Stop hook's call — the in-turn refusal and a cross-session spawn are alternatives, never both, and every way the refusal declines is also a reason not to start a second session.
 dora-ledger         # CLI: a read-only report a person runs to see the delivery ledger

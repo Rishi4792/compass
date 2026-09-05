@@ -6,7 +6,7 @@ user-invocable: false
 
 # compass:start — the lifecycle orchestrator
 
-Compass builds software **true to spec, with zero drift**. The contract is the invariant; every stage is checked against it. This skill sequences the stage skills, but **never auto-advances** in gated mode — each transition is a user-driven gate, AND each downstream stage runs a real script gate that blocks on missing proof.
+Compass builds software **true to spec, with zero drift**. The contract is the invariant; every stage is checked against it. This skill sequences the stage skills. It **never advances without being asked** — each transition is a user-driven gate — and since v0.35 an answer of **Approve** is acted on rather than described, so the build continues instead of stopping in silence. Each downstream stage still runs a real script gate that blocks on missing proof.
 
 > The whole lifecycle is driven through the single front door **`/compass:go`**, which reads state and routes into each stage skill (`compass:contract`, `compass:review-contract`, `compass:plan`, `compass:review-plan`, `compass:build`, `compass:review-build`, `compass:ship`). Resume from a fresh terminal with **`/compass:resume`**. The per-stage skills are hidden from the `/` menu (`user-invocable: false`) but Compass invokes them for you — you never have to remember which one.
 
@@ -72,7 +72,9 @@ The orchestrator loop in `--auto`:
 5. **G2 (event-triggered):** any `fire-g2` writes a `gate-wait-G2` banner to `progress.md` and STOPs (exit non-zero) — it NEVER auto-resolves, spawns, or hangs. A human resumes with `/compass:resume <slug>` choosing ship-despite-miss / relax / keep-trying / abort (after `g2_fires` ≥ 3, keep-trying is withdrawn).
 6. **End of lifecycle:** review-build records `auto-closed: two clean adversarial rounds + all INVARIANTs green` (NOT a faked human signature — `lifecycle-audit` G-L2 accepts this marker); ship then runs its FULL real verification (prod recon + route smoke). Any ship/prod-verify FAIL → `fire-g2`.
 
-**Cross-session continuation (self-spawn, v0.11.0):** when context runs low and the owning session stops at ANY **continuable** stage (contract/plan/review/build — fixed in v0.11; v0.10 only fired during build), the Stop hook (`compass.sh stop-guard`) auto-spawns a fresh `claude` running `/compass:resume <slug> --auto` (from `budget.env`/`session-chain.log`) and lets this session exit — **only** if `is_stage_continuable` (real pending work, not terminal/idle), not at a G1/G2 gate-lock (INV-GATE), single-flight holds (INV-5), and budget remains (INV-HALT).
+**Continuation at a turn end (v0.35 — this replaced the self-spawn):** when the owning session tries to end a turn on an Autonomous build that still has work, the Stop hook (`compass.sh stop-guard`) does **not** let the turn end quietly. It refuses, and the reason names the next stage, `/compass:resume <slug>`, and two commands that stop it. Nine conditions must ALL hold: Autonomous · not suspended · not aborted · this session owns it · no gate-lock · `can-advance` passes · a successor exists · the successor is not `ship` · refusals remain. Any one absent and the turn ends normally. The refusal counter (`ceiling_refusals`, default 40) is the bound, and each refusal says how many are left.
+
+**The Stop hook no longer starts a second session.** Until v0.34 it spawned a fresh `claude` running `/compass:resume <slug> --auto`, on a much weaker test — owned and continuable — so a build parked at a human gate, or sitting at the ship seam, got a new session started on it. Driving the build from this turn and starting another session are alternatives, never both. `compass.sh auto-spawn` still exists for anyone who wants the cross-session behaviour deliberately.
 
 **Honesty on the boundary:** the budget — wall-clock + max-sessions + max-stages — is the **hard runaway ceiling**, proven (INV-HALT) to bind across *real separate spawned processes*, so the chain cannot exceed it regardless of what the spawn launches. The self-spawn launches `nohup claude -p "/compass:resume <slug> --auto"`; if that launcher can't start, it records `spawn-failed` and stops cleanly (INV-DEGRADE) — never a silent or faked continuation. A human is needed only at G1/G2.
 
@@ -89,7 +91,7 @@ The orchestrator loop in `--auto`:
 - **review-build requires a human sign-off** on the receipt's command+output evidence before CLOSED.
 - **Ship is mandatory (v0.7.0).** CLOSED is NOT a final resting state unless the contract waives deploy. The terminal-status guard (`compass.sh close` runs `lifecycle-audit CLOSED`; ship runs `lifecycle-audit SHIPPED`) and the **Stop hook** (`compass.sh stop-guard`, fires every time the agent tries to stop) block going quiet, skipping a gate, or forgetting ship while a build is mid-lifecycle. Enforcement is script + hook, not discretion.
 
-## The gate (between every stage — owned by the stage, never auto-advance)
+## The gate (between every stage — owned by the stage; it ASKS, and acts on the answer)
 **The gate is owned by each stage's skill.** Every stage skill ends by presenting the canonical 4-button gate (single source: `shared/gate.md`, smoke-enforced byte-identical across the 7 stage skills). As the orchestrator you **sequence** the stages and advance only when the user picks **Approve** or **Amend** — you do **not** present a second gate of your own. On detected drift from `contract.md`, STOP and surface. (The gate's transition footer now points the user at **`/compass:go`**, the one front door that reads state and routes on to the correct next stage.)
 
 ## Standalone / budget

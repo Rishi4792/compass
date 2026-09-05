@@ -1,0 +1,62 @@
+# A SIGNED, BOUNDED EXCEPTION TO THE SPEED CEILING — NOT A NEW CEILING.
+#
+# The ceiling in perf-ceiling.txt is 78 seconds and it has NOT been changed. This file records that
+# ONE release is allowed to ship over it: why, who decided, and the exact figure that decision
+# covers. When this file is absent the ceiling binds normally, which is the default and the
+# behaviour of every other release.
+#
+# WHY IT WAS SIGNED. Two separate things pushed the suite over, and only one of them is code:
+#
+#   1. THE MACHINE'S FREE MEMORY CHANGES THE RESULT MORE THAN THE CODE DOES, and this was measured
+#      only after a first explanation had been written and published. The first version of this file
+#      said "the machine is about 10% slower than when the bound was taken". That was a guess with a
+#      number attached. The real variable is memory pressure, because this suite forks hundreds of
+#      short-lived processes and that is exactly the workload that suffers when a machine swaps:
+#
+#          free memory 95%   ->  76s   (inside the 78s ceiling)
+#          free memory 30%   ->  82s   (median of seven runs, spread 2s)
+#          free memory 13%   -> 136s   (an unrelated process holding 73 GB of 96 GB, 24 GB swapped)
+#
+#      The 13% figure is not a property of this release and never was. The honest planning number is
+#      the 30% row — an ordinary working machine — which is 82s, over the ceiling and inside this
+#      exception. A wall-clock bound cannot separate the code from the machine it runs on, and this
+#      one did not.
+#
+#   2. THE RELEASE GENUINELY ADDED 7s: 5s for the mutex fix, which is the lock that now actually
+#      holds across its critical section, and 2s for the widened secret scanner. Four of those
+#      seconds were recovered by two optimisations that weaken no test — the ten concurrency trials
+#      no longer queue behind each other, and the scanner no longer forks two processes per line to
+#      strip a prefix. Both were re-proved red-first afterwards. About 3s remains, and it is
+#      correctness work worth keeping.
+#
+# THE EXCEPTION IS BOUNDED THREE WAYS, so that it cannot quietly become permanent:
+#
+#   * BY VERSION. It names one release. The moment plugin.json says anything else, this file is
+#     spent and perf-cap-check fails again with no edit and no reminder required.
+#   * BY MAGNITUDE. It names the figure it covers. A further regression past that number is NOT
+#     covered and still fails, so this does not license the suite to keep growing under cover.
+#   * BY SIGNATURE. A person decided it and is named. Raising a ceiling to fit an implementation is
+#     something this project forbids itself. Accepting a measured, dated, bounded overage for one
+#     named release is a different act, and only the owner can make it.
+#
+# THE NUMBER BELOW IS MEASURED, NOT CHOSEN, and it is set by the SAME method as the 78s ceiling it
+# temporarily covers — so the two can be compared rather than merely quoted side by side.
+#
+#   Seven runs of the whole suite, fresh clone, release head, one machine, 30% free memory, which is
+#   an ordinary working state rather than an idle one:
+#       81  82  82  82  82  83  83   seconds
+#   median 82s · p95 83s (the slowest of seven, the convention the 78s bound used) · spread 2s.
+#   The figure below is p95 plus about 5%, which is also how 78 was derived from a p95 of 74.3s,
+#   rounded up to leave room for the memory variance measured above. The margin exists so ordinary
+#   noise cannot turn this red, because a speed gate that goes spuriously red is one somebody
+#   switches off.
+#
+#   An earlier series in this same file read 83-87s with a median of 84s. It was taken while an
+#   unrelated process held 73 GB and the machine was swapping, and it is superseded rather than
+#   quietly deleted, because the difference between those two series is the whole lesson here.
+
+exception-version: 0.35.0
+exception-ceiling-seconds: 91
+exception-signed-by: Rishi Kapoor
+exception-signed-date: 2026-09-05
+exception-reason: on an ordinary working machine (30% free memory) the suite measures 82s against a 78s ceiling, median of seven runs with a 2s spread. Two causes, neither of which the ceiling can separate: the release added real work that is wanted — the mutex fix and the widened secret scanner — and this suite's speed depends on the machine's free memory far more than on its own code, measuring 76s at 95% free and 136s at 13% free. A wall-clock bound cannot tell those apart, so the overage is accepted for this one release and stated rather than explained away.

@@ -3,6 +3,384 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.35.0] — 2026-09-05 — Compass carries itself to the next stage, and says so where it can be tested
+
+**Compass used to stop between stages and wait to be told to carry on.** It stated a prohibition,
+never named what came next, and put its real checks far from the moment the work happened. That is
+why a separate `/long-build` skill had to exist at all. This release makes the handoff explicit, and
+— more importantly — makes every claim about it something a test can disagree with.
+
+### Added
+- **`compass.sh next-stage <build-dir>`** — asks one question and answers it: which stage comes next.
+  It walks the same `LIFECYCLE` the rest of the tool walks, so there is no second copy to drift. It
+  never stops the process on an error: exit 0 with a stage name, 2 for "cannot tell", 3 for finished.
+- **A turn-end refusal, under nine conditions.** When a build is Autonomous, owned by this session,
+  not suspended, not aborted, past its gate, with a successor that is not `ship`, and with refusals
+  left in its own budget, a quiet stop is refused with a message that NAMES the next command. Any one
+  condition failing means silence. Each condition now has a fixture that only it can fail.
+- **A speed check with a floor as well as a ceiling**, and the floor is COUNTED, not timed: it
+  asserts the assertions actually ran. A wall-clock floor fires on a faster machine that did all the
+  work, and this project has already demoted five rules for firing on correct input.
+- **A secret-scan corpus as a repo fixture** — 55 real leaks that must be refused, 128 ordinary lines
+  that must not. Written before the rules are tuned, not after.
+
+### Fixed
+- **The gate's central instruction was guarded by a blacklist of five phrasings**, and a reviewer
+  paraphrased past it twice — reinstating the exact stall this release exists to end, with every
+  suite green. The imperative is now pinned as a required literal. A blacklist can be worded around;
+  a whitelist cannot.
+- **`stage_pass`'s PASS test had no test.** Delete it and a FAILED stage read as passed. Nothing had
+  ever fed it a FAIL header.
+- **`review-evidence-gate` never ran on this build.** A bold `streams:` line carrying two rounds
+  parsed to zero rounds, so deleting a declared evidence file passed.
+- **`with_lock` never locked.** A return trap fired on the first inner function return, so the lock
+  was released before the work it protected. Five concurrent increments landed three or four.
+- **The scanner refused 19 of 26 idiomatic "read the secret from elsewhere" lines** — Rails, Python,
+  Rust, AWS Secrets Manager. A project using a secrets manager could not close a build.
+- **Three of the scanner's ten rules had no example in the corpus** — PEM keys, web tokens, GitHub
+  fine-grained tokens — while it printed a confident "45 of 45".
+- **Nonce records were written, filed, and never read.** A stub with an invented nonce passed as
+  evidence for a stream nobody ran.
+- **A bracket expression that excluded the letter `t`**, truncating 28 of 34 build names.
+
+### Known — and signed off rather than hidden
+- **The suite measures 84s against its own 78s ceiling, and ships on a signed, bounded exception.**
+  Seven fresh-clone runs at the release head, on an ordinary working machine (30% free memory):
+  81 · 82 · 82 · 82 · 82 · 83 · 83 (median 82, spread 2). **The ceiling was NOT raised.**
+
+  **This suite's speed depends on the machine's free memory far more than on its own code**, which
+  was found only after a first, wrong explanation had already been written down and committed. The
+  same head measures **76s at 95% free memory — inside the ceiling — 82s at 30%, and 136s at 13%**,
+  the last with an unrelated process holding 73 GB of 96 GB and 24 GB swapped. The suite forks
+  hundreds of short-lived processes, which is precisely the workload that suffers when a machine
+  swaps. An earlier entry here blamed "a machine about 10% slower than when the bound was taken".
+  That was a guess with a number attached, and it is corrected rather than quietly dropped.
+
+  The release also added real work that is wanted: the mutex fix and the widened secret scanner,
+  after 4s was recovered by optimisations that weaken no test. A wall-clock bound cannot separate
+  those two causes, so the overage is accepted for this one release and stated plainly. The exception is bounded by
+  version, by magnitude and by signature, each independently restoring the block, and eleven
+  assertions hold it to that. It is spent the moment the version changes.
+- **Eight of v0.34's evidence files carry no `target-sha`**, required since v0.32. They were written
+  while the evidence gate above was blind, which is how they got there. They are NOT backfilled:
+  writing a sha nobody issued would fabricate the evidence the gate exists to check.
+
+## [Unreleased] — the lock released itself before the work it was protecting
+
+**Compass's mutex has never excluded anything, and the counter it guards is the one that stops an
+autonomous build looping for ever.**
+
+`with_lock` ended by installing a cleanup on function return, then running the work. In a shell, a
+return trap set inside a function is the *current* return trap — it fires when **any** function
+returns while it is installed, not only the one that set it. The protected work calls other
+functions, so the lock was deleted the moment the first of those returned, with the read-modify-write
+barely started.
+
+Measured, with process ids logged at acquire and release: **one acquire and three releases per
+process.** Five concurrent budget increments landed three or four instead of five, about one run in
+ten — with every process exiting cleanly and nothing on the error output. A counter that silently
+undercounts is not a bound.
+
+It had been sitting behind an intermittent test that looked like machine load. It is now twenty
+consecutive correct runs, and the suite asserts it over ten trials, because a race that shows one
+time in ten passes a single run more often than not.
+
+**Four holes in the leak scanner, from the same review round:**
+
+- A value ending in a quote defeated the checks that judge it — so a placeholder written bare passed
+  and the same text inside a quoted string was refused. That one character is what made this
+  project's own release check red on its own history.
+- Any lowercase hyphenated value was treated as a harmless label. A Mailgun key, a hyphenated
+  password and a uuid-shaped secret all pass that description. A label is now short as well as
+  lowercase.
+- `name: value` was invisible — only `name=value` counted. That is the shape of every YAML file, of
+  JSON, and of what the AWS command line writes.
+- A full stop in the allow-list is a wildcard. Six of them on a line allowed every six-character home
+  directory name. An earlier fix closed `.*` and left `.`; names are escaped now rather than trusted.
+
+## [Unreleased] — the speed bound, measured and set, with the cost written down
+
+**This release is slower and here is exactly where it went.** The first version of this table named
+phases its measured ranges did not contain, and recorded neither a run count nor a single commit —
+so nobody could go and check it, which is how the mislabelling got published. An independent reviewer
+caught it by rebuilding the ranges from the branch history. Every row now names the commit it was
+measured at. Fresh clone per row, three runs each, median:
+
+```
+  ecb4daa  v0.34 release base                          57s
+  d22e569  the leak scanner and its five review rounds 73s  +16s  ← the whole story is here
+  3122ed8  the successor lookup and the gate text      76s   +3s
+  5d03866  the end-of-turn walk                        78s   +2s
+  0055ecf  the refusal and its own budget              77s   -1s
+  6f409d6  arming, evidence, close, the speed bound    79s   +2s
+  f17e274  the mutex fix                               83s   +4s  ← a lock that now really locks
+  a5132f8  the widened secret scanner                  85s   +2s
+  51ebfaf  review-build round 1's fixes                86s   +1s
+  c9ae55c  the optimisations and the signed exception  82s   -4s
+```
+
+**Read the deltas, not the absolutes.** Every row reads high against the first table — `ecb4daa`
+measures 57s against 50.9s, `6f409d6` measures 79s against the 72.7s the bound came from. The reason
+was found only afterwards and it is not a slower machine: **this suite's speed depends on free memory
+far more than on its own code.** The same head measures 76s at 95% free, 82s at 30%, and 136s at 13%.
+This series was taken under memory pressure, so its absolutes are inflated and comparable only within
+itself. The deltas survive, because each row differs from the one above it only by the commits
+between them and the two were measured back to back under the same conditions.
+
+The bound is **78 seconds** — the p95 of 74.3s plus about 5%. Tight enough that a real regression
+turns it red; loose enough that scheduling noise does not, since the spread across seven runs was
+3.0 seconds.
+
+**The bound moved because the suite changed, not because the number was inconvenient**: 1173
+assertions at c9ae55c against 1025 at v0.34.0, and 17 mechanical checks against 13 — every figure counted in a FRESH CLONE, which is
+the set the bound is defined for. The working tree reports more, because some assertions need build
+state; an earlier draft of this entry mixed the two and published three wrong figures. The leak scanner is 16s of the 25s
+this release adds — about two thirds — and it was not in this build's ask at all. It came from a
+release soak that found a home path shipped in 14 releases. It is named as the first thing to make
+faster, and it still is.
+
+**The check was disarmed for this entire release and nobody could see it.** It read its limit from a
+directory that git ignores, so in a fresh clone — the only tree a release is ever cut from — it
+answered "no ceiling found" every time. The limit now lives in a tracked file as well; the contract
+is still the authority that sets it; and if the two ever disagree the check refuses rather than
+picking one. Running it is now a numbered step in the release checklist, which also says in plain
+words that the bound is never raised to fit a change.
+
+## [Unreleased] — the last three: evidence, the finish line, and a bounded repair
+
+**A review could close without its evidence.** The check for that existed and rode the right seam
+already — what was missing was proof it bites. Deleting one reviewer's file and running the real gate
+now refuses, and the test does exactly that. The contract asked for this in as many words: not a
+search for the check's name, because a search is satisfied by typing it.
+
+**A finished build never said so.** Every close wrote `CLOSED`, whether the build had shipped or not,
+and nothing in Compass ever wrote `shipped` — the lowercase rows in the index came from somewhere
+else entirely. A build that shipped now records it, in the spelling the index already mostly uses.
+A build closed without shipping still says `CLOSED`, because it did not ship.
+
+**A failing gate in autonomous mode gets one repair, then stops.** Without a rule, an unattended
+build either halts at the first failure — the stall this whole release is about — or retries for
+ever. So: one attempt per check, autonomous only, written down in a fixed shape, and **never to the
+contract**. That last one is not hypothetical: five of Compass's own checks read the contract, so an
+unattended repair could edit the spec its own check reads. The contract's fingerprint is recorded
+when it locks and compared afterwards.
+
+**Every one of the seventeen promises in this build's contract now has a test that names it** — and
+each of the three above is proved by running the thing, not by searching for a word.
+
+## [Unreleased] — choosing Autonomous now actually arms it
+
+`compass.sh auto-init` refuses to arm a build that has no declared budget. That refusal is the only
+thing standing between "the user chose Autonomous" and a loop with no ceiling. It is also trivially
+bypassed, because arming is just a marker file: write it by hand and the budget check never runs.
+
+**Nothing detected that, and this project's own build was in exactly that state** while it was
+building the mechanism that depends on it. The consequence is not cosmetic: every bound reads the
+budget file, so a hand-armed build has no time limit, no session limit and no refusal limit — and
+the new end-of-turn check reads the budget before it refuses, so it stayed **silently inert**. You
+chose Autonomous and got nothing, with no error anywhere.
+
+`armed-check` grades the build you are working on: if it answered Autonomous, it must carry both the
+marker and a real budget. Every other build is **named but never failed** — a finished build records
+what was true when it shipped, and re-grading history is how a check starts refusing things nobody
+can fix. One build is named that way today.
+
+The check's first run reported "no build in flight" for a live build, because the status line reads
+`build — … P1 CLOSED …` and a search for "closed" anywhere in it matched. A status is what it starts
+with; everything after the dash is prose about the build, not its state.
+
+## [Unreleased] — a stale fingerprint had been hiding real failures since v0.32
+
+Compass pins the fingerprints of the two programs that produce and audit every number on its pages,
+so that editing one is a visible change rather than a quiet one. Both programs changed in later
+releases and nobody updated the pins — so from v0.32 the check stopped giving a verdict at all. **A
+check that refuses to answer is not a check that passes**, and refreshing the pins showed what the
+silence had covered:
+
+- **Three pages could not be cross-checked at all.** The check proves a number is about your data by
+  rendering the page twice, once from a deliberately altered copy. v0.32 taught the page generator to
+  refuse a page whose declared totals disagree with what it computes — and the alteration changes a
+  total, so the second render was being refused. The altered copy now updates its own declared total,
+  which is what a build with one fewer invariant would really say. The alteration is not weakened.
+- **Two numbers a reader sees that nothing explained.** Both were a count repeated inside a
+  "Show the rest" control — a place that cannot carry a provenance marker, by design, because a
+  control's label is plain text. The count is already on screen right beside it, marked. The labels
+  no longer repeat it.
+- **A read-only command could invalidate the baseline.** One build directory was reported "changed
+  since the baseline" and nothing in it had changed except a log file that grows every time you look
+  at the build. Logs are observability output, not inputs — this project already says so where it
+  stopped tracking them. They are out of the fingerprint now.
+
+**Result: zero unmarked, zero mismatched, zero unsourced numbers across 140 pages and 28 builds.**
+Every quality check reads zero, and only then were the two corpus totals re-recorded — the page count
+went UP, from 112 distinct of 140 to 140 of 140, because a defect where one page stood in for several
+is gone. Re-recording a total while a quality check is red would be hiding a defect; doing it after
+they all read zero is what a baseline is for.
+
+## [Unreleased] — the stop instruction now runs, and the end-of-turn check got four times faster
+
+Three independent reviewers went at the two new phases. The behaviour held up — every condition, the
+bound, ownership, the walk — and the things they broke were the parts a person actually touches.
+
+**The printed way to stop it did not run.** The refusal tells you how to switch it off. Copied into a
+shell it said `command not found`: the script is not on your PATH. Given the full path it still failed,
+because this project lives in a folder whose name contains a space and the path was unquoted. Both
+fixed, and the test now RUNS the printed commands instead of checking that the words appear — which is
+what let two broken versions ship in a row.
+
+**`compass.sh abort` did not stop it.** The most obviously named stop command in the tool, whose own
+message says the build "halts before its next step", was not one of the conditions. It is now.
+
+**It got four times faster, not slower.** Walking the whole list cost 19–21ms per build, so 34 builds
+meant about 700ms at the end of every turn. Nearly all of it was two subprocesses per row spent on
+builds that could not produce a decision. Two file tests and one built-in read decide that now:
+**536ms before any of this work, 658ms after the walk changed, 129ms now**, on a real 34-build list.
+
+**The cockpit was reading the wrong source for the mode.** It read a line of prose in `progress.md`
+while the hook reads a marker file, and printed "mode: not set" for 14 of 17 autonomous builds —
+including the live one. It reads the marker now: 33 of 33 builds report a real mode.
+
+**One redundant condition removed.** A separate gate-lock test duplicated what `can-advance` already
+does, so no fixture could break one without breaking the other. A condition no test can isolate is a
+duplicate, not a condition.
+
+**And the refusal says how many refusals are left** — the bound was 40 by default and written nowhere.
+
+## [Unreleased] — the end-of-turn check reads every build, and refuses a silent stop
+
+**It read 26 of 34 and never once saw the build being worked on.** When a turn ends Compass reads its
+list of builds top to bottom. The branch handling an autonomous build ended by returning, and that
+return sat outside the ownership test above it — so the first row with the autonomous marker and a
+non-terminal status ended the read, owned or not. Measured by tracing the real function against the
+real list: rows 1 to 26 of 34, then nothing. Row 34 was the build doing the work.
+
+**And now it refuses a quiet stop, under eight conditions, all of them.** Autonomous · owned by this
+session · not suspended · no human gate held · `can-advance` passes · a successor exists · not the
+ship seam · budget remaining. Any one absent and the turn ends normally. A hook that blocks on seven
+of eight is a runaway, so each is tested by a fixture that breaks exactly that one.
+
+The refusal names the successor `next-stage` worked out, the command to continue (`/compass:resume`),
+**and the command to stop** (`compass.sh auto-suspend`). A mechanism that will not let a turn end and
+does not say how to switch it off is a trap.
+
+**The bound is the budget, and it moves.** An earlier attempt at this shipped a loop bound that
+bounded nothing — 39 refusals went straight through it. With `ceiling_stages=3` you now get exactly
+three refusals and then quiet for ever. A counter that only reads is not a bound.
+
+**The Stop hook no longer starts a second session.** The old cross-session spawn ran on a much weaker
+test — owned and continuable — so a build parked at a human gate, or sitting at the ship seam, got a
+fresh session started on it. Driving the build from this turn and starting a second session are
+alternatives, never both. `compass.sh auto-spawn` still exists for anyone who wants that on purpose.
+
+**Human-gated still never refuses.** That is the off switch, and none of this reaches it.
+
+## [Unreleased] — the gate now says what to do next, and a new command works out what that is
+
+**`compass.sh next-stage <build-dir>`** prints the one stage that has not passed yet. Compass named
+seven stages from its first release and nothing could answer "which comes next?" on demand, so every
+caller re-derived it and the text a user reads could not name a successor at all. Exit 0 with the
+stage name · exit 3 when the build is finished, including a build whose contract declares
+`deploy: out-of-scope` · exit 2 when the state cannot be read. **Branch on the code, never on the
+output**: finished and unreadable both print nothing.
+
+**The gate text changed in all eight places it lives.** It used to forbid invoking the next skill and
+name nothing in its place — it told the reader what would not happen and never what would, so an
+approved stage ended in silence. It now says: on Approve, run `next-stage` and invoke that stage with
+the Skill tool. The block stays byte-identical across all seven stage skills, which is why it names
+one command that works out the successor rather than a command per stage.
+
+**A speed bug in `stage_pass`, found by an independent reviewer and worth its own line.** Reading a
+receipt's first line through `printf | head -n1 | grep` under `pipefail` reads the plumbing as a
+verdict: on a large receipt block `head` exits early, `printf` dies of SIGPIPE, and a receipt headed
+PASS is reported as NOT passed. Reproduced at about 100 KB of receipt — reachable by any build with
+several rounds of review evidence. `stage_pass` is what `cockpit`, `statusline`, `orient` and
+`next-stage` all use to answer "which stage are we on", so a long-running build could be told it was
+back at the beginning. It reads the first line with a shell parameter expansion now: no pipe, no
+second process, no exit status to misread.
+
+**Two mutation tests, because two reviewers proved the old checks could not tell the fix from its
+opposite.** Replacing the whole Stop hook with three lines that print `{}` passed every assertion.
+Rewriting the gate to say "do NOT run it; end the turn in silence", keeping the words the checks
+grep for, also passed everything. Both now fail: one assertion requires a real Autonomous build to
+leave a spawn event on disk, and another refuses a negation attached to the instruction. The gate
+block is prose for a model, and the suite says so in as many words — presence, placement and the
+absence of a negation are measured; comprehension is not, and no script can measure it.
+
+## [Unreleased] — the Stop hook's two modes were the wrong way round
+
+**A behaviour change for every existing install, stated plainly.** Until now a build with no
+`.auto-mode` marker — which is every build in the field, because only `auto-init` writes that marker
+— was REFUSED when a turn tried to end mid-step: *"build X is mid-BUILD with a step in progress …
+finish the build step before stopping"*. An Autonomous build was never refused. The setting that
+means "do not drive me" was the only one that refused anything.
+
+That warning is now gone for Human-gated builds. A Stop hook can say exactly two things — allow, or
+refuse with a reason — so "warn without refusing" was never available, and the contract chose allow:
+Human-gated is the off switch. If you relied on that warning, the equivalent is `/compass:status`,
+which prints the same stage and next action without stopping you.
+
+## [Unreleased] — the leak scanner, four review rounds
+
+**This is behaviour change and it is written down here because three earlier rounds were not.** A
+reviewer pointed out that `plugin.json` still said 0.34.0 while the scanner had been rewritten three
+times, and this project's own RELEASING.md calls that a broken release. The version bump belongs to
+whoever ships; the record belongs here.
+
+**What changed.** `compass.sh secret-scan` can now see the only class that has ever leaked from this
+repository — an absolute home path and a session id — and it no longer refuses ordinary code to do
+it. Along the way it gained a `--tracked` mode that scans the working tree, the index and files
+present but not ignored; per-match rather than per-line filtering; file and line attribution in
+`--commits`; and two declared routes past a false positive.
+
+**How it is measured, which is the part that matters.** Four rounds each reported a good score
+against a list written after the rule was chosen, and each had a hole its own list contained no
+example of. The corpus is now a fixture — `scripts/fixtures/secrets/{leaks,not-leaks}.txt` — scored
+by a new suite child, `secret-corpus-check`. Every version of the scanner, against that one corpus:
+
+```
+                              ordinary lines wrongly refused    real leaks missed
+  before this work                     7 of 48                      14 of 22
+  round 1                             20 of 48                      11 of 22
+  round 2                             18 of 48                       7 of 22
+  round 3                              5 of 48                       6 of 22
+  round 4                              0 of 48                       0 of 22
+  round 5 (corpus now 112 / 45)        0 of 112                      0 of 45
+```
+
+A reviewer made the fair point that a corpus written by the author can flatter itself, so round 5 was
+also checked against forty lines written fresh from real Dockerfiles, systemd units, CI configs,
+nginx, Terraform, Rails, Laravel, ASP.NET, SCIM and `.env.example` files: **seven refused before that
+round's rules, none after**, with none of thirteen real leaks missed. All forty are in the fixture now.
+
+**What is NOT fixed is written down.** Ten open items — UTF-16 files, `.gitattributes -diff`,
+rename-only commits, commit messages, symlinks, binaries over 1 MB, review transcripts under
+`.claude/`, the absence of CI, an unwired speed check, and a test run that is over its last published
+ceiling — each with the reason it was left. A leak scanner is never finished; a list of what it cannot
+see is the honest substitute for pretending otherwise.
+
+Rounds 1 and 2 made the scanner **worse at ordinary code than the version that could not see the leak
+at all**. Nothing showed that until the population stopped moving.
+
+**Two routes past a false positive, both deliberate.** A home-directory name that is not a person —
+a fixture stand-in, a container account, a CI runner, a URL segment — goes in
+`scripts/fixtures/secrets/allowed-names.txt`, one line, visible and reviewable. Anything else takes
+`# compass-allow-secret: <reason>` on the line, at least eight characters, counted in the summary.
+A finding in a committed patch cannot be cleared either way.
+
+**Inside a `.claude/` path only keys are checked.** `review-build` scans a build's own folder and
+treats any hit as blocking; once the scanner learned to see home paths it returned 320 hits on this
+build and would have blocked every Compass build anybody runs. Local build state records the
+operator's real paths by design. The question worth asking of it is whether it contains a key.
+
+**Speed.** `secret-scan --tracked` reads files git calls binary, which is how a single NUL byte
+stopped hiding a readable line — but only for files under 256 KB. Reading a 7.1 MB GIF and a 3.5 MB
+MP4 as text twice per run cost 4.4s; it is 1.1s now, and files above the limit are named in the
+summary rather than silently skipped.
+
+**The exposure window, counted three times.** The path shipped in **14 tagged releases**, v0.28.0
+through v0.33.5. Earlier figures of "six" and "15" were both wrong, and both are corrected in place
+with the reason stated.
+
 ## [0.34.0] — 2026-09-02
 
 Pages a stranger can read, and the checks that prove it.
@@ -25,8 +403,16 @@ release changes what the generator EXTRACTS, so a person's own words reach the p
 - The mechanical suite now verifies its own child list, so it can no longer report every check clean
   after one has been unwired.
 
-**Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files, present
-since at least v0.33.5.
+**Fixed:** a fixture corpus that shipped an absolute home path in four hook-payload files.
+
+**The exposure window, counted rather than estimated — and the first count was also wrong.** This
+entry first said "since at least v0.33.5", which was wrong by thirteen releases. The correction then
+said 15 tags, which was wrong by one: the mistake was counting the tags that CONTAIN the leaking
+commit, and v0.34.0 contains it while being clean, because the fix landed before the tag. Counting
+the tags whose TREE holds the path gives: clean through v0.27.0, then **four files in every one of
+the 14 tagged releases from v0.28.0 to v0.33.5**, then clean again at v0.34.0. The path is still present in public git history
+and in the v0.33.5 tag on the remote, so the remediation here is forward-only — v0.34.0 onward does
+not carry it, and earlier tags still do.
 
 **Shipped un-converged.** review-contract rounds 1-3 carry no valid nonce: that rule was adopted
 mid-build and back-filling one would forge the single field that makes evidence unforgeable. The

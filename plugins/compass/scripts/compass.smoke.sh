@@ -204,9 +204,406 @@ chk "$(grep -lq 'budget.env\|NO JSON\|line-oriented' "$PLUGIN_ROOT/scripts/compa
 # ── v0.11.0 autonomous self-spawn wiring ──
 d11=0; for c in fire-g1 gate-clear auto-start stage-continuable; do grep -qE "^[[:space:]]+$c\)" "$SH" && d11=$((d11+1)); done
 chk "$d11" "4" "v0.11 all 4 new subcommands wired in dispatch (fire-g1/gate-clear/auto-start/stage-continuable)"
-# the reorder: the .auto-mode branch must appear BEFORE the gated `is_mid_build || continue` in stop-guard
-am=$(grep -n 'sr/\$slug/.auto-mode' "$SH" | head -1 | cut -d: -f1); im=$(grep -n 'is_mid_build "\$sr/\$slug" || continue' "$SH" | head -1 | cut -d: -f1)
-chk "$([ -n "$am" ] && [ -n "$im" ] && [ "$am" -lt "$im" ] && echo 1 || echo 0)" "1" "v0.11 stop-guard: .auto-mode branch is BEFORE is_mid_build (fires at all stages — the fix)"
+# ── v0.35 P2 — the Stop hook, tested by RUNNING IT rather than by comparing two line numbers ─────
+# The v0.11 assertion here compared the line number of the `.auto-mode` branch with the line number
+# of the gated `is_mid_build` check. It was the ONLY line in 1073 assertions that mentioned
+# stop-guard, and it could not see what the hook actually returns. That is why the two modes stayed
+# the wrong way round for twenty-four releases: a Human-gated build — which is every build in the
+# field, because only `auto-init` writes the marker — was REFUSED at a mid-build stop, while an
+# Autonomous build was always allowed to end its turn.
+_sgfx() {   # <mode: human|auto> [--foreign|--orphan] → prints the hook's raw JSON
+  local mode="$1"; shift
+  local own="self"; case "${1:-}" in --foreign) own=foreign ;; --orphan) own=orphan ;; esac
+  # The documented placeholder id, not an invented one: P1's scanner caught the first version of
+  # this fixture on the very next run, which is the check earning its place.
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/fixbuild .claude/builds/.locks
+    printf 'fixbuild · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# fixbuild\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** the next step\n' > .claude/builds/fixbuild/progress.md
+    printf '## RECEIPT — contract\nPASS\n\n## RECEIPT — build\nIN-PROGRESS step 2/5\n' > .claude/builds/fixbuild/receipts.md
+    printf -- '- [x] S1 done\n- [ ] S2 pending\n' > .claude/builds/fixbuild/plan.md
+    case "$own" in
+      self)    printf 'session=%s\n' "$sid" > .claude/builds/.locks/fixbuild.owner ;;
+      foreign) printf 'session=%s\n' "someone-else" > .claude/builds/.locks/fixbuild.owner ;;
+      orphan)  : ;;
+    esac
+    [ "$mode" = auto ] && : > .claude/builds/fixbuild/.auto-mode
+    printf '{"session_id":"%s","stop_hook_active":false,"transcript_path":"/x/y.jsonl"}' "$sid" \
+      | bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+# A STUB PASSES EVERY ASSERTION BELOW, and an independent reviewer proved it: replacing all 63 lines
+# of cmd_stop_guard with `cat >/dev/null; printf '{}\n'` left smoke at 1090 passed, 0 failed. That is
+# the shape of the trap — once the invariant is "always return {}", every check for {} is satisfied by
+# a hook that does nothing at all. So the FIRST assertion is one only a working hook can pass: an
+# Autonomous, owned, continuable build must make the hook walk the INDEX, find it, and attempt the
+# cross-session spawn, which leaves a `spawn` event on disk. The spawn command is overridden to `true`
+# so nothing is really launched.
+_sgauto_trace() {
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/fixauto .claude/builds/.locks
+    printf 'fixauto · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# fixauto\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** the next step\n' > .claude/builds/fixauto/progress.md
+    printf '## RECEIPT — contract · fixauto · PASS\nok\n\n## RECEIPT — build · fixauto · IN-PROGRESS step 2/5\nok\n' > .claude/builds/fixauto/receipts.md
+    printf -- '- [x] S1\n- [ ] S2\n' > .claude/builds/fixauto/plan.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/fixauto.owner
+    : > .claude/builds/fixauto/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/fixauto/budget.env
+    _j='{"session_id":"SID","stop_hook_active":false}'; _j="${_j/SID/$sid}"
+    printf '%s' "$_j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null \
+      | grep -c '"decision":"block"' || true )
+  rm -rf "$r"
+}
+chk "$(_sgauto_trace)" "1" "v0.35 THE HOOK REALLY RAN: an Autonomous owned build is REFUSED — a stub that only prints {} fails this and passes every other stop-guard assertion here"
+chk "$(_sgfx human)"            "{}" "v0.35 INV-HUMAN-GATED-NEVER-REFUSES: a Human-gated build mid-step, owned by this session, returns {} — the off switch is off"
+chk "$(_sgfx auto)"             "{}" "v0.35: an Autonomous build still returns {} at this stage (P6 adds the refusal, and only under eight conditions)"
+chk "$(_sgfx human --foreign)"  "{}" "v0.35 INV-OWNED-ONLY: a build owned by another session returns {} — an unrelated turn is never interrupted"
+chk "$(_sgfx human --orphan)"   "{}" "v0.35 INV-OWNED-ONLY: an orphan build, whose owning session is gone, returns {}"
+chk "$(printf '{"session_id":"x","stop_hook_active":true}' | bash "$SH" stop-guard 2>/dev/null)" "{}" "v0.35: stop_hook_active short-circuits — the platform's anti-deadlock escape still works"
+chk "$(grep -c 'is_mid_build "\$sr/\$slug" || continue' "$SH")" "0" "v0.35: the gated refusal is GONE from stop-guard, not merely bypassed"
+
+# ── v0.35 P5 — the walk reaches EVERY build, and acts at most once ───────────────────────────────
+# The autonomous branch used to end `printf '{}'; return 0`, and that return sat OUTSIDE the
+# ownership test above it. So the first INDEX row with `.auto-mode` and a non-terminal status ended
+# the walk whether or not this session owned it. Measured on this repository by tracing the real
+# function: rows 1-26 of 34 were read and the rest were never examined. Row 34 is this build.
+_sgwalk() {   # <rows> <owners: one|many> → "<spawns for the LAST build> <total spawns>"
+  local rows="${1:-4}" owners="${2:-one}"
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks; : > .claude/builds/INDEX
+    _mk() { local sl="$1" ow="$2"
+      mkdir -p ".claude/builds/$sl"
+      printf '%s · fixture · status=build · facets=library · touches=x\n' "$sl" >> .claude/builds/INDEX
+      printf '# %s\n\n**Status:** build (step 2/5)\n**Stage:** build\n**Next:** next\n' "$sl" > ".claude/builds/$sl/progress.md"
+      printf '## RECEIPT — contract · %s · PASS\nok\n\n## RECEIPT — build · %s · IN-PROGRESS step 2/5\nok\n' "$sl" "$sl" > ".claude/builds/$sl/receipts.md"
+      printf -- '- [x] S1\n- [ ] S2\n' > ".claude/builds/$sl/plan.md"
+      printf 'session=%s\n' "$ow" > ".claude/builds/.locks/$sl.owner"
+      : > ".claude/builds/$sl/.auto-mode"
+      printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > ".claude/builds/$sl/budget.env"; }
+    local i=1 ow
+    while [ "$i" -lt "$rows" ]; do
+      if [ "$owners" = "many" ]; then ow="$sid"; else ow="somebody-else"; fi
+      _mk "$(printf 'other%02d' "$i")" "$ow"; i=$((i+1))
+    done
+    _mk "mine" "$sid"
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    # Two numbers: did the refusal name the DEEP build (so the walk reached it), and how many
+    # refusals were emitted (exactly one decision per turn, however many rows qualify).
+    local named blocks
+    named="$(printf '%s' "$o" | grep -c 'Compass: mine ' || true)"
+    blocks="$(printf '%s' "$o" | grep -c '"decision":"block"' || true)"
+    printf '%s %s' "${named:-0}" "${blocks:-0}" )
+  rm -rf "$r"
+}
+chk "$(_sgwalk 1)"  "1 1" "v0.35 P5: one row, owned → the hook acts on it (the control)"
+chk "$(_sgwalk 2)"  "1 1" "v0.35 P5: an owned build BEHIND one foreign autonomous build is reached — before this change the walk returned at row 1"
+chk "$(_sgwalk 10)" "1 1" "v0.35 P5: ...and behind nine of them"
+chk "$(_sgwalk 30)" "1 1" "v0.35 P5: ...and behind twenty-nine, which is the shape of a real INDEX that only grows"
+chk "$(_sgwalk 3 many)" "0 1" "v0.35 P5: three OWNED autonomous builds produce exactly ONE decision, and it is for the FIRST of them — walking every row must not fan out one action per row"
+# The structural half: the autonomous branch must not RETURN. Behaviour is asserted above; this
+# catches a future edit that reinstates the early exit while the fixtures still happen to pass.
+_p5br="$(awk '/^cmd_stop_guard\(\) \{/{g=1} g && /sr\/\$slug\/\.auto-mode/{f=1} f{print} f&&/^    fi$/{exit}' "$SH")"
+chk "$([ -n "$_p5br" ] && echo 1 || echo 0)" "1" "v0.35 P5: the autonomous branch is findable (no vacuous match)"
+# Comments are stripped first. The branch EXPLAINS why the return is gone, so a naive grep counts
+# the explanation and reports the defect it documents — the same trap as a note that quotes a banned
+# sentence. Only executable lines are counted.
+_p5code="$(printf '%s' "$_p5br" | grep -vE '^[[:space:]]*#' || true)"
+chk "$(printf '%s' "$_p5code" | grep -c 'return')" "0" "v0.35 P5: ...and no executable line in it returns — the walk continues to the next INDEX row instead of ending there"
+# The branch now skips cheaply BEFORE it does anything expensive, so it carries several `continue`s
+# — the point is that it carries no `return`, asserted above. What used to be one `continue` at the
+# end is now a set of early exits that cost no subprocess; the count is not the property worth
+# pinning, the absence of an early RETURN is.
+chk "$([ "$(printf '%s' "$_p5code" | grep -c 'continue')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 P5: ...and it continues rather than returning, at every exit it has"
+
+# ── v0.35 P6 — THE REFUSAL: eight conditions, each one falsified in turn ─────────────────────────
+# A hook that blocks on seven of eight is a runaway. So the fixture below meets all eight and then
+# breaks exactly one at a time, and every break must produce {} — not a softer refusal, not a
+# warning, {}.
+_p6fx() {   # <break: none|mode|suspended|owner|gatelock|advance|successor|ship|budget>
+  local brk="${1:-none}" sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** write the plan\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf -- '- [x] S1\n' > .claude/builds/b/plan.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    case "$brk" in
+      mode)      rm -f .claude/builds/b/.auto-mode ;;
+      suspended) : > .claude/builds/b/.auto-suspended ;;
+      owner)     printf 'session=somebody-else\n' > .claude/builds/.locks/b.owner ;;
+      gatelock)  mkdir -p .claude/builds/.locks/b.gate-lock ;;
+      advance)   printf '# b\n\n**Status:** gate-wait-G1 waiting on a person\n**Stage:** plan\n**Next:** answer\n' > .claude/builds/b/progress.md ;;
+      successor) for _st in plan review-plan build review-build ship; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
+      ship)      for _st in plan review-plan build review-build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
+      budget)    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=0\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      wall)      printf 'ceiling_wall=1\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=40\nspent_wall=99999\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      abort)     : > .claude/builds/b/.abort ;;
+      ownerprefix) printf 'session=%s-a-different-session\n' "$sid" > .claude/builds/.locks/b.owner ;;
+      unwritable) chmod a-w .claude/builds/b ;;
+      badslug)   : ;;
+    esac
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | COMPASS_SPAWN_CMD=true CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    local v sp sg
+    case "$o" in *'"decision":"block"'*) v=BLOCK ;; '{}') v=ALLOW ;; *) v=OTHER ;; esac
+    chmod u+w .claude/builds/b 2>/dev/null || true
+    sg="$(sed -nE 's/^spent_refusals=(.*)$/\1/p' .claude/builds/b/budget.env 2>/dev/null | tail -1)"
+    sp="$(grep -c '|spawn|' .claude/builds/b/session-chain.log 2>/dev/null || true)"
+    printf '%s %s %s' "$v" "${sg:-?}" "${sp:-0}" )
+  rm -rf "$r"
+}
+chk "$(_p6fx none)"      "BLOCK 1 0" "v0.35 INV-REFUSES-QUIET-STOP: all eight conditions met → the hook REFUSES, the budget MOVES, and no second session is spawned"
+chk "$(_p6fx mode)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 1/8: not Autonomous → {} (this is INV-HUMAN-GATED-NEVER-REFUSES seen from the other side)"
+chk "$(_p6fx suspended)" "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 2/8: .auto-suspended present → {} — the one command Compass offers for 'make it stop' actually stops it"
+chk "$(_p6fx owner)"     "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 3/8: owned by another session → {} — an unrelated turn is never interrupted"
+chk "$(_p6fx gatelock)"  "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 4/8: a human gate-lock is held → {}"
+chk "$(_p6fx advance)"   "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 5/8: parked at a gate-wait status → {}"
+chk "$(_p6fx successor)" "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 6/8: every stage has passed, no successor → {}"
+chk "$(_p6fx ship)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 7/8 (INV-SHIP-SEAM-NEVER-REFUSES): the successor is ship → {} — ship is the user's, in either mode"
+chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the refusal ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
+# ── the round-1 reviewer's findings, each with the fixture that found it ─────────────────────────
+chk "$(_p6fx wall)"       "ALLOW 0 0" "v0.35 P6b: the WALL ceiling still binds independently of the refusal counter — two bounds, not one"
+# ── review-build r1: two of the nine conditions had no fixture that could isolate them ──────────
+# `abort` is the most plainly named stop command Compass has, and its own message says the build
+# "halts before its next step". Nothing tested that the refusals stop when it is set.
+chk "$(_p6fx abort)"       "ALLOW 0 0" "v0.35 rb1: the abort sentinel is set → {} — the stop command stops the refusals too"
+# Ownership is checked TWICE with two different rules, and only the weak one was covered. The caller
+# does a cheap PREFIX match to skip foreign rows without spawning a process; `_sg_refuse_ok` then
+# does the real EXACT comparison. Every existing fixture used a wholly unrelated owner, which the
+# prefix match already rejects — so the exact comparison could be deleted with the whole suite
+# green, and then any session whose id merely STARTS the owner's would act on a build it does not
+# own. This fixture is that exact case: the prefix matches and the identity does not.
+chk "$(_p6fx ownerprefix)" "ALLOW 0 0" "v0.35 rb1: an owner whose id merely starts with this session's id → {} — the prefix pre-filter is a speed-up, not the identity test"
+# `is_mid_build` lost its only hook caller when P2 deleted the gated refusal, and a reviewer replaced
+# it with `return 1` with every suite still green. It is still what `stage-continuable` — and
+# therefore `auto-spawn` — decides on, so it is tested through the command that uses it.
+_p6mid() {   # <case: inprogress|halfplan|neither> → stage-continuable's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1; mkdir -p .claude/builds/b
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    case "$c" in
+      inprogress) printf '## RECEIPT — build · b · IN-PROGRESS step 2/5\nok\n' > .claude/builds/b/receipts.md ;;
+      halfplan)   printf '## RECEIPT — contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+                  printf -- '- [x] S1\n- [ ] S2\n' > .claude/builds/b/plan.md ;;
+      neither)    printf '## RECEIPT — contract · b · PASS\nok\n' > .claude/builds/b/receipts.md ;;
+    esac
+    bash "$SH" stage-continuable .claude/builds/b >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_p6mid inprogress)" "0" "v0.35 P6c: is_mid_build route (a) — an IN-PROGRESS build receipt makes a build continuable"
+chk "$(_p6mid halfplan)"   "0" "v0.35 P6c: is_mid_build route (b) — a plan.md with both a checked and an unchecked box does too"
+chk "$(_p6mid neither)"    "0" "v0.35 P6c: ...and a clean contract PASS is continuable by the LATER rule, not by is_mid_build — the two routes are distinguishable"
+chk "$(_p6fx unwritable)" "ALLOW 0 0" "v0.35 P6b: a build directory it cannot write to → {} — the first version discarded the bump's failure and refused FOR EVER with the counter frozen at 1"
+# A bound whose counter is its OWN. INV-REFUSAL-BUMPS-BUDGET names `spent_stages`, and a reviewer
+# proved that cannot be right: `spent_stages` is bumped once per STAGE ENTRY and reported by
+# `dora-record`, so refusing at every TURN end burned stage slots the build never used and the next
+# legitimate stage entry was refused for a budget it never spent. Recorded as a signed deviation.
+_p6sg() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=5\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local i=1; while [ "$i" -le 5 ]; do printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard >/dev/null 2>&1; i=$((i+1)); done
+    printf '%s' "$(sed -nE 's/^spent_stages=(.*)$/\1/p' .claude/builds/b/budget.env | tail -1)" )
+  rm -rf "$r"
+}
+chk "$(_p6sg)" "0" "v0.35 P6b: five turn-ends leave spent_stages at ZERO — the refusal counts on its own counter and does not spend the per-stage budget the build has not used"
+# The platform's escape, parsed as a FIELD. `"stop_hook_active" : true` is legal JSON and the first
+# version's two literal substrings walked straight past it.
+_p6sha() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active" : true}'; j="${j/SID/$sid}"
+    printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+chk "$(_p6sha)" "{}" "v0.35 P6b: stop_hook_active is parsed as a FIELD — a space before the colon is legal JSON and used to walk straight past the platform's own escape"
+# The slug reaches the JSON, so it is validated the way the spawn path has validated it since v0.11.
+chk "$([ "$(awk '/^cmd_stop_guard\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$SH" | grep -c 'A-Za-z0-9._-')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 P6b: the slug is validated before it reaches the refusal JSON — a quote made it invalid and .. named a directory outside the state root"
+# The off switch has to work from where the reader stands: an absolute path, not a relative one that
+# is wrong inside a git worktree.
+
+# The reason has to be actionable: the successor by name, the command to continue, the command to stop.
+_p6msg() { local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** write the plan\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null )
+  rm -rf "$r"
+}
+_p6m="$(_p6msg)"
+chk "$(printf '%s' "$_p6m" | grep -c 'the next one is plan')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: the reason names the SUCCESSOR the walk worked out — not a stage typed into a string"
+chk "$(printf '%s' "$_p6m" | grep -c '/compass:resume')" "1" "v0.35 INV-REASON-NAMES-THE-COMMAND: ...and the exact command to continue"
+chk "$(printf '%s' "$_p6m" | grep -c 'auto-suspend')" "1" "v0.35: ...and the exact command to make it STOP — a mechanism that refuses to let a turn end and does not say how to switch it off is a trap"
+chk "$(printf '%s' "$_p6m" | grep -c 'Human-gated')" "1" "v0.35: ...and the setting that means it never refuses again"
+# ── v0.35 P6c — the printed commands are RUN, not grepped for ────────────────────────────────────
+# The previous assertion checked that the string `auto-suspend` appeared in the reason. A reviewer
+# copied the line into a shell and got `command not found`: the script is not on PATH. The fix put
+# the full path in, and it STILL did not run, because this repository lives under a directory with a
+# space in its name. Grepping for a command name cannot see either failure. This runs them.
+_p6cmds() {   # → "<json-valid> <suspend-rc> <abort-rc> <after-suspend>"
+  local sid="9999dead-0000-0000-0000-000000000000" r; r="$(mktemp -d)"
+  ( cd "$r" && git init -q . >/dev/null 2>&1
+    mkdir -p .claude/builds/.locks .claude/builds/b
+    printf 'b · fixture · status=plan · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** plan\n**Stage:** plan\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\nok\n\n## RECEIPT — review-contract · b · PASS\nok\n' > .claude/builds/b/receipts.md
+    printf 'session=%s\n' "$sid" > .claude/builds/.locks/b.owner
+    : > .claude/builds/b/.auto-mode
+    printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env
+    local j='{"session_id":"SID","stop_hook_active":false}'; j="${j/SID/$sid}"
+    local o; o="$(printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    # valid JSON? node is already a dependency of this suite.
+    local vj; vj="$(printf '%s' "$o" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{JSON.parse(d);console.log(1)}catch(e){console.log(0)}})' 2>/dev/null || echo 0)"
+    local sc ac after
+    sc="$(printf '%s' "$o" | sed -nE "s/.*run as written: (bash .*) [·].*/\\1/p")"
+    ac="$(printf '%s' "$o" | sed -nE "s/.*[·]  (bash [^.]*)\\. Or answer.*/\\1/p")"
+    CLAUDE_CODE_SESSION_ID="$sid" eval "$sc" >/dev/null 2>&1; local scrc=$?
+    after="$(printf '%s' "$j" | CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" stop-guard 2>/dev/null)"
+    CLAUDE_CODE_SESSION_ID="$sid" bash "$SH" auto-resume .claude/builds/b >/dev/null 2>&1
+    CLAUDE_CODE_SESSION_ID="$sid" eval "$ac" >/dev/null 2>&1; local acrc=$?
+    printf '%s %s %s %s' "${vj:-0}" "$scrc" "$acrc" "$after" )
+  rm -rf "$r"
+}
+chk "$(_p6cmds)" "1 0 0 {}" "v0.35 P6c: the refusal is valid JSON, and BOTH printed stop commands run verbatim and actually stop it — grepping for a command name saw neither the missing PATH nor the space in the directory name"
+chk "$(printf '%s' "$_p6m" | grep -cE "auto-suspend '/")" "1" "v0.35 P6b: the printed stop path is ABSOLUTE and QUOTED — relative was wrong inside a git worktree, and unquoted broke on a directory name containing a space"
+
+# ── v0.35 P3 — next-stage: the successor, from ONE place ─────────────────────────────────────────
+# Compass named seven stages and nothing could answer "which comes next?" on demand. The gate text a
+# user reads could not name a successor at all — it said only what would NOT happen. P4 needs one
+# command that works wherever the build is, because smoke requires that gate block to be
+# byte-identical across all seven stage skills and so it cannot name a per-stage command.
+_nsfx() {   # <stage…> → a build dir whose receipts record those stages as PASS
+  local d; d="$(mktemp -d)"; : > "$d/receipts.md"
+  local st; for st in "$@"; do printf '## RECEIPT — %s · fix · PASS\nbody\n\n' "$st" >> "$d/receipts.md"; done
+  printf '%s' "$d"
+}
+_d="$(_nsfx contract)";                        chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "review-contract" "v0.35 P3: contract passed → next-stage says review-contract"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract)";        chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "plan" "v0.35 P3: ...and then plan"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract plan review-plan)"; chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "build" "v0.35 P3: ...and then build — the walk is LIFECYCLE's, not a second copy of it"; rm -rf "$_d"
+_d="$(_nsfx contract review-contract plan review-plan build review-build ship)"
+bash "$SH" next-stage "$_d" >/dev/null 2>&1;   chk "$?" "3" "v0.35 P3: every stage passed → exit 3 (finished), and it is NOT an error"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "" "v0.35 P3: ...with nothing on stdout, so a caller cannot mistake a message for a stage name"; rm -rf "$_d"
+_d="$(mktemp -d)"; bash "$SH" next-stage "$_d" >/dev/null 2>&1; chk "$?" "2" "v0.35 P3: no receipts.md → exit 2 (unknown), fail closed"; rm -rf "$_d"
+bash "$SH" next-stage /no/such/dir >/dev/null 2>&1; chk "$?" "2" "v0.35 P3: no such directory → exit 2, not a crash"
+bash "$SH" next-stage >/dev/null 2>&1;         chk "$?" "2" "v0.35 P3: no argument → exit 2, not a crash"
+# The one that matters most: the Stop hook calls this, and `die()` is `exit 1`. A hook that exits
+# kills the session — a failure this build already made once.
+chk "$(sed -n '/^cmd_next_stage()/,/^}/p' "$SH" | grep -c 'die ')" "0" "v0.35 P3: next-stage never calls die — a hook that exits crashes the session"
+
+# ── v0.35 P4 — INV-APPROVE-INVOKES: the gate names the successor ─────────────────────────────────
+# The sentence this replaces told a reader what would NOT happen and never what would. An approved
+# stage therefore ended in silence, and the build waited for a person to remember the next command —
+# the exact failure this whole release was raised to fix. The replacement must be BYTE-IDENTICAL
+# across all seven stage skills (INV-7 above), so it cannot name a per-stage command; it names ONE
+# command that works out the successor wherever the build is, which is why P3 had to come first.
+_gate="$(xblk "$GATE")"
+# Assembled at run time, or this file would be the ninth carrying the phrase and the assertion would
+# refuse the fix that removed it. Same rule as the leak fixtures: never write the shape you hunt.
+_banned="Never auto-""invoke the next skill"
+chk "$(grep -rl "$_banned" "$PLUGIN_ROOT" 2>/dev/null | grep -c .)" "0" "v0.35 INV-APPROVE-INVOKES: the prohibition is GONE from every file in the plugin"
+chk "$(printf '%s' "$_gate" | grep -c 'compass.sh next-stage')" "2" "v0.35 INV-APPROVE-INVOKES: ...and the gate block names the command that yields the successor — in the footer and at the Approve branch"
+# A BLACKLIST OF PHRASINGS CANNOT GUARD PROSE. The negation check below lists five ways to say "do
+# not" — and a reviewer walked past it twice, replacing the instruction with "wait for the user to
+# type the next command" and with "STOP and let the person invoke the named stage themselves", in
+# all eight files, with every suite green. Both put back the exact stall this release exists to end.
+#
+# So the guard is inverted: the imperative is pinned as a REQUIRED LITERAL. Any rewrite that removes
+# it fails, whatever words replace it — a whitelist cannot be paraphrased past, which is the one
+# thing a blacklist can never promise. The blacklist stays as a second line of defence against an
+# instruction that keeps the words and negates them.
+_gateimp="Run \`compass.sh next-stage <build-dir>\`"
+_gateimp2="invoke the named stage with the Skill tool"
+chk "$([ "$(printf '%s' "$_gate" | grep -cF "$_gateimp")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-APPROVE-INVOKES: the block carries the imperative VERBATIM — pinned as a literal, because a blacklist of negations was paraphrased past twice with every suite green"
+chk "$([ "$(printf '%s' "$_gate" | grep -cF "$_gateimp2")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-APPROVE-INVOKES: ...including how to invoke it, which is the half a reader cannot act without"
+chk "$(printf '%s' "$_gate" | grep -ci 'on \*\*Approve\*\* you CONTINUE')" "1" "v0.35 INV-APPROVE-INVOKES: Approve is acted on, not merely described"
+# A STRING COUNT CANNOT TELL AN INSTRUCTION FROM ITS NEGATION. A reviewer rewrote this block to say
+# "You must NOT act on it. Do NOT run compass.sh next-stage… End the turn in silence", kept the four
+# literals the assertions grep for, and smoke stayed at 1090/0 with the suite 15 of 15. So the
+# sentence that carries the instruction is extracted and checked for a negation inside it.
+_gsent="$(printf '%s' "$_gate" | tr '\n' ' ' | sed -E 's/.*(Only \*\*Approve\*\*[^.]*\.[^.]*\.).*/\1/')"
+# The negation has to be attached to the ACTION, not merely present: "you do not stop to ask a second
+# time" is a negation and is exactly right. What must never appear is a negation of the instruction —
+# do not run it, must not act, never invoke, end in silence.
+chk "$(printf '%s' "$_gate" | grep -ciE '(do (NOT|not) (run|invoke|act)|must (NOT|not) (run|invoke|act)|never (run|invoke)|end the turn in silence|do not advance)')" "0" "v0.35 INV-APPROVE-INVOKES: no negation is attached to the instruction — a grep for four literals cannot tell 'run it' from 'do NOT run it'"
+# REPORT, not MEASURE, and it says so: no script can read prose for meaning. What is measured above is
+# that the words are present, in the right sentence, un-negated, naming commands that exist. Whether a
+# model then does the right thing is settled by the cold read at review-build, not here.
+printf '  REPORT  the gate block is INSTRUCTIONS FOR A MODEL. The assertions above measure presence,\n'
+printf '          sentence placement and the absence of a negation; they cannot measure comprehension.\n'
+chk "$(printf '%s' "$_gate" | grep -c '/compass:resume')" "1" "v0.35 INV-APPROVE-INVOKES: ...and it names the command a person can actually type, since the 7 stage skills are hidden from the / menu"
+# The successor command in the text must be one this script really dispatches — a gate that names a
+# command nobody has is the defect it replaced, wearing different words.
+_ns="$(printf '%s' "$_gate" | grep -oE 'compass\.sh [a-z-]+' | sed 's/compass.sh //' | sort -u)"
+_nsbad=0; for _c in $_ns; do grep -qE "^[[:space:]]+$_c\)" "$SH" || _nsbad=$((_nsbad+1)); done
+chk "$_nsbad" "0" "v0.35 INV-APPROVE-INVOKES: every compass.sh command the gate block names is really dispatched"
+# And the whole block still travels as one unit — asserted above by INV-7, re-stated here against the
+# NEW text so a future edit to one skill cannot drift while the old assertion still passes.
+_p4=0; for _t in contract review-contract plan review-plan build review-build ship; do
+  [ "$(xblk "$PLUGIN_ROOT/skills/$_t/SKILL.md")" = "$_gate" ] && _p4=$((_p4+1)); done
+chk "$_p4" "7" "v0.35 INV-APPROVE-INVOKES: the new text is byte-identical across all seven stage skills"
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a SUPERSEDED last block is not a pass"; rm -rf "$_d"
+# v0.35 rb1 — `stage_pass` decides "which stage are we on" for cockpit, statusline, orient and
+# next-stage, and v0.35's gate tells the model to INVOKE whatever stage that names. It makes three
+# separate refusals; a mutation reviewer deleted TWO of them with the whole suite still green:
+#
+#   * delete the PASS test -> a FAILED stage reads as passed. Nothing ever fed it a FAIL header.
+#     The SUPERSEDED fixture above only failed because the word "SUPERSEDED" happens not to
+#     contain "PASS", so the PASS test was quietly catching it and its own deletion went unseen.
+#   * delete the SUPERSEDED test -> caught by the PASS test for that same accidental reason, so it
+#     was untested too. A real superseded receipt often names the verdict it replaced, and then the
+#     header does contain the word PASS and the PASS test lets it straight through.
+#
+# Each refusal now has a fixture only IT can refuse.
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · FAIL\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 rb1: a FAILED last block is not a pass — the build does not advance past it"; rm -rf "$_d"
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED (replaces the earlier PASS)\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 rb1: SUPERSEDED wins even when the header also carries the word PASS"; rm -rf "$_d"
+_d="$(mktemp -d)"; printf '## RECEIPT — contract · fix · PASS\n- [ ] an unchecked box\n\n' > "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a PASS carrying an unchecked box is not a pass"; rm -rf "$_d"
+# v0.35 P3b — the three defects an independent reviewer found in the first version.
+# (a) `stage_pass` read its own plumbing as a verdict: `printf | head -n1 | grep -q PASS` under
+#     pipefail turns SIGPIPE (141) into "not passed" on a large receipt block, so a long-running
+#     build was told it was back at `contract` — and P4 now tells the model to INVOKE that.
+_d="$(mktemp -d)"; { printf '## RECEIPT — contract · fix · PASS\n'; head -c 300000 /dev/zero | tr '\0' 'x' | fold -w 100; printf '\n\n'; } > "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "review-contract" "v0.35 P3b: a 300 KB receipt block still reads as PASS — no head|grep pipeline, so SIGPIPE cannot be mistaken for a verdict"; rm -rf "$_d"
+# (b) a build whose contract declares deploy out-of-scope has no ship stage to advance to.
+_d="$(_nsfx contract review-contract plan review-plan build review-build)"
+printf 'deploy: out-of-scope — nothing is deployed by this build\n' > "$_d/contract.md"
+bash "$SH" next-stage "$_d" >/dev/null 2>&1; chk "$?" "3" "v0.35 P3b: deploy out-of-scope → finished, not 'ship' — the header Compass honours everywhere else"
+printf 'deploy: in scope\n' > "$_d/contract.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "ship" "v0.35 P3b: ...and an ordinary build still advances to ship"; rm -rf "$_d"
+# (c) exit 2 and exit 3 both print nothing, so a caller MUST branch on the code. Asserted so the
+#     distinction cannot quietly collapse into "empty means finished".
+_d="$(_nsfx contract review-contract plan review-plan build review-build ship)"
+_ns3="$(bash "$SH" next-stage "$_d" 2>/dev/null)"; bash "$SH" next-stage "$_d" >/dev/null 2>&1; _rc3=$?
+_ns2="$(bash "$SH" next-stage /no/such/dir 2>/dev/null)"; bash "$SH" next-stage /no/such/dir >/dev/null 2>&1; _rc2=$?
+chk "$([ "$_ns3" = "$_ns2" ] && [ "$_rc3" != "$_rc2" ] && echo 1 || echo 0)" "1" "v0.35 P3b: finished and unreadable print the SAME empty output and DIFFERENT exit codes — the code is the answer, not the silence"; rm -rf "$_d"
 chk "$(grep -lq 'Gated or Autonomous' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the Gated/Autonomous at-lock choice"
 chk "$(grep -lq 'auto-start' "$PLUGIN_ROOT/skills/start/SKILL.md" && echo 1 || echo 0)" "1" "v0.11 start skill documents the auto-start one-command trigger"
 
@@ -774,13 +1171,13 @@ COUT="$("$SH" cockpit "$V24/.claude/builds/b" 2>/dev/null || true)"
 # INV-COCKPIT / INV-PUSH-STAGE — the pushed strip renders
 chk "$(printf '%s' "$COUT" | grep -cE 'BUILD ·')" "1" "v0.24 INV-COCKPIT: cockpit prints the BUILD strip"
 chk "$(printf '%s' "$COUT" | grep -c '▲ plan')" "1" "v0.24 INV-PUSH-STAGE: marker lands on the correct stage from CANONICAL receipts (contract+review-contract PASS → plan) — bites the R1 receipt-format bug"
-chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -cE 'compass\.sh cockpit[^-]')" "1" "v0.24 INV-PUSH-STAGE: the canonical gate block invokes compass.sh cockpit"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -cE 'compass\.sh cockpit[^-]')" "1" "v0.24 INV-PUSH-STAGE / v0.35 INV-COCKPIT-PUSHED: the canonical gate block invokes compass.sh cockpit"
 # v0.33.3 — the push and the GATE are two different invocations and the counter must tell them
 # apart. `compass.sh cockpit-gate` contains `compass.sh cockpit` as a substring, so the unbounded
 # count above read 2 the moment the gate was wired — a boundary bug of exactly the kind this
 # release found in the clip detector's `min-width` rule. The push is matched with a negative class;
 # the gate gets its own assertion so neither can go missing unnoticed.
-chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit-gate')" "1" "v0.33.3 INV-PUSH-STAGE: the canonical gate block also RUNS cockpit-gate on what it just printed"
+chk "$(awk '/<!-- GATE:START -->/{f=1} f{print} /<!-- GATE:END -->/{f=0}' "$PLUGIN_ROOT/shared/gate.md" | grep -c 'compass.sh cockpit-gate')" "1" "v0.33.3 INV-PUSH-STAGE / v0.35 INV-COCKPIT-PUSHED: the block RUNS cockpit-gate on what it just printed — the check that refuses a stage end missing any of its four elements"
 # INV-MULTI-CONTRACT — both contracts render, and a status flip flips the glyph (teeth)
 chk "$([ "$(printf '%s' "$COUT" | grep -c 'p2-a')" -ge 1 ] && [ "$(printf '%s' "$COUT" | grep -c 'p2-b')" -ge 1 ] && echo 1 || echo 0)" "1" "v0.24 INV-MULTI-CONTRACT: both contracts in phase 2 render"
 sed -i.bak 's/p2-a · status=shipped/p2-a · status=planned/' "$V24/.claude/builds/PROGRAM.md"
@@ -835,7 +1232,7 @@ if [ -n "$V23" ]; then
   la="$(printf '%s' "$V23" | grep '^LIFECYCLE=')"; lb="$(grep '^LIFECYCLE=' "$CURSH")"
   { [ -n "$la" ] && [ "$la" = "$lb" ]; } || frz=0
 else frz=1; fi   # tag unreachable (shallow/CI clone) → do not false-FAIL
-chk "$frz" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE: LIFECYCLE + prod-safety fns byte-identical to v0.23.0"
+chk "$frz" "1" "v0.28 INV-NO-LIFECYCLE-CHANGE / v0.35 INV-NO-LIFECYCLE-CHANGE-HONOURED: LIFECYCLE + prod-safety fns byte-identical to v0.23.0"
 # cmd_gate core: everything from the function head down to the first seam block.
 # This is the part that decides PASS / SUPERSEDED / unchecked-box — the actual
 # gate semantics. It must never drift.
@@ -3484,6 +3881,440 @@ chk "$([ "${_capshown:-9999}" -lt 300 ] && echo 1 || echo 0)" "1" "v0.34: a long
 _capfull="$(printf '%s' "$_caprow" | LC_ALL=C sed 's/<[^>]*>//g' | tr -s ' ' | LC_ALL=C grep -c 'third bit' || true)"
 chk "$([ "${_capfull:-0}" -ge 1 ] && echo 1 || echo 0)" "1" "v0.34: ...and what the cap moved is still on the page behind the control — capped, not lost"
 rm -rf "$_capd"
+
+# ── a gold block belongs to its build, and a moved POPULATION is one cause not N symptoms ───────
+# gold-diff-check took whichever contract it found first, so it re-checked a SHIPPED build's
+# historical figures for ever. Those figures count over every build folder on the machine, so the
+# NEXT build starting moved them: 17 of 33 went red on work that was correct when measured.
+_gdd="$(mktemp -d)"; mkdir -p "$_gdd/r/plugins/compass/scripts" "$_gdd/r/.claude/builds/live"
+cp "$PLUGIN_ROOT/scripts/gold-diff-check.sh" "$_gdd/r/plugins/compass/scripts/" 2>/dev/null
+cp "$PLUGIN_ROOT/scripts/reconcile-pages.mjs" "$_gdd/r/plugins/compass/scripts/" 2>/dev/null
+printf 'live\n' > "$_gdd/r/.claude/builds/CURRENT"
+printf '# no gold block here\n' > "$_gdd/r/.claude/builds/live/contract.md"
+( cd "$_gdd/r" && bash plugins/compass/scripts/gold-diff-check.sh . >/dev/null 2>&1 )
+chk "$?" "0" "v0.34.1: a current build with no gold block N/A-passes — an older build's figures are not re-checked"
+_gdout="$( cd "$_gdd/r" && bash plugins/compass/scripts/gold-diff-check.sh . 2>&1 || true )"
+chk "$(printf '%s' "$_gdout" | grep -c 'N/A')" "1" "v0.34.1: ...and it SAYS so, rather than passing silently"
+rm -rf "$_gdd"
+
+# ── v0.34.1: the leak scanner can see the only class that has ever leaked here ───────────────────
+# An absolute home path shipped in this public plugin in four files across 14 tagged releases,
+# v0.28.0 through v0.33.5, and `secret-scan` returned PASS on the very commit that published it.
+# (Two earlier figures here were wrong: "six", counted from minor version numbers, and "15", counted
+# from the tags CONTAINING the leaking commit — v0.34.0 contains it and is clean.)
+#
+# THE TEST STRINGS ARE ASSEMBLED AT RUNTIME, and that is not a trick — it is the rule. Written as
+# literals, these assertions made the scanner flag THIS FILE, because test data for a leak scanner
+# looks exactly like a leak. Three review rounds asked for "fixtures are authored with neutral
+# values" and the author broke it within minutes of adding the check. Assembling the value means the
+# shipped file never contains the shape, while the scanner still sees it at run time.
+_lk="$(mktemp -d)"
+# The harness REFUSES to run against a fixture directory that is not there. The first version of the
+# v0.34.3 block was accidentally placed after `rm -rf "$_lk"`, so every assertion scanned a directory
+# that did not exist: `secret-scan` fell through to file-list mode, found nothing, and returned 0 —
+# six "want 1" assertions failed and every "want 0" one passed for no reason at all. An absent
+# population is not a pass, and a test harness has to hold itself to that before it holds anything else.
+_lkrun() { [ -d "$_lk" ] || { echo "smoke: fixture dir $_lk is gone — refusing to score" >&2; return 99; }
+           printf '%s\n' "$1" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" >/dev/null 2>&1; local r=$?; rm -f "$_lk/f.txt"; return $r; }
+_lkfile() { printf '%s\n' "$1" > "$_lk/g.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk/g.txt" >/dev/null 2>&1; local r=$?; rm -f "$_lk/g.txt"; return $r; }
+_U="Us""ers"; _H="ho""me"; _SK="s""k-"; _AK="AK""IA"
+# v0.34.2 — THE FIXTURE ID IS NOT A REAL ONE ANY MORE. The v0.34.1 version assembled the AUTHOR'S
+# LIVE session id at run time, so 28 of its 36 characters sat verbatim in a file that ships in a
+# public plugin. Splitting a string is a legitimate way to hide a shape from the scanner; using it
+# on a real value is the exact class this check exists to stop. This id is invented.
+_ID1="1a2b""3c4d"; _ID2="-0000-4000-8000-00000000f00d"
+_lkrun "/$_U/someone/Desktop/x";  chk "$?" "1" "v0.34.1: an absolute home path is CAUGHT — it shipped for 14 tagged releases while this scanner passed it"
+_lkrun "cwd /$_H/someone/x";      chk "$?" "1" "v0.34.5: the Linux home form is caught WITH a filesystem cue"
+_lkrun "/$_H/someone/x";          chk "$?" "0" "v0.34.5: ...and WITHOUT one it is not, because /home/<word> is a URL route far more often than a person — a reviewer refused ten route words in a row"
+_lkrun "\"session_id\":\"$_ID1$_ID2\""; chk "$?" "1" "v0.34.5: a session id is CAUGHT when the line says it is one"
+_lkrun "trace_id $_ID1$_ID2";     chk "$?" "0" "v0.34.5: ...and a BARE uuid is not a leak — trace ids, tenant ids and test rows are all this shape, and every one of them was being refused"
+_lkrun "/$_U/alice/project";      chk "$?" "0" "v0.34.1: an AUTHORED placeholder is allowed — a fixture must be able to show the shape it guards"
+_lkrun "id 9999dead-0000-0000-0000-000000000000"; chk "$?" "0" "v0.34.1: the authored placeholder uuid is allowed"
+_lkrun "k = ${_SK}abcdefghijklmnopqrstuvwx"; chk "$?" "1" "v0.34.1: the pre-existing key patterns still bite — the fix ADDED, it did not replace"
+_lkrun "the quick brown fox";     chk "$?" "0" "v0.34.1: ordinary prose is not a leak"
+# ── v0.34.2 · the round-1 CRITICALs, each with the exact shape that defeated the first fix ───────
+# C-1: `grep -Ev "$allow"` dropped the WHOLE LINE, so an allowed placeholder masked every finding
+# beside it. This one line was CAUGHT at v0.34.0 and PASSED at v0.34.1 — the fix made the scanner
+# weaker at the six patterns its own commit message said it had left alone.
+_lkrun "KEY=${_AK}ABCDEFGHIJKLMN  # see /$_U/alice/n.md"; chk "$?" "1" "v0.34.2 C-1: a real key beside an allowed placeholder is still CAUGHT (per-match filter, not per-line)"
+_lkrun "cwd /$_U/alice/x and id $_ID1$_ID2";             chk "$?" "1" "v0.34.2 C-1: an allowed home path cannot mask a real id on the same line"
+# C-2: the allow-list was tested against `path:lineno:content`, so a checkout under an allowed home
+# path allowed every line in the repository and the scanner failed green.
+mkdir -p "$_lk/$_U/alice/repo"; printf 'KEY=%sABCDEFGHIJKLMN\n' "$_AK" > "$_lk/$_U/alice/repo/x.txt"
+bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk/$_U/alice/repo" >/dev/null 2>&1
+chk "$?" "1" "v0.34.2 C-2: a checkout UNDER an allowed home path is still scanned (the target's own path cannot disarm it)"
+rm -rf "$_lk/$_U"
+# F4: four entry points, one behaviour. The same content gave exit 0 as a directory and exit 1 as a
+# file, because only two of the four applied the allow-list at all.
+_lkfile "/$_U/alice/project";                            chk "$?" "0" "v0.34.2 F4: file mode allows an authored placeholder too (all four entry points agree)"
+_lkfile "KEY=${_AK}ABCDEFGHIJKLMN  # see /$_U/alice/n.md"; chk "$?" "1" "v0.34.2 F4: file mode catches the masked key too"
+# F6: the two pattern holes. A hook payload writes a cwd with NO trailing slash — the shape that
+# actually leaked — and an id can be written in either case.
+_lkrun "{\"cwd\": \"/$_U/someone\"}";                     chk "$?" "1" "v0.34.2 F6: a home path with NO trailing slash is caught (the hook-payload shape)"
+_lkrun "transcript $(printf '%s' "$_ID1$_ID2" | tr 'a-f' 'A-F').jsonl"; chk "$?" "1" "v0.34.2 F6: an UPPERCASE session id is caught, in context"
+# False positives are the whole risk: a scanner that cries wolf is one somebody switches off.
+_lkrun "see https://example.com/$_H/user/index.html";     chk "$?" "0" "v0.34.2 FP: a /home/ segment inside a URL is not a leak"
+_lkrun "uuid f81d4fae-7dec-11d0-a765-00a0c91e6bf6";       chk "$?" "0" "v0.34.2 FP: the RFC 4122 example uuid is not a leak"
+_lkrun "put it in /$_U/Shared/";                          chk "$?" "0" "v0.34.2 FP: /Users/Shared is a system path, not a person"
+_lkrun "run it from /$_H/user/app";                       chk "$?" "0" "v0.34.2 FP: /home/user is the canonical documentation placeholder"
+_lkrun "/$_U/alicent/x";                                  chk "$?" "1" "v0.34.2: a real name that merely BEGINS with a placeholder name is NOT allowed"
+# M-6: a refusal that names no route out is a refusal a contributor cannot act on.
+_lkmsg="$(printf '/%s/someone/x\n' "$_U" > "$_lk/f.txt"; bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan "$_lk" 2>&1 || true)"; rm -f "$_lk/f.txt"
+chk "$( { printf '%s' "$_lkmsg" | grep -q 'allowed-names.txt' && printf '%s' "$_lkmsg" | grep -q 'compass-allow-secret' && echo 1 || echo 0; } )" "1" "v0.34.5 M-6: the refusal names BOTH routes out — the names file and the per-line reason"
+# ── v0.34.3 · round 2 found five more Criticals. Each gets the exact shape that defeated round 2 ──
+# C-1 was only HALF fixed: the filter drops a whole MATCH, and two patterns have value fields wide
+# enough to swallow a placeholder INSIDE one match. So the patterns are now split — HARD values the
+# placeholder list never touches, SOFT shapes where it applies.
+# Assembled at run time for the same reason as everything else in this block: written whole, these
+# two strings ARE the shapes the scanner hunts, so the file would flag itself.
+_SEC="_SEC""RET"; _PG="post""gresql"
+_lkrun "API${_SEC}=hunter2/$_U/alice/";                    chk "$?" "1" "v0.34.3 C-1b: a placeholder INSIDE a secret's value cannot excuse it (hard patterns ignore the allow-list)"
+_lkrun "$_PG://admin/$_U/alice/x:hunter2@db.example.net/app"; chk "$?" "1" "v0.34.3 C-1b: ...and the same for a connection string"
+# The three shapes a leading-boundary test threw away. The JSON-escaped one is the exact file class
+# that leaked from this repository.
+_lkrun "cc -I/$_U/someone/inc -c x.c";                     chk "$?" "1" "v0.34.3: a home path after a compiler flag is caught (no leading boundary on /Users/)"
+_lkrun "run from .../$_U/someone/Desktop";                 chk "$?" "1" "v0.34.3: ...after an ellipsis too"
+_lkrun "{\"transcript_path\":\"\\/$_U\\/someone\\/x.jsonl\"}"; chk "$?" "1" "v0.34.3: ...and JSON-escaped, which is the shape that actually leaked here"
+# FALSE POSITIVES ARE THE WHOLE RISK, and the corpus that measures them now lives in the repo as a
+# fixture rather than in this file as a list. Four rounds each scored well against a list written
+# after the rule was chosen, and each had a hole its own list contained no example of. The score is
+# asserted here; the population is `scripts/fixtures/secrets/{leaks,not-leaks}.txt`, and a reviewer
+# who finds a new hole adds a LINE to it instead of writing a paragraph.
+_cor="$(bash "$PLUGIN_ROOT/scripts/secret-corpus-check.sh" "$_ROOT" 2>&1)"; _corrc=$?
+chk "$_corrc" "0" "v0.34.4: every line of the fixed corpus scores correctly — 0 false alarms AND 0 missed leaks"
+chk "$(printf '%s' "$_cor" | grep -cE '^secret-corpus-check: [0-9]+ of [0-9]+ real leaks refused')" "1" "v0.34.4: ...and it STATES both denominators, so a green over an empty corpus is impossible"
+# The escape hatch, in the shape unwired-allow.txt already uses: declared and reasoned, never silent.
+_lkrun "k = /$_U/someone/x  # compass-allow-secret: this path is the documented example";  chk "$?" "0" "v0.34.3: a declared exception WITH a reason is allowed"
+_lkrun "k = /$_U/someone/x  # compass-allow-secret:";      chk "$?" "1" "v0.34.3: ...and one with NO reason is not — the reason is the whole point"
+# --tracked: three ways round 2 turned the release gate off, and two population holes.
+_tk="$(mktemp -d)"
+( cd "$_tk" && git init -q . && printf 'ok\n' > a.txt && printf 'x\000y /%s/someone/Desktop/n\n' "$_U" > n.txt && git add -A ) >/dev/null 2>&1
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-1: ONE NUL byte no longer hides a readable home path"
+rm -f "$_tk/n.txt"; ( cd "$_tk" && git rm -q --cached n.txt ) >/dev/null 2>&1
+( cd "$_tk" && printf '/%s/someone/Desktop/q\n' "$_U" > ./-q && git add -A ) >/dev/null 2>&1
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-2: a tracked file NAMED like a grep flag no longer turns the scan off"
+( cd "$_tk" && git rm -q --cached ./-q ) >/dev/null 2>&1; rm -f "$_tk/-q"
+mkdir -p "$_tk/sub"
+( cd "$_tk/sub" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3 C-tracked-3: run from a subdirectory it REFUSES rather than reporting the enclosing repo"
+_tke="$(mktemp -d)"; ( cd "$_tke" && git init -q . && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3: 0 tracked files is an ERR — an empty population is not a pass"; rm -rf "$_tke"
+( cd "$_tk" && printf 'note /%s/someone/Desktop/z\n' "$_U" > fresh.md ) 
+( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --tracked ) >/dev/null 2>&1
+chk "$?" "1" "v0.34.3: a NEW, never-added file is scanned too — that is the shape the original leak had"
+rm -f "$_tk/fresh.md"
+# --commits used to number lines against the whole `git log -p` stream and name no file at all.
+( cd "$_tk" && git add -A && git commit -qm base && printf 'l1\nl2\nleak /%s/someone/Desktop/w\n' "$_U" > b.md && git add -A && git commit -qm adds ) >/dev/null 2>&1
+_cmsg="$( cd "$_tk" && bash "$PLUGIN_ROOT/scripts/compass.sh" secret-scan --commits 'HEAD^..HEAD' 2>&1 || true )"
+chk "$(printf '%s' "$_cmsg" | grep -c 'b\.md:3:')" "1" "v0.34.3: --commits names the FILE and the file's own line number, not an offset into a diff stream"
+rm -rf "$_tk"
+
+rm -rf "$_lk"
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_ROOT" >/dev/null 2>&1
+chk "$?" "0" "v0.34.1: leak-scan-check ships and the shipped tree is clean"
+chk "$(grep -c 'leak-scan-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.34.1: ...and the suite NAMES it, so the class has an owner"
+
+# ── v0.35 item 7 — INV-ARMED-THROUGH-AUTO-INIT ───────────────────────────────────────────────────
+# `auto-init` refuses to arm a build with no declared budget, and that refusal is the only thing
+# between "the user chose Autonomous" and an unbounded loop. It is also trivially bypassed, because
+# arming is a marker file: write `.auto-mode` by hand and the budget guard never runs. Nothing
+# detected that — and this build's own folder was in exactly that state while it built the mechanism
+# that depends on it. Every bound reads budget.env, so a hand-armed build has no wall ceiling, no
+# session ceiling and no refusal ceiling, and the Stop hook stays silently inert on it. The user
+# chose Autonomous and got nothing, with no error anywhere.
+_armfx() {   # <case: armed|marker-only|no-budget-key|not-auto> → "<exit> <verdict>"
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p plugins/compass .claude/builds/b
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf '## RECEIPT — contract · b · PASS\n- [x] mode choice: asked=yes · answer=Autonomous · source=question\n' > .claude/builds/b/receipts.md
+    case "$c" in
+      armed)         : > .claude/builds/b/.auto-mode
+                     printf 'ceiling_wall=3600\nceiling_sessions=6\nceiling_stages=40\n' > .claude/builds/b/budget.env ;;
+      marker-only)   : > .claude/builds/b/.auto-mode ;;
+      no-budget-key) : > .claude/builds/b/.auto-mode; printf 'spent_wall=0\n' > .claude/builds/b/budget.env ;;
+      not-auto)      printf '## RECEIPT — contract · b · PASS\n- [x] mode choice: asked=yes · answer=Human-gated · source=question\n' > .claude/builds/b/receipts.md ;;
+    esac
+    bash "$PLUGIN_ROOT/scripts/armed-check.sh" . >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_armfx armed)"         "0" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a build that answered Autonomous WITH a declared budget passes"
+chk "$(_armfx marker-only)"   "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: the marker written by hand, with NO budget, FAILS — the state this build's own folder was in while it built the mechanism that depends on it"
+chk "$(_armfx no-budget-key)" "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a budget.env with no declared ceiling is not a budget"
+chk "$(_armfx not-auto)"      "0" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: a Human-gated build has nothing to arm, and says so rather than passing silently"
+chk "$(grep -c 'armed-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: ...and the suite NAMES the check, so the class has an owner"
+# auto-init itself must keep refusing — the check exists because this guard can be bypassed, not
+# because it is absent, and a bypassable guard that stopped guarding would be worse than both.
+_armai() { local r; r="$(mktemp -d)"; mkdir -p "$r/b"
+  bash "$PLUGIN_ROOT/scripts/compass.sh" auto-init "$r/b" >/dev/null 2>&1; local rc=$?
+  local m; m=$([ -f "$r/b/.auto-mode" ] && echo marker || echo none); rm -rf "$r"; printf '%s %s' "$rc" "$m"; }
+chk "$(_armai)" "1 none" "v0.35 INV-ARMED-THROUGH-AUTO-INIT: auto-init REFUSES a build with no budget, and writes no marker when it refuses"
+
+# ── v0.35 item 8 — INV-EVIDENCE-AT-THE-SEAM ──────────────────────────────────────────────────────
+# The contract is explicit that a grep will not do: "Not a grep for the gate's name: v1 asserted
+# that, and it is satisfied by typing a string." So this deletes one stream's evidence file and runs
+# the real gate.
+_evfx() {   # <complete|missing-one> → the gate's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p b/agents
+    printf '## RECEIPT — review-contract · b · PASS\n- [x] streams: review-contract r1 -> 8 of 8\n' > b/receipts.md
+    local st first=""
+    for st in $(bash "$SH" review-streams review-contract 2>/dev/null); do
+      [ -n "$first" ] || first="$st"
+      printf 'nonce: aaaabbbbccccddddeeeeffff\nstream: %s\nreview: review-contract\nround: 1\ntarget-sha: 0123456789abcdef\nverdict: CLEAN\n' "$st" > "b/agents/review-contract-r1-$st.md"
+    done
+    [ "$c" = missing-one ] && rm -f "b/agents/review-contract-r1-$first.md"
+    bash "$SH" gate b review-contract >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_evfx complete)"    "0" "v0.35 INV-EVIDENCE-AT-THE-SEAM: a review round with every declared stream's evidence passes its own gate"
+chk "$(_evfx missing-one)" "1" "v0.35 INV-EVIDENCE-AT-THE-SEAM: DELETE one stream's evidence file and the gate REFUSES — run, not grepped for, because a grep is satisfied by typing the gate's name"
+
+# ── v0.35 item 9 — INV-TERMINAL-STATUS-WRITTEN ───────────────────────────────────────────────────
+# Nothing in this file ever wrote `shipped`: every close wrote CLOSED, whether the build had shipped
+# or not, so the 17 lowercase rows in the INDEX came from somewhere else. Asserted on a fixture the
+# test creates, never on the real INDEX, which is gitignored.
+_termfx() {   # <shipped|not> → the status token left on the fixture's INDEX row
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p .claude/builds/b && git init -q . >/dev/null 2>&1
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    : > .claude/builds/b/receipts.md
+    local st
+    for st in contract review-contract plan review-plan build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$st" >> .claude/builds/b/receipts.md; done
+    printf '## RECEIPT — review-build · b · PASS\n- [x] auto-closed: fixture\n\n' >> .claude/builds/b/receipts.md
+    [ "$c" = shipped ] && printf '## RECEIPT — ship · b · PASS\nok\n\n' >> .claude/builds/b/receipts.md
+    bash "$SH" close .claude/builds/b b >/dev/null 2>&1
+    grep -o 'status=[A-Za-z-]*' .claude/builds/INDEX | head -1 )
+  rm -rf "$r"
+}
+chk "$(_termfx shipped)" "status=shipped" "v0.35 INV-TERMINAL-STATUS-WRITTEN: a build that FINISHED carries the terminal literal, lower case — matching the 17 rows already there rather than the 9 that disagree"
+chk "$(_termfx not)"     "status=CLOSED"  "v0.35 INV-TERMINAL-STATUS-WRITTEN: ...and a build closed WITHOUT shipping does not claim it did"
+
+# ── v0.35 item 10 — INV-AUTOFIX-BOUNDED ──────────────────────────────────────────────────────────
+# In Autonomous mode a failing gate should not simply stop — that is the stall. An unattended repair
+# loop is the opposite hazard, and the contract names it: "an unattended repair could rewrite the
+# locked contract." Four fixtures, one per way the bound can break.
+_afx() {   # <case> → the check's exit code
+  local c="$1" r; r="$(mktemp -d)"
+  ( cd "$r" && mkdir -p plugins/compass .claude/builds/b
+    printf 'b · fixture · status=build · facets=library · touches=x\n' > .claude/builds/INDEX
+    printf '# b\n\n**Status:** build\n**Stage:** build\n**Next:** x\n' > .claude/builds/b/progress.md
+    printf 'the contract\n' > .claude/builds/b/contract.md
+    local sha; sha="$(shasum -a 256 .claude/builds/b/contract.md | cut -c1-16)"
+    printf '## RECEIPT — contract · b · PASS\n- [x] contract-sha: %s\n\n## RECEIPT — build · b · PASS\n' "$sha" > .claude/builds/b/receipts.md
+    [ "$c" = human ] || : > .claude/builds/b/.auto-mode
+    case "$c" in
+      one|human) printf -- '- [x] autofix: copy-gate · reworded one caveat · re-run PASS\n' >> .claude/builds/b/receipts.md ;;
+      twice)     printf -- '- [x] autofix: copy-gate · reworded · re-run PASS\n- [x] autofix: copy-gate · reworded again · re-run PASS\n' >> .claude/builds/b/receipts.md ;;
+      malformed) printf -- '- [x] autofix: copy-gate reworded and re-run\n' >> .claude/builds/b/receipts.md ;;
+      contract)  printf -- '- [x] autofix: copy-gate · reworded · re-run PASS\n' >> .claude/builds/b/receipts.md
+                 printf 'edited\n' > .claude/builds/b/contract.md ;;
+      none)      : ;;
+    esac
+    bash "$PLUGIN_ROOT/scripts/autofix-check.sh" . >/dev/null 2>&1; printf '%s' "$?" )
+  rm -rf "$r"
+}
+chk "$(_afx none)"      "0" "v0.35 INV-AUTOFIX-BOUNDED: no repair at all passes — the rule bounds a repair, it does not demand one"
+chk "$(_afx one)"       "0" "v0.35 INV-AUTOFIX-BOUNDED: ONE repair, Autonomous, recorded in the stated shape, contract untouched → allowed"
+chk "$(_afx twice)"     "1" "v0.35 INV-AUTOFIX-BOUNDED: a SECOND attempt at the same sub-gate is a loop, however well each is worded"
+chk "$(_afx human)"     "1" "v0.35 INV-AUTOFIX-BOUNDED: any repair in Human-gated mode — the answer to a failing gate there is the person"
+chk "$(_afx malformed)" "1" "v0.35 INV-AUTOFIX-BOUNDED: a record nobody can read is indistinguishable from a build that quietly edited itself"
+chk "$(_afx contract)"  "1" "v0.35 INV-AUTOFIX-BOUNDED: the contract changed since it locked — five of Compass's own sub-gates fail on contract.md, so this is the repair rewriting the spec its gate reads"
+chk "$(grep -c 'autofix-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the suite NAMES the check"
+chk "$(grep -c 'autofix: <sub-gate>' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the build skill states the rule where the model reads it"
+# review-build r1 control: a reviewer INVERTED this rule in build/SKILL.md — "no limit on attempts,
+# may edit the contract" — and every suite stayed green, because the only assertion above greps the
+# RECEIPT SHAPE line, which an inversion leaves untouched. `autofix-check` polices the receipt; the
+# rule the model actually obeys is prose in the skill, and prose needs its load-bearing sentences
+# pinned as required literals. A blacklist of ways to write the opposite was already paraphrased
+# past twice on the gate text this same release, so this is a whitelist: these three claims must be
+# present verbatim, and none of them can survive an inversion of the rule.
+_afxb="$PLUGIN_ROOT/skills/build/SKILL.md"
+chk "$(grep -cF 'you may attempt **exactly one** repair' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: the ONE-repair bound is stated verbatim where the model reads it"
+chk "$(grep -cF 'In **Human-gated** mode: **zero** repairs' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the Human-gated count is zero, stated verbatim"
+chk "$(grep -cF 'A repair may NEVER edit `contract.md`' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the ban on a repair rewriting the locked spec is stated verbatim"
+
+# ── v0.35: the SIGNED, BOUNDED speed exception ───────────────────────────────────────────────────
+# This release ships over its own 78s ceiling on a signed exception, and an exception mechanism with
+# no test that can fail is the exact defect six review streams spent this release removing. The
+# decision is its own script precisely so it can be exercised here in milliseconds instead of one
+# full suite run per case. Every branch, on a throwaway tree built to order — never on the real one,
+# because a fixture that shares state with the repository proves whatever the repository happens to
+# say today.
+_pxfx() {   # <break: none|version|magnitude|unsigned|undated|nofigure|missing> [measured] -> exit code
+  local brk="${1:-none}" meas="${2:-84}" d; d="$(mktemp -d)"
+  mkdir -p "$d/plugins/compass/scripts" "$d/plugins/compass/.claude-plugin"
+  cp "$PLUGIN_ROOT/scripts/perf-exception-check.sh" "$d/plugins/compass/scripts/"
+  printf '{ "name": "compass", "version": "0.35.0" }\n' > "$d/plugins/compass/.claude-plugin/plugin.json"
+  {
+    printf '# a fixture, not the real record\n'
+    [ "$brk" = "version" ] && printf 'exception-version: 9.9.9\n' || printf 'exception-version: 0.35.0\n'
+    [ "$brk" = "nofigure" ] || { [ "$brk" = "magnitude" ] && printf 'exception-ceiling-seconds: 80\n' || printf 'exception-ceiling-seconds: 91\n'; }
+    [ "$brk" = "unsigned" ] || printf 'exception-signed-by: A Person\n'
+    [ "$brk" = "undated" ]  || printf 'exception-signed-date: 2026-09-05\n'
+  } > "$d/plugins/compass/scripts/perf-exception.txt"
+  [ "$brk" = "missing" ] && rm -f "$d/plugins/compass/scripts/perf-exception.txt"
+  bash "$d/plugins/compass/scripts/perf-exception-check.sh" "$meas" 78 "$d" >/dev/null 2>&1
+  local rc=$?; rm -rf "$d"; printf '%s' "$rc"
+}
+chk "$(_pxfx none)"      "0" "v0.35 INV-EXCEPTION-BOUNDED: a complete, signed, in-version exception COVERS the measured overage"
+chk "$(_pxfx version)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: BY VERSION — an exception signed for another release is SPENT, with no edit needed"
+chk "$(_pxfx magnitude)" "1" "v0.35 INV-EXCEPTION-BOUNDED: BY MAGNITUDE — growing past the figure signed for is not covered, so this cannot hide a later regression"
+chk "$(_pxfx unsigned)"  "1" "v0.35 INV-EXCEPTION-BOUNDED: BY SIGNATURE — an unsigned exception is not a decision anybody made"
+chk "$(_pxfx undated)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: ...nor is an undated one"
+chk "$(_pxfx nofigure)"  "1" "v0.35 INV-EXCEPTION-BOUNDED: ...nor one that names no figure, which would cover any overage at all"
+chk "$(_pxfx missing)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: no exception file is the DEFAULT — the ceiling binds, which is what every other release gets"
+chk "$(_pxfx none 90.9)" "0" "v0.35 INV-EXCEPTION-BOUNDED: the boundary is inclusive at the figure signed for"
+chk "$(_pxfx none 91.1)" "1" "v0.35 INV-EXCEPTION-BOUNDED: ...and one tenth of a second past it is refused"
+# And the real record must itself be complete, or this release ships on an exception nobody signed.
+chk "$(grep -c '^exception-signed-by: .' "$PLUGIN_ROOT/scripts/perf-exception.txt")" "1" "v0.35: the exception on record carries a signer"
+chk "$(sed -n 's/^exception-version:[[:space:]]*//p' "$PLUGIN_ROOT/scripts/perf-exception.txt" | head -1)" "$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PLUGIN_ROOT/.claude-plugin/plugin.json" | head -1)" "v0.35: the exception on record names THIS version — the moment the version moves, it is spent"
+
+# ── v0.35: historical findings cleared BY NAME (secret-scan --commits) ───────────────────────────
+# `--commits` judges committed patches, so a finding there cannot be cleared by editing the file —
+# right for a real secret, because deleting it next commit does not un-leak it, and therefore also
+# permanent for a FALSE alarm. Without a way to name one, the release step fails for ever on a line
+# that was never a secret and the only routes left are rewriting published history or switching the
+# check off. So a line can be cleared, and ONLY a line: one path, one exact content.
+#
+# The danger is obvious and is what these assertions are for: a clearance that matched loosely would
+# be a way to wave real keys through. Every case runs on a throwaway repository with a real key
+# committed and then removed, because that is the shape the mechanism has to get right.
+_chfx() {   # <clear: none|exact|onechar|wrongpath> -> exit code of secret-scan --commits
+  local mode="${1:-none}" d; d="$(mktemp -d)"
+  mkdir -p "$d/plugins/compass/scripts/fixtures/secrets"
+  cp "$SH" "$d/plugins/compass/scripts/"
+  ( cd "$d" && git init -q . >/dev/null 2>&1 && git config user.email t@t && git config user.name t
+    printf 'ok line one\n' > f.txt; git add -A >/dev/null 2>&1; git commit -qm base >/dev/null 2>&1
+    git rev-parse HEAD > .base
+    printf 'ok line one\nAPI%s=Zx9QwErTy12345678abcd\n' "_SEC""RET" > f.txt
+    git add -A >/dev/null 2>&1; git commit -qm 'adds a real key' >/dev/null 2>&1
+    printf 'ok line one\n' > f.txt; git add -A >/dev/null 2>&1; git commit -qm 'removes it' >/dev/null 2>&1 )
+  local key; key="API$(printf '%s' "_SEC""RET")=Zx9QwErTy12345678abcd"
+  local cf="$d/plugins/compass/scripts/fixtures/secrets/cleared-history.txt"
+  # The entry names the line by its HASH, never by its text — a list of cleared findings is the last
+  # place that should hold the text of one, and the first version of this fixture put a real key
+  # straight into a tracked file and the tree scan caught it.
+  local kh oh
+  kh="sha256:$(printf '%s' "$key"  | shasum -a 256 | cut -d' ' -f1)"
+  oh="sha256:$(printf '%se' "$key" | shasum -a 256 | cut -d' ' -f1)"
+  case "$mode" in
+    none)      : > "$cf" ;;
+    exact)     printf 'f.txt :: %s :: cleared in a test :: tester\n' "$kh" > "$cf" ;;
+    onechar)   printf 'f.txt :: %s :: one character off :: tester\n' "$oh" > "$cf" ;;
+    wrongpath) printf 'other.txt :: %s :: right line, wrong file :: tester\n' "$kh" > "$cf" ;;
+  esac
+  local b; b="$(cat "$d/.base")"
+  ( cd "$d" && bash plugins/compass/scripts/compass.sh secret-scan --commits "$b..HEAD" >/dev/null 2>&1 )
+  local rc=$?; rm -rf "$d"; printf '%s' "$rc"
+}
+chk "$(_chfx none)"      "1" "v0.35 INV-CLEARED-BY-NAME: a real key committed then REMOVED still fails — deleting it in the next commit does not un-leak it"
+chk "$(_chfx exact)"     "0" "v0.35 INV-CLEARED-BY-NAME: naming that exact path and that exact line clears it, and the summary says how many were cleared"
+chk "$(_chfx onechar)"   "1" "v0.35 INV-CLEARED-BY-NAME: ONE character different and the finding stands — a clearance cannot be a pattern"
+chk "$(_chfx wrongpath)" "1" "v0.35 INV-CLEARED-BY-NAME: the right line under the wrong path clears nothing — the path is half the key"
+
+# ── v0.35 — INV-BRIEF-DESCRIBES-THIS-BUILD and INV-NO-SELF-ARM ───────────────────────────────────
+# v2's Contract Brief described v1's build: the words "Stop hook" appeared ZERO times in its reader
+# copy, on a page whose entire subject is a Stop hook. The check is on the RENDERED page, not on the
+# source, because the source can say anything the page never shows.
+_brieffx() { local r; r="$(mktemp -d)"
+  if node "$PLUGIN_ROOT/skills/compass-visual/gen.mjs" "$_ROOT/.claude/builds/self-driving-lifecycle-v0-35" brief --out "$r/b.html" >/dev/null 2>&1; then
+    node -e 'const fs=require("fs");const h=fs.readFileSync(process.argv[1],"utf8");
+      const t=h.replace(/<script[\s\S]*?<\/script>/g,"").replace(/<style[\s\S]*?<\/style>/g,"").replace(/<[^>]+>/g," ");
+      console.log((t.toLowerCase().match(/stop hook/g)||[]).length>0?1:0);' "$r/b.html"
+  else echo skip; fi
+  rm -rf "$r"; }
+_bf="$(_brieffx)"
+if [ "$_bf" = "skip" ]; then
+  printf '  REPORT  INV-BRIEF-DESCRIBES-THIS-BUILD: the brief could not be rendered on this tree (no build state), so it was not checked. Stated, not skipped.\n'
+else
+  chk "$_bf" "1" "v0.35 INV-BRIEF-DESCRIBES-THIS-BUILD: the rendered brief NAMES the Stop hook — v2's brief described v1's build and the phrase appeared zero times on a page whose whole subject it is"
+fi
+chk "$(grep -c 'self-arm-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-NO-SELF-ARM: the suite NAMES the self-arm check — the 1.16-billion-token runaway ban is enforced by a check, not by a promise"
+chk "$([ "$(grep -c 'outside-in-reachable' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-BRIEF-TEXT-IS-OPENABLE: ...and the suite NAMES the check that proves every shortened unit has a real control behind it"
+
+# ── v0.35 — THE SPEED BOUND, set from a measurement and readable where a release happens ─────────
+# `perf-cap-check` runs the whole suite several times, so it is a RELEASE step, not a suite child —
+# putting it in the mechanical suite would turn a 12-second suite into a four-minute one. What smoke
+# asserts is that the bound exists, that its two carriers agree, and that the release path names the
+# step. A reviewer found the check disarmed for this entire release: it read its ceiling from
+# `.claude/builds/`, which is gitignored, so in a fresh clone — the only tree a release is cut from —
+# it returned "no ceiling found" every time.
+_pcf="$PLUGIN_ROOT/scripts/perf-ceiling.txt"
+chk "$([ -f "$_pcf" ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: the bound is carried in a TRACKED file, so a fresh clone can read it"
+_pcn="$(LC_ALL=C sed -n 's/^p95-ceiling-seconds:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$_pcf" 2>/dev/null | head -1)"
+chk "$([ -n "$_pcn" ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: ...and it states a number, not a placeholder"
+_pccur="$(cat "$_ROOT/.claude/builds/CURRENT" 2>/dev/null | head -1)"
+_pcc=""
+[ -n "$_pccur" ] && _pcc="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' "$_ROOT/.claude/builds/$_pccur/contract.md" 2>/dev/null | head -1)"
+if [ -n "$_pcc" ]; then
+  chk "$_pcn" "$_pcc" "v0.35 INV-PERFBUDGET: the tracked file and the contract state the SAME bound — one fact, one owner, and a disagreement the check refuses rather than resolves"
+else
+  printf '  REPORT  INV-PERFBUDGET: the contract is not on this tree (build state is gitignored), so the two carriers could not be compared here. Stated, not skipped.\n'
+fi
+chk "$([ "$(grep -c 'perf-cap-check.sh' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: the RELEASE path runs the speed check — not the suite, which it would turn from twelve seconds into four minutes"
+chk "$([ "$(grep -c 'Never raise the bound' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: ...and the release doc says plainly that the bound is never raised to fit a change"
+
+# ── v0.35 — THE MUTEX ACTUALLY EXCLUDES ──────────────────────────────────────────────────────────
+# `with_lock` ended `trap "rmdir $lock" RETURN; "$@"`. A RETURN trap installed inside a function is
+# the shell's CURRENT return trap: it fires when ANY function returns while installed, not only the
+# one that set it. The locked body calls other functions, so the trap fired on the FIRST of those
+# and removed the lock while the read-modify-write had barely started. Measured with pid logging:
+# one acquire, three releases, per process. Five concurrent `--bump-stage` calls landed 3 or 4
+# increments instead of 5 about one run in ten — every process exiting 0, nothing on stderr.
+#
+# That counter is the bound that stops an autonomous build looping for ever, so a silent undercount
+# is not a cosmetic bug. Twenty trials, because a race that shows one time in ten passes a single
+# run more often than not — which is exactly how this sat behind an "intermittent" selftest.
+_wlrace() {
+  # TEN TRIALS, RUN AT ONCE RATHER THAN ONE AFTER THE OTHER. Each trial is five simultaneous
+  # `--bump-stage` calls that must all land, which is what proves the mutex holds across the critical
+  # section. The trials were sequential, and that cost the suite five seconds of pure waiting: every
+  # trial serialised five whole processes behind one lock while the other nine trials sat idle.
+  #
+  # Each trial now gets its OWN repository, so its own locks directory, so the trials cannot interfere
+  # with one another. Fifty processes contend at once instead of five at a time. The test is not
+  # smaller and it is not gentler — it is strictly MORE contended, which is the direction that matters
+  # for a race. Verified both ways: green with the mutex correct, and red on every trial with the
+  # original RETURN-trap release put back.
+  local r; r="$(mktemp -d)" ; local bad=0 t
+  for t in 1 2 3 4 5 6 7 8 9 10; do
+    mkdir -p "$r/w$t/.claude/builds/b"
+    ( cd "$r/w$t" && git init -q . >/dev/null 2>&1
+      bash "$SH" budget-init .claude/builds/b --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
+      for i in 1 2 3 4 5; do ( bash "$SH" budget-check .claude/builds/b --bump-stage >/dev/null 2>&1 ) & done
+      wait ) &
+  done
+  wait
+  for t in 1 2 3 4 5 6 7 8 9 10; do
+    local v; v="$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$r/w$t/.claude/builds/b/budget.env" 2>/dev/null | tail -1)"
+    [ "${v:-0}" = "5" ] || bad=$((bad+1))
+  done
+  rm -rf "$r"; printf '%s' "$bad"
+}
+chk "$(_wlrace)" "0" "v0.35: five concurrent budget increments land FIVE, ten trials running — the mutex released itself before the critical section for the whole of this project's history"
+chk "$(awk '/^with_lock\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$SH" | grep -c 'RETURN')" "0" "v0.35: ...and no RETURN trap remains in with_lock, which is what released it early"
+# F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
+# and docs/ are public too, and the first version of this check reported them clean while a reviewer's
+# planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the
+# check for a string: a grep for "--tracked" is satisfied by typing it in a comment, which is exactly
+# how the first attempt at this assertion passed for the wrong reason.
+_f3="$(mktemp -d)"; mkdir -p "$_f3/plugins/compass/scripts"
+cp "$PLUGIN_ROOT/scripts/compass.sh" "$_f3/plugins/compass/scripts/"
+printf '# demo
+' > "$_f3/README.md"
+( cd "$_f3" && git init -q . && git add -A >/dev/null 2>&1 ) >/dev/null 2>&1
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_f3" >/dev/null 2>&1
+chk "$?" "0" "v0.34.2 F3: a clean throwaway repo passes (no false alarm on the wider population)"
+printf 'note: /%s/someone/Desktop/x
+' "$_U" >> "$_f3/README.md"
+( cd "$_f3" && git add -A >/dev/null 2>&1 )
+bash "$PLUGIN_ROOT/scripts/leak-scan-check.sh" "$_f3" >/dev/null 2>&1
+chk "$?" "1" "v0.34.2 F3: a home path in README.md is CAUGHT — the shipped tree is what git tracks, not plugins/"
+rm -rf "$_f3"
 
 # ZERO npm dependencies. The whole plugin, still.
 chk "$(find "$_ROOT" -name package.json -not -path '*/node_modules/*' 2>/dev/null | grep -c . || true)" "0" "v0.33 S21: the plugin still ships ZERO npm dependencies"

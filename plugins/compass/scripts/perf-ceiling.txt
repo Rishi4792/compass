@@ -1,0 +1,65 @@
+# The speed bound for `compass.smoke.sh`, in one place a fresh clone can read.
+#
+# WHY THIS FILE EXISTS. The bound belongs to the build's contract — that is the authority, and the
+# contract states it in the phrase `perf-cap-check.sh` parses. But a contract lives under
+# `.claude/builds/`, which is gitignored, so `perf-cap-check` could never produce a verdict in a
+# fresh clone — which is the only tree a release is ever cut from. A reviewer measured that: exit 2,
+# "no ceiling found", every time.
+#
+# So: the contract SETS the number, this tracked file CARRIES it, and `perf-cap-check` refuses if
+# the two disagree rather than picking one. One fact, one owner, and a disagreement that is fatal
+# instead of invisible.
+#
+# HOW IT IS MEASURED. Fresh clone, no build state — the set an installer actually has. The working
+# tree here is ~20s slower because several checks walk 34 build folders, and timing that would be
+# measuring a machine nobody ships on.
+#
+# NEVER RAISE THIS TO FIT A CHANGE. If a release is over the bound, make it faster or say so in the
+# CHANGELOG with the measurement. A limit moved to accommodate the thing it limits is not a limit.
+#
+# THE MEASUREMENT THIS NUMBER COMES FROM — v0.35, seven fresh-clone runs, same machine, same hour:
+#   71.3  71.6  72.0  72.7  73.2  73.8  74.3   →  median 72.7s   p95 74.3s   spread 3.0s
+# The bound is 78s: p95 plus about 5%. Tight enough that a real regression turns it red, loose
+# enough that ordinary scheduling noise does not — the spread across those seven runs was 3.0s.
+#
+# AND THE HONEST PART. v0.34 measured 51.2s and published a 61s bound. v0.35 is slower — by 25s on
+# the one-day series below, where v0.34's own base measures 57s and this release's head measures 82s
+# — and
+# the bound moved because the SUITE changed, not because the number was inconvenient: 1173
+# assertions at c9ae55c against 1025 at v0.34.0, and 17 mechanical checks against 13 — every figure
+# counted in a fresh clone, the set this
+# bound is defined for.
+#
+# WHERE THE TIME WENT. The first version of this table labelled its rows with PHASE names its ranges
+# did not contain, and recorded neither a run count nor a single boundary sha — so nobody could go
+# and check it, which is exactly how the mislabelling survived to be published. An independent
+# reviewer found it by reconstructing the ranges from the branch history. Every row below now names
+# the commit it was measured at and the runs it came from. Fresh clone per row, three runs, median.
+#
+#   ecb4daa  v0.34 release base                          57s
+#   d22e569  the leak scanner and its five review rounds 73s  +16s  ← the whole story is here
+#   3122ed8  the successor lookup and the gate text      76s   +3s
+#   5d03866  the end-of-turn walk                        78s   +2s
+#   0055ecf  the refusal and its own budget              77s   -1s
+#   6f409d6  arming, evidence, close, the speed bound    79s   +2s
+#   f17e274  the mutex fix                               83s   +4s  ← a lock that now really locks
+#   a5132f8  the widened secret scanner                  85s   +2s
+#   51ebfaf  review-build round 1's fixes                86s   +1s
+#   c9ae55c  the optimisations and the signed exception  82s   -4s
+#
+# READ THE DELTAS, NOT THE ABSOLUTES. Every row here reads high against the numbers the first table
+# recorded — ecb4daa measures 57s against 50.9s, and 6f409d6 measures 79s against the 72.7s the bound
+# itself came from. The reason was found only afterwards, and it is not a slower machine: THIS SUITE'S
+# SPEED DEPENDS ON FREE MEMORY far more than on its own code. The same release head measures 76s at
+# 95% free memory, 82s at 30%, and 136s at 13% with an unrelated process holding 73 GB of 96 GB. It
+# forks hundreds of short-lived processes, which is exactly the workload that suffers when a machine
+# swaps. This series was taken under memory pressure, so its absolutes are inflated and comparable
+# only within itself. The DELTAS survive, because each row differs from the one above it only by the
+# commits between them and the two were measured back to back under the same conditions.
+# The leak scanner is the cost, and it was not in the original ask — it came from a release soak
+# that found a home path shipped in 14 releases. It is the first thing to make faster.
+p95-ceiling-seconds: 78
+
+# THE FLOOR, counted rather than timed. A wall-clock floor fires on a faster machine that did all
+# the work; what the floor means is "fewer things ran", so the assertions are counted instead.
+min-assertions: 1173

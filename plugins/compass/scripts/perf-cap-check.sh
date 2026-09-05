@@ -38,11 +38,29 @@ SUITE=plugins/compass/scripts/compass.smoke.sh
 # The ceiling comes from ONE place — the contract — so it cannot drift from the number the contract
 # states. Review-2 round 4 found this build stating two different ceilings at once after a fix
 # landed in the header and not in the invariant.
+# v0.35 — AND IT HAS TO BE READABLE WHERE A RELEASE HAPPENS. The contract is the authority, but it
+# lives under `.claude/builds/`, which is gitignored — so this check could never produce a verdict in
+# a fresh clone, which is exactly where a release is cut. A reviewer measured that: exit 2, "no
+# ceiling found", every time, on the only tree that matters.
+#
+# So the number lives in TWO places with ONE owner. The contract sets it. `perf-ceiling.txt` is
+# tracked and carries the same figure so a clone can read it. They may never disagree: when both are
+# present and differ, this refuses rather than picking one — that is the "one fact, two sources"
+# failure this repository keeps finding, and the fix is to make the disagreement fatal, not to choose.
+CEIL_CONTRACT=""; CEIL_FILE=""
 if [ -z "$CEIL" ]; then
   C="$(cat .claude/builds/CURRENT 2>/dev/null | head -1)"
-  [ -n "$C" ] && CEIL="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' ".claude/builds/$C/contract.md" 2>/dev/null | head -1)"
+  [ -n "$C" ] && CEIL_CONTRACT="$(LC_ALL=C sed -n 's/.*p95 ceiling on the whole suite is \([0-9][0-9.]*\)s.*/\1/p' ".claude/builds/$C/contract.md" 2>/dev/null | head -1)"
+  CEIL_FILE="$(LC_ALL=C sed -n 's/^p95-ceiling-seconds:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' plugins/compass/scripts/perf-ceiling.txt 2>/dev/null | head -1)"
+  if [ -n "$CEIL_CONTRACT" ] && [ -n "$CEIL_FILE" ] && [ "$CEIL_CONTRACT" != "$CEIL_FILE" ]; then
+    echo "perf-cap-check: ERR — the contract says ${CEIL_CONTRACT}s and perf-ceiling.txt says ${CEIL_FILE}s."
+    echo "  One fact, two sources, and they have drifted. The contract is the authority: correct the file"
+    echo "  to match it. Refusing to pick one — choosing silently is how the drift became invisible."
+    exit 2
+  fi
+  CEIL="${CEIL_CONTRACT:-$CEIL_FILE}"
 fi
-[ -n "$CEIL" ] || { echo "perf-cap-check: ERR — no ceiling found in the contract and none given. Refusing to invent one."; exit 2; }
+[ -n "$CEIL" ] || { echo "perf-cap-check: ERR — no ceiling in the contract, none in plugins/compass/scripts/perf-ceiling.txt, and none given. Refusing to invent one."; exit 2; }
 
 case "${RUNS:-0}" in ''|*[!0-9]*|0) echo "perf-cap-check: ERR — runs must be a positive integer."; exit 2 ;; esac
 
@@ -66,10 +84,22 @@ fi
 times=""
 i=1
 while [ "$i" -le "$RUNS" ]; do
-  s=$(date +%s); bash "$SUITE" >/dev/null 2>&1; e=$(date +%s)
+  s=$(date +%s); _out="$(bash "$SUITE" 2>&1)"; e=$(date +%s)
   times="$times $((e-s))"
   i=$((i+1))
 done
+# THE FLOOR IS COUNTED, NOT TIMED. The contract states a healthy RANGE and until now only its top
+# was enforced. A run far under the bottom means the suite stopped doing something, and this
+# repository has shipped exactly that twice: a generator that wrote one page and exited 0 for the
+# other 139, and a scanner whose allow-list dropped whole lines. Both would have finished fast.
+#
+# But a floor on the WALL CLOCK cannot be that check. A faster machine trips it while doing all the
+# work, and this project has already had to demote five rules for firing on correct input: a false
+# alarm costs more than a miss, because the first thing a spurious speed gate teaches you is to
+# switch it off. What the floor actually means is "fewer things ran" — so that is what is counted,
+# from the suite's own report, which is machine-independent by construction.
+PASSED="$(printf '%s' "$_out" | LC_ALL=C sed -nE 's/.*[^0-9]([0-9]+) passed, ([0-9]+) failed.*/\1/p' | tail -1)"
+FAILED="$(printf '%s' "$_out" | LC_ALL=C sed -nE 's/.*[^0-9]([0-9]+) passed, ([0-9]+) failed.*/\2/p' | tail -1)"
 cd "$WORK" 2>/dev/null || true
 med="$(printf '%s\n' $times | LC_ALL=C sort -n | awk -v n="$RUNS" 'NR==int((n+1)/2){print}')"
 
@@ -87,11 +117,43 @@ printf '  Asserting a CEILING, never an equality — a wall clock never repeats,
 printf '  goes spuriously red is one somebody switches off. The ceiling is read from the contract,\n'
 printf '  from one place, so it cannot drift from the number the contract states.\n'
 # Integer comparison against a possibly-decimal ceiling: compare in tenths, no bc dependency.
+# ── THE FLOOR: DID THE SUITE ACTUALLY DO ITS WORK? ───────────────────────────────────────────
+MINA="$(LC_ALL=C sed -n 's/^min-assertions:[[:space:]]*\([0-9]*\).*/\1/p' "$WORK/plugins/compass/scripts/perf-ceiling.txt" 2>/dev/null | head -1)"
+if [ -n "$MINA" ]; then
+  if [ -z "$PASSED" ]; then
+    printf '  FLOOR: the suite printed no assertion count, so its work could not be counted. Refusing to\n'
+    printf '         call a duration a pass when the thing being timed cannot be shown to have run.\n'
+    exit 1
+  fi
+  printf '  floor: %s assertions ran, %s failed (floor %s).\n' "$PASSED" "${FAILED:-?}" "$MINA"
+  if [ "${FAILED:-0}" != "0" ]; then
+    printf '  UNDER THE FLOOR: %s assertion(s) FAILED. A duration measured over a failing suite is not a\n' "$FAILED"
+    printf '         speed result at all. Release blocker.\n'
+    exit 1
+  fi
+  if [ "$PASSED" -lt "$MINA" ]; then
+    printf '  UNDER THE FLOOR by %s assertions. The suite finished, but it ran LESS than the set this\n' "$((MINA-PASSED))"
+    printf '         bound is defined over — which is what "fast" looks like when something quietly\n'
+    printf '         stopped running. This repository has shipped that twice. Release blocker.\n'
+    exit 1
+  fi
+fi
+
 ct=$(printf '%s' "$CEIL" | awk '{printf "%d", ($1*10)+0.5}')
 mt=$((med*10))
 if [ "$mt" -le "$ct" ]; then
   printf '  INSIDE the ceiling by %ss.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(a-b)/10}')"
   exit 0
 fi
-printf '  OVER the ceiling by %ss. This is a release blocker, not a note.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(b-a)/10}')"
-exit 1
+printf '  OVER the ceiling by %ss.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(b-a)/10}')"
+
+# ── A SIGNED, BOUNDED EXCEPTION ───────────────────────────────────────────────────────────────
+# The overage above is always PRINTED, whatever happens next. An exception changes the verdict; it
+# must never change what the reader is told the suite actually measured.
+#
+# The decision itself lives in `perf-exception-check.sh`, and the reason it is a separate script is
+# that THIS one runs the whole suite before it can decide anything — so a test of the decision would
+# cost a full suite run per case, and nobody would write one. An exception mechanism with no test
+# that can fail is the exact defect six review streams have spent this release removing. Split out,
+# every branch of it is exercised in milliseconds by the suite. One decision, one owner.
+exec bash "$WORK/plugins/compass/scripts/perf-exception-check.sh" "$med" "$CEIL" "$WORK"

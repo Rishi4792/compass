@@ -184,17 +184,28 @@ printf 'midbuild · goal · status=building · facets=library\n' > "$G/.claude/b
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — build · midbuild · IN-PROGRESS · step 4/11\n- [x] y\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '**Status:** building\n**Stage:** build · IN-PROGRESS · step 4/11\n**Next:** step 5\n' > "$G/.claude/builds/midbuild/progress.md"
 printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$G/.claude/builds/midbuild/plan.md"
-printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "mid-build (IN-PROGRESS · step 4/11) + owning session → block"
+# ── v0.35 P2 — THIRTEEN ASSERTIONS CHANGED THEIR EXPECTED VALUE, AND WHY ─────────────────────────
+# Every test below used to prove that a Human-gated build mid-step REFUSES a quiet turn-end. v0.35's
+# contract forbids that: "Human-gated is the off switch, and INV-HUMAN-GATED-NEVER-REFUSES is what
+# makes that true rather than merely claimed." So the expected value is now `{}`.
+#
+# What those tests really PROVED — that the guard identifies the right session and the right build,
+# parses session_id from the field rather than the transcript path, falls back to the environment,
+# trims a stored owner, and stays isolated across repositories — is not observable while the output
+# is `{}` for every input. It is not abandoned: P6 adds the refusal on the AUTONOMOUS path with the
+# same ownership rules, and each label below names the obligation to re-point it there. That list is
+# also written into the build's PHASES.md, so it is an obligation on the phase rather than a comment.
+printf '%s' "$(sg)" | grep -q '^{}$'; chk "$?" "0" "v0.35 mid-build (IN-PROGRESS · step 4/11) + owning session → {} — Human-gated is the off switch and never refuses"
 # plan.md half-checked, NO IN-PROGRESS build receipt → still mid-build via (b)
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n' > "$G/.claude/builds/midbuild/receipts.md"
-printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "plan.md half-checked (≥1 [x] AND ≥1 [ ]) + owning session → block"
+printf '%s' "$(sg)" | grep -q '^{}$'; chk "$?" "0" "v0.35 plan.md half-checked + owning session → {} (Human-gated)"
 # (quiet) ambiguity guard: review-plan IN PROGRESS (no build k/n) is NOT a build mid-step
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — review-plan · midbuild · IN PROGRESS\n- [ ] round 1 paused\n' > "$G/.claude/builds/midbuild/receipts.md"
 printf '## 7. Steps\n- [ ] **S1**\n' > "$G/.claude/builds/midbuild/plan.md"
 printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "1" "ambiguity guard ('review-plan IN PROGRESS', no build k/n) + owner present → NO block (quiet from is_mid_build)"
 # POSITIVE CONTROL (R2-12): same fixture flipped to a REAL mid-step build + owner → MUST block (proves owner path didn't disable everything)
 printf '## RECEIPT — contract · midbuild · PASS\n- [x] x\n## RECEIPT — build · midbuild · IN-PROGRESS · step 2/7\n- [x] y\n' > "$G/.claude/builds/midbuild/receipts.md"
-printf '%s' "$(sg)" | grep -q '"decision":"block"'; chk "$?" "0" "POSITIVE CONTROL: same slug flipped to real mid-step + owner → block (owner path is live, not a kill-switch)"
+printf '%s' "$(sg)" | grep -q '^{}$'; chk "$?" "0" "v0.35 same slug flipped to real mid-step + owner → still {} — the mode decides, not the step"
 # (quiet) CLOSED-awaiting-ship
 printf 'midbuild · goal · status=closed · facets=library\n' > "$G/.claude/builds/INDEX"
 printf '**Status:** CLOSED\n**Stage:** review-build\n**Next:** ship\n' > "$G/.claude/builds/midbuild/progress.md"
@@ -220,7 +231,7 @@ setA() { printf 'A · goal · status=building · facets=library\n' > "$I/.claude
 ig() { cd "$I" && printf '%s' "$1" | bash "$SH" stop-guard; }
 setA sessX
 O="$(ig '{"session_id":"sessX","stop_hook_active":false}')"
-printf '%s' "$O" | grep -q '"decision":"block"' && printf '%s' "$O" | grep -q '\bA\b'; chk "$?" "0" "S1 owning session sessX + mid-build → block (reason names A)"
+printf '%s' "$O" | grep -q '^{}$'; chk "$?" "0" "v0.35 S1 owning session sessX + mid-build → {} (Human-gated never refuses)"
 printf '%s' "$(ig '{"session_id":"sessY","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S2 foreign session sessY → quiet {}"
 printf '%s' "$(ig '{"stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S3 no session id (env unset) → quiet {}"
 rm -f "$I/.claude/builds/.locks/A.owner"
@@ -241,37 +252,37 @@ printf '## RECEIPT — contract · B · PASS\n- [x] x\n## RECEIPT — build · B
 printf '**Status:** building\n**Stage:** build step 1/4\n**Next:** step 2\n' > "$I/.claude/builds/B/progress.md"
 printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$I/.claude/builds/B/plan.md"
 printf 'session=sessY\n' > "$I/.claude/builds/.locks/B.owner"
-O="$(ig '{"session_id":"sessX","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '\bA\b' && ! printf '%s' "$O" | grep -q '\bB\b'; chk "$?" "0" "S7 A(sessX)+B(sessY) mid: sessX stops → block names A NOT B"
-O="$(ig '{"session_id":"sessY","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '\bB\b' && ! printf '%s' "$O" | grep -q '\bA\b'; chk "$?" "0" "S8 same: sessY stops → block names B NOT A"
+O="$(ig '{"session_id":"sessX","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '^{}$'; chk "$?" "0" "v0.35 S7 A(sessX)+B(sessY) both Human-gated: sessX stops → {} (P6 re-points this at the autonomous refusal, where naming the right build is observable again)"
+O="$(ig '{"session_id":"sessY","stop_hook_active":false}')"; printf '%s' "$O" | grep -q '^{}$'; chk "$?" "0" "v0.35 S8 same: sessY stops → {} (P6 obligation, as S7)"
 rm -f "$I/.claude/builds/B.owner" "$I/.claude/builds/.locks/B.owner" "$I/.claude/builds/.locks/B.blocked"; rm -rf "$I/.claude/builds/B"
 # S9 non-git already covered (fail-open). S10 malformed progress + mid-build + owner → still block, exit 0
 setA sessX; printf 'GARBAGE no status line here\x01\n' > "$I/.claude/builds/A/progress.md"
 S10E=0; O="$(ig '{"session_id":"sessX","stop_hook_active":false}')" || S10E=$?   # ONE call (a 2nd would dedupe)
 chk "$S10E" "0" "S10 malformed progress.md + mid-build + owner → exit 0 (no crash)"
-printf '%s' "$O" | grep -q '"decision":"block"'; chk "$?" "0" "S10b malformed progress.md → still valid block JSON (stage/next '?')"
+printf '%s' "$O" | grep -q '^{}$'; chk "$?" "0" "v0.35 S10b malformed progress.md → valid JSON and no crash (Human-gated → {})"
 # S11 substring non-collision
 setA sessX
 printf '%s' "$(ig '{"session_id":"sessXY","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S11 owner sessX vs stop sessXY → quiet (exact compare, no substring match)"
 # S12 fingerprint dedup + re-arm
 setA sessX
-printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S12a first stop, step 3/9 → block"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '^{}$'; chk "$?" "0" "v0.35 S12a first stop, step 3/9 → {} (Human-gated)"
 printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "1" "S12b identical step (zero mutation) → quiet {} (fingerprint dedup)"
 printf '## RECEIPT — contract · A · PASS\n- [x] x\n## RECEIPT — build · A · IN-PROGRESS · step 4/9\n- [x] y\n' > "$I/.claude/builds/A/receipts.md"   # advance step → re-arm
-printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S12c step advanced 3→4 → block again (re-armed)"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '^{}$'; chk "$?" "0" "v0.35 S12c step advanced 3→4 → still {} (P6 re-points the re-arming test at the refusal it creates)"
 # S13 own refuses empty
 ( cd "$I" && bash "$SH" own A --session "" >/dev/null 2>&1 ); chk "$?" "1" "S13 own --session '' → non-zero (refuse empty)"
 # S15 transcript_path different uuid + spaced/pretty JSON
 setA sessX
 O="$(ig '{ "transcript_path" : "/x/9999dead-0000-0000-0000-000000000000/t.jsonl" , "session_id" : "sessX" , "stop_hook_active" : false }')"
-printf '%s' "$O" | grep -q '"decision":"block"'; chk "$?" "0" "S15 different uuid in transcript_path + spaced JSON → block (parse keyed to session_id field)"
+printf '%s' "$O" | grep -q '^{}$'; chk "$?" "0" "v0.35 S15 different uuid in transcript_path + spaced JSON → {} without crashing (P6 re-asserts the session_id parse at the refusal)"
 # S16 env fallback
 setA sessX
-( cd "$I" && printf '%s' '{"stop_hook_active":false}' | CLAUDE_CODE_SESSION_ID=sessX bash "$SH" stop-guard | grep -q '"decision":"block"' ); chk "$?" "0" "S16 no stdin session_id + env CLAUDE_CODE_SESSION_ID=sessX → block (env fallback)"
+( cd "$I" && printf '%s' '{"stop_hook_active":false}' | CLAUDE_CODE_SESSION_ID=sessX bash "$SH" stop-guard | grep -q '^{}$' ); chk "$?" "0" "v0.35 S16 no stdin session_id + env fallback → {} (P6 re-asserts the fallback at the refusal)"
 setA sessX
 ( cd "$I" && printf '%s' '{"stop_hook_active":false}' | CLAUDE_CODE_SESSION_ID= bash "$SH" stop-guard | grep -q '"decision":"block"' ); chk "$?" "1" "S16b no stdin + empty env → quiet {}"
 # S17 trailing-newline / whitespace owner still matches
 setA sessX; printf 'session=sessX  \n\n' > "$I/.claude/builds/.locks/A.owner"; rm -f "$I/.claude/builds/.locks/A.blocked"
-printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '"decision":"block"'; chk "$?" "0" "S17 owner with trailing whitespace/newline → still block (strict extract + trim)"
+printf '%s' "$(ig '{"session_id":"sessX","stop_hook_active":false}')" | grep -q '^{}$'; chk "$?" "0" "v0.35 S17 owner with trailing whitespace/newline → {} (P6 re-asserts the strict extract at the refusal)"
 
 echo "── S14 cross-project isolation (two real repos) ──────────────"
 RA="$SB/repoA"; RB="$SB/repoB"
@@ -283,7 +294,7 @@ printf '**Status:** building\n**Stage:** build step 2/5\n**Next:** step 3\n' > "
 printf '## 7. Steps\n- [x] **S1**\n- [ ] **S2**\n' > "$RA/.claude/builds/X/plan.md"
 printf 'session=sessX\n' > "$RA/.claude/builds/.locks/X.owner"
 printf '%s' "$(cd "$RB" && printf '%s' '{"session_id":"sessX","stop_hook_active":false}' | bash "$SH" stop-guard)" | grep -q '"decision":"block"'; chk "$?" "1" "S14 same session sessX stopping in repoB → quiet (cross-project isolation)"
-printf '%s' "$(cd "$RA" && printf '%s' '{"session_id":"sessX","stop_hook_active":false}' | bash "$SH" stop-guard)" | grep -q '"decision":"block"'; chk "$?" "0" "S14b converse: sessX in repoA still blocks (proves quiet is isolation, not global invisibility)"
+printf '%s' "$(cd "$RA" && printf '%s' '{"session_id":"sessX","stop_hook_active":false}' | bash "$SH" stop-guard)" | grep -q '^{}$'; chk "$?" "0" "v0.35 S14b converse: sessX in repoA → {} (P6 re-asserts cross-repo isolation at the refusal)"
 
 echo "── ship coordination P1–P7 (v0.9.0) ─────────────────────────"
 SP="$SB/ship"; mkdir -p "$SP/.claude/builds/A" "$SP/.claude/builds/B" "$SP/.claude/builds/C" "$SP/.claude/builds/.locks"; ( cd "$SP" && git init -q && git commit -q --allow-empty -m x 2>/dev/null )
@@ -521,8 +532,101 @@ chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "none" "INV-BC: no .a
 # with .auto-mode → autonomous: the reorder reaches the spawn path at the plan (non-build) stage (INV-STAGE)
 : > "$SG/.claude/builds/sb11/.auto-mode"
 bash "$SH" budget-init "$SG/.claude/builds/sb11" --wall 99999 --sessions 6 --stages 99 >/dev/null 2>&1
-sgz >/dev/null 2>&1; sleep 0.3
-chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "spawned" "★ INV-STAGE: .auto-mode at a NON-build stage (plan) → Stop hook REACHES the spawn (the v0.10 bug is fixed)"
+# v0.35 P6 — RE-POINTED, and the meaning is preserved rather than the mechanism. What this assertion
+# proved is that the autonomous path fires at EVERY continuable stage and not only at `build` — the
+# v0.10 bug. P6 replaced the cross-session spawn with an in-turn REFUSAL, because driving the build
+# from this turn and starting a second session are alternatives and doing both drives it twice. So
+# the same fixture, at the same non-build stage, must now REFUSE. If the reorder is ever undone this
+# still fails, which is what the assertion was for.
+_sgo="$(sgz 2>/dev/null)"; sleep 0.1
+chk "$(printf '%s' "$_sgo" | grep -c '"decision":"block"')" "1" "★ INV-STAGE: .auto-mode at a NON-build stage (plan) → the Stop hook REFUSES there (the v0.10 bug is fixed; v0.35 replaced the spawn with the refusal)"
+chk "$(printf '%s' "$_sgo" | grep -c 'review-plan')" "1" "★ v0.35 INV-REASON-NAMES-THE-COMMAND: ...and the reason names the successor the walk worked out, not a stage typed into a string"
+chk "$([ -f "$SG/SPAWNED" ] && echo spawned || echo none)" "none" "★ v0.35: ...and NO second session was spawned beside the refusal"
+
+# ── v0.35 P6 — THE THIRTEEN OBLIGATIONS, DISCHARGED ──────────────────────────────────────────────
+# P2 deleted the Human-gated refusal, and with it the only observable thirteen assertions had. Their
+# expected value became `{}` and PHASES.md recorded, per row, what each had really proved. Those
+# properties are observable again now that the AUTONOMOUS path refuses, so each is re-asserted here
+# against the refusal P6 creates. This block is what "P6 is not complete until every row has a live
+# assertion" means.
+_p6r="$(mktemp -d)"
+_p6mk() { # <repo> <slug> <owner-line> [progress-override]
+  local rp="$1" sl="$2" ow="$3" pg="${4:-}"
+  mkdir -p "$rp/.claude/builds/$sl" "$rp/.claude/builds/.locks"
+  ( cd "$rp" && git init -q . >/dev/null 2>&1 ) || true
+  printf '%s · fixture · status=plan · facets=library · touches=x\n' "$sl" >> "$rp/.claude/builds/INDEX"
+  if [ -n "$pg" ]; then printf '%s' "$pg" > "$rp/.claude/builds/$sl/progress.md"
+  else printf '# %s\n\n**Status:** plan\n**Stage:** plan\n**Next:** write the plan\n' "$sl" > "$rp/.claude/builds/$sl/progress.md"; fi
+  printf '## RECEIPT — contract · %s · PASS\nok\n\n## RECEIPT — review-contract · %s · PASS\nok\n' "$sl" "$sl" > "$rp/.claude/builds/$sl/receipts.md"
+  printf -- '- [x] S1\n' > "$rp/.claude/builds/$sl/plan.md"
+  printf '%s\n' "$ow" > "$rp/.claude/builds/.locks/$sl.owner"
+  : > "$rp/.claude/builds/$sl/.auto-mode"
+  printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=99\nceiling_refusals=40\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > "$rp/.claude/builds/$sl/budget.env"
+}
+_p6run() { ( cd "$1" && printf '%s' "$2" | CLAUDE_CODE_SESSION_ID="${3:-}" bash "$SH" stop-guard 2>/dev/null ); }
+_SIDA="9999dead-0000-0000-0000-000000000000"
+
+# S1 — the reason names the owning build.
+_p6mk "$_p6r/a" A "session=$_SIDA"
+_o="$(_p6run "$_p6r/a" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$(printf '%s' "$_o" | grep -c '"decision":"block"')" "1" "v0.35 P6/S1: an owned Autonomous build at a clean seam → the hook REFUSES"
+chk "$(printf '%s' "$_o" | grep -c '\bA\b')" "1" "v0.35 P6/S1: ...and the reason NAMES that build"
+
+# S7/S8 — two builds, two sessions: each session sees ITS OWN build named, not the neighbour's.
+_p6mk "$_p6r/ab" A "session=$_SIDA"
+_p6mk "$_p6r/ab" B "session=sessY"
+_o="$(_p6run "$_p6r/ab" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$([ "$(printf '%s' "$_o" | grep -c '\bA\b')" = "1" ] && [ "$(printf '%s' "$_o" | grep -c '\bB\b')" = "0" ] && echo 1 || echo 0)" "1" "v0.35 P6/S7: session A stops → the reason names A and not B"
+_o="$(_p6run "$_p6r/ab" '{"session_id":"sessY","stop_hook_active":false}')"
+chk "$([ "$(printf '%s' "$_o" | grep -c '\bB\b')" = "1" ] && [ "$(printf '%s' "$_o" | grep -c '\bA\b')" = "0" ] && echo 1 || echo 0)" "1" "v0.35 P6/S8: session Y stops → the reason names B and not A — and this only works because P5 made the walk reach row 2"
+
+# S15 — session_id is read from the FIELD, never from a uuid inside transcript_path.
+_p6mk "$_p6r/p" A "session=$_SIDA"
+_o="$(_p6run "$_p6r/p" "{ \"transcript_path\" : \"/x/00000000-0000-0000-0000-000000000000.jsonl\" , \"session_id\" : \"$_SIDA\" , \"stop_hook_active\" : false }")"
+chk "$(printf '%s' "$_o" | grep -c '"decision":"block"')" "1" "v0.35 P6/S15: a different uuid in transcript_path and spaced JSON → still refuses (the parse is keyed to the session_id FIELD)"
+
+# S16 — the CLAUDE_CODE_SESSION_ID fallback when stdin carries no session_id.
+_p6mk "$_p6r/e" A "session=$_SIDA"
+_o="$(_p6run "$_p6r/e" '{"stop_hook_active":false}' "$_SIDA")"
+chk "$(printf '%s' "$_o" | grep -c '"decision":"block"')" "1" "v0.35 P6/S16: no session_id on stdin, env fallback set → still refuses"
+
+# S17 — a stored owner with trailing whitespace still matches.
+_p6mk "$_p6r/w" A "session=$_SIDA  "
+_o="$(_p6run "$_p6r/w" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$(printf '%s' "$_o" | grep -c '"decision":"block"')" "1" "v0.35 P6/S17: an owner line with trailing whitespace still matches (strict extract + trim)"
+
+# S14b — a session is quiet in another repository, but not globally invisible.
+_p6mk "$_p6r/r1" A "session=$_SIDA"
+_p6other="$(mktemp -d)"; ( cd "$_p6other" && git init -q . >/dev/null 2>&1 ) || true
+_o="$(_p6run "$_p6other" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$_o" "{}" "v0.35 P6/S14b: the same session stopping in a DIFFERENT repository → quiet"
+_o="$(_p6run "$_p6r/r1" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$(printf '%s' "$_o" | grep -c '"decision":"block"')" "1" "v0.35 P6/S14b: ...and in its OWN repository it still refuses — quiet is isolation, not global invisibility"
+
+# S10b — a malformed progress.md must still yield valid JSON and never crash.
+_p6mk "$_p6r/m" A "session=$_SIDA" "no status line at all, and no stage either"
+_o="$(_p6run "$_p6r/m" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")"
+chk "$([ "${_o#\{}" != "$_o" ] && [ "${_o%\}}" != "$_o" ] && echo 1 || echo 0)" "1" "v0.35 P6/S10b: a malformed progress.md still yields a JSON object and does not crash the session"
+
+# S12a/S12c — the bound. It is the BUDGET now, not a step fingerprint: N refusals, then quiet for
+# ever. A counter that only reads is not a bound; this one moves, and stops the loop when it fills.
+_p6mk "$_p6r/bd" A "session=$_SIDA"
+printf 'ceiling_wall=99999\nceiling_sessions=50\nceiling_stages=99\nceiling_refusals=2\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > "$_p6r/bd/.claude/builds/A/budget.env"
+_seq=""; _i=1
+while [ "$_i" -le 5 ]; do
+  case "$(_p6run "$_p6r/bd" "{\"session_id\":\"$_SIDA\",\"stop_hook_active\":false}")" in *block*) _seq="${_seq}B" ;; *) _seq="${_seq}a" ;; esac
+  _i=$((_i+1))
+done
+chk "$_seq" "BBaaa" "v0.35 P6/S12: the refusal is BOUNDED — ceiling_refusals=2 gives exactly two refusals, then quiet for ever"
+chk "$(sed -nE 's/^spent_refusals=(.*)$/\1/p' "$_p6r/bd/.claude/builds/A/budget.env" | tail -1)" "2" "v0.35 P6/S12: ...and the counter MOVED, which is what makes it a bound rather than a reading"
+chk "$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$_p6r/bd/.claude/builds/A/budget.env" | tail -1)" "0" "v0.35 P6/S12: ...on its OWN counter — five turn-ends do not spend the per-stage budget the build never used"
+
+# stop_hook_active — the platform's own anti-deadlock escape must still win over all of this.
+_p6json_true='{"session_id":"SID","stop_hook_active":true}'
+_p6json_true="${_p6json_true/SID/$_SIDA}"
+_o="$(_p6run "$_p6r/a" "$_p6json_true")"
+chk "$_o" "{}" "v0.35 P6: stop_hook_active still short-circuits before anything else is read"
+rm -rf "$_p6r" "${_p6other:-}"
 # (all v0.11 state lived in the sandbox repos $V/$SG under $SB — auto-removed by the EXIT trap; no real locks touched)
 
 echo "── INV-ENGINEFIX (v0.12.0 S1): mutex-leak class BUG-1/BUG-2/BUG-3 ─────────────"

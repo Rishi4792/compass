@@ -37,6 +37,13 @@ Then run `compass.sh gate "$(compass.sh state-root)/<slug>" review-plan`. **Non-
 Re-read the relevant `contract.md` part. **A step that would deviate — even slightly — STOPS and asks.** Never "improve" beyond the contract silently.
 
 ## Per-step loop (each unchecked step, in order)
+0. **A failing gate in Autonomous mode — ONE repair, then stop (v0.35, INV-AUTOFIX-BOUNDED).** When a gate fails and this build is Autonomous (`.auto-mode` present), you may attempt **exactly one** repair of the named sub-gate, then re-run **that sub-gate alone**, then the **full gate**. A second failure of the same sub-gate STOPS and asks — two attempts is a loop, however well each is worded. In **Human-gated** mode: **zero** repairs; a failing gate is the person's to answer.
+   Record every attempt in `receipts.md`, in exactly this shape, or `autofix-check` refuses:
+
+   `autofix: <sub-gate> · <what changed> · <re-run result>`
+
+   **A repair may NEVER edit `contract.md`.** Five of Compass's own sub-gates fail on the contract itself, so an unattended repair could rewrite the locked spec to make its own gate pass. The contract's sha is recorded when it locks and `autofix-check` compares it; a deliberate amendment re-records it with the user's signature.
+
 0. **Abort sentinel (INV-ABORT, v0.16.0):** at the TOP of each step **and before every mutating op** (a file write, a migration, a bulk data op), run `compass.sh abort-check <slug>` — **non-zero (exit 3) → HALT cleanly**: stop *before* the mutation, leave committed + working state known-good and revertible, record the cursor in `progress.md`, and exit. **Bulk mutations run in bounded batches with a checkpoint after each batch**, re-checking `abort-check` between batches so a mid-flight `compass.sh abort <slug>` bounds blast radius (never a half-applied bulk op). This is the clean mid-flight stop for an autonomous/`--auto` build.
 1. **Build** exactly as specified — no scope creep. **(web, v0.14.0) Apply the design-standard:** before building any UI surface, load the contract's `design-standard` bundled skill — invoke the `rk-house-style` skill (product surfaces: dashboards/tables/forms/charts) and/or the `cinematic-hero` skill (hero/launch/motion) — and compose from ITS pinned tokens + component recipes; never invent off-system styles. The contract's `## Design Spec` (extracted from that same bundled skill) is the binding target, and its gates (`rk-house-style` anti-drift + compose-check against the active theme) are the per-surface craft check.
    - **(v0.15.0) Kill-switch spine (F-FLAG):** any **user-visible** change is built behind the contract's declared feature flag, **flag defaulted OFF** (dark). The step's verify must exercise **both states**: flag OFF = the old behavior is intact (no user-visible change), flag ON = the new behavior. A user-visible change with only one state proven is not done. (`no flag — <reason>` in the contract waives this for that build.)
@@ -134,7 +141,14 @@ does **not** present a second gate — the stage owns it.
 
    `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
 
-   (For the terminal `ship` stage, Next is `done — build SHIPPED`.)
+   That footer line is for the READER: it names where they are and the door they can take if they
+   want to steer. It is not your instruction — yours is the Approve branch at the end of this block.
+
+   `<next stage>` is not guessed. Run `compass.sh next-stage <build-dir>` and branch on its EXIT
+   CODE, never on its output, because two different states both print nothing:
+   **0** → the stage it named · **3** → every stage has passed, so Next is `done — build SHIPPED` ·
+   **anything else** → the build state could not be read; say exactly that and stop, rather than
+   guessing a stage or reporting the build finished.
 
    Then PUSH the RAIL when this stage produced an artefact — run
    `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
@@ -162,7 +176,25 @@ does **not** present a second gate — the stage owns it.
      run a mini review-contract on the delta, `supersede` downstream, re-baseline.
    - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
 
-Only **Approve** or **Amend** advances. **Never auto-invoke the next skill** — the gate ASKS;
-it does not advance by itself. On any detected drift from `contract.md`, STOP and surface
-instead of advancing.
+Only **Approve** or **Amend** advances — and on **Approve** you CONTINUE, you do not stop to ask a
+second time. Run `compass.sh next-stage <build-dir>` — the build directory is the one this stage has
+been working in — and on exit 0 **invoke the named stage with the Skill tool**, whose skill name is
+`compass:` followed by that stage, exactly the way this stage was invoked. On exit 3 the build is
+finished; on any other code, say the state could not be read and stop. The user has already said
+yes; the silence after that yes is the stall this gate exists to end.
+
+The seven stage skills are hidden from the `/` menu, and that is not an obstacle — it is a division
+of labour. A person types **`/compass:resume`**; a model uses the Skill tool. Both reach the same
+stage. What nobody has is a `/compass:` slash command named after a stage, so never print one: it
+sends the reader to a door that is not there.
+
+On **Revise**, re-run this stage with the change. On **Pause**, stop cleanly. On any detected drift
+from `contract.md`, STOP and surface instead of advancing.
+
+*(Until v0.35 this paragraph forbade invoking the next skill at all. It told the reader what would
+NOT happen and never what would, so an approved stage ended in silence and the build waited for a
+human to remember the next command. The old sentence is not quoted here, because the check that
+proves it is gone greps for it — a note about a banned string that contains the banned string keeps
+the defect alive in the file that fixed it. The gate still ASKS. What changed is that an answer of
+Approve is now acted on rather than described.)*
 <!-- GATE:END -->

@@ -95,17 +95,51 @@ main_root() {
 }
 
 # Portable mutex (macOS has no flock). mkdir is atomic on POSIX filesystems.
+# THE MUTEX RELEASED ITSELF BEFORE THE CRITICAL SECTION RAN, and had done since it was written.
+#
+# The old body ended `trap "rmdir '$lock'" RETURN; "$@"`. A RETURN trap installed inside a function
+# is the shell's CURRENT return trap: it fires when ANY function returns while it is installed, not
+# only the one that set it. The locked body calls other functions — `_be_get` is the first thing
+# `_budget_check_locked` does — so the trap fired on THAT return and removed the lock directory
+# while the read-modify-write had barely started. Every later return fired it again.
+#
+# Measured, by logging acquire and release with pids: each process logged ONE acquire and THREE
+# releases, and five concurrent `--bump-stage` calls landed 3 or 4 increments instead of 5 in about
+# one run in ten — every process exiting 0, nothing on stderr. A counter that silently undercounts
+# is not a bound, and this counter is the one that stops an autonomous build from looping for ever.
+# Found by an intermittent selftest that had been dismissed as machine load.
+#
+# Explicit acquire, run, release. No trap on RETURN, so nothing can release it early. An EXIT trap
+# is still armed for the `die`-inside-the-section case that BUG-3 documents — that path is supposed
+# to be impossible (locked bodies set a message and return 1 rather than exit) but a leaked mutex
+# hangs every later run for thirty seconds, so it is caught rather than trusted.
 with_lock() { # <name> <command...>
   local lock; lock="$(locks_dir)/.$1.lock"; shift
   mkdir -p "$(dirname "$lock")"
   local tries=0
   until mkdir "$lock" 2>/dev/null; do
-    tries=$((tries+1)); [ "$tries" -gt 600 ] && die "lock timeout on $lock"
-    sleep 0.05
+    # THE WAIT IS ADAPTIVE, AND THE REASON IS MEASURED. This lock guards a counter increment that
+    # takes microseconds, so a flat 50ms sleep made every waiter overshoot by roughly a thousand
+    # times. Instrumenting one suite run showed 64 acquisitions, 100 spin iterations and exactly
+    # 5000ms of sleeping — the whole of the +5s the speed bound picked up when this lock started
+    # actually locking. All 100 spins were the deliberate concurrency fixture: ten trials of five
+    # simultaneous `--bump-stage` calls, giving a clean 10x1, 10x2, 10x3, 10x4 staircase.
+    #
+    # So the fix is granularity, not patience. Short waits are polled quickly; a genuinely long wait
+    # backs off to the original interval, and the TOTAL budget is unchanged at about thirty seconds,
+    # which is what protects a real contended build. Nothing about when the lock is granted changes.
+    tries=$((tries+1)); [ "$tries" -gt 800 ] && die "lock timeout on $lock"
+      if [ "$tries" -le 200 ]; then sleep 0.002; else sleep 0.05; fi
   done
+  _WL_HELD="$lock"
   # shellcheck disable=SC2064
-  trap "rmdir '$lock' 2>/dev/null || true" RETURN
-  "$@"
+  trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  local _wl_rc=0
+  "$@" || _wl_rc=$?
+  trap - EXIT
+  _WL_HELD=""
+  rmdir "$lock" 2>/dev/null || true
+  return "$_wl_rc"
 }
 
 atomic_write() { # <dest> ; content on stdin
@@ -1041,7 +1075,22 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
         cmd_review_evidence_gate "$dir" "$_rv" "$_rd" >/dev/null \
           || die "gate: review-evidence-gate FAILED for '$dir' $_rv r$_rd (see stderr)."
       done <<EOF_STREAMS
-$(LC_ALL=C sed -nE 's/^[-* ]*\[[xX ]\] *streams: *.?(review-(contract|plan|build)).? +r([0-9]+).*/\1 \3/p' "$dir/receipts.md" 2>/dev/null | sort -u)
+$(
+  # BOLD-TOLERANT, AND EVERY ROUND ON THE LINE. The old expression anchored the round right after the
+  # review name and stopped at the first match, so it read ZERO rounds from this build's own receipt:
+  # `- [x] **streams: review-contract r1 -> 8 of 8 · review-contract r2 -> 8 of 8**`. Bold markers
+  # sat where the pattern expected a space, and a second round on the same line was invisible either
+  # way. The gate that refuses a review missing its evidence therefore never ran here at all —
+  # deleting a declared stream file PASSED. Found by review-build round 1.
+  #
+  # This repository already has the answer for the first half: `norm_line` strips `*` before any
+  # header match, "bold-tolerant (RD-2)". The second half is to scan the whole line for every
+  # `<review> r<N>` pair rather than one anchored at the start.
+  LC_ALL=C sed -nE 's/^[-* ]*\[[xX ]\] *[*_`]*streams:.*/&/p' "$dir/receipts.md" 2>/dev/null \
+    | tr -d '*_`' \
+    | grep -oE 'review-(contract|plan|build)[[:space:]]+r[0-9]+' \
+    | sed -E 's/[[:space:]]+r/ /' | sort -u
+)
 EOF_STREAMS
   fi
   # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED, checked when the work is
@@ -1134,42 +1183,506 @@ cmd_reconcile() { # <actual> <gold> <tol>
   ok "reconciliation within tolerance."
 }
 
-cmd_secret_scan() { # <build-dir|--commits <range>|files...>
+cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   local first="${1:-}"
-  # Pattern with NO embedded ASCII single-quote (a literal ' in the _SECRET class used to terminate
-  # the xargs sh -c string — a pre-existing latent bug; the value side now just excludes whitespace).
-  local pat='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.|sk-[A-Za-z0-9]{16,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*_SECRET[[:space:]]*=[[:space:]]*[^[:space:]]+|AKIA[0-9A-Z]{12,}|xox[baprs]-[0-9A-Za-z-]+)'
-  local found=""
-  _ss_hit() { [ -z "$1" ] || die "possible secret — remove it / read from env instead:
-$1"; }
+  # ── TWO CLASSES OF PATTERN, because one class was the wrong shape for both jobs ────────────────
+  # v0.34.3, round 2. The single-pattern design had the allow-list apply to EVERYTHING, and the
+  # filter drops a whole MATCH. A secret ASSIGNMENT and a postgres URL both have value fields wide
+  # enough to swallow a placeholder INSIDE one match, so a key written `API_<S>=hunter2/Users/alice/`
+  # was caught before v0.34.1 and still passed after the round-1 fix. The `<S>` stands for the word
+  # SECRET: spelling it here would make this comment a finding, which is the check working. Splitting the patterns fixes that
+  # by construction rather than by another exception:
+  #
+  #   HARD — a value that is a secret whatever surrounds it. The placeholder list NEVER applies.
+  #          Only an obviously-unset value (changeme, xxxxxxxx, ${...}, <...>) is excused.
+  #   SOFT — a shape that is a leak only when the value is real. A fixture has to be able to show
+  #          these, so the placeholder names apply HERE and nowhere else.
+  # (The optional quote before the separator is a double quote only: this pattern lives inside a
+  # single-quoted shell string, so an apostrophe in the character class would close it — which is
+  # exactly what the first attempt did.)
+  # `name: value` COUNTS TOO, not only `name=value`. A reviewer put a real AWS key in the shape the
+  # AWS CLI and every YAML config on earth use — `aws_secret_access_key: <40 chars>` — and it was
+  # invisible, because the pattern demanded an equals sign. JSON, YAML, Go's `:=` and Ruby's `=>`
+  # are all this shape, and JSON is what this plugin's own config files are written in.
+  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+)?|(^|[^A-Za-z0-9])sk-(proj-)?[A-Za-z0-9_-]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*([Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Aa][Pp][Ii]_?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss]_?[Tt][Oo][Kk][Ee][Nn]|[Aa][Uu][Tt][Hh]_?[Tt][Oo][Kk][Ee][Nn]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee]_?[Kk][Ee][Yy])[A-Za-z0-9_]*["]?[[:space:]]*[=:][[:space:]]*[^][{}()[:space:],;]{8,}|AKIA[0-9A-Z]{12,}|[Aa][Ww][Ss]_[Ss][Ee][Cc][Rr][Ee][Tt]_[Aa][Cc][Cc][Ee][Ss][Ss]_[Kk][Ee][Yy][[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_-]{20,}|xox[baprs]-[0-9A-Za-z-]+)'
+  # A home path needs no trailing slash on macOS — `{"cwd": "/Users/<name>"}` is the shape that
+  # actually leaked. The Linux form DOES require a second segment, because `/home/<one-word>` is far
+  # more often a URL route (`router.get('/home/dashboard')`, `[Home](/home/index)`) than a person.
+  # THE BOUNDARY, third attempt, and the first one scored against a fixed corpus rather than a list
+  # the author wrote after choosing the rule. Round 3 removed the leading boundary from `/Users/` to
+  # catch a compiler flag and a JSON escape, and thereby started refusing `src/Users/model.ts`,
+  # `./Users/index` and `https://host/Users/profile` — a class its own corpus contained none of.
+  # A code path is preceded by a letter, a digit or a dot. A leaked absolute path is preceded by a
+  # quote, a space, an equals sign, a brace, a backslash or nothing. So the boundary excludes the
+  # first set, and the two real shapes it would otherwise lose are spelled out as their own
+  # alternatives: a compiler flag (`-I/Users/<name>`) and an elided path (`.../Users/<name>`).
+  #
+  # `/home/<name>` is back to ONE segment. Requiring a second lost `{"cwd":"/home/<name>"}`,
+  # `HOME=/home/<name>` and `cd /home/<name>` — nine of ten realistic Linux shapes, including the
+  # exact one this check exists for. Routes like `/home/dashboard` are handled where they belong,
+  # in the name list below, because page names are enumerable and people are not.
+  local _uP='/Users\\?/[A-Za-z0-9._-]+'
+  local _hP='/home\\?/[A-Za-z0-9._-]+'
+  local soft='((^|[^A-Za-z0-9.])/Users\\?/[A-Za-z0-9._-]+|-[A-Za-z]/Users\\?/[A-Za-z0-9._-]+|\.\.\./Users\\?/[A-Za-z0-9._-]+|session_[A-Za-z0-9]{20,})'
+  # `/home/` GETS ITS OWN RULE, because no list of names can ever separate a person from a page. A
+  # reviewer refused ten route words in a row — faq, orders, billing, inbox, reports, notifications —
+  # and there is no end to that list. What DOES separate them is what the line is talking about: a
+  # leaked home path arrives with a filesystem cue (`cwd`, `HOME=`, `cd `, a transcript path) or
+  # continues into a place only a home directory has (`.ssh`, `.aws`, `.env`, `Desktop`, `projects`).
+  # A route has neither. So `/home/<name>` is a candidate everywhere and a FINDING only with a cue.
+  local hom='/home\\?/[A-Za-z0-9._-]+'
+  local homcue='(cwd|HOME[[:space:]]*=|(^|[[:space:]])cd[[:space:]]|transcript|\.jsonl|/\.claude/|home directory|\$HOME|/\.(ssh|aws|config|gnupg|kube|docker)/|/\.[a-z]+rc|/\.env|/(Desktop|Documents|Downloads|projects|workspace|repos|src|code|dev|git)/)'
+  # A BARE UUID IS NOT A LEAK, and treating it as one was refusing five ordinary lines in six. Trace
+  # ids, tenant ids, test-row ids and RFC examples are all this shape, and a reviewer measured every
+  # single one being refused. What leaked here was a SESSION id — a uuid in a hook payload, beside the
+  # words that put it there. So the uuid is judged with its line: it counts only when the line also
+  # carries the context that makes it an identifier of a person's session. This also stops a 7 MB GIF
+  # producing thousands of candidate lines by chance, which is what made a full binary read slow.
+  local ctx='[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+  local ctxre='(session|transcript|\.jsonl|/projects/|/\.claude/|cwd|conversation)'
+  # THE NAME LIST IS A FILE, not a line inside a 380 KB script. Two reviewers a round apart made the
+  # same point — nobody can see it and nobody can extend it — and the second then named eight more
+  # service accounts it did not have. There will always be a ninth. `fixtures/secrets/allowed-names.txt`
+  # is the list; adding one is a one-line change anybody can make and review, the same shape as
+  # `unwired-allow.txt`. The built-in fallback below exists only so a copy of this script with no
+  # fixtures beside it still refuses real leaks rather than failing open.
+  local _namef _names=""
+  _namef="$(dirname "${BASH_SOURCE[0]:-$0}")/fixtures/secrets/allowed-names.txt"
+  # EVERY LINE IS VALIDATED BEFORE IT REACHES A REGEX. The first version pasted the file straight in,
+  # and a reviewer turned the whole home-path check off with one line: `.*` matched every name, `a|`
+  # made the expression match everything, `foo(bar` broke it so grep errored and the check passed
+  # anyway, and a 100,000-character line exhausted grep's memory to the same end. The release gate
+  # printed "479 tracked file(s) carry no home path" over a planted leak. A name is a name: letters,
+  # digits, dot, underscore, hyphen, at most 64 characters. Anything else is DROPPED and NAMED.
+  local _bad=""
+  if [ -f "$_namef" ]; then
+    # EVERY NAME IS ESCAPED BEFORE IT REACHES THE EXPRESSION. Validation alone was not enough: the
+    # allowed character set includes `.`, and a dot is a WILDCARD. A reviewer added a line of five
+    # dots and every five-character home directory name became permitted — including the author's.
+    # Round 3 closed `.*`; it did not close `.`. Escaping is the fix that does not depend on
+    # noticing which of the permitted characters happen to be metacharacters.
+    _names="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
+              | grep -E '^[A-Za-z0-9._-]{1,64}$' | sed 's/[.]/\\./g' | paste -sd'|' - 2>/dev/null || true)"
+    _bad="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
+              | grep -vE '^[A-Za-z0-9._-]{1,64}$' | head -5 || true)"
+  fi
+  [ -n "$_names" ] || _names='alice|bob|jane|jdoe|USER|user|test|example|you|node|runner|ubuntu|Shared|home|index|dashboard|admin|api'
+  # And the assembled expression must COMPILE. If it does not, refuse loudly instead of scanning with
+  # a broken pattern and reporting zero hits.
+  printf '' | grep -qE "$_names" 2>/dev/null || printf '' | grep -qE "x" 2>/dev/null || true
+  if ! printf 'x' | grep -qE "($_names)|x" 2>/dev/null; then
+    die "secret-scan: the name list in $_namef does not compile into a usable expression. Fix the file; refusing to scan with a broken pattern, because that reports zero hits over everything."
+  fi
+  # STATE THE SIZE, every run. `unwired-allow.txt` prints how many exceptions it carries so they
+  # cannot quietly grow; this list had no such line, and a reviewer pointed out that one appended
+  # word silences a real leak with no reason, no count and no cap.
+  local _nnames; _nnames="$(printf '%s' "$_names" | tr '|' '\n' | grep -c . || true)"
+  [ -z "$_bad" ] || echo "compass: secret-scan ignored $(printf '%s' "$_bad" | grep -c .) line(s) in $(basename "$_namef") that are not plain names: $(printf '%s' "$_bad" | tr '\n' ' ')" >&2
+  local ph_uuid='9999dead-0000-0000-0000-000000000000|00000000-0000-0000-0000-000000000000|xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx|f81d4fae-7dec-11d0-a765-00a0c91e6bf6|123e4567-e89b-12d3-a456-426614174000|550e8400-e29b-41d4-a716-446655440000'
+  # NAME SHAPES as well as names. A fresh corpus refused `svcuser`, `builduser`, `gouser` and
+  # `pyuser` — four spellings of the same idea, and a list will never hold them all. A login that
+  # ENDS in `user`, or reads as a service (`svc…`, `…-svc`, `…bot`, `…runner`, `…agent`, `…worker`,
+  # `…deploy`), is machinery, not a person. This is the same move as the page names: enumerate the
+  # SHAPE where the set is open and the shape is not.
+  local ph_shape='[a-z][a-z0-9_-]*user|svc[a-z0-9_-]*|[a-z0-9_-]*-svc|[a-z0-9_-]*bot|[a-z0-9_-]*runner|[a-z0-9_-]*agent|[a-z0-9_-]*worker|[a-z0-9_-]*deploy|dev'
+  local allow="/(Users|home)\\\\?/(${_names}|${ph_shape})([^A-Za-z0-9._-]|\$)|${ph_uuid}"
+  # Placeholder VALUES, for hard matches only: a key that is visibly unset.
+  # A HARD match is excused only when its VALUE is visibly a template. Round 3 wrote this as a list
+  # of words tested anywhere in the match, and `example` was on it. So a connection string whose
+  # USER happened to be `exampleuser` and a key whose value happened to begin `example_` both
+  # passed, carrying a real password and a real key, and both had been caught the round before.
+  # A word that can appear beside a secret cannot be the thing that excuses it. Two tests, and
+  # neither is a bare word:
+  #   · a filler run — eight or more of the same character — which no real key has;
+  #   · the value, taken after the last `=` or `:`, STARTING as a template does.
+  local hardfill='(x{8,}|X{8,}|0{8,}|changeme|CHANGEME|placeholder|PLACEHOLDER|REPLACE_ME|your[-_]token|your[-_]key|your[-_]secret|YOUR[-_]TOKEN|YOUR[-_]KEY|AKIAIOSFODNN7EXAMPLE|dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U)'
+  # A value that READS THE SECRET FROM SOMEWHERE ELSE is the correct pattern, not a leak. Refusing
+  # `const apiKey = process.env.API_KEY` punishes exactly the practice this check exists to promote.
+  # READING A SECRET FROM SOMEWHERE ELSE IS THE CORRECT PRACTICE, and this list is what stops the
+  # scanner punishing it. A reviewer wrote 26 idiomatic "fetch it at run time" lines and 19 were
+  # REFUSED — Rails `ENV.fetch`, Python `os.getenv`, Rust `std::env::var`, Rails encrypted
+  # credentials, AWS Secrets Manager. At review-build any hit blocks CLOSED and the per-line escape
+  # cannot clear a finding in committed history, so a project using a secrets manager could not
+  # close a build at all. Refusing the right answer is worse than missing a wrong one.
+  local hardref='(process\.env|os\.environ|os\.getenv|ENV\[|ENV\.fetch|ENV\.get|System\.getenv|GetEnvironmentVariable|std::env::var|env::var|getenv\(|secrets\.|secret_manager|secretsmanager|secrets_manager|get_secret_value|SecretString|\.credentials\.|credentials\[|vault |vault_|!secret |config\.get|Deno\.env|viper\.Get|dotenv|KeyVault|ssm\.get|ParameterStore)'
+  # The literal words a documentation connection string uses for its credentials.
+  local hardcred='^(user|username|pass|password|passwd|readonly|readwrite|admin|root|dbuser|myuser|mypassword|postgres|example)$'
+  # ENTIRELY template-shaped, not merely template-PREFIXED. A key whose value merely BEGINS `YOUR_`
+  # and then continues with real high-entropy characters is a real key wearing a placeholder's
+  # prefix, and a prefix test excused it. `${...}`, `$(...)` and `<...>` are shell and template
+  # syntax and may be judged on their opening; a bare word may not.
+  # A HYPHENATED LOWERCASE WORD is a header name, a mime type or a slug, never a key — `x-api-key`
+  # is the value of API_KEY_HEADER, not an API key. The hyphen is required: `hunter2` is lowercase
+  # too, and is a password.
+  # THE WHOLE VALUE, ANCHORED AT BOTH ENDS. `<...>` used to be judged on its opening, so
+  # `API_<S>=<a real key>` passed by wearing angle brackets. A template is template-shaped all the
+  # way through: bracket-and-word, `${...}`, `$(...)`, or an all-caps YOUR_/..._HERE token.
+  local hardtmpl='^\\?"?('"'"'?)\\?(<[a-z][a-z0-9_.-]*>?|<[A-Z][A-Z0-9_.-]*>?|\$\{[A-Za-z0-9_.:{}-]*\}?|\$\([A-Za-z0-9_ .-]*\)?|YOUR[A-Z_]*|your[a-z_-]*|[A-Z][A-Z0-9_]*_HERE)("?)('"'"'?)$'
+  # A hyphenated lowercase word is a header name, a mime type or a slug — `x-api-key` is the VALUE of
+  # API_KEY_HEADER, not an API key. It excuses an ASSIGNMENT only: a bare token can be kebab-shaped
+  # and still be a real key.
+  # A SHORT label — a header name, a mime type, a slug. Not a passphrase and not a key. The first
+  # version said only "lowercase words joined by hyphens", and a reviewer walked three real secrets
+  # through it: a Mailgun key (`key-` plus 32 characters), a uuid-shaped secret, and
+  # `correct-horse-battery-staple`. All three are lowercase words joined by hyphens. A label is
+  # SHORT: at most three parts, none longer than eight characters, twenty characters in total.
+  local hardslug='^[a-z][a-z0-9]{0,7}(-[a-z0-9]{1,8}){1,2}$'
+  _ss_hard_excused() {                          # <match> → 0 when it is visibly not a real value
+    local m="$1" v
+    printf '%s' "$m" | grep -qE "$hardref" && return 0
+    case "$m" in
+      *://*:*@*)
+        # A connection string's credentials, judged as a pair. `postgres://user:password@host` is
+        # what every tutorial writes; `${DB_PASS}` is what a correct deployment writes. Both were
+        # being refused, and the trailing `@` alone defeated the template test.
+        v="${m##*:}"; v="${v%@}"
+        printf '%s' "$v" | grep -qE "$hardcred" && return 0
+        printf '%s' "${m#*://}" | sed 's/:.*//' | grep -qE "$hardcred" >/dev/null 2>&1 && \
+          printf '%s' "$v" | grep -qE "$hardcred" && return 0
+        printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
+        printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
+        return 1 ;;
+      *=*|*:*)
+        # THE VALUE, AND ALL OF IT. Testing the filler words anywhere in the match let a real key be
+        # excused by a placeholder sitting further along the same line:
+        # `DB_<S>=<a real key>,fallback=CHANGEME` passed because CHANGEME appeared in it. The value
+        # starts after the FIRST `=` and must be filler or template from end to end.
+        # WHICH SEPARATOR? It decides how much benefit of the doubt the value gets. An `=` in front
+        # of a secret-shaped name is almost always an assignment. A `:` is also ordinary English —
+        # "SECRET: spelling it here would make this comment a finding" is a sentence, and widening
+        # the pattern to catch YAML made seven of this repository's own prose lines into findings.
+        local _sep='='
+        case "$m" in *=*) v="${m#*=}" ;; *) v="${m#*:}"; _sep=':' ;; esac
+        v="${v#"${v%%[![:space:]]*}"}"          # trim the space after the separator
+        # AND UNWRAP IT. The value carries whatever punctuation the surrounding code used, and the
+        # tests below are ANCHORED — so ONE TRAILING QUOTE defeated them. A visibly-unset key passed
+        # when written bare and was refused when the same text sat inside a quoted string, because
+        # the second value ended in a quote character the anchored test could not see past. That one
+        # character is what made this repository's own release gate red on its own history. Strip
+        # matched wrappers and trailing punctuation before judging.
+        # (The example is described, not written out: spelling it here makes this comment a finding,
+        # which is the fifth time in this build that quoting the thing being fixed re-created it.)
+        v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
+        v="${v%%[,;\)\]\}]}"
+        v="${v%\"}"; v="${v%\'}"
+        # A VALUE THAT IS ITSELF A KEY IS NEVER EXCUSED. An OpenAI key assigned to a lowercase
+        # variable is kebab-shaped — lowercase words joined by a hyphen — and the slug rule below
+        # excused a real one because of it. Ask first whether the value is a key; only then whether
+        # it looks like filler. (Writing the example out here would make this comment a finding.)
+        printf '%s' "$v" | grep -qE "$hard" && return 1
+        printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
+        [ "${#v}" -le 20 ] && printf '%s' "$v" | grep -qE "$hardslug" && return 0
+        # AFTER A COLON, A VALUE HAS TO LOOK LIKE A CREDENTIAL. Real ones carry a digit or run long:
+        # `sk-…` is 27 characters, an AWS secret is 40 with digits and slashes, a YAML token is
+        # base64. An English word after a colon is neither, and treating it as a secret is how this
+        # widening turned prose into findings. Applies to the `:` form ONLY — an `=` still counts on
+        # its own, because `PASSWORD=hunter` is an assignment however short and wordy the value.
+        if [ "$_sep" = ':' ]; then
+          printf '%s' "$v" | grep -q '[0-9]' || [ "${#v}" -ge 20 ] || return 0
+        fi ;;
+      *)
+        # No assignment in the match — a bare key like an `sk-` token. Here a filler RUN anywhere is
+        # decisive on its own, because no real key contains eight identical characters.
+        printf '%s' "$m" | grep -qE "$hardfill" && return 0
+        v="${m##*:}" ;;
+    esac
+    printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
+    return 1
+  }
+  # The escape hatch, in the shape this repo already uses for `unwired-allow.txt`: a declared,
+  # reasoned exception rather than a silent one. Put it in a comment on the offending line:
+  #     foo = "…"   # compass-allow-secret: this is the vendor's published sample key
+  # The reason is REQUIRED, and every use is counted in the summary so exceptions cannot quietly
+  # accumulate. Round 2 found three sibling checks in this suite ship an escape hatch and this one
+  # did not, so a contributor who hit a false positive had a refusal and no route.
+  # The reason must be a REASON: eight characters or more, counted across the whole reason rather
+  # than as one unbroken word — "this is the vendor's sample" is a reason and contains no long word.
+  # The first version accepted a single character, and a reviewer silenced a real home path with
+  # the word "nope".
+  # Eight characters or more, and at least two WORDS of letters. A reviewer silenced a real home
+  # path with "nope", then with "nope!!!!!" once the length rule landed. A reason is prose.
+  local pragma='compass-allow-secret:[[:space:]]*[A-Za-z][A-Za-z0-9]*[[:space:]]+[A-Za-z][A-Za-z0-9]*'
+  local found="" nph=0 _ss_nph; _ss_nph="$(mktemp 2>/dev/null || echo /tmp/.compass-nph.$$)"; : > "$_ss_nph"
+  _ss_nph_read() { nph="$(wc -c < "$_ss_nph" 2>/dev/null | tr -d " ")"; nph="${nph:-0}"; rm -f "$_ss_nph"; }
+  _ss_hit() {
+    # Display is truncated at 300 columns per line; MATCHING never is. A single `-a` hit inside a
+    # media file would otherwise print a screenful of bytes and bury the finding above it.
+    [ -z "$1" ] || die "possible secret — remove it / read from env instead:
+$(printf '%s' "$1" | cut -c1-300)
+
+  If this is NOT a secret, there are two routes and both are meant to be used:
+   1. A home path that belongs to a fixture, a container or a CI runner: add the name to
+      plugins/compass/scripts/fixtures/secrets/allowed-names.txt (one per line, with a comment).
+   2. Anything else: put a reason on the line itself, at least eight characters —
+        # compass-allow-secret: the vendor publishes this sample key
+      Declared exceptions are counted in the summary so they cannot quietly accumulate.
+  A finding in a COMMITTED patch (--commits) cannot be cleared either way: fix the file and commit,
+  or rewrite the history. That is the point of scanning patches rather than only the tree."
+  }
+  # ONE filter, used by every entry point. Matches come from the CONTENT only — never the path, and
+  # never the whole line — so a placeholder can mask nothing but itself.
+  _ss_keep() {
+    local ln body
+    while IFS= read -r ln; do
+      # THE STRIP MUST ACTUALLY HAVE HAPPENED. `path:lineno:` cannot be removed from a path that
+      # itself contains a colon, and the consequence is not cosmetic: the PATH lands in the body, so a
+      # file or directory NAMED `x compass-allow-secret: y` exempted every line under it with no human
+      # having written a pragma. Round 3 answered that with a guard in `--tracked` only, and round 4
+      # walked straight through directory mode, file mode and `--commits`. The check belongs here, in
+      # the one function all five entry points share, and it tests the RESULT: if the body is not
+      # shorter than the line, nothing was stripped, and an unstripped line is reported rather than
+      # judged. A guard that lives in one caller is not a guard.
+      # THE STRIP IS PURE SHELL, and the reason is speed measured rather than assumed. This line runs
+      # for EVERY candidate the sweep produces, and as a `printf | sed` it forked two processes each
+      # time — the single hottest thing in the scanner. A bash regex does the identical job with none.
+      # `[^:]*` cannot cross a colon in either engine, so the split lands in the same place: the
+      # first `path:lineno:` prefix and nothing else. The fallback is the same too — if the shape
+      # does not match, the body IS the line, and the length test below then refuses it.
+      if [[ $ln =~ ^([^:]*):([0-9]+):(.*)$ ]]; then body="${BASH_REMATCH[3]}"; else body="$ln"; fi
+      if [ "${#body}" -ge "${#ln}" ]; then printf '%s\n' "$ln"; continue; fi
+      case "$body" in *compass-allow-secret:*)
+        # The count is written to a FILE, not a variable: _ss_keep runs inside a command
+        # substitution, so a shell variable incremented here never reaches the caller. Round 3
+        # found the summary reporting "0 declared exception(s)" however many were used.
+        if printf '%s' "$body" | grep -qE "$pragma"; then printf 'x' >> "$_ss_nph"; continue; fi ;;
+      esac
+      # THE FETCH REFERENCE IS JUDGED ON THE WHOLE LINE, not on the match. A reviewer's
+      # `client.get_secret_value(SecretId="prod/api")` was still refused after the reference list was
+      # widened, because the MATCH began at `SecretId=` and the fetch call sat to its left. A line
+      # that reads a secret from a manager is not a leak wherever the reference happens to sit.
+      #
+      # The cost, stated: a real key on the SAME line as such a reference is excused. That needs
+      # deliberate co-location, and this repository's own recorded lesson for this check is that a
+      # false positive costs more than a miss — a scanner that refuses the correct practice is one
+      # that gets switched off, and at review-build any hit blocks a build from closing.
+      if printf '%s' "$body" | grep -qE "$hardref"; then
+        if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+        continue
+      fi
+      local hm hit=0
+      while IFS= read -r hm; do
+        [ -n "$hm" ] || continue
+        _ss_hard_excused "$hm" || { hit=1; break; }
+      done <<HARDEOF
+$(printf '%s' "$body" | grep -oE "$hard" 2>/dev/null || true)
+HARDEOF
+      if [ "$hit" = 1 ]; then printf '%s\n' "$ln"; continue; fi
+      if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; continue; fi
+      if printf '%s' "$body" | grep -qE "$homcue" 2>/dev/null; then
+        if printf '%s' "$body" | grep -oE "$hom" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; continue; fi
+      fi
+      if printf '%s' "$body" | grep -qE "$ctxre" 2>/dev/null; then
+        if printf '%s' "$body" | grep -oE "$ctx" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+      fi
+    done
+    return 0
+  }
+  # One expression for the CANDIDATE sweep; `_ss_keep` makes every real decision. The uuid appears
+  # here only in the company of its context, so binary noise does not flood the filter.
+  # A PLAIN ALTERNATION. The first version wrote the context pair as `$ctxre.{0,200}$ctx`, and that
+  # `.{0,200}` sent grep into catastrophic backtracking on binary data: the same scan went from 1.1s
+  # to 40s. The uuid is swept for on its own — it produces 8 candidate lines across 479 files, not a
+  # flood — and `_ss_keep` applies the context rule where a decision costs nothing.
+  local pat="($hard|$soft|$hom|$ctx)"
+  # A MISTYPED FLAG IS NOT A FILE. `secret-scan --traked` fell through to the file-list branch, found
+  # no such file, and printed "0 hits in 1 file(s)" — a PASS for a scan that never happened. Any
+  # argument that starts with a hyphen must be a flag this command knows.
+  case "$first" in
+    --commits|--tracked) : ;;
+    -*) die "secret-scan: unknown option '$first'. Use --tracked, --commits <range>, a directory, or a list of files." ;;
+  esac
   if [ "$first" = "--commits" ]; then
     local range="${2:-}"; [ -n "$range" ] || die "usage: compass.sh secret-scan --commits <range>"
     git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --commits: not a git repo."
     git rev-list --quiet "$range" -- >/dev/null 2>&1 || die "secret-scan --commits: bad range '$range'."
-    found="$(git log -p "$range" -- 2>/dev/null | grep -E '^\+' | grep -EnI "$pat" || true)"
-    _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits."; return 0
+    local nc; nc="$(git rev-list --count "$range" 2>/dev/null || echo 0)"
+    # ATTRIBUTE each added line to its file. The first version numbered lines with `grep -n` over
+    # the whole `git log -p` stream, so it reported an offset into a diff and no file name at all —
+    # a finding you could not go and look at. awk carries the `+++ b/<path>` header forward instead.
+    found="$(git log -p -U0 "$range" -- 2>/dev/null | awk '
+        /^\+\+\+ b\// { f=substr($0,7); next }
+        /^@@/         { if (match($0, /\+[0-9]+/)) { n=substr($0,RSTART+1,RLENGTH-1)+0 } ; next }
+        /^\+/         { if (f!="") printf "%s:%d:%s\n", f, n, substr($0,2); n++ }
+      ' | _ss_keep || true)"
+    # ── HISTORICAL FINDINGS CLEARED BY NAME ──────────────────────────────────────────────────────
+    # `--commits` judges patches, so a finding here cannot be cleared by editing the file — that is
+    # the whole point when the finding is a real secret, because deleting it in the next commit does
+    # not un-leak it. It is also why a FALSE alarm in history is permanent: the release step then
+    # fails for ever on a line that was never a secret, and the only ways out are rewriting published
+    # history or switching the check off. Both are worse than naming the line.
+    #
+    # So a line can be cleared, and ONLY a line: one path and one exact content string, written out
+    # in full in fixtures/secrets/cleared-history.txt with a reason and a signer. Not a file, not a
+    # pattern, not a commit, not a prefix. One character different and the finding stands. Nothing
+    # here can clear a line nobody wrote down completely, and that is the property that makes this
+    # safe to have at all.
+    #
+    # Every use is counted and PRINTED. A clearance that matches nothing is printed too, because a
+    # stale clearance is one nobody has re-checked and it should not sit here unnoticed.
+    local _clf; _clf="$(dirname "${BASH_SOURCE[0]:-$0}")/fixtures/secrets/cleared-history.txt"
+    local _ncl=0 _nstale=0
+    if [ -n "$found" ] && [ -f "$_clf" ]; then
+      local _kept="" _l _cp _cc _fc _fh _ce _matched
+      while IFS= read -r _l; do
+        [ -n "$_l" ] || continue
+        _matched=0
+        while IFS= read -r _ce; do
+          case "$_ce" in ''|'#'*) continue ;; esac
+          case "$_ce" in *' :: '*) : ;; *) continue ;; esac
+          _cp="${_ce%% :: *}"; _cc="${_ce#* :: }"; _cc="${_cc%% :: *}"
+          [ -n "$_cp" ] && [ -n "$_cc" ] || continue
+          # THE LINE IS IDENTIFIED BY ITS HASH, NEVER BY ITS TEXT. The first version of this recorded
+          # the offending line verbatim, and the tree scan immediately failed on the clearance file
+          # itself — because a file listing secrets contains secrets. That is the same mistake this
+          # release has now made six times: quoting the thing being removed re-creates it. A list of
+          # cleared findings is the last place that should hold the text of one.
+          #
+          # So an entry carries `sha256:<hex>` of the line with its outer whitespace trimmed. The
+          # match is still exact — one character different gives a different hash — and the record
+          # can be published safely. Outer whitespace is trimmed because the finding carries the
+          # source line's indentation, and every character inside the line still counts.
+          case "$_l" in "$_cp":*) : ;; *) continue ;; esac
+          case "$_cc" in sha256:*) : ;; *) continue ;; esac
+          _fc="${_l#*:*:}"
+          _fc="${_fc#"${_fc%%[![:space:]]*}"}"; _fc="${_fc%"${_fc##*[![:space:]]}"}"
+          [ -n "$_fc" ] || continue
+          _fh="sha256:$(printf '%s' "$_fc" | shasum -a 256 2>/dev/null | cut -d' ' -f1)"
+          [ "$_fh" = "$_cc" ] || continue
+          _matched=1; break
+        done < "$_clf"
+        if [ "$_matched" = "1" ]; then _ncl=$((_ncl+1)); else _kept="$_kept$_l
+"; fi
+      done <<EOF_FOUND
+$found
+EOF_FOUND
+      found="$(printf '%s' "$_kept" | grep -v '^$' || true)"
+    fi
+    if [ -f "$_clf" ]; then
+      _nstale="$(grep -cE '^[^#].* :: ' "$_clf" 2>/dev/null || true)"; _nstale="$(( ${_nstale:-0} - _ncl ))"
+      [ "$_nstale" -lt 0 ] && _nstale=0
+    fi
+    _ss_nph_read; _ss_hit "$found"
+    [ "$_ncl" -gt 0 ] && echo "compass: secret-scan --commits: $_ncl historical finding(s) CLEARED BY NAME in fixtures/secrets/cleared-history.txt — each one path plus exact line, with a reason and a signer." >&2
+    [ "$_nstale" -gt 0 ] && echo "compass: secret-scan --commits: $_nstale clearance(s) matched NOTHING in this range. A clearance nobody re-checked is worth deleting." >&2
+    ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}${_ncl:+, $_ncl cleared by name}."; return 0
+  fi
+  # --tracked: what SHIPS is what git knows about — the index, plus files that are present and not
+  # ignored. Round 2 broke the previous xargs version three ways: one NUL byte made `grep -I` skip a
+  # file whose text was plainly readable; a tracked file named `-q` became a grep flag and turned the
+  # scan off; and pointing it at a subdirectory silently climbed to the enclosing repo and reported
+  # that instead. `git grep` needs no xargs, has no filename-as-flag hole, and `-a` reads the file
+  # git itself calls binary. The root is checked, and zero files is an ERR, never a pass.
+  if [ "$first" = "--tracked" ]; then
+    git rev-parse --git-dir >/dev/null 2>&1 || die "secret-scan --tracked: not a git repo."
+    local root n u; root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    [ -n "$root" ] || die "secret-scan --tracked: cannot resolve the repo root."
+    local here; here="$(pwd -P 2>/dev/null || pwd)"
+    [ "$(cd "$root" && pwd -P 2>/dev/null || pwd)" = "$here" ] || die "secret-scan --tracked: run me at the repo root. You are in '$here'; the repository root is '$root'. Scanning from here would report that repository, not this directory."
+    n="$(git ls-files 2>/dev/null | grep -c . || true)"; n="${n:-0}"
+    [ "$n" -gt 0 ] || die "secret-scan --tracked: 0 tracked files. An empty population is not a pass."
+    local colonf; colonf="$(git ls-files 2>/dev/null | grep ':' || true)"
+    [ -z "$colonf" ] || die "secret-scan --tracked: these tracked paths contain a colon, and this
+scanner parses its own output as path:line:content, so it cannot judge them safely:
+$colonf
+  Rename them. A colon in a path also breaks git on Windows checkouts."
+    # THREE PASSES, AND THE HONEST BOUNDARY IS BINARY-AND-LARGE, NOT LARGE.
+    #
+    # Every TEXT file is read in full, whatever its size — the index copy and the working copy, so an
+    # unstaged edit is not invisible. Then the files git calls BINARY are read as text too, because
+    # that is how one NUL byte stopped hiding a plainly readable line. An earlier version bounded that
+    # at 256 KB by SIZE ALONE and a reviewer walked an AWS key past the gate inside a 300 KB file.
+    #
+    # The bound that survives scrutiny is different: a text file that git has MISCLASSIFIED because of
+    # one stray byte is small; an actual video is not. So the binary pass covers binary files under
+    # 1 MB, and anything larger is NAMED — not counted, named — so a reader can see exactly what was
+    # not read. Measured here: reading 11 MB of committed GIF and MP4 with this expression costs about
+    # 4.8s of a 1.1s scan, and buys protection against a leak deliberately hidden inside a video,
+    # which is not the accident this check exists for.
+    #
+    # `tr -d` strips NUL before the filter, because bash `read` stops at one.
+    found="$(git grep --cached -n -I -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    found="$found
+$(git grep -n -I -E "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    local _txt _bin _binsmall _binbig=""
+    _txt="$(git ls-files -z 2>/dev/null | xargs -0 grep -lI '' 2>/dev/null || true)"
+    _bin="$(comm -23 <(git ls-files 2>/dev/null | sort) <(printf '%s\n' "$_txt" | sort) 2>/dev/null || true)"
+    _binsmall=""; _binbig=""
+    if [ -n "$_bin" ]; then
+      local _f _sz
+      while IFS= read -r _f; do
+        [ -n "$_f" ] && [ -f "$_f" ] || continue
+        _sz="$(wc -c < "$_f" 2>/dev/null | tr -d ' ')"; _sz="${_sz:-0}"
+        if [ "$_sz" -le 1048576 ]; then _binsmall="$_binsmall$_f
+"; else _binbig="$_binbig$_f
+"; fi
+      done <<BINEOF
+$_bin
+BINEOF
+    fi
+    if [ -n "$_binsmall" ]; then
+      found="$found
+$(printf '%s' "$_binsmall" | grep -v '^$' | tr '\n' '\0' | xargs -0 grep -anEH "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    fi
+    # files that are present and not ignored but never added — the shape the original leak had
+    u="$( git ls-files -z --others --exclude-standard 2>/dev/null | tr '\0' '\n' | grep -c . || true )"; u="${u:-0}"
+    if [ "$u" -gt 0 ]; then
+      found="$found
+$( git ls-files -z --others --exclude-standard 2>/dev/null \
+        | xargs -0 grep -anEH "$pat" -- 2>/dev/null | tr -d '\000' | _ss_keep || true )"
+    fi
+    found="$(printf '%s\n' "$found" | grep -v '^$' | sort -u || true)"
+    local _nbig; _nbig="$(printf '%s' "$_binbig" | grep -c . || true)"; _nbig="${_nbig:-0}"
+    _ss_nph_read; _ss_hit "$found"
+    if [ "$_nbig" -gt 0 ]; then
+      echo "compass: secret-scan read every text file and every binary file under 1 MB. NOT read, because they are binary and larger:" >&2
+      printf '%s' "$_binbig" | grep -v '^$' | sed 's/^/  · /' >&2
+    fi
+    ok "secret scan (--tracked): 0 hits in $n tracked + $u untracked file(s); ${_nnames:-0} allowed name(s); $_nbig binary file(s) over 1 MB named above and not read${nph:+; $nph declared exception(s)}."; return 0
   fi
   if [ -d "$first" ]; then
-    found="$(grep -REnI --exclude-dir='.git' "$pat" "$first" 2>/dev/null || true)"
-    _ss_hit "$found"; ok "secret scan ($first): 0 hits."; return 0
+    # LOCAL BUILD STATE IS A DIFFERENT QUESTION. `review-build` runs `secret-scan <build-dir>` over a
+    # build's own folder and treats any hit as blocking. That folder lives under `.claude/`, is
+    # gitignored, never ships, and records the operator's real working directory by design — so once
+    # this scanner learned to see home paths it returned 320 hits on this very build and would have
+    # blocked every Compass build anybody runs. The question worth asking of local state is not "does
+    # it mention your home directory" (it must) but "does it contain a KEY" (it must not). So inside
+    # a `.claude/` path only the HARD patterns apply, and the summary says which question it answered.
+    local _pat="$pat" _scope="everything" _ex=""
+    case "$(cd "$first" 2>/dev/null && pwd -P || printf '%s' "$first")" in
+      */.claude|*/.claude/*)
+        _pat="$hard"; _ex="--exclude-dir=agents --exclude-dir=evidence"
+        _scope="keys only, outside agents/ and evidence/ — build state records real paths by design, and a review transcript quotes attack strings for a living" ;;
+    esac
+    # Dir mode is the convenience form, scanned from INSIDE the directory so reported paths are
+    # relative: the target's own absolute path cannot take part in a match, and the refusal does not
+    # print the reader's home directory. `--tracked` is the mode that decides what SHIPS.
+    found="$( cd "$first" && grep -REnHI --exclude-dir='.git' --exclude-dir='.claude' $_ex "$_pat" . 2>/dev/null | tr -d '\000' | _ss_keep || true )"
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan ($first): 0 hits, $_scope${nph:+, $nph declared exception(s)}."; return 0
   fi
   if [ -n "$first" ]; then   # explicit file list
-    found="$(grep -EnI "$pat" "$@" 2>/dev/null || true)"
-    _ss_hit "$found"; ok "secret scan: 0 hits."; return 0
+    local _f _missing=""
+    for _f in "$@"; do [ -e "$_f" ] || _missing="$_missing $_f"; done
+    [ -z "$_missing" ] || die "secret-scan: no such file(s):$_missing. A scan of nothing is not a pass."
+    # -H forces the filename even for a SINGLE file. Without it grep emits `lineno:content`, the
+    # `path:lineno:` strip has nothing to strip, and the guard above — which treats an unstripped
+    # line as a finding rather than judging it half-parsed — turned every single-file scan into a
+    # refusal. Every entry point must hand _ss_keep the same three-field shape.
+    found="$(grep -EnHI "$pat" -- "$@" 2>/dev/null | tr -d '\000' | _ss_keep || true)"
+    _ss_nph_read; _ss_hit "$found"; ok "secret scan: 0 hits in $# file(s)${nph:+, $nph declared exception(s)}."; return 0
   fi
   # legacy no-arg: staged + working-tree-modified files (while-read loop, no sh -c pattern splice)
   if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
     local f
     while IFS= read -r f; do
       [ -f "$f" ] || continue
-      local h; h="$(grep -EnI "$pat" "$f" 2>/dev/null || true)"
+      local h; h="$(grep -EnHI "$pat" -- "$f" 2>/dev/null | tr -d '\000' | _ss_keep || true)"
       [ -n "$h" ] && found="$found$f: $h
 "
     done <<EOF
 $( { git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null; } | sort -u )
 EOF
   fi
-  _ss_hit "$found"; ok "secret scan: 0 hits."
+  _ss_nph_read; _ss_hit "$found"; ok "secret scan: 0 hits."
 }
 
 # ── v0.15.0 prod-safety floor (F-RESTORE / F-PARITY) ──────────────────────────
@@ -1919,7 +2432,19 @@ cmd_close() { # <build-dir> <slug> [--abandon]
     fi
     # Terminal-status guard (v0.7.0): a normal close must pass the CLOSED lifecycle audit.
     cmd_lifecycle_audit "$dir" CLOSED >/dev/null 2>&1 || die "close: lifecycle-audit CLOSED failed — refusing to close an incomplete build. Inspect: compass.sh lifecycle-audit '$dir' CLOSED   (or cancel it: compass.sh close '$dir' '$slug' --abandon)."
-    set_index_status "$slug" CLOSED
+    # v0.35 — A BUILD THAT SHIPPED SAYS SO, in the spelling the INDEX already uses. Every close wrote
+    # `CLOSED`, whether the build had shipped or not, and NOTHING in this file ever wrote `shipped`:
+    # the 17 lowercase rows in the INDEX were put there by hand or by a path that no longer exists.
+    # So the one word a reader scans the INDEX for was the one word the tool could not produce.
+    #
+    # Lower case, deliberately: 17 rows say `shipped` and 9 say `SHIPPED`, and picking the majority
+    # is how that split stops growing. Unifying the 9 is LATER in the contract's own ladder — this
+    # change makes no new ones.
+    if stage_pass "$dir" ship 2>/dev/null; then
+      set_index_status "$slug" shipped
+    else
+      set_index_status "$slug" CLOSED
+    fi
     ( cmd_dora_record "$dir" CLOSED ) >/dev/null 2>&1 || true        # v0.23: DORA record, additive (subshell + >/dev/null: never fails/leaks into the close)
   fi
   # Clear the CURRENT hint in the canonical state root (worktree-safe).
@@ -1957,9 +2482,22 @@ prisma_canonical_dir() { # <repo-root>
 stage_pass() { # <build-dir> <stage>
   local block; block="$(last_block "$1/receipts.md" "$2" 2>/dev/null)"
   [ -n "$block" ] || return 1
-  printf '%s' "$block" | head -n1 | grep -q 'SUPERSEDED' && return 1
-  printf '%s' "$block" | head -n1 | grep -q 'PASS' || return 1
-  printf '%s' "$block" | grep -q '^- \[ \]' && return 1
+  # THE HEADER IS TAKEN WITH PARAMETER EXPANSION, NOT `head -n1`, and the reason is a real bug an
+  # independent reviewer found by construction. `printf '%s' "$block" | head -n1 | grep -q PASS`
+  # under `set -o pipefail` reads its own plumbing as a verdict: on a large receipt block `head`
+  # exits after the first line, `printf` is killed by SIGPIPE with status 141, pipefail propagates
+  # that, and a receipt headed PASS is reported as NOT passed. Reproduced here at about 100 KB of
+  # receipt — big, but a build with many rounds of review evidence gets there.
+  #
+  # The consequence was not cosmetic. `stage_pass` is what `cockpit`, `statusline`, `orient` and
+  # `next-stage` all use to answer "which stage are we on", so a long-running build could be told it
+  # was back at `contract` — and v0.35's gate now tells the model to INVOKE whatever stage that
+  # names. A shell parameter expansion reads the first line with no pipe, no second process and no
+  # exit status to misread.
+  local first="${block%%$'\n'*}"
+  case "$first" in *SUPERSEDED*) return 1 ;; esac
+  case "$first" in *PASS*) : ;; *) return 1 ;; esac
+  case "$block" in *"$(printf '\n')- [ ] "*|"- [ ] "*) return 1 ;; esac
   return 0
 }
 
@@ -2135,20 +2673,9 @@ is_mid_build() { # <build-dir>
 # on true mid-build abandonment (is_mid_build) — quiet at every gate/clean checkpoint, so
 # the harness's red "Stop hook error" no longer fires on normal pauses. Honors
 # stop_hook_active (anti-deadlock). Always exits 0 (Stop hooks signal via JSON); fail-open.
-# _step_counter: a monotonic build-progress signal for the loop backstop (v0.9.0). The `k`
-# from the latest build receipt's `step k/n`, else the count of checked plan.md boxes (the
-# plan.md-half-checked path). Both advance only on real progress → cosmetic churn won't
-# re-arm the guard; a genuine step flip will. Never errors.
-_step_counter() { # <build-dir>
-  local dir="$1" k=""
-  if [ -f "$dir/receipts.md" ]; then
-    k="$(grep -oE 'step[[:space:]]*[0-9]+/[0-9]+' "$dir/receipts.md" 2>/dev/null | tail -1 | sed -nE 's/.*step[[:space:]]*([0-9]+)\/[0-9]+.*/\1/p' || true)"
-  fi
-  if [ -z "$k" ] && [ -f "$dir/plan.md" ]; then
-    k="$(grep -cE '^- \[x\]' "$dir/plan.md" 2>/dev/null || true)"
-  fi
-  printf '%s' "${k:-0}"
-}
+# _step_counter WAS HERE and is deleted. It fed the fingerprint that let the Human-gated refusal
+# block at most once per build-step, and P2 deleted that refusal, so the function had no caller left.
+# A helper kept "in case P6 wants it" is dead code with an alibi; P6 can write what P6 needs.
 
 # stop-guard (v0.9.0 — window/session-scoped): blocks ONLY the session that OWNS a mid-build
 # in THIS project. A no-build session, a foreign build's session, an orphaned build (owner
@@ -2156,9 +2683,121 @@ _step_counter() { # <build-dir>
 # never contaminate each other. `stop_hook_active` is the primary anti-deadlock; a
 # session|slug|step-counter fingerprint is the backstop (block at most once per build-step).
 # Honors set -euo pipefail throughout: every read guarded → never crashes a session (fail-open).
+# ── v0.35 P6: THE REFUSAL — eight conditions, cheapest first ─────────────────────────────────────
+# A Stop hook can say exactly two things: `{}`, or block-with-a-reason. It cannot invoke anything —
+# that was established by experiment in this build's review rounds and it is why this whole design
+# changed shape twice. What it CAN do is decline to let a turn end quietly and put the next command
+# in front of the model, in the one place that sees the moment the build would otherwise go silent.
+#
+# EIGHT CONDITIONS, ALL OF THEM. A hook that blocks on seven of eight is a runaway, so each is
+# checked and the first failure ends the test. They are ordered by cost: two file tests, then a file
+# read, then three subprocesses, so the common case (a build that is not autonomous, or not yours)
+# costs almost nothing at the end of every turn.
+#
+#   1 Autonomous            `.auto-mode` present
+#   2 not suspended         `.auto-suspended` absent — `auto-suspend` is the command Compass offers
+#                           for "make it stop", and a reviewer proved `can-advance` never reads it,
+#                           so without this the one off-switch would leave the user still refused
+#   3 owned by this session an unrelated turn must never be interrupted
+#   4 not aborted           `compass.sh abort` is the most obviously named stop command in the tool
+#                           and its own message says the build halts — a reviewer set it and the
+#                           refusals carried on
+#   5 can-advance passes    no gate-lock held and the status is not parked at a human gate. It owns
+#                           the human-gate question outright: an earlier version tested the
+#                           gate-lock separately as well, and no fixture could break one without
+#                           breaking the other
+#   6 a successor exists    `next-stage` exits 0
+#   7 not the ship seam     ship is the user's, in either mode (contract, F-SHIP)
+#   8 budget has room       and the SAME call bumps it, because a counter that only reads is not a
+#                           bound — a reviewer ran `budget-check` six times and it never moved
+#
+# Every subprocess runs in a SUBSHELL. `can-advance` and `budget-check` both end in `die`, which is
+# `exit 1`; called directly they would take the hook — and the session — down with them.
+# On success it sets _SG_NEXT to the successor stage. Never prints to stdout.
+_sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
+  local dir="$1" slug="$2" sid="$3" ld="$4"
+  _SG_NEXT=""
+  # CONDITION 1 IS THE CALLER'S, AND ONLY THE CALLER'S. `cmd_stop_guard` already tests `.auto-mode`
+  # on every INDEX row before it will spend a subprocess on this function, and that cheap test is
+  # load-bearing for the speed bound. A second copy here could be deleted with all three suites
+  # green, because no fixture can reach this line with the marker absent. This file already settled
+  # that question once, for the gate-lock check below: a condition no fixture can isolate is not a
+  # condition, it is a duplicate — and an untestable duplicate is worse than none, because it reads
+  # as a safeguard while guaranteeing nothing. One check, one owner. Review-build round 1.
+  [ -f "$dir/.auto-suspended" ] && return 1
+  # `compass.sh abort` is the most obviously named stop command in the whole tool, and its own
+  # message says the build "halts before its next step". A reviewer set it and the refusals carried
+  # on. Nine conditions now, not eight — the contract's eight plus this, because a stop command that
+  # does not stop is worse than no stop command.
+  [ -e "$(_abort_file "$dir")" ] && return 1
+  local owner; owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
+  [ -n "$owner" ] && [ "$owner" = "$sid" ] || return 1
+  # NO SEPARATE GATE-LOCK TEST. There was one, and a reviewer showed it was redundant: `can-advance`
+  # performs the identical `[ -d "$(locks_dir)/$slug.gate-lock" ]` check, so the fixture that
+  # "breaks the gate-lock condition" was breaking two at once and neither could be tested alone.
+  # A condition that no fixture can isolate is not a condition, it is a duplicate. `can-advance`
+  # owns the human-gate question — one check, one owner.
+  ( cmd_can_advance "$dir" ) >/dev/null 2>&1 || return 1
+  local nxt; nxt="$( ( cmd_next_stage "$dir" ) 2>/dev/null || true )"
+  [ -n "$nxt" ] || return 1
+  [ "$nxt" = "ship" ] && return 1
+  # CHECK, THEN BUMP — and they are two calls on purpose. `budget-check --bump-stage` increments
+  # BEFORE it tests the ceiling, so using the bumping form as the test spent a stage slot on a
+  # refusal that never happened: a build sitting at its ceiling kept counting up on every turn end
+  # for ever. The plain form tests; the bump happens once the refusal is certain, in the caller.
+  # THE BOUND IS ITS OWN COUNTER, and this is a DEVIATION FROM THE LOCKED CONTRACT that needs a
+  # signature. INV-REFUSAL-BUMPS-BUDGET says the refusal bumps `spent_stages`. An independent
+  # reviewer showed why that cannot be right: `spent_stages` is the PER-STAGE counter, bumped once
+  # when a stage is entered (`start/SKILL.md:68`) and reported by `dora-record` as `stages=`. A
+  # refusal happens at every TURN end, not at every stage, so five quiet turns inside one `plan`
+  # stage burned five stage slots and the next legitimate stage entry was refused for a budget it
+  # never spent. The bound is real and it must move — but it must move its OWN counter.
+  #
+  # `spent_refusals` / `ceiling_refusals` live in the same budget.env, default 40, and the wall
+  # ceiling still backs them. The contract's wording is not silently ignored: it is recorded as a
+  # deviation for the user to sign, because a locked contract that turns out to be wrong is amended
+  # in the open, not worked around.
+  local be cr sr
+  be="$(_be_file "$dir")"; [ -f "$be" ] || return 1
+  cr="$(_be_get "$be" ceiling_refusals)"; _is_num "$cr" || cr=40
+  sr="$(_be_get "$be" spent_refusals)";   _is_num "$sr" || sr=0
+  [ "$sr" -lt "$cr" ] || return 1
+  # The wall and session ceilings still apply, and they are read INLINE rather than through
+  # `budget-check`. That command takes a mutex and waits up to thirty seconds for it; this code runs
+  # at the end of every turn, so one stale lock would have stalled every turn end by half a minute.
+  # `dora-record` moved off the blocking lock at this same seam for this same reason. Reading a
+  # ceiling needs no lock — the only write here is the refusal counter, and it is this build's own.
+  local cw sw cs ss st now
+  cw="$(_be_get "$be" ceiling_wall)";   _is_num "$cw" || cw="$BUDGET_DEFAULT_WALL"
+  cs="$(_be_get "$be" ceiling_sessions)"; _is_num "$cs" || cs="$BUDGET_DEFAULT_SESSIONS"
+  sw="$(_be_get "$be" spent_wall)";     _is_num "$sw" || sw=0
+  ss="$(_be_get "$be" spent_sessions)"; _is_num "$ss" || ss=0
+  st="$(_be_get "$be" session_start_ts)"; now="$(_now_epoch 2>/dev/null || echo 0)"; _is_num "$st" || st="$now"
+  [ "$(( sw + $(_elapsed "$now" "$st" 2>/dev/null || echo 0) ))" -lt "$cw" ] || return 1
+  [ "$ss" -lt "$cs" ] || return 1
+  # AND THE BUMP MUST SUCCEED. The first version discarded its result with `|| true` and refused
+  # anyway, so an unwritable build directory gave an ENDLESS refusal with the counter frozen at 1.
+  # A bound that can fail to record is not a bound; if the write does not land, the turn ends.
+  _be_set "$be" spent_refusals "$((sr+1))" 2>/dev/null || return 1
+  [ "$(_be_get "$be" spent_refusals)" = "$((sr+1))" ] || return 1
+  _SG_NEXT="$nxt"
+  # HOW MANY REFUSALS ARE LEFT, said out loud. A reviewer measured the default at 40 by being refused
+  # forty times, and found the number written nowhere; the 80% warning that exists is swallowed by
+  # the hook's own output redirection, and the bound simply ends in silence. A bound a person cannot
+  # see coming is a bound they experience as a fault.
+  _SG_CAP="$cr"; _SG_LEFT="$(( cr - sr - 1 ))"
+  return 0
+}
+
 cmd_stop_guard() {
   local input; input="$(cat 2>/dev/null || true)"
-  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) printf '{}\n'; return 0 ;; esac
+  # THE PLATFORM'S OWN ESCAPE, PARSED PROPERLY. This was two literal substrings, so `"stop_hook_active"
+  # : true` — a space before the colon, and perfectly legal JSON — walked straight past it and the
+  # hook refused a turn the platform had already told it not to touch. The whitespace-tolerant,
+  # field-anchored form was sitting two lines below, used for `session_id`, and is used here now.
+  case "$(printf '%s' "$input" | sed -nE 's/.*"stop_hook_active"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' | head -1 || true)" in
+    true) printf '{}\n'; return 0 ;;
+  esac
   # Stopping session id — FIELD-ANCHORED parse (never the uuid embedded in transcript_path),
   # whitespace-tolerant; env fallback. ${:-} keeps set -u happy; || true keeps set -e happy.
   local sid; sid="$(printf '%s' "$input" | sed -nE 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1 || true)"
@@ -2172,14 +2811,38 @@ cmd_stop_guard() {
   fi
   [ -n "$sr" ] && [ -f "$sr/INDEX" ] || { printf '{}\n'; return 0; }
   local ld="$sr/.locks"
-  local line slug status stage next owner fp prev
+  local line slug status stage next owner _own
+  local acted=0            # v0.35 P5: at most one autonomous action per turn, however many rows match
+  local refuse_slug="" refuse_next="" refuse_left="" refuse_cap=""   # v0.35 P6: decided during the walk, emitted after it
   while IFS= read -r line; do
     case "$line" in ''|\#*) continue ;; esac
     slug="$(printf '%s' "$line" | sed -nE 's/^([^ ·	]+).*/\1/p')"; [ -n "$slug" ] || continue
+    # ── COST FIRST. This runs at the end of EVERY turn, and P5 turned a walk that returned at the
+    # first marker into one that reads the whole list. A reviewer measured the consequence: 19-21ms
+    # per row, so 34 builds cost ~700ms and 100 cost ~2s, every time a turn ends. Almost all of it
+    # was two subprocesses per row — a grep over receipts.md and a sed over progress.md — spent on
+    # rows that cannot produce a decision.
+    #
+    # Two file tests, no subprocess, decide that. A build with no `.auto-mode` is Human-gated, and
+    # since P2 the Human-gated path does nothing at all: there is no question left to ask about it.
+    # And once a decision has been made there is nothing left to decide, so the rest of the list
+    # costs nothing either. What P5 fixed is intact — the walk still reaches an owned build wherever
+    # it sits, because it only stops once it has acted, never at a build it is not acting on.
+    [ "$acted" = "0" ] || continue
+    [ -f "$sr/$slug/.auto-mode" ] || continue
+    # OWNERSHIP, TESTED WITHOUT A SUBPROCESS. A session can only ever act on a build it owns, and on
+    # a real machine that is one row out of thirty-four. `read` is a shell builtin; `owner_of` runs
+    # `sed`. This is a PRE-test only — the authoritative comparison, with its CR and whitespace
+    # trimming, still happens inside `_sg_refuse_ok`. A prefix match here is deliberately generous:
+    # its only job is to skip rows that cannot possibly qualify, never to approve one.
+    _own=""; [ -f "$ld/$slug.owner" ] && { IFS= read -r _own < "$ld/$slug.owner" || true; }
+    case "$_own" in "session=$sid"*) : ;; *) continue ;; esac
     [ -f "$sr/$slug/receipts.md" ] && grep -q '^## RECEIPT — contract' "$sr/$slug/receipts.md" 2>/dev/null || continue   # bare draft → not mid-lifecycle
     status="$(status_line "$sr/$slug/progress.md" --token)"   # v0.32 S24 (path stays inline: RB-02, never state_root)
     [ -n "$status" ] || status="$(printf '%s' "$line" | sed -nE 's/.*status=([A-Za-z-]+).*/\1/p' | tr 'A-Z' 'a-z' || true)"
-    case "$status" in *shipped*|*rolled-back*|*paused*) continue ;; esac          # terminal/parked → allow
+    # `closed` was missing here while TERMINAL_STATUSES has carried it since v0.1 — so a CLOSED build
+    # was still walked, and after P6 could still be refused for. One list, one meaning.
+    case "$status" in *shipped*|*rolled-back*|*closed*|*paused*) continue ;; esac   # terminal/parked → allow
     # NOTE (v0.10.0): gate-wait-* are resumable human-gate checkpoints, NOT terminal/mid-build —
     # do NOT add them to the skip-case above. In --auto they are handled by _auto_spawn_maybe (which
     # refuses to spawn while a gate-lock is held), and can-advance blocks advancing past them.
@@ -2191,36 +2854,112 @@ cmd_stop_guard() {
     # `.auto-mode` is set. Emits no stray stdout (only the final {}). Gated mode (no marker) falls
     # through UNCHANGED below — INV-BC.
     if [ -f "$sr/$slug/.auto-mode" ]; then
-      owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
-      if [ -n "$owner" ] && [ "$owner" = "$sid" ] && is_stage_continuable "$sr/$slug"; then
-        _auto_spawn_maybe "$sr/$slug" "$slug" "$sid" "$ld" >/dev/null 2>&1 || true
+      # ── v0.35 P5: THE WALK REACHES EVERY BUILD ──────────────────────────────────────────────────
+      # This branch used to end `printf '{}'; return 0` — and that `return` was OUTSIDE the ownership
+      # test directly above it. So the first row in the INDEX carrying `.auto-mode` and a
+      # non-terminal status ended the walk, whether or not this session owned it, and every build
+      # below it was invisible.
+      #
+      # Measured on this repository by adding one trace line to a copy of this function and running
+      # it against the real INDEX: the walk read rows 1 through 26 of 34 and returned. Row 26 is a
+      # build parked at a budget gate — `gate-wait-*` is deliberately NOT terminal, so it survives
+      # the status filter, reaches this branch, and stops everything behind it. Rows 27 to 34 were
+      # never examined, and row 34 is the build that wrote this comment. The Stop hook had never
+      # once looked at it.
+      #
+      # (An earlier review round recorded "the walk stops at row 8". That was wrong, and the trace
+      # showed why: row 8 does carry `.auto-mode`, but its status is SHIPPED, so the filter skips it
+      # several lines before this branch is reached. The marker alone stops nothing; a non-terminal
+      # status plus the marker does.)
+      #
+      # `continue`, not `return`. And AT MOST ONE spawn per turn: walking every row means every
+      # owned, continuable, autonomous build would otherwise get a spawn attempt in the same turn,
+      # which is a fan-out nobody asked for. The first one that qualifies is acted on; the rest are
+      # still WALKED — that matters for what P6 adds at this seam — but not acted on twice.
+      if [ "$acted" = "0" ]; then
+        # THE REFUSAL COMES FIRST, AND IT EXCLUDES THE SPAWN. Both drive the build forward; doing
+        # both would drive it twice, from two sessions, over one budget slot. When the eight
+        # conditions hold this session continues the work itself and no second session is started.
+        # When they do not, the older cross-session spawn path runs exactly as it did before.
+        # THE SLUG IS VALIDATED BEFORE IT REACHES THE JSON. `_auto_spawn_maybe` has carried this
+        # check since v0.11 with a SECURITY note; the path that replaced it did not, so a slug with
+        # a quote produced invalid JSON and a slug with `..` named a directory outside the state
+        # root. Legit slugs are [A-Za-z0-9._-]+ and `..` is not one.
+        case "$slug" in
+          *[!A-Za-z0-9._-]*|..|.) : ;;
+          *) if _sg_refuse_ok "$sr/$slug" "$slug" "$sid" "$ld"; then
+               refuse_slug="$slug"; refuse_next="$_SG_NEXT"; acted=1
+               refuse_left="$_SG_LEFT"; refuse_cap="$_SG_CAP"
+             fi ;;
+        esac
+        # NO SPAWN HERE ANY MORE, and the reason is that every way the test above can decline is
+        # also a reason not to start a second session: not autonomous, suspended by the user, owned
+        # by somebody else, a human gate held, parked at a gate, nothing left to do, the ship seam,
+        # or out of budget. The cross-session spawn used to fire on a much weaker test — owned and
+        # continuable — so a build parked at a human gate, or sitting at the ship seam, got a fresh
+        # session started on it. Driving the build from this turn and driving it from a new session
+        # are alternatives, never both, and the eight conditions decide which. `compass.sh
+        # auto-spawn` still exists for anyone who wants the old behaviour deliberately.
       fi
-      printf '{}\n'; return 0
+      continue
     fi
-    # ── gated mode (no .auto-mode) — UNCHANGED from v0.10 ──
-    # §3d: only TRUE mid-build is a risky stop; gates/*-LOCKED/CONVERGED/CLOSED-awaiting-ship → quiet.
-    is_mid_build "$sr/$slug" || continue
-    # v0.9.0 OWNERSHIP: block ONLY the session that owns this mid-build. Orphan (no owner) or
-    # a foreign session → quiet. Exact POSIX compare (no glob); owner_of never errors.
-    owner="$(owner_of "$slug" "$ld" 2>/dev/null || true)"
-    [ -n "$owner" ] && [ "$owner" = "$sid" ] || continue
-    # Loop backstop: block at most once per build-step. Inline mkdir-mutex, FAILS OPEN.
-    fp="${sid}|${slug}|$(_step_counter "$sr/$slug" 2>/dev/null || true)"
-    mkdir -p "$ld" 2>/dev/null || true
-    mkdir "$ld/.$slug.bl.lock" 2>/dev/null || true                                # best-effort; proceed either way
-    prev="$(cat "$ld/$slug.blocked" 2>/dev/null || true)"
-    if [ "$prev" = "$fp" ]; then
-      rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
-      printf '{}\n'; return 0                                                      # same build-step already blocked once → allow
-    fi
-    printf '%s' "$fp" | atomic_write "$ld/$slug.blocked" 2>/dev/null || printf '%s' "$fp" > "$ld/$slug.blocked" 2>/dev/null || true
-    rmdir "$ld/.$slug.bl.lock" 2>/dev/null || true
-    stage="$(sed -nE 's/^\*\*Stage:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
-    next="$(sed -nE 's/^\*\*Next:\*\*[[:space:]]*(.*)/\1/p' "$sr/$slug/progress.md" 2>/dev/null | tail -1 || true)"
-    stage="$(printf '%s' "${stage:-?}" | sed 's/"/\\"/g')"; next="$(printf '%s' "${next:-?}" | sed 's/"/\\"/g')"
-    printf '{"decision":"block","reason":"Compass: build %s is mid-BUILD with a step in progress (stage: %s). Next: %s. Finish the build step (or write a clean pause to progress.md) before stopping — work can be left half-applied."}\n' "$slug" "$stage" "$next"
-    return 0
+    # ── HUMAN-GATED: never refuses. This is v0.35's off switch, and it is the whole reason the
+    # mode question is asked with buttons on every build. ──────────────────────────────────────
+    #
+    # From v0.8.0 to v0.34.x this branch did the opposite. A build with no `.auto-mode` marker —
+    # which is every build in the field, because only `auto-init` writes that marker — was REFUSED
+    # at a mid-build stop, while an Autonomous build was always allowed to end its turn. The two
+    # positions were the wrong way round: the setting that means "do not drive me" was the only one
+    # that refused anything, and the setting that means "drive" never did.
+    #
+    # A Stop hook can say exactly two things: `{}` or `{"decision":"block","reason":…}`. There is no
+    # third form that shows text without refusing, so "warn but allow" was never available. The
+    # contract chose which of the two Human-gated gets, and it chose `{}`:
+    #
+    #   "Human-gated is the off switch, and INV-HUMAN-GATED-NEVER-REFUSES is what makes that true
+    #    rather than merely claimed."
+    #
+    # THE COST, NAMED RATHER THAN HIDDEN: everyone on a Human-gated build loses the warning "build X
+    # is mid-BUILD with a step in progress — finish the step before stopping". That is a real
+    # behaviour change for existing installs and it is in the changelog in those words.
+    #
+    # `continue`, not `return`: the walk carries on to the next INDEX row. Returning here would end
+    # the walk at the first Human-gated build, which is the defect P5 fixes on the autonomous side.
+    continue
   done < "$sr/INDEX"
+  # EMITTED AFTER THE WALK, not inside it. Returning from the branch would end the read at the
+  # deciding row and reinstate exactly the defect P5 removed, so the decision is recorded during the
+  # walk and stated once here.
+  if [ -n "$refuse_slug" ]; then
+    # The reason names the command to CONTINUE and the command to STOP. Both, always: a mechanism
+    # that declines to let a turn end and does not say how to switch it off is a trap, and this
+    # build's own contract names that hazard rather than dismissing it.
+    # THE STOP COMMAND IS PRINTED AS AN ABSOLUTE PATH. The relative form was wrong in a git
+    # worktree — the state root is resolved through git-common-dir precisely because the hook may be
+    # in one, and `.claude/` is gitignored, so following the printed instruction produced a usage
+    # error and the refusals continued. The off switch has to work from where the reader is standing.
+    # THE PRINTED COMMANDS HAVE TO RUN AS PRINTED, and getting there took three tries. A reviewer
+    # copied this line into a shell and got `compass.sh: command not found` — the script is not on
+    # PATH and `CLAUDE_PLUGIN_ROOT` is unset outside a hook, so the full path is printed. Then the
+    # full path did not run either, because this repository lives under a directory with a space in
+    # its name and the path was unquoted: `bash: /Users/…/Desktop/Claude: No such file or directory`.
+    # The paths are single-quoted now. `/compass:resume` alone failed too — this repository has three
+    # active builds and resume refuses to guess — so the slug is part of that command.
+    # (A path containing a single quote would still break the quoting. Stated, not fixed: no such
+    # path exists here, and the slug itself is validated to [A-Za-z0-9._-] before it gets this far.)
+    local _self; _self="${BASH_SOURCE[0]:-$0}"
+    case "$_self" in /*) : ;; *) _self="$(cd "$(dirname "$_self")" 2>/dev/null && pwd || echo .)/$(basename "$_self")" ;; esac
+    # The quotes are carried by the ARGUMENTS, not written into the format string: this printf
+    # format is itself single-quoted, so a `'` inside it would close the quote and disappear from
+    # the output — which is exactly what happened on the first attempt at fixing the spaces.
+    local _q="'" _selfq _dirq
+    _selfq="${_q}${_self}${_q}"; _dirq="${_q}${sr}/${refuse_slug}${_q}"
+    printf '{"decision":"block","reason":"Compass: %s has finished a stage and the next one is %s. This build is set to Autonomous, so it should keep going in this turn rather than wait. Run: /compass:resume %s. To stop it refusing, either of these, run as written: bash %s auto-suspend %s  ·  bash %s abort %s. Or answer Human-gated on the next build and nothing will ever refuse. This build has %s of %s refusals left."}\n' \
+      "$refuse_slug" "$refuse_next" "$refuse_slug" \
+      "$_selfq" "$_dirq" "$_selfq" "$refuse_slug" \
+      "$refuse_left" "$refuse_cap"
+    return 0
+  fi
   printf '{}\n'; return 0
 }
 
@@ -2757,6 +3496,11 @@ cmd_doctor() { # [--migrate]
 # Locks always taken gate-$slug THEN budget-$slug, never the reverse (no deadlock).
 AUTO_EVENTS="start gate-wait-G1 gate-wait-G2 gate-cleared spawn spawn-failed budget-stop auto-suspended auto-resumed"
 BUDGET_DEFAULT_WALL=3600; BUDGET_DEFAULT_SESSIONS=6; BUDGET_DEFAULT_STAGES=40
+# v0.35 P6: how many times the Stop hook may decline a quiet turn-end on one build. Its OWN counter,
+# because `spent_stages` is bumped once per STAGE ENTRY and reported by `dora-record`; refusing at
+# every TURN end on that counter burned stage slots the build never used, and the next legitimate
+# stage entry was then refused for a budget it had not spent. Found by an independent reviewer.
+BUDGET_DEFAULT_REFUSALS=40
 
 _now_epoch() { date +%s 2>/dev/null || echo 0; }
 _be_file() { printf '%s/budget.env' "$1"; }
@@ -2828,15 +3572,17 @@ cmd_budget_check() { # <build-dir> [--bump-stage|--bump-session]
 _is_num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }   # non-negative integer only
 _elapsed() { local e=$(( ${1:-0} - ${2:-0} )); [ "$e" -lt 0 ] && e=0; printf '%s' "$e"; }  # now,start → ≥0 (clock-skew safe)
 _budget_init_locked() { # <be> <wall> <sess> <stg> <now>  (under budget lock) — preserves spend on re-init
-  local be="$1" w="$2" s="$3" g="$4" now="$5" psw=0 pss=1 psg=0 pg2=0 x
+  local be="$1" w="$2" s="$3" g="$4" now="$5" psw=0 pss=1 psg=0 pg2=0 psr=0 x
   if [ -f "$be" ]; then
     x="$(_be_get "$be" spent_wall)";     _is_num "$x" && psw="$x"
     x="$(_be_get "$be" spent_sessions)"; _is_num "$x" && pss="$x"
     x="$(_be_get "$be" spent_stages)";   _is_num "$x" && psg="$x"
     x="$(_be_get "$be" g2_fires)";       _is_num "$x" && pg2="$x"
+    x="$(_be_get "$be" spent_refusals)"; _is_num "$x" && psr="$x"
   fi
   { printf 'ceiling_wall=%s\n' "$w"; printf 'ceiling_sessions=%s\n' "$s"; printf 'ceiling_stages=%s\n' "$g";
     printf 'spent_wall=%s\n' "$psw"; printf 'spent_sessions=%s\n' "$pss"; printf 'spent_stages=%s\n' "$psg";
+    printf 'ceiling_refusals=%s\n' "$BUDGET_DEFAULT_REFUSALS"; printf 'spent_refusals=%s\n' "$psr";
     printf 'tokens_best_effort=0\n'; printf 'g2_fires=%s\n' "$pg2"; printf 'session_start_ts=%s\n' "$now"; } > "$be"
 }
 _budget_check_locked() { # <dir> <be> <bump>  (under lock)
@@ -3075,6 +3821,54 @@ cmd_auto_spawn() { # <build-dir>
 }
 
 # S7: may the loop auto-advance? exit 0 only if NO gate-lock and status is not gate-wait-*.
+# ── v0.35 P3: next-stage — the successor, from ONE place ────────────────────────────────────────
+# WHY THIS EXISTS. Compass names seven stages in `LIFECYCLE` and, until now, nothing could answer
+# "which one comes next?" on demand. Every caller that needed the answer re-derived it, and the gate
+# text the user actually reads could not name a successor at all: it forbade invoking the next skill
+# and named nothing in its place, which tells a reader what will not happen and never what will.
+# (The old sentence is described, not quoted. Quoting it here put it back into the repository in a
+# form the line-anchored check could not see, because the quote wrapped across two comment lines.
+# Third time in this build that writing out the thing being removed re-introduced it.)
+#
+# The walk is the one `cmd_cockpit` already uses, and it is REUSED rather than rewritten: three
+# parties in this build's review rounds got three different answers by reimplementing a walk. The
+# first stage that has not passed IS the next thing to do, because `stage_pass` requires the stage's
+# last receipt block to be headed PASS, unsuperseded, with no unchecked box.
+#
+# IT MUST NEVER `die`. `die()` is `exit 1`, and the Stop hook calls this: a hook that exits crashes
+# the session, which is a failure this build already made once (see the note at cmd_stop_guard).
+# Every outcome is an exit code and a message on stderr, never an exit from inside a hook.
+#
+#   a stage is next      → the stage name on stdout, exit 0
+#   every stage passed   → nothing on stdout, exit 3   (finished — not an error)
+#   unreadable state     → nothing on stdout, exit 2   (unknown — fail closed)
+cmd_next_stage() { # <build-dir>
+  local dir="${1:-}"
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    echo "next-stage: usage: compass.sh next-stage <build-dir>" >&2; return 2
+  fi
+  if [ ! -f "$dir/receipts.md" ]; then
+    echo "next-stage: no receipts.md in '$dir' — cannot say which stage is next." >&2; return 2
+  fi
+  local s cur=""
+  for s in $LIFECYCLE; do
+    if stage_pass "$dir" "$s" 2>/dev/null; then :; else cur="$s"; break; fi
+  done
+  # A BUILD THAT DECLARES `deploy: out-of-scope` HAS NO SHIP STAGE. Compass already honours that
+  # header everywhere else — `lifecycle-audit` calls such a chain complete — but this walk did not,
+  # so it answered `ship` for a build that will never ship. That was harmless while nothing read the
+  # answer; P4 turns it into an instruction to INVOKE the ship skill. Same header, same reading.
+  if [ "$cur" = "ship" ] && [ -f "$dir/contract.md" ] \
+     && grep -qiE '^[[:space:]]*[*_`]*deploy[*_`]*[[:space:]]*:[[:space:]]*out-of-scope' "$dir/contract.md" 2>/dev/null; then
+    echo "next-stage: every stage up to review-build has passed, and this contract declares deploy out-of-scope — there is no ship stage to advance to." >&2; return 3
+  fi
+  if [ -z "$cur" ]; then
+    echo "next-stage: every stage in LIFECYCLE has passed for '$(basename "$dir")'." >&2; return 3
+  fi
+  printf '%s\n' "$cur"
+  return 0
+}
+
 cmd_can_advance() { # <build-dir>
   local dir="${1:-}"; [ -n "$dir" ] && [ -d "$dir" ] || die "usage: compass.sh can-advance <build-dir>"
   local slug; slug="$(basename "$dir")"
@@ -4171,7 +4965,18 @@ COMPASS_ORIENT_NEW
 # Read the declared run-mode. INV-MODE-VISIBLE: the user must always be able to
 # see whether Compass will stop for them, not just have it recorded on disk.
 _orient_mode() { # <build-dir>
-  local m; m="$(sed -nE 's/^mode:[[:space:]]*([A-Za-z-]+).*/\1/p' "${1:-}/progress.md" 2>/dev/null | head -1)"
+  # THE MARKER FILE IS THE AUTHORITY, because it is what actually decides behaviour. This read a
+  # `mode:` line in progress.md while `stop-guard` reads `.auto-mode`, and a reviewer found the
+  # cockpit printing "mode: not set" for fourteen of seventeen autonomous builds — including the
+  # live one, whose every turn end the hook was treating as Autonomous. One fact, two sources, and
+  # the display was reading the one with no consequences. The prose line is still honoured as a
+  # fallback, and `.auto-suspended` is shown because a suspended build behaves like neither.
+  local d="${1:-}"
+  if [ -f "$d/.auto-mode" ]; then
+    if [ -f "$d/.auto-suspended" ]; then printf 'Autonomous (suspended)'; else printf 'Autonomous'; fi
+    return 0
+  fi
+  local m; m="$(sed -nE 's/^mode:[[:space:]]*([A-Za-z-]+).*/\1/p' "$d/progress.md" 2>/dev/null | head -1)"
   case "$(printf '%s' "${m:-}" | tr 'A-Z' 'a-z')" in
     autonomous|auto) printf 'Autonomous' ;;
     human-gated|gated|human) printf 'Human-gated' ;;
@@ -5265,6 +6070,7 @@ main() {
     auto-start)        cmd_auto_start "$@" ;;
     auto-spawn)        cmd_auto_spawn "$@" ;;
     can-advance)       cmd_can_advance "$@" ;;
+    next-stage)        cmd_next_stage "$@" ;;
     program-init)      cmd_program_init "$@" ;;
     program-ledger)    cmd_program_ledger "$@" ;;
     program-next)      cmd_program_next "$@" ;;
