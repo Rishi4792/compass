@@ -36,3 +36,7 @@
 # The leak scanner is the cost, and it was not in the original ask — it came from a release soak
 # that found a home path shipped in 14 releases. It is the first thing to make faster.
 p95-ceiling-seconds: 78
+
+# THE FLOOR, counted rather than timed. A wall-clock floor fires on a faster machine that did all
+# the work; what the floor means is "fewer things ran", so the assertions are counted instead.
+min-assertions: 1162

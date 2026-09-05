@@ -4191,14 +4191,27 @@ chk "$([ "$(grep -c 'Never raise the bound' "$_ROOT/RELEASING.md")" -ge 1 ] && e
 # is not a cosmetic bug. Twenty trials, because a race that shows one time in ten passes a single
 # run more often than not — which is exactly how this sat behind an "intermittent" selftest.
 _wlrace() {
-  local r; r="$(mktemp -d)" ; local bad=0 t i v
+  # TEN TRIALS, RUN AT ONCE RATHER THAN ONE AFTER THE OTHER. Each trial is five simultaneous
+  # `--bump-stage` calls that must all land, which is what proves the mutex holds across the critical
+  # section. The trials were sequential, and that cost the suite five seconds of pure waiting: every
+  # trial serialised five whole processes behind one lock while the other nine trials sat idle.
+  #
+  # Each trial now gets its OWN repository, so its own locks directory, so the trials cannot interfere
+  # with one another. Fifty processes contend at once instead of five at a time. The test is not
+  # smaller and it is not gentler — it is strictly MORE contended, which is the direction that matters
+  # for a race. Verified both ways: green with the mutex correct, and red on every trial with the
+  # original RETURN-trap release put back.
+  local r; r="$(mktemp -d)" ; local bad=0 t
   for t in 1 2 3 4 5 6 7 8 9 10; do
-    rm -rf "$r/w"; mkdir -p "$r/w/.claude/builds/b"
-    ( cd "$r/w" && git init -q . >/dev/null 2>&1
+    mkdir -p "$r/w$t/.claude/builds/b"
+    ( cd "$r/w$t" && git init -q . >/dev/null 2>&1
       bash "$SH" budget-init .claude/builds/b --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
       for i in 1 2 3 4 5; do ( bash "$SH" budget-check .claude/builds/b --bump-stage >/dev/null 2>&1 ) & done
-      wait )
-    v="$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$r/w/.claude/builds/b/budget.env" 2>/dev/null | tail -1)"
+      wait ) &
+  done
+  wait
+  for t in 1 2 3 4 5 6 7 8 9 10; do
+    local v; v="$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$r/w$t/.claude/builds/b/budget.env" 2>/dev/null | tail -1)"
     [ "${v:-0}" = "5" ] || bad=$((bad+1))
   done
   rm -rf "$r"; printf '%s' "$bad"

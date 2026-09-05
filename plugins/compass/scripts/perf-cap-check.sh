@@ -84,10 +84,22 @@ fi
 times=""
 i=1
 while [ "$i" -le "$RUNS" ]; do
-  s=$(date +%s); bash "$SUITE" >/dev/null 2>&1; e=$(date +%s)
+  s=$(date +%s); _out="$(bash "$SUITE" 2>&1)"; e=$(date +%s)
   times="$times $((e-s))"
   i=$((i+1))
 done
+# THE FLOOR IS COUNTED, NOT TIMED. The contract states a healthy RANGE and until now only its top
+# was enforced. A run far under the bottom means the suite stopped doing something, and this
+# repository has shipped exactly that twice: a generator that wrote one page and exited 0 for the
+# other 139, and a scanner whose allow-list dropped whole lines. Both would have finished fast.
+#
+# But a floor on the WALL CLOCK cannot be that check. A faster machine trips it while doing all the
+# work, and this project has already had to demote five rules for firing on correct input: a false
+# alarm costs more than a miss, because the first thing a spurious speed gate teaches you is to
+# switch it off. What the floor actually means is "fewer things ran" — so that is what is counted,
+# from the suite's own report, which is machine-independent by construction.
+PASSED="$(printf '%s' "$_out" | LC_ALL=C sed -nE 's/.*[^0-9]([0-9]+) passed, ([0-9]+) failed.*/\1/p' | tail -1)"
+FAILED="$(printf '%s' "$_out" | LC_ALL=C sed -nE 's/.*[^0-9]([0-9]+) passed, ([0-9]+) failed.*/\2/p' | tail -1)"
 cd "$WORK" 2>/dev/null || true
 med="$(printf '%s\n' $times | LC_ALL=C sort -n | awk -v n="$RUNS" 'NR==int((n+1)/2){print}')"
 
@@ -105,6 +117,28 @@ printf '  Asserting a CEILING, never an equality — a wall clock never repeats,
 printf '  goes spuriously red is one somebody switches off. The ceiling is read from the contract,\n'
 printf '  from one place, so it cannot drift from the number the contract states.\n'
 # Integer comparison against a possibly-decimal ceiling: compare in tenths, no bc dependency.
+# ── THE FLOOR: DID THE SUITE ACTUALLY DO ITS WORK? ───────────────────────────────────────────
+MINA="$(LC_ALL=C sed -n 's/^min-assertions:[[:space:]]*\([0-9]*\).*/\1/p' "$WORK/plugins/compass/scripts/perf-ceiling.txt" 2>/dev/null | head -1)"
+if [ -n "$MINA" ]; then
+  if [ -z "$PASSED" ]; then
+    printf '  FLOOR: the suite printed no assertion count, so its work could not be counted. Refusing to\n'
+    printf '         call a duration a pass when the thing being timed cannot be shown to have run.\n'
+    exit 1
+  fi
+  printf '  floor: %s assertions ran, %s failed (floor %s).\n' "$PASSED" "${FAILED:-?}" "$MINA"
+  if [ "${FAILED:-0}" != "0" ]; then
+    printf '  UNDER THE FLOOR: %s assertion(s) FAILED. A duration measured over a failing suite is not a\n' "$FAILED"
+    printf '         speed result at all. Release blocker.\n'
+    exit 1
+  fi
+  if [ "$PASSED" -lt "$MINA" ]; then
+    printf '  UNDER THE FLOOR by %s assertions. The suite finished, but it ran LESS than the set this\n' "$((MINA-PASSED))"
+    printf '         bound is defined over — which is what "fast" looks like when something quietly\n'
+    printf '         stopped running. This repository has shipped that twice. Release blocker.\n'
+    exit 1
+  fi
+fi
+
 ct=$(printf '%s' "$CEIL" | awk '{printf "%d", ($1*10)+0.5}')
 mt=$((med*10))
 if [ "$mt" -le "$ct" ]; then
