@@ -132,8 +132,19 @@ import(pathToFileURL(process.env.AUD).href).then(m=>{
 #   WANT_DISTINCT 112 → 140. At v0.31, 28 of 140 renders were not distinct — one page standing in
 #   for many, which is exactly what this check is named for. Every page is now its own; the number
 #   went UP because the defect went away.
-#   WANT_TOKENS 8516 → 13701. Four releases of builds accumulated content, and pages now render
-#   fields that used to be truncated away.
+#   WANT_TOKENS 8516 → 13701. THE STATED CAUSE WAS WRONG AND AN INDEPENDENT REVIEWER REFUTED IT.
+#   The old wording said four releases of builds had accumulated content. They had not. The 28 build
+#   directories this baseline is computed over are byte-identical to what they were when 8516 was
+#   pinned at v0.31.0 (d832b774a): comparing the per-file checksums the manifest already carries,
+#   NOT ONE content hash differs, and the only entries that moved are 35 `*.log` files this release
+#   removed from the manifest on purpose. The generator is the whole move. `gen.mjs` has changed in
+#   26 commits since that pin — 789 lines added, 74 removed — across v0.32's thirteen destroying
+#   paths, v0.33's two cold-reader fixes and v0.34's truncation work. Pages render more text because
+#   the generator stopped throwing it away, which is the defect those releases existed to fix.
+#
+#   The number is unchanged; only the reason is corrected. A baseline whose figure is right and whose
+#   explanation is invented is still a page stating something nobody checked, and this release put
+#   two other wrong causes in print before this one.
 #
 # Re-pinning a total while a quality check is red would be hiding a defect. Re-pinning it after they
 # are all zero is recording where the corpus now stands, which is what a baseline is for.

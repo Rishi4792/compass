@@ -118,8 +118,18 @@ with_lock() { # <name> <command...>
   mkdir -p "$(dirname "$lock")"
   local tries=0
   until mkdir "$lock" 2>/dev/null; do
-    tries=$((tries+1)); [ "$tries" -gt 600 ] && die "lock timeout on $lock"
-    sleep 0.05
+    # THE WAIT IS ADAPTIVE, AND THE REASON IS MEASURED. This lock guards a counter increment that
+    # takes microseconds, so a flat 50ms sleep made every waiter overshoot by roughly a thousand
+    # times. Instrumenting one suite run showed 64 acquisitions, 100 spin iterations and exactly
+    # 5000ms of sleeping — the whole of the +5s the speed bound picked up when this lock started
+    # actually locking. All 100 spins were the deliberate concurrency fixture: ten trials of five
+    # simultaneous `--bump-stage` calls, giving a clean 10x1, 10x2, 10x3, 10x4 staircase.
+    #
+    # So the fix is granularity, not patience. Short waits are polled quickly; a genuinely long wait
+    # backs off to the original interval, and the TOTAL budget is unchanged at about thirty seconds,
+    # which is what protects a real contended build. Nothing about when the lock is granted changes.
+    tries=$((tries+1)); [ "$tries" -gt 800 ] && die "lock timeout on $lock"
+      if [ "$tries" -le 200 ]; then sleep 0.002; else sleep 0.05; fi
   done
   _WL_HELD="$lock"
   # shellcheck disable=SC2064
