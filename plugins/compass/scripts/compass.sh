@@ -1432,7 +1432,13 @@ $(printf '%s' "$1" | cut -c1-300)
       # the one function all five entry points share, and it tests the RESULT: if the body is not
       # shorter than the line, nothing was stripped, and an unstripped line is reported rather than
       # judged. A guard that lives in one caller is not a guard.
-      body="$(printf '%s' "$ln" | sed -E 's|^[^:]*:[0-9]+:||' 2>/dev/null || printf '%s' "$ln")"
+      # THE STRIP IS PURE SHELL, and the reason is speed measured rather than assumed. This line runs
+      # for EVERY candidate the sweep produces, and as a `printf | sed` it forked two processes each
+      # time — the single hottest thing in the scanner. A bash regex does the identical job with none.
+      # `[^:]*` cannot cross a colon in either engine, so the split lands in the same place: the
+      # first `path:lineno:` prefix and nothing else. The fallback is the same too — if the shape
+      # does not match, the body IS the line, and the length test below then refuses it.
+      if [[ $ln =~ ^([^:]*):([0-9]+):(.*)$ ]]; then body="${BASH_REMATCH[3]}"; else body="$ln"; fi
       if [ "${#body}" -ge "${#ln}" ]; then printf '%s\n' "$ln"; continue; fi
       case "$body" in *compass-allow-secret:*)
         # The count is written to a FILE, not a variable: _ss_keep runs inside a command
