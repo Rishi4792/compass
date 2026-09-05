@@ -3,6 +3,39 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [Unreleased] — the lock released itself before the work it was protecting
+
+**Compass's mutex has never excluded anything, and the counter it guards is the one that stops an
+autonomous build looping for ever.**
+
+`with_lock` ended by installing a cleanup on function return, then running the work. In a shell, a
+return trap set inside a function is the *current* return trap — it fires when **any** function
+returns while it is installed, not only the one that set it. The protected work calls other
+functions, so the lock was deleted the moment the first of those returned, with the read-modify-write
+barely started.
+
+Measured, with process ids logged at acquire and release: **one acquire and three releases per
+process.** Five concurrent budget increments landed three or four instead of five, about one run in
+ten — with every process exiting cleanly and nothing on the error output. A counter that silently
+undercounts is not a bound.
+
+It had been sitting behind an intermittent test that looked like machine load. It is now twenty
+consecutive correct runs, and the suite asserts it over ten trials, because a race that shows one
+time in ten passes a single run more often than not.
+
+**Four holes in the leak scanner, from the same review round:**
+
+- A value ending in a quote defeated the checks that judge it — so a placeholder written bare passed
+  and the same text inside a quoted string was refused. That one character is what made this
+  project's own release check red on its own history.
+- Any lowercase hyphenated value was treated as a harmless label. A Mailgun key, a hyphenated
+  password and a uuid-shaped secret all pass that description. A label is now short as well as
+  lowercase.
+- `name: value` was invisible — only `name=value` counted. That is the shape of every YAML file, of
+  JSON, and of what the AWS command line writes.
+- A full stop in the allow-list is a wildcard. Six of them on a line allowed every six-character home
+  directory name. An earlier fix closed `.*` and left `.`; names are escaped now rather than trusted.
+
 ## [Unreleased] — the speed bound, measured and set, with the cost written down
 
 **This release is 21.8 seconds slower and here is exactly where it went.** Seven runs on fresh clones

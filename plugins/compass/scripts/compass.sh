@@ -95,6 +95,24 @@ main_root() {
 }
 
 # Portable mutex (macOS has no flock). mkdir is atomic on POSIX filesystems.
+# THE MUTEX RELEASED ITSELF BEFORE THE CRITICAL SECTION RAN, and had done since it was written.
+#
+# The old body ended `trap "rmdir '$lock'" RETURN; "$@"`. A RETURN trap installed inside a function
+# is the shell's CURRENT return trap: it fires when ANY function returns while it is installed, not
+# only the one that set it. The locked body calls other functions — `_be_get` is the first thing
+# `_budget_check_locked` does — so the trap fired on THAT return and removed the lock directory
+# while the read-modify-write had barely started. Every later return fired it again.
+#
+# Measured, by logging acquire and release with pids: each process logged ONE acquire and THREE
+# releases, and five concurrent `--bump-stage` calls landed 3 or 4 increments instead of 5 in about
+# one run in ten — every process exiting 0, nothing on stderr. A counter that silently undercounts
+# is not a bound, and this counter is the one that stops an autonomous build from looping for ever.
+# Found by an intermittent selftest that had been dismissed as machine load.
+#
+# Explicit acquire, run, release. No trap on RETURN, so nothing can release it early. An EXIT trap
+# is still armed for the `die`-inside-the-section case that BUG-3 documents — that path is supposed
+# to be impossible (locked bodies set a message and return 1 rather than exit) but a leaked mutex
+# hangs every later run for thirty seconds, so it is caught rather than trusted.
 with_lock() { # <name> <command...>
   local lock; lock="$(locks_dir)/.$1.lock"; shift
   mkdir -p "$(dirname "$lock")"
@@ -103,9 +121,15 @@ with_lock() { # <name> <command...>
     tries=$((tries+1)); [ "$tries" -gt 600 ] && die "lock timeout on $lock"
     sleep 0.05
   done
+  _WL_HELD="$lock"
   # shellcheck disable=SC2064
-  trap "rmdir '$lock' 2>/dev/null || true" RETURN
-  "$@"
+  trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  local _wl_rc=0
+  "$@" || _wl_rc=$?
+  trap - EXIT
+  _WL_HELD=""
+  rmdir "$lock" 2>/dev/null || true
+  return "$_wl_rc"
 }
 
 atomic_write() { # <dest> ; content on stdin
@@ -1148,7 +1172,14 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   #          Only an obviously-unset value (changeme, xxxxxxxx, ${...}, <...>) is excused.
   #   SOFT — a shape that is a leak only when the value is real. A fixture has to be able to show
   #          these, so the placeholder names apply HERE and nowhere else.
-  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+)?|(^|[^A-Za-z0-9])sk-(proj-)?[A-Za-z0-9_-]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*([Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Aa][Pp][Ii]_?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss]_?[Tt][Oo][Kk][Ee][Nn]|[Aa][Uu][Tt][Hh]_?[Tt][Oo][Kk][Ee][Nn]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee]_?[Kk][Ee][Yy])[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*[^][{}()[:space:],;]{8,}|AKIA[0-9A-Z]{12,}|[Aa][Ww][Ss]_[Ss][Ee][Cc][Rr][Ee][Tt]_[Aa][Cc][Cc][Ee][Ss][Ss]_[Kk][Ee][Yy][[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_-]{20,}|xox[baprs]-[0-9A-Za-z-]+)'
+  # (The optional quote before the separator is a double quote only: this pattern lives inside a
+  # single-quoted shell string, so an apostrophe in the character class would close it — which is
+  # exactly what the first attempt did.)
+  # `name: value` COUNTS TOO, not only `name=value`. A reviewer put a real AWS key in the shape the
+  # AWS CLI and every YAML config on earth use — `aws_secret_access_key: <40 chars>` — and it was
+  # invisible, because the pattern demanded an equals sign. JSON, YAML, Go's `:=` and Ruby's `=>`
+  # are all this shape, and JSON is what this plugin's own config files are written in.
+  local hard='(-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+)?|(^|[^A-Za-z0-9])sk-(proj-)?[A-Za-z0-9_-]{16,}|(^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|postgres(ql)?://[^ ]*:[^ @]*@|[A-Za-z0-9_]*([Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Aa][Pp][Ii]_?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss]_?[Tt][Oo][Kk][Ee][Nn]|[Aa][Uu][Tt][Hh]_?[Tt][Oo][Kk][Ee][Nn]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee]_?[Kk][Ee][Yy])[A-Za-z0-9_]*["]?[[:space:]]*[=:][[:space:]]*[^][{}()[:space:],;]{8,}|AKIA[0-9A-Z]{12,}|[Aa][Ww][Ss]_[Ss][Ee][Cc][Rr][Ee][Tt]_[Aa][Cc][Cc][Ee][Ss][Ss]_[Kk][Ee][Yy][[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_-]{20,}|xox[baprs]-[0-9A-Za-z-]+)'
   # A home path needs no trailing slash on macOS — `{"cwd": "/Users/<name>"}` is the shape that
   # actually leaked. The Linux form DOES require a second segment, because `/home/<one-word>` is far
   # more often a URL route (`router.get('/home/dashboard')`, `[Home](/home/index)`) than a person.
@@ -1200,8 +1231,13 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # digits, dot, underscore, hyphen, at most 64 characters. Anything else is DROPPED and NAMED.
   local _bad=""
   if [ -f "$_namef" ]; then
+    # EVERY NAME IS ESCAPED BEFORE IT REACHES THE EXPRESSION. Validation alone was not enough: the
+    # allowed character set includes `.`, and a dot is a WILDCARD. A reviewer added a line of five
+    # dots and every five-character home directory name became permitted — including the author's.
+    # Round 3 closed `.*`; it did not close `.`. Escaping is the fix that does not depend on
+    # noticing which of the permitted characters happen to be metacharacters.
     _names="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
-              | grep -E '^[A-Za-z0-9._-]{1,64}$' | paste -sd'|' - 2>/dev/null || true)"
+              | grep -E '^[A-Za-z0-9._-]{1,64}$' | sed 's/[.]/\\./g' | paste -sd'|' - 2>/dev/null || true)"
     _bad="$(grep -vE '^[[:space:]]*(#|$)' "$_namef" 2>/dev/null | tr -d ' \t\r' \
               | grep -vE '^[A-Za-z0-9._-]{1,64}$' | head -5 || true)"
   fi
@@ -1254,7 +1290,12 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   # A hyphenated lowercase word is a header name, a mime type or a slug — `x-api-key` is the VALUE of
   # API_KEY_HEADER, not an API key. It excuses an ASSIGNMENT only: a bare token can be kebab-shaped
   # and still be a real key.
-  local hardslug='^"?('"'"'?)[a-z][a-z0-9]*(-[a-z0-9]+)+("?)('"'"'?)$'
+  # A SHORT label — a header name, a mime type, a slug. Not a passphrase and not a key. The first
+  # version said only "lowercase words joined by hyphens", and a reviewer walked three real secrets
+  # through it: a Mailgun key (`key-` plus 32 characters), a uuid-shaped secret, and
+  # `correct-horse-battery-staple`. All three are lowercase words joined by hyphens. A label is
+  # SHORT: at most three parts, none longer than eight characters, twenty characters in total.
+  local hardslug='^[a-z][a-z0-9]{0,7}(-[a-z0-9]{1,8}){1,2}$'
   _ss_hard_excused() {                          # <match> → 0 when it is visibly not a real value
     local m="$1" v
     printf '%s' "$m" | grep -qE "$hardref" && return 0
@@ -1270,20 +1311,44 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
         printf '%s' "$v" | grep -qE "$hardtmpl" && return 0
         printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
         return 1 ;;
-      *=*)
+      *=*|*:*)
         # THE VALUE, AND ALL OF IT. Testing the filler words anywhere in the match let a real key be
         # excused by a placeholder sitting further along the same line:
         # `DB_<S>=<a real key>,fallback=CHANGEME` passed because CHANGEME appeared in it. The value
         # starts after the FIRST `=` and must be filler or template from end to end.
-        v="${m#*=}"
-        v="${v#"${v%%[![:space:]]*}"}"          # trim the space after `=` — `KEY = "value"` is ordinary
+        # WHICH SEPARATOR? It decides how much benefit of the doubt the value gets. An `=` in front
+        # of a secret-shaped name is almost always an assignment. A `:` is also ordinary English —
+        # "SECRET: spelling it here would make this comment a finding" is a sentence, and widening
+        # the pattern to catch YAML made seven of this repository's own prose lines into findings.
+        local _sep='='
+        case "$m" in *=*) v="${m#*=}" ;; *) v="${m#*:}"; _sep=':' ;; esac
+        v="${v#"${v%%[![:space:]]*}"}"          # trim the space after the separator
+        # AND UNWRAP IT. The value carries whatever punctuation the surrounding code used, and the
+        # tests below are ANCHORED — so ONE TRAILING QUOTE defeated them. A visibly-unset key passed
+        # when written bare and was refused when the same text sat inside a quoted string, because
+        # the second value ended in a quote character the anchored test could not see past. That one
+        # character is what made this repository's own release gate red on its own history. Strip
+        # matched wrappers and trailing punctuation before judging.
+        # (The example is described, not written out: spelling it here makes this comment a finding,
+        # which is the fifth time in this build that quoting the thing being fixed re-created it.)
+        v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
+        v="${v%%[,;\)\]\}]}"
+        v="${v%\"}"; v="${v%\'}"
         # A VALUE THAT IS ITSELF A KEY IS NEVER EXCUSED. An OpenAI key assigned to a lowercase
         # variable is kebab-shaped — lowercase words joined by a hyphen — and the slug rule below
         # excused a real one because of it. Ask first whether the value is a key; only then whether
         # it looks like filler. (Writing the example out here would make this comment a finding.)
         printf '%s' "$v" | grep -qE "$hard" && return 1
         printf '%s' "$v" | grep -qE "^(${hardfill})$" && return 0
-        printf '%s' "$v" | grep -qE "$hardslug" && return 0 ;;
+        [ "${#v}" -le 20 ] && printf '%s' "$v" | grep -qE "$hardslug" && return 0
+        # AFTER A COLON, A VALUE HAS TO LOOK LIKE A CREDENTIAL. Real ones carry a digit or run long:
+        # `sk-…` is 27 characters, an AWS secret is 40 with digits and slashes, a YAML token is
+        # base64. An English word after a colon is neither, and treating it as a secret is how this
+        # widening turned prose into findings. Applies to the `:` form ONLY — an `=` still counts on
+        # its own, because `PASSWORD=hunter` is an assignment however short and wordy the value.
+        if [ "$_sep" = ':' ]; then
+          printf '%s' "$v" | grep -q '[0-9]' || [ "${#v}" -ge 20 ] || return 0
+        fi ;;
       *)
         # No assignment in the match — a bare key like an `sk-` token. Here a filler RUN anywhere is
         # decisive on its own, because no real key contains eight identical characters.

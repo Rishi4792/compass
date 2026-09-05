@@ -4125,6 +4125,33 @@ else
 fi
 chk "$([ "$(grep -c 'perf-cap-check.sh' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: the RELEASE path runs the speed check — not the suite, which it would turn from twelve seconds into four minutes"
 chk "$([ "$(grep -c 'Never raise the bound' "$_ROOT/RELEASING.md")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-PERFBUDGET: ...and the release doc says plainly that the bound is never raised to fit a change"
+
+# ── v0.35 — THE MUTEX ACTUALLY EXCLUDES ──────────────────────────────────────────────────────────
+# `with_lock` ended `trap "rmdir $lock" RETURN; "$@"`. A RETURN trap installed inside a function is
+# the shell's CURRENT return trap: it fires when ANY function returns while installed, not only the
+# one that set it. The locked body calls other functions, so the trap fired on the FIRST of those
+# and removed the lock while the read-modify-write had barely started. Measured with pid logging:
+# one acquire, three releases, per process. Five concurrent `--bump-stage` calls landed 3 or 4
+# increments instead of 5 about one run in ten — every process exiting 0, nothing on stderr.
+#
+# That counter is the bound that stops an autonomous build looping for ever, so a silent undercount
+# is not a cosmetic bug. Twenty trials, because a race that shows one time in ten passes a single
+# run more often than not — which is exactly how this sat behind an "intermittent" selftest.
+_wlrace() {
+  local r; r="$(mktemp -d)" ; local bad=0 t i v
+  for t in 1 2 3 4 5 6 7 8 9 10; do
+    rm -rf "$r/w"; mkdir -p "$r/w/.claude/builds/b"
+    ( cd "$r/w" && git init -q . >/dev/null 2>&1
+      bash "$SH" budget-init .claude/builds/b --wall 99999 --sessions 99 --stages 99 >/dev/null 2>&1
+      for i in 1 2 3 4 5; do ( bash "$SH" budget-check .claude/builds/b --bump-stage >/dev/null 2>&1 ) & done
+      wait )
+    v="$(sed -nE 's/^spent_stages=(.*)$/\1/p' "$r/w/.claude/builds/b/budget.env" 2>/dev/null | tail -1)"
+    [ "${v:-0}" = "5" ] || bad=$((bad+1))
+  done
+  rm -rf "$r"; printf '%s' "$bad"
+}
+chk "$(_wlrace)" "0" "v0.35: five concurrent budget increments land FIVE, ten trials running — the mutex released itself before the critical section for the whole of this project's history"
+chk "$(awk '/^with_lock\(\) \{/{f=1} f{print} f&&/^}$/{exit}' "$SH" | grep -c 'RETURN')" "0" "v0.35: ...and no RETURN trap remains in with_lock, which is what released it early"
 # F3: "the shipped tree" is the set git TRACKS, not the plugins/ directory. README.md, CHANGELOG.md
 # and docs/ are public too, and the first version of this check reported them clean while a reviewer's
 # planted home path sat in all three. Asserted by BEHAVIOUR on a throwaway repo, not by grepping the
