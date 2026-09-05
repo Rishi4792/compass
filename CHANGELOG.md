@@ -92,17 +92,30 @@ time in ten passes a single run more often than not.
 
 ## [Unreleased] — the speed bound, measured and set, with the cost written down
 
-**This release is 21.8 seconds slower and here is exactly where it went.** Seven runs on fresh clones
-of six commits, same machine, same hour:
+**This release is slower and here is exactly where it went.** The first version of this table named
+phases its measured ranges did not contain, and recorded neither a run count nor a single commit —
+so nobody could go and check it, which is how the mislabelling got published. An independent reviewer
+caught it by rebuilding the ranges from the branch history. Every row now names the commit it was
+measured at. Fresh clone per row, three runs each, median:
 
 ```
-  v0.34 as shipped                50.9s
-  + the leak scanner              65.2s   +14.3s   ← two thirds of the whole increase
-  + the gate text                 65.5s    +0.3s
-  + the end-of-turn refusal       69.1s    +3.6s
-  + its review fixes              69.8s    +0.7s
-  + arming, evidence, close       72.7s    +2.9s
+  ecb4daa  v0.34 release base                          57s
+  d22e569  the leak scanner and its five review rounds 73s  +16s  ← the whole story is here
+  3122ed8  the successor lookup and the gate text      76s   +3s
+  5d03866  the end-of-turn walk                        78s   +2s
+  0055ecf  the refusal and its own budget              77s   -1s
+  6f409d6  arming, evidence, close, the speed bound    79s   +2s
+  f17e274  the mutex fix                               83s   +4s  ← a lock that now really locks
+  a5132f8  the widened secret scanner                  85s   +2s
+  51ebfaf  review-build round 1's fixes                86s   +1s
+  c9ae55c  the optimisations and the signed exception  82s   -4s
 ```
+
+**Read the deltas, not the absolutes.** This series was taken on one day, and that day the machine was
+about 12% slower than when the 78s bound was set: `ecb4daa` measures 57s here against the 50.9s the
+first table recorded, and `6f409d6` measures 79s against the 72.7s the bound itself came from. Each
+row differs from the one above it only by the commits between them, measured back to back, so the
+deltas are sound and the absolutes are comparable only within this series.
 
 The bound is **78 seconds** — the p95 of 74.3s plus about 5%. Tight enough that a real regression
 turns it red; loose enough that scheduling noise does not, since the spread across seven runs was
@@ -111,9 +124,10 @@ turns it red; loose enough that scheduling noise does not, since the spread acro
 **The bound moved because the suite changed, not because the number was inconvenient**: 1173
 assertions at c9ae55c against 1025 at v0.34.0, and 17 mechanical checks against 13 — every figure counted in a FRESH CLONE, which is
 the set the bound is defined for. The working tree reports more, because some assertions need build
-state; an earlier draft of this entry mixed the two and published three wrong figures. The leak scanner is two thirds
-of the cost and it was not in this build's ask at all — it came from a release soak that found a home
-path shipped in 14 releases. It is named as the first thing to make faster.
+state; an earlier draft of this entry mixed the two and published three wrong figures. The leak scanner is 16s of the 25s
+this release adds — about two thirds — and it was not in this build's ask at all. It came from a
+release soak that found a home path shipped in 14 releases. It is named as the first thing to make
+faster, and it still is.
 
 **The check was disarmed for this entire release and nobody could see it.** It read its limit from a
 directory that git ignores, so in a fresh clone — the only tree a release is ever cut from — it

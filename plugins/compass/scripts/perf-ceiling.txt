@@ -22,18 +22,37 @@
 # The bound is 78s: p95 plus about 5%. Tight enough that a real regression turns it red, loose
 # enough that ordinary scheduling noise does not — the spread across those seven runs was 3.0s.
 #
-# AND THE HONEST PART. v0.34 measured 51.2s and published a 61s bound. v0.35 is 21.8s slower, and
+# AND THE HONEST PART. v0.34 measured 51.2s and published a 61s bound. v0.35 is slower — by 25s on
+# the one-day series below, where v0.34's own base measures 57s and this release's head measures 82s
+# — and
 # the bound moved because the SUITE changed, not because the number was inconvenient: 1173
 # assertions at c9ae55c against 1025 at v0.34.0, and 17 mechanical checks against 13 — every figure
 # counted in a fresh clone, the set this
-# bound is defined for. Where the time went,
-# bisected across six commits on fresh clones:
-#     main v0.34                 50.9s
-#     + the leak scanner (P1)    65.2s   +14.3s   ← two thirds of the whole increase
-#     + the gate text (P2-P4)    65.5s    +0.3s
-#     + the end-of-turn work     69.1s    +3.6s
-#     + its review fixes         69.8s    +0.7s
-#     + arming, evidence, close  72.7s    +2.9s
+# bound is defined for.
+#
+# WHERE THE TIME WENT. The first version of this table labelled its rows with PHASE names its ranges
+# did not contain, and recorded neither a run count nor a single boundary sha — so nobody could go
+# and check it, which is exactly how the mislabelling survived to be published. An independent
+# reviewer found it by reconstructing the ranges from the branch history. Every row below now names
+# the commit it was measured at and the runs it came from. Fresh clone per row, three runs, median.
+#
+#   ecb4daa  v0.34 release base                          57s
+#   d22e569  the leak scanner and its five review rounds 73s  +16s  ← the whole story is here
+#   3122ed8  the successor lookup and the gate text      76s   +3s
+#   5d03866  the end-of-turn walk                        78s   +2s
+#   0055ecf  the refusal and its own budget              77s   -1s
+#   6f409d6  arming, evidence, close, the speed bound    79s   +2s
+#   f17e274  the mutex fix                               83s   +4s  ← a lock that now really locks
+#   a5132f8  the widened secret scanner                  85s   +2s
+#   51ebfaf  review-build round 1's fixes                86s   +1s
+#   c9ae55c  the optimisations and the signed exception  82s   -4s
+#
+# READ THE ABSOLUTE NUMBERS WITH CARE, AND THE DELTAS WITHOUT IT. This whole series was taken on one
+# day, and that day the machine was about 12% slower than when the 78s bound was set: ecb4daa
+# measures 57s here against the 50.9s the first table recorded, and 6f409d6 measures 79s against the
+# 72.7s the bound itself came from. The DELTAS are what the table is for — each row differs from the
+# one above it only by the commits between them, measured back to back — and they are stable. The
+# absolutes are only comparable within this series.
 # The leak scanner is the cost, and it was not in the original ask — it came from a release soak
 # that found a home path shipped in 14 releases. It is the first thing to make faster.
 p95-ceiling-seconds: 78
