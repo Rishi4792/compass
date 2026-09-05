@@ -145,5 +145,15 @@ if [ "$mt" -le "$ct" ]; then
   printf '  INSIDE the ceiling by %ss.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(a-b)/10}')"
   exit 0
 fi
-printf '  OVER the ceiling by %ss. This is a release blocker, not a note.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(b-a)/10}')"
-exit 1
+printf '  OVER the ceiling by %ss.\n' "$(awk -v a="$ct" -v b="$mt" 'BEGIN{printf "%.1f",(b-a)/10}')"
+
+# ── A SIGNED, BOUNDED EXCEPTION ───────────────────────────────────────────────────────────────
+# The overage above is always PRINTED, whatever happens next. An exception changes the verdict; it
+# must never change what the reader is told the suite actually measured.
+#
+# The decision itself lives in `perf-exception-check.sh`, and the reason it is a separate script is
+# that THIS one runs the whole suite before it can decide anything — so a test of the decision would
+# cost a full suite run per case, and nobody would write one. An exception mechanism with no test
+# that can fail is the exact defect six review streams have spent this release removing. Split out,
+# every branch of it is exercised in milliseconds by the suite. One decision, one owner.
+exec bash "$WORK/plugins/compass/scripts/perf-exception-check.sh" "$med" "$CEIL" "$WORK"

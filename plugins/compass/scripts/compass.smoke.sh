@@ -4137,6 +4137,42 @@ chk "$(grep -cF 'you may attempt **exactly one** repair' "$_afxb")" "1" "v0.35 r
 chk "$(grep -cF 'In **Human-gated** mode: **zero** repairs' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the Human-gated count is zero, stated verbatim"
 chk "$(grep -cF 'A repair may NEVER edit `contract.md`' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the ban on a repair rewriting the locked spec is stated verbatim"
 
+# ── v0.35: the SIGNED, BOUNDED speed exception ───────────────────────────────────────────────────
+# This release ships over its own 78s ceiling on a signed exception, and an exception mechanism with
+# no test that can fail is the exact defect six review streams spent this release removing. The
+# decision is its own script precisely so it can be exercised here in milliseconds instead of one
+# full suite run per case. Every branch, on a throwaway tree built to order — never on the real one,
+# because a fixture that shares state with the repository proves whatever the repository happens to
+# say today.
+_pxfx() {   # <break: none|version|magnitude|unsigned|undated|nofigure|missing> [measured] -> exit code
+  local brk="${1:-none}" meas="${2:-84}" d; d="$(mktemp -d)"
+  mkdir -p "$d/plugins/compass/scripts" "$d/plugins/compass/.claude-plugin"
+  cp "$PLUGIN_ROOT/scripts/perf-exception-check.sh" "$d/plugins/compass/scripts/"
+  printf '{ "name": "compass", "version": "0.35.0" }\n' > "$d/plugins/compass/.claude-plugin/plugin.json"
+  {
+    printf '# a fixture, not the real record\n'
+    [ "$brk" = "version" ] && printf 'exception-version: 9.9.9\n' || printf 'exception-version: 0.35.0\n'
+    [ "$brk" = "nofigure" ] || { [ "$brk" = "magnitude" ] && printf 'exception-ceiling-seconds: 80\n' || printf 'exception-ceiling-seconds: 91\n'; }
+    [ "$brk" = "unsigned" ] || printf 'exception-signed-by: A Person\n'
+    [ "$brk" = "undated" ]  || printf 'exception-signed-date: 2026-09-05\n'
+  } > "$d/plugins/compass/scripts/perf-exception.txt"
+  [ "$brk" = "missing" ] && rm -f "$d/plugins/compass/scripts/perf-exception.txt"
+  bash "$d/plugins/compass/scripts/perf-exception-check.sh" "$meas" 78 "$d" >/dev/null 2>&1
+  local rc=$?; rm -rf "$d"; printf '%s' "$rc"
+}
+chk "$(_pxfx none)"      "0" "v0.35 INV-EXCEPTION-BOUNDED: a complete, signed, in-version exception COVERS the measured overage"
+chk "$(_pxfx version)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: BY VERSION — an exception signed for another release is SPENT, with no edit needed"
+chk "$(_pxfx magnitude)" "1" "v0.35 INV-EXCEPTION-BOUNDED: BY MAGNITUDE — growing past the figure signed for is not covered, so this cannot hide a later regression"
+chk "$(_pxfx unsigned)"  "1" "v0.35 INV-EXCEPTION-BOUNDED: BY SIGNATURE — an unsigned exception is not a decision anybody made"
+chk "$(_pxfx undated)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: ...nor is an undated one"
+chk "$(_pxfx nofigure)"  "1" "v0.35 INV-EXCEPTION-BOUNDED: ...nor one that names no figure, which would cover any overage at all"
+chk "$(_pxfx missing)"   "1" "v0.35 INV-EXCEPTION-BOUNDED: no exception file is the DEFAULT — the ceiling binds, which is what every other release gets"
+chk "$(_pxfx none 90.9)" "0" "v0.35 INV-EXCEPTION-BOUNDED: the boundary is inclusive at the figure signed for"
+chk "$(_pxfx none 91.1)" "1" "v0.35 INV-EXCEPTION-BOUNDED: ...and one tenth of a second past it is refused"
+# And the real record must itself be complete, or this release ships on an exception nobody signed.
+chk "$(grep -c '^exception-signed-by: .' "$PLUGIN_ROOT/scripts/perf-exception.txt")" "1" "v0.35: the exception on record carries a signer"
+chk "$(sed -n 's/^exception-version:[[:space:]]*//p' "$PLUGIN_ROOT/scripts/perf-exception.txt" | head -1)" "$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PLUGIN_ROOT/.claude-plugin/plugin.json" | head -1)" "v0.35: the exception on record names THIS version — the moment the version moves, it is spent"
+
 # ── v0.35 — INV-BRIEF-DESCRIBES-THIS-BUILD and INV-NO-SELF-ARM ───────────────────────────────────
 # v2's Contract Brief described v1's build: the words "Stop hook" appeared ZERO times in its reader
 # copy, on a page whose entire subject is a Stop hook. The check is on the RENDERED page, not on the

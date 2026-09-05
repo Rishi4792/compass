@@ -1,0 +1,49 @@
+# A SIGNED, BOUNDED EXCEPTION TO THE SPEED CEILING — NOT A NEW CEILING.
+#
+# The ceiling in perf-ceiling.txt is 78 seconds and it has NOT been changed. This file records that
+# ONE release is allowed to ship over it: why, who decided, and the exact figure that decision
+# covers. When this file is absent the ceiling binds normally, which is the default and the
+# behaviour of every other release.
+#
+# WHY IT WAS SIGNED. Two separate things pushed the suite over, and only one of them is code:
+#
+#   1. THE MACHINE IS ABOUT 10% SLOWER than when the bound was taken. The very commit the 78s was
+#      measured from (6f409d6, 72.7s then) measures 80s today, clean and uncontended, order rotated
+#      so drift cancels. That commit fails its own bound now. A wall-clock number is not portable
+#      across time even on one machine, and no edit to this repository can fix that.
+#
+#   2. THE RELEASE GENUINELY ADDED 7s: 5s for the mutex fix, which is the lock that now actually
+#      holds across its critical section, and 2s for the widened secret scanner. Four of those
+#      seconds were recovered by two optimisations that weaken no test — the ten concurrency trials
+#      no longer queue behind each other, and the scanner no longer forks two processes per line to
+#      strip a prefix. Both were re-proved red-first afterwards. About 3s remains, and it is
+#      correctness work worth keeping.
+#
+# THE EXCEPTION IS BOUNDED THREE WAYS, so that it cannot quietly become permanent:
+#
+#   * BY VERSION. It names one release. The moment plugin.json says anything else, this file is
+#     spent and perf-cap-check fails again with no edit and no reminder required.
+#   * BY MAGNITUDE. It names the figure it covers. A further regression past that number is NOT
+#     covered and still fails, so this does not license the suite to keep growing under cover.
+#   * BY SIGNATURE. A person decided it and is named. Raising a ceiling to fit an implementation is
+#     something this project forbids itself. Accepting a measured, dated, bounded overage for one
+#     named release is a different act, and only the owner can make it.
+#
+# THE NUMBER BELOW IS MEASURED, NOT CHOSEN, and it is set by the SAME method as the 78s ceiling it
+# temporarily covers — so the two can be compared rather than merely quoted side by side.
+#
+#   Seven runs of the whole suite, fresh clone, release head, one machine, within one hour:
+#       83  83  84  84  85  86  87   seconds
+#   median 84s · p95 87s (the slowest of seven, which is the convention the 78s bound used) ·
+#   spread 4s. The figure is p95 plus about 5%, which is also how 78 was derived from a p95 of
+#   74.3s. The margin exists so that ordinary scheduling noise cannot turn this red, because a
+#   speed gate that goes spuriously red is one somebody switches off.
+#
+#   For comparison, measured the same day, clean and uncontended: the commit the 78s bound came
+#   from (6f409d6) now runs at 80s, against the 72.7s it ran at when the bound was taken.
+
+exception-version: 0.35.0
+exception-ceiling-seconds: 91
+exception-signed-by: Rishi Kapoor
+exception-signed-date: 2026-09-05
+exception-reason: the machine is ~10% slower than when the 78s bound was taken (the bound's own commit now measures 80s), and the ~3s of real growth remaining after optimisation is the mutex fix and the widened secret scanner, both wanted.

@@ -3,6 +3,60 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.35.0] — 2026-09-05 — Compass carries itself to the next stage, and says so where it can be tested
+
+**Compass used to stop between stages and wait to be told to carry on.** It stated a prohibition,
+never named what came next, and put its real checks far from the moment the work happened. That is
+why a separate `/long-build` skill had to exist at all. This release makes the handoff explicit, and
+— more importantly — makes every claim about it something a test can disagree with.
+
+### Added
+- **`compass.sh next-stage <build-dir>`** — asks one question and answers it: which stage comes next.
+  It walks the same `LIFECYCLE` the rest of the tool walks, so there is no second copy to drift. It
+  never stops the process on an error: exit 0 with a stage name, 2 for "cannot tell", 3 for finished.
+- **A turn-end refusal, under nine conditions.** When a build is Autonomous, owned by this session,
+  not suspended, not aborted, past its gate, with a successor that is not `ship`, and with refusals
+  left in its own budget, a quiet stop is refused with a message that NAMES the next command. Any one
+  condition failing means silence. Each condition now has a fixture that only it can fail.
+- **A speed check with a floor as well as a ceiling**, and the floor is COUNTED, not timed: it
+  asserts the assertions actually ran. A wall-clock floor fires on a faster machine that did all the
+  work, and this project has already demoted five rules for firing on correct input.
+- **A secret-scan corpus as a repo fixture** — 55 real leaks that must be refused, 128 ordinary lines
+  that must not. Written before the rules are tuned, not after.
+
+### Fixed
+- **The gate's central instruction was guarded by a blacklist of five phrasings**, and a reviewer
+  paraphrased past it twice — reinstating the exact stall this release exists to end, with every
+  suite green. The imperative is now pinned as a required literal. A blacklist can be worded around;
+  a whitelist cannot.
+- **`stage_pass`'s PASS test had no test.** Delete it and a FAILED stage read as passed. Nothing had
+  ever fed it a FAIL header.
+- **`review-evidence-gate` never ran on this build.** A bold `streams:` line carrying two rounds
+  parsed to zero rounds, so deleting a declared evidence file passed.
+- **`with_lock` never locked.** A return trap fired on the first inner function return, so the lock
+  was released before the work it protected. Five concurrent increments landed three or four.
+- **The scanner refused 19 of 26 idiomatic "read the secret from elsewhere" lines** — Rails, Python,
+  Rust, AWS Secrets Manager. A project using a secrets manager could not close a build.
+- **Three of the scanner's ten rules had no example in the corpus** — PEM keys, web tokens, GitHub
+  fine-grained tokens — while it printed a confident "45 of 45".
+- **Nonce records were written, filed, and never read.** A stub with an invented nonce passed as
+  evidence for a stream nobody ran.
+- **A bracket expression that excluded the letter `t`**, truncating 28 of 34 build names.
+
+### Known — and signed off rather than hidden
+- **The suite measures 84s against its own 78s ceiling, and ships on a signed, bounded exception.**
+  Seven fresh-clone runs at the release head: 83 · 83 · 84 · 84 · 85 · 86 · 87 (median 84, p95 87,
+  spread 4). **The ceiling was NOT raised.** Two separate things caused it, and only one is code:
+  the machine is about 10% slower than when the bound was taken — the very commit the 78s came from
+  now measures 80s against the 72.7s it measured then, so it fails its own bound — and the release
+  genuinely added 7s, of which 4s was then recovered by optimisations that weaken no test. The ~3s
+  that remains is the mutex fix and the widened scanner, both wanted. The exception is bounded by
+  version, by magnitude and by signature, each independently restoring the block, and eleven
+  assertions hold it to that. It is spent the moment the version changes.
+- **Eight of v0.34's evidence files carry no `target-sha`**, required since v0.32. They were written
+  while the evidence gate above was blind, which is how they got there. They are NOT backfilled:
+  writing a sha nobody issued would fabricate the evidence the gate exists to check.
+
 ## [Unreleased] — the lock released itself before the work it was protecting
 
 **Compass's mutex has never excluded anything, and the counter it guards is the one that stops an
