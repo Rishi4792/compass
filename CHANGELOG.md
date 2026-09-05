@@ -45,12 +45,20 @@ why a separate `/long-build` skill had to exist at all. This release makes the h
 
 ### Known — and signed off rather than hidden
 - **The suite measures 84s against its own 78s ceiling, and ships on a signed, bounded exception.**
-  Seven fresh-clone runs at the release head: 83 · 83 · 84 · 84 · 85 · 86 · 87 (median 84, p95 87,
-  spread 4). **The ceiling was NOT raised.** Two separate things caused it, and only one is code:
-  the machine is about 10% slower than when the bound was taken — the very commit the 78s came from
-  now measures 80s against the 72.7s it measured then, so it fails its own bound — and the release
-  genuinely added 7s, of which 4s was then recovered by optimisations that weaken no test. The ~3s
-  that remains is the mutex fix and the widened scanner, both wanted. The exception is bounded by
+  Seven fresh-clone runs at the release head, on an ordinary working machine (30% free memory):
+  81 · 82 · 82 · 82 · 82 · 83 · 83 (median 82, spread 2). **The ceiling was NOT raised.**
+
+  **This suite's speed depends on the machine's free memory far more than on its own code**, which
+  was found only after a first, wrong explanation had already been written down and committed. The
+  same head measures **76s at 95% free memory — inside the ceiling — 82s at 30%, and 136s at 13%**,
+  the last with an unrelated process holding 73 GB of 96 GB and 24 GB swapped. The suite forks
+  hundreds of short-lived processes, which is precisely the workload that suffers when a machine
+  swaps. An earlier entry here blamed "a machine about 10% slower than when the bound was taken".
+  That was a guess with a number attached, and it is corrected rather than quietly dropped.
+
+  The release also added real work that is wanted: the mutex fix and the widened secret scanner,
+  after 4s was recovered by optimisations that weaken no test. A wall-clock bound cannot separate
+  those two causes, so the overage is accepted for this one release and stated plainly. The exception is bounded by
   version, by magnitude and by signature, each independently restoring the block, and eleven
   assertions hold it to that. It is spent the moment the version changes.
 - **Eight of v0.34's evidence files carry no `target-sha`**, required since v0.32. They were written
@@ -111,11 +119,13 @@ measured at. Fresh clone per row, three runs each, median:
   c9ae55c  the optimisations and the signed exception  82s   -4s
 ```
 
-**Read the deltas, not the absolutes.** This series was taken on one day, and that day the machine was
-about 12% slower than when the 78s bound was set: `ecb4daa` measures 57s here against the 50.9s the
-first table recorded, and `6f409d6` measures 79s against the 72.7s the bound itself came from. Each
-row differs from the one above it only by the commits between them, measured back to back, so the
-deltas are sound and the absolutes are comparable only within this series.
+**Read the deltas, not the absolutes.** Every row reads high against the first table — `ecb4daa`
+measures 57s against 50.9s, `6f409d6` measures 79s against the 72.7s the bound came from. The reason
+was found only afterwards and it is not a slower machine: **this suite's speed depends on free memory
+far more than on its own code.** The same head measures 76s at 95% free, 82s at 30%, and 136s at 13%.
+This series was taken under memory pressure, so its absolutes are inflated and comparable only within
+itself. The deltas survive, because each row differs from the one above it only by the commits
+between them and the two were measured back to back under the same conditions.
 
 The bound is **78 seconds** — the p95 of 74.3s plus about 5%. Tight enough that a real regression
 turns it red; loose enough that scheduling noise does not, since the spread across seven runs was

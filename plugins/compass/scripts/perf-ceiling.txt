@@ -47,12 +47,15 @@
 #   51ebfaf  review-build round 1's fixes                86s   +1s
 #   c9ae55c  the optimisations and the signed exception  82s   -4s
 #
-# READ THE ABSOLUTE NUMBERS WITH CARE, AND THE DELTAS WITHOUT IT. This whole series was taken on one
-# day, and that day the machine was about 12% slower than when the 78s bound was set: ecb4daa
-# measures 57s here against the 50.9s the first table recorded, and 6f409d6 measures 79s against the
-# 72.7s the bound itself came from. The DELTAS are what the table is for — each row differs from the
-# one above it only by the commits between them, measured back to back — and they are stable. The
-# absolutes are only comparable within this series.
+# READ THE DELTAS, NOT THE ABSOLUTES. Every row here reads high against the numbers the first table
+# recorded — ecb4daa measures 57s against 50.9s, and 6f409d6 measures 79s against the 72.7s the bound
+# itself came from. The reason was found only afterwards, and it is not a slower machine: THIS SUITE'S
+# SPEED DEPENDS ON FREE MEMORY far more than on its own code. The same release head measures 76s at
+# 95% free memory, 82s at 30%, and 136s at 13% with an unrelated process holding 73 GB of 96 GB. It
+# forks hundreds of short-lived processes, which is exactly the workload that suffers when a machine
+# swaps. This series was taken under memory pressure, so its absolutes are inflated and comparable
+# only within itself. The DELTAS survive, because each row differs from the one above it only by the
+# commits between them and the two were measured back to back under the same conditions.
 # The leak scanner is the cost, and it was not in the original ask — it came from a release soak
 # that found a home path shipped in 14 releases. It is the first thing to make faster.
 p95-ceiling-seconds: 78
