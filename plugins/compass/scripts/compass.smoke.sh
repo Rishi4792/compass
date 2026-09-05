@@ -4173,6 +4173,49 @@ chk "$(_pxfx none 91.1)" "1" "v0.35 INV-EXCEPTION-BOUNDED: ...and one tenth of a
 chk "$(grep -c '^exception-signed-by: .' "$PLUGIN_ROOT/scripts/perf-exception.txt")" "1" "v0.35: the exception on record carries a signer"
 chk "$(sed -n 's/^exception-version:[[:space:]]*//p' "$PLUGIN_ROOT/scripts/perf-exception.txt" | head -1)" "$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PLUGIN_ROOT/.claude-plugin/plugin.json" | head -1)" "v0.35: the exception on record names THIS version — the moment the version moves, it is spent"
 
+# ── v0.35: historical findings cleared BY NAME (secret-scan --commits) ───────────────────────────
+# `--commits` judges committed patches, so a finding there cannot be cleared by editing the file —
+# right for a real secret, because deleting it next commit does not un-leak it, and therefore also
+# permanent for a FALSE alarm. Without a way to name one, the release step fails for ever on a line
+# that was never a secret and the only routes left are rewriting published history or switching the
+# check off. So a line can be cleared, and ONLY a line: one path, one exact content.
+#
+# The danger is obvious and is what these assertions are for: a clearance that matched loosely would
+# be a way to wave real keys through. Every case runs on a throwaway repository with a real key
+# committed and then removed, because that is the shape the mechanism has to get right.
+_chfx() {   # <clear: none|exact|onechar|wrongpath> -> exit code of secret-scan --commits
+  local mode="${1:-none}" d; d="$(mktemp -d)"
+  mkdir -p "$d/plugins/compass/scripts/fixtures/secrets"
+  cp "$SH" "$d/plugins/compass/scripts/"
+  ( cd "$d" && git init -q . >/dev/null 2>&1 && git config user.email t@t && git config user.name t
+    printf 'ok line one\n' > f.txt; git add -A >/dev/null 2>&1; git commit -qm base >/dev/null 2>&1
+    git rev-parse HEAD > .base
+    printf 'ok line one\nAPI%s=Zx9QwErTy12345678abcd\n' "_SEC""RET" > f.txt
+    git add -A >/dev/null 2>&1; git commit -qm 'adds a real key' >/dev/null 2>&1
+    printf 'ok line one\n' > f.txt; git add -A >/dev/null 2>&1; git commit -qm 'removes it' >/dev/null 2>&1 )
+  local key; key="API$(printf '%s' "_SEC""RET")=Zx9QwErTy12345678abcd"
+  local cf="$d/plugins/compass/scripts/fixtures/secrets/cleared-history.txt"
+  # The entry names the line by its HASH, never by its text — a list of cleared findings is the last
+  # place that should hold the text of one, and the first version of this fixture put a real key
+  # straight into a tracked file and the tree scan caught it.
+  local kh oh
+  kh="sha256:$(printf '%s' "$key"  | shasum -a 256 | cut -d' ' -f1)"
+  oh="sha256:$(printf '%se' "$key" | shasum -a 256 | cut -d' ' -f1)"
+  case "$mode" in
+    none)      : > "$cf" ;;
+    exact)     printf 'f.txt :: %s :: cleared in a test :: tester\n' "$kh" > "$cf" ;;
+    onechar)   printf 'f.txt :: %s :: one character off :: tester\n' "$oh" > "$cf" ;;
+    wrongpath) printf 'other.txt :: %s :: right line, wrong file :: tester\n' "$kh" > "$cf" ;;
+  esac
+  local b; b="$(cat "$d/.base")"
+  ( cd "$d" && bash plugins/compass/scripts/compass.sh secret-scan --commits "$b..HEAD" >/dev/null 2>&1 )
+  local rc=$?; rm -rf "$d"; printf '%s' "$rc"
+}
+chk "$(_chfx none)"      "1" "v0.35 INV-CLEARED-BY-NAME: a real key committed then REMOVED still fails — deleting it in the next commit does not un-leak it"
+chk "$(_chfx exact)"     "0" "v0.35 INV-CLEARED-BY-NAME: naming that exact path and that exact line clears it, and the summary says how many were cleared"
+chk "$(_chfx onechar)"   "1" "v0.35 INV-CLEARED-BY-NAME: ONE character different and the finding stands — a clearance cannot be a pattern"
+chk "$(_chfx wrongpath)" "1" "v0.35 INV-CLEARED-BY-NAME: the right line under the wrong path clears nothing — the path is half the key"
+
 # ── v0.35 — INV-BRIEF-DESCRIBES-THIS-BUILD and INV-NO-SELF-ARM ───────────────────────────────────
 # v2's Contract Brief described v1's build: the words "Stop hook" appeared ZERO times in its reader
 # copy, on a page whose entire subject is a Stop hook. The check is on the RENDERED page, not on the

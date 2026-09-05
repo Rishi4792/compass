@@ -29,9 +29,24 @@ How every update reaches users on GitHub and the Claude community marketplace. F
    `plugins/compass/scripts/fixtures/secrets/allowed-names.txt`, one per line with a comment.
    Anything else takes `# compass-allow-secret: <reason>` on the line itself, at least eight
    characters, and declared exceptions are counted in the summary so they cannot quietly pile up.
-   A finding in a COMMITTED patch cannot be cleared either way — fix the file and commit again.
+   A finding in a COMMITTED patch cannot be cleared either way — fix the file and commit again, or,
+   when the finding is a false alarm now frozen into history, name that ONE line in
+   `fixtures/secrets/cleared-history.txt` by its path and the SHA-256 of the line, with a reason and a
+   signer. One character different and the finding stands; every use is printed in the summary. It
+   exists because the rule that is right for a real secret — deleting it next commit does not un-leak
+   it — makes a false alarm permanent, and a check that can never pass is one somebody switches off.
    `secret-corpus-check` scores the scanner against a fixed corpus of real leaks and ordinary code;
    if you find a case it gets wrong, add a LINE to `fixtures/secrets/{leaks,not-leaks}.txt`.
+
+   **Then check the commit MESSAGES**, which the scans above never look at:
+   ```sh
+   bash plugins/compass/scripts/session-trailer-check.sh origin/main..HEAD
+   ```
+   Assistant session links reached **150 commit messages, 132 of them already on public `main`**,
+   before anyone looked. They are disclosed in `SECURITY.md` rather than rewritten, because a
+   published history is published and rewriting the unmerged remainder would have changed every
+   commit sha this release pinned its measurements to. This check fails on any commit written on or
+   after the policy date that carries one, so it cannot start again quietly.
 5. **Check the speed bound** — it is a release step, not a suite check, because it runs the whole
    test suite several times over:
    ```sh

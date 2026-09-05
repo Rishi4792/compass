@@ -1504,7 +1504,67 @@ HARDEOF
         /^@@/         { if (match($0, /\+[0-9]+/)) { n=substr($0,RSTART+1,RLENGTH-1)+0 } ; next }
         /^\+/         { if (f!="") printf "%s:%d:%s\n", f, n, substr($0,2); n++ }
       ' | _ss_keep || true)"
-    _ss_nph_read; _ss_hit "$found"; ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}."; return 0
+    # ── HISTORICAL FINDINGS CLEARED BY NAME ──────────────────────────────────────────────────────
+    # `--commits` judges patches, so a finding here cannot be cleared by editing the file — that is
+    # the whole point when the finding is a real secret, because deleting it in the next commit does
+    # not un-leak it. It is also why a FALSE alarm in history is permanent: the release step then
+    # fails for ever on a line that was never a secret, and the only ways out are rewriting published
+    # history or switching the check off. Both are worse than naming the line.
+    #
+    # So a line can be cleared, and ONLY a line: one path and one exact content string, written out
+    # in full in fixtures/secrets/cleared-history.txt with a reason and a signer. Not a file, not a
+    # pattern, not a commit, not a prefix. One character different and the finding stands. Nothing
+    # here can clear a line nobody wrote down completely, and that is the property that makes this
+    # safe to have at all.
+    #
+    # Every use is counted and PRINTED. A clearance that matches nothing is printed too, because a
+    # stale clearance is one nobody has re-checked and it should not sit here unnoticed.
+    local _clf; _clf="$(dirname "${BASH_SOURCE[0]:-$0}")/fixtures/secrets/cleared-history.txt"
+    local _ncl=0 _nstale=0
+    if [ -n "$found" ] && [ -f "$_clf" ]; then
+      local _kept="" _l _cp _cc _fc _fh _ce _matched
+      while IFS= read -r _l; do
+        [ -n "$_l" ] || continue
+        _matched=0
+        while IFS= read -r _ce; do
+          case "$_ce" in ''|'#'*) continue ;; esac
+          case "$_ce" in *' :: '*) : ;; *) continue ;; esac
+          _cp="${_ce%% :: *}"; _cc="${_ce#* :: }"; _cc="${_cc%% :: *}"
+          [ -n "$_cp" ] && [ -n "$_cc" ] || continue
+          # THE LINE IS IDENTIFIED BY ITS HASH, NEVER BY ITS TEXT. The first version of this recorded
+          # the offending line verbatim, and the tree scan immediately failed on the clearance file
+          # itself — because a file listing secrets contains secrets. That is the same mistake this
+          # release has now made six times: quoting the thing being removed re-creates it. A list of
+          # cleared findings is the last place that should hold the text of one.
+          #
+          # So an entry carries `sha256:<hex>` of the line with its outer whitespace trimmed. The
+          # match is still exact — one character different gives a different hash — and the record
+          # can be published safely. Outer whitespace is trimmed because the finding carries the
+          # source line's indentation, and every character inside the line still counts.
+          case "$_l" in "$_cp":*) : ;; *) continue ;; esac
+          case "$_cc" in sha256:*) : ;; *) continue ;; esac
+          _fc="${_l#*:*:}"
+          _fc="${_fc#"${_fc%%[![:space:]]*}"}"; _fc="${_fc%"${_fc##*[![:space:]]}"}"
+          [ -n "$_fc" ] || continue
+          _fh="sha256:$(printf '%s' "$_fc" | shasum -a 256 2>/dev/null | cut -d' ' -f1)"
+          [ "$_fh" = "$_cc" ] || continue
+          _matched=1; break
+        done < "$_clf"
+        if [ "$_matched" = "1" ]; then _ncl=$((_ncl+1)); else _kept="$_kept$_l
+"; fi
+      done <<EOF_FOUND
+$found
+EOF_FOUND
+      found="$(printf '%s' "$_kept" | grep -v '^$' || true)"
+    fi
+    if [ -f "$_clf" ]; then
+      _nstale="$(grep -cE '^[^#].* :: ' "$_clf" 2>/dev/null || true)"; _nstale="$(( ${_nstale:-0} - _ncl ))"
+      [ "$_nstale" -lt 0 ] && _nstale=0
+    fi
+    _ss_nph_read; _ss_hit "$found"
+    [ "$_ncl" -gt 0 ] && echo "compass: secret-scan --commits: $_ncl historical finding(s) CLEARED BY NAME in fixtures/secrets/cleared-history.txt — each one path plus exact line, with a reason and a signer." >&2
+    [ "$_nstale" -gt 0 ] && echo "compass: secret-scan --commits: $_nstale clearance(s) matched NOTHING in this range. A clearance nobody re-checked is worth deleting." >&2
+    ok "secret scan (--commits $range): 0 hits across ${nc:-0} commit(s)${nph:+, $nph declared exception(s)}${_ncl:+, $_ncl cleared by name}."; return 0
   fi
   # --tracked: what SHIPS is what git knows about — the index, plus files that are present and not
   # ignored. Round 2 broke the previous xargs version three ways: one NUL byte made `grep -I` skip a

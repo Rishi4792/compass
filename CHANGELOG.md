@@ -108,8 +108,8 @@ The bound is **78 seconds** — the p95 of 74.3s plus about 5%. Tight enough tha
 turns it red; loose enough that scheduling noise does not, since the spread across seven runs was
 3.0 seconds.
 
-**The bound moved because the suite changed, not because the number was inconvenient**: 1162
-assertions against 1025, and 17 mechanical checks against 13 — both counted in a FRESH CLONE, which is
+**The bound moved because the suite changed, not because the number was inconvenient**: 1173
+assertions at c9ae55c against 1025 at v0.34.0, and 17 mechanical checks against 13 — every figure counted in a FRESH CLONE, which is
 the set the bound is defined for. The working tree reports more, because some assertions need build
 state; an earlier draft of this entry mixed the two and published three wrong figures. The leak scanner is two thirds
 of the cost and it was not in this build's ask at all — it came from a release soak that found a home
