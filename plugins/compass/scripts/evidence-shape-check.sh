@@ -57,6 +57,27 @@ for f in "$DIR"/*.md; do
   case "$(field "$f" round)" in ''|*[!0-9]*) echo "  BAD    $base — 'round' is not an integer"; bad=$((bad+1)); continue ;; esac
   [ "$(field "$f" round)" -ge 1 ] 2>/dev/null || { echo "  BAD    $base — 'round' must be >= 1"; bad=$((bad+1)); continue; }
   [ "${#nonce}" -ge 16 ] || { echo "  BAD    $base — 'nonce' is shorter than the 16 characters §4 requires"; bad=$((bad+1)); continue; }
+    # THE NONCE IS NOW CHECKED AGAINST THE ONE THAT WAS ISSUED. Until round 1 of v0.35's review-build
+    # nothing in the repository ever read a `NONCES-*.txt`, so a six-line stub carrying an invented
+    # nonce passed as well-formed evidence for a stream nobody ran. The issue records were written,
+    # filed and never consulted.
+    #
+    # WHAT THIS PROVES AND WHAT IT DOES NOT. It proves the file belongs to a round that was actually
+    # commissioned, with a nonce this repository handed out. It does NOT prove independence, and the
+    # note above still stands in full: a reviewer forged four transcripts in about thirty lines of
+    # Python, and a nonce copied out of the issue file would satisfy this too. It closes the gap
+    # between "any 16 characters" and "one of the strings we issued", which is a real gap and not
+    # the same as the one it cannot close.
+    #
+    # Guard-first: a directory with no issue record at all is N/A, not a failure. Every build before
+    # v0.32 has none, and inventing a verdict for them would be the opposite of what this checks.
+    if ls "$DIR"/NONCES-*.txt >/dev/null 2>&1; then
+      if ! grep -qF -- "$nonce" "$DIR"/NONCES-*.txt 2>/dev/null; then
+        echo "  BAD    $base — its nonce appears in no NONCES-*.txt in this directory. Either the file"
+        echo "         was not commissioned by this repository, or the issue record was never written."
+        bad=$((bad+1)); continue
+      fi
+    fi
   ok=$((ok+1)); seen="$seen $(field "$f" stream)"
 done
 
