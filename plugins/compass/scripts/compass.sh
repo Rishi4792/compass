@@ -1273,7 +1273,13 @@ cmd_secret_scan() { # <--tracked|--commits <range>|build-dir|files...>
   local hardfill='(x{8,}|X{8,}|0{8,}|changeme|CHANGEME|placeholder|PLACEHOLDER|REPLACE_ME|your[-_]token|your[-_]key|your[-_]secret|YOUR[-_]TOKEN|YOUR[-_]KEY|AKIAIOSFODNN7EXAMPLE|dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U)'
   # A value that READS THE SECRET FROM SOMEWHERE ELSE is the correct pattern, not a leak. Refusing
   # `const apiKey = process.env.API_KEY` punishes exactly the practice this check exists to promote.
-  local hardref='(process\.env|os\.environ|ENV\[|System\.getenv|GetEnvironmentVariable|secrets\.|vault |!secret |config\.get|Deno\.env)'
+  # READING A SECRET FROM SOMEWHERE ELSE IS THE CORRECT PRACTICE, and this list is what stops the
+  # scanner punishing it. A reviewer wrote 26 idiomatic "fetch it at run time" lines and 19 were
+  # REFUSED — Rails `ENV.fetch`, Python `os.getenv`, Rust `std::env::var`, Rails encrypted
+  # credentials, AWS Secrets Manager. At review-build any hit blocks CLOSED and the per-line escape
+  # cannot clear a finding in committed history, so a project using a secrets manager could not
+  # close a build at all. Refusing the right answer is worse than missing a wrong one.
+  local hardref='(process\.env|os\.environ|os\.getenv|ENV\[|ENV\.fetch|ENV\.get|System\.getenv|GetEnvironmentVariable|std::env::var|env::var|getenv\(|secrets\.|secret_manager|secretsmanager|secrets_manager|get_secret_value|SecretString|\.credentials\.|credentials\[|vault |vault_|!secret |config\.get|Deno\.env|viper\.Get|dotenv|KeyVault|ssm\.get|ParameterStore)'
   # The literal words a documentation connection string uses for its credentials.
   local hardcred='^(user|username|pass|password|passwd|readonly|readwrite|admin|root|dbuser|myuser|mypassword|postgres|example)$'
   # ENTIRELY template-shaped, not merely template-PREFIXED. A key whose value merely BEGINS `YOUR_`
@@ -1409,6 +1415,19 @@ $(printf '%s' "$1" | cut -c1-300)
         # found the summary reporting "0 declared exception(s)" however many were used.
         if printf '%s' "$body" | grep -qE "$pragma"; then printf 'x' >> "$_ss_nph"; continue; fi ;;
       esac
+      # THE FETCH REFERENCE IS JUDGED ON THE WHOLE LINE, not on the match. A reviewer's
+      # `client.get_secret_value(SecretId="prod/api")` was still refused after the reference list was
+      # widened, because the MATCH began at `SecretId=` and the fetch call sat to its left. A line
+      # that reads a secret from a manager is not a leak wherever the reference happens to sit.
+      #
+      # The cost, stated: a real key on the SAME line as such a reference is excused. That needs
+      # deliberate co-location, and this repository's own recorded lesson for this check is that a
+      # false positive costs more than a miss — a scanner that refuses the correct practice is one
+      # that gets switched off, and at review-build any hit blocks a build from closing.
+      if printf '%s' "$body" | grep -qE "$hardref"; then
+        if printf '%s' "$body" | grep -oE "$soft" 2>/dev/null | grep -qEv "$allow"; then printf '%s\n' "$ln"; fi
+        continue
+      fi
       local hm hit=0
       while IFS= read -r hm; do
         [ -n "$hm" ] || continue

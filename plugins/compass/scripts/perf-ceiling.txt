@@ -23,8 +23,9 @@
 # enough that ordinary scheduling noise does not — the spread across those seven runs was 3.0s.
 #
 # AND THE HONEST PART. v0.34 measured 51.2s and published a 61s bound. v0.35 is 21.8s slower, and
-# the bound moved because the SUITE changed, not because the number was inconvenient: 1155
-# assertions against roughly 1066, and 17 mechanical checks against 14. Where the time went,
+# the bound moved because the SUITE changed, not because the number was inconvenient: 1153
+# assertions against 1025, and 17 mechanical checks against 13 — counted in a fresh clone, the set this
+# bound is defined for. Where the time went,
 # bisected across six commits on fresh clones:
 #     main v0.34                 50.9s
 #     + the leak scanner (P1)    65.2s   +14.3s   ← two thirds of the whole increase

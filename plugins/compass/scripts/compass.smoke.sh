@@ -514,6 +514,19 @@ _gate="$(xblk "$GATE")"
 _banned="Never auto-""invoke the next skill"
 chk "$(grep -rl "$_banned" "$PLUGIN_ROOT" 2>/dev/null | grep -c .)" "0" "v0.35 INV-APPROVE-INVOKES: the prohibition is GONE from every file in the plugin"
 chk "$(printf '%s' "$_gate" | grep -c 'compass.sh next-stage')" "2" "v0.35 INV-APPROVE-INVOKES: ...and the gate block names the command that yields the successor — in the footer and at the Approve branch"
+# A BLACKLIST OF PHRASINGS CANNOT GUARD PROSE. The negation check below lists five ways to say "do
+# not" — and a reviewer walked past it twice, replacing the instruction with "wait for the user to
+# type the next command" and with "STOP and let the person invoke the named stage themselves", in
+# all eight files, with every suite green. Both put back the exact stall this release exists to end.
+#
+# So the guard is inverted: the imperative is pinned as a REQUIRED LITERAL. Any rewrite that removes
+# it fails, whatever words replace it — a whitelist cannot be paraphrased past, which is the one
+# thing a blacklist can never promise. The blacklist stays as a second line of defence against an
+# instruction that keeps the words and negates them.
+_gateimp="Run \`compass.sh next-stage <build-dir>\`"
+_gateimp2="invoke the named stage with the Skill tool"
+chk "$([ "$(printf '%s' "$_gate" | grep -cF "$_gateimp")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-APPROVE-INVOKES: the block carries the imperative VERBATIM — pinned as a literal, because a blacklist of negations was paraphrased past twice with every suite green"
+chk "$([ "$(printf '%s' "$_gate" | grep -cF "$_gateimp2")" -ge 1 ] && echo 1 || echo 0)" "1" "v0.35 INV-APPROVE-INVOKES: ...including how to invoke it, which is the half a reader cannot act without"
 chk "$(printf '%s' "$_gate" | grep -ci 'on \*\*Approve\*\* you CONTINUE')" "1" "v0.35 INV-APPROVE-INVOKES: Approve is acted on, not merely described"
 # A STRING COUNT CANNOT TELL AN INSTRUCTION FROM ITS NEGATION. A reviewer rewrote this block to say
 # "You must NOT act on it. Do NOT run compass.sh next-stage… End the turn in silence", kept the four

@@ -40,7 +40,12 @@ cur=""
 if [ -f "$SR/INDEX" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|\#*) continue ;; esac
-    s="$(printf '%s' "$line" | sed -nE 's/^([^ ·\t]+).*/\1/p')"; [ -n "$s" ] || continue
+    # `[^ ·\t]` DOES NOT MEAN "not a tab". Inside a bracket expression sed reads it as the two
+    # characters backslash and t — so the class excluded the LETTER t, and every slug was truncated
+    # at its first one: `always-clarity-v0-28` became `always-clari`. 28 of this repository's 34
+    # build slugs contain a t; this check passed only because the one it grades does not. Found by
+    # an independent reviewer. `[:space:]` is the portable class that means what was intended.
+    s="$(printf '%s' "$line" | sed -nE 's/^([^ ·[:space:]]+).*/\1/p')"; [ -n "$s" ] || continue
     [ -d "$SR/$s" ] || continue
     st="$(sed -nE 's/^[[:space:]]*\*\*Status:\*\*[[:space:]]*(.*)$/\1/p' "$SR/$s/progress.md" 2>/dev/null | tail -1 \
          | sed -E 's/^[*_`[:space:]]+//' | sed -E 's/^([A-Za-z()0-9 -]*).*/\1/' | tr 'A-Z' 'a-z')"
