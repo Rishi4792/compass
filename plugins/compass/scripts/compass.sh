@@ -1065,7 +1065,22 @@ $(printf '%s' "$block" | grep '^\- \[ \]')"
         cmd_review_evidence_gate "$dir" "$_rv" "$_rd" >/dev/null \
           || die "gate: review-evidence-gate FAILED for '$dir' $_rv r$_rd (see stderr)."
       done <<EOF_STREAMS
-$(LC_ALL=C sed -nE 's/^[-* ]*\[[xX ]\] *streams: *.?(review-(contract|plan|build)).? +r([0-9]+).*/\1 \3/p' "$dir/receipts.md" 2>/dev/null | sort -u)
+$(
+  # BOLD-TOLERANT, AND EVERY ROUND ON THE LINE. The old expression anchored the round right after the
+  # review name and stopped at the first match, so it read ZERO rounds from this build's own receipt:
+  # `- [x] **streams: review-contract r1 -> 8 of 8 · review-contract r2 -> 8 of 8**`. Bold markers
+  # sat where the pattern expected a space, and a second round on the same line was invisible either
+  # way. The gate that refuses a review missing its evidence therefore never ran here at all —
+  # deleting a declared stream file PASSED. Found by review-build round 1.
+  #
+  # This repository already has the answer for the first half: `norm_line` strips `*` before any
+  # header match, "bold-tolerant (RD-2)". The second half is to scan the whole line for every
+  # `<review> r<N>` pair rather than one anchored at the start.
+  LC_ALL=C sed -nE 's/^[-* ]*\[[xX ]\] *[*_`]*streams:.*/&/p' "$dir/receipts.md" 2>/dev/null \
+    | tr -d '*_`' \
+    | grep -oE 'review-(contract|plan|build)[[:space:]]+r[0-9]+' \
+    | sed -E 's/[[:space:]]+r/ /' | sort -u
+)
 EOF_STREAMS
   fi
   # v0.30 INV-0 — every INVARIANT must carry a recorded pre-change RED, checked when the work is
@@ -2626,7 +2641,13 @@ is_mid_build() { # <build-dir>
 _sg_refuse_ok() { # <build-dir> <slug> <sid> <locks-dir>
   local dir="$1" slug="$2" sid="$3" ld="$4"
   _SG_NEXT=""
-  [ -f "$dir/.auto-mode" ] || return 1
+  # CONDITION 1 IS THE CALLER'S, AND ONLY THE CALLER'S. `cmd_stop_guard` already tests `.auto-mode`
+  # on every INDEX row before it will spend a subprocess on this function, and that cheap test is
+  # load-bearing for the speed bound. A second copy here could be deleted with all three suites
+  # green, because no fixture can reach this line with the marker absent. This file already settled
+  # that question once, for the gate-lock check below: a condition no fixture can isolate is not a
+  # condition, it is a duplicate — and an untestable duplicate is worse than none, because it reads
+  # as a safeguard while guaranteeing nothing. One check, one owner. Review-build round 1.
   [ -f "$dir/.auto-suspended" ] && return 1
   # `compass.sh abort` is the most obviously named stop command in the whole tool, and its own
   # message says the build "halts before its next step". A reviewer set it and the refusals carried

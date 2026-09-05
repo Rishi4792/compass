@@ -37,6 +37,12 @@ SH=plugins/compass/scripts/compass.sh
 # is the same mistake as shipping the real one: a fixture must not read as anybody's identity.
 _U="Us""ers"; _H="ho""me"; _N="fixture""person"; _AK="AK""IA"; _SK="s""k-"; _SEC="_SEC""RET"
 _PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"; _sec="_sec""ret"; _KEY="K""EY"; _PW="PASS""WORD"
+# Three of the scanner's ten refusal rules had NO example in this corpus at all — a PEM private-key
+# header, a JSON Web Token, and a GitHub fine-grained token. The check still printed a confident
+# "45 of 45 · 112 of 112", so deleting any one of those three rules would have let a real leak of
+# that class through with the corpus fully green. Found by review-build round 1. Split the same way
+# as every token above, so this file never carries the shape it describes.
+_PEM="-----BE""GIN RSA PRIVATE ""KEY-----"; _JWT="ey""J"; _GPAT="git""hub_pat_"
 # AN INVENTED ID. The first version of this line assembled the AUTHOR'S REAL session id at run time
 # — the same defect this project has now found three times, in three different files, twice after
 # declaring it fixed. Splitting a string hides a value from the scanner; it does not make the value
@@ -45,7 +51,7 @@ _PG="post""gres"; _XO="xo""xb-"; _GH="gh""p_"; _SS="ses""sion_"; _sec="_sec""ret
 _ID="1a2b""3c4d-0000-4000-8000-00000000f00d"; _IDU="$(printf '%s' "$_ID" | tr 'a-f' 'A-F')"
 subst() { sed -e "s|<U>|$_U|g" -e "s|<H>|$_H|g" -e "s|<N>|$_N|g" -e "s|<AK>|$_AK|g" \
               -e "s|<SK>|$_SK|g" -e "s|<SEC>|$_SEC|g" -e "s|<PG>|$_PG|g" -e "s|<XO>|$_XO|g" \
-              -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<sec>|$_sec|g" -e "s|<KEY>|$_KEY|g" -e "s|<PW>|$_PW|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
+              -e "s|<PEM>|$_PEM|g" -e "s|<JWT>|$_JWT|g" -e "s|<GPAT>|$_GPAT|g" -e "s|<GH>|$_GH|g" -e "s|<SS>|$_SS|g" -e "s|<sec>|$_sec|g" -e "s|<KEY>|$_KEY|g" -e "s|<PW>|$_PW|g" -e "s|<IDU>|$_IDU|g" -e "s|<ID>|$_ID|g"; }
 
 D="$(mktemp -d)"; mkdir -p "$D/d"
 one() { printf '%s\n' "$1" > "$D/d/f.txt"; bash "$SH" secret-scan "$D/d" >/dev/null 2>&1; local r=$?; rm -f "$D/d/f.txt"; return $r; }

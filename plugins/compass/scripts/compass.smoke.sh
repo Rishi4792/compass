@@ -344,6 +344,8 @@ _p6fx() {   # <break: none|mode|suspended|owner|gatelock|advance|successor|ship|
       ship)      for _st in plan review-plan build review-build; do printf '## RECEIPT — %s · b · PASS\nok\n\n' "$_st" >> .claude/builds/b/receipts.md; done ;;
       budget)    printf 'ceiling_wall=3600\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=0\nspent_wall=0\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
       wall)      printf 'ceiling_wall=1\nceiling_sessions=5\nceiling_stages=20\nceiling_refusals=40\nspent_wall=99999\nspent_sessions=0\nspent_stages=0\nspent_refusals=0\nstarted_epoch=1\n' > .claude/builds/b/budget.env ;;
+      abort)     : > .claude/builds/b/.abort ;;
+      ownerprefix) printf 'session=%s-a-different-session\n' "$sid" > .claude/builds/.locks/b.owner ;;
       unwritable) chmod a-w .claude/builds/b ;;
       badslug)   : ;;
     esac
@@ -368,6 +370,17 @@ chk "$(_p6fx ship)"      "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 7/8 (INV-SHIP-S
 chk "$(_p6fx budget)"    "ALLOW 0 0" "v0.35 INV-EIGHT-CONDITIONS 8/8: the refusal ceiling is reached → {}, and the counter is NOT spent on a refusal that did not happen"
 # ── the round-1 reviewer's findings, each with the fixture that found it ─────────────────────────
 chk "$(_p6fx wall)"       "ALLOW 0 0" "v0.35 P6b: the WALL ceiling still binds independently of the refusal counter — two bounds, not one"
+# ── review-build r1: two of the nine conditions had no fixture that could isolate them ──────────
+# `abort` is the most plainly named stop command Compass has, and its own message says the build
+# "halts before its next step". Nothing tested that the refusals stop when it is set.
+chk "$(_p6fx abort)"       "ALLOW 0 0" "v0.35 rb1: the abort sentinel is set → {} — the stop command stops the refusals too"
+# Ownership is checked TWICE with two different rules, and only the weak one was covered. The caller
+# does a cheap PREFIX match to skip foreign rows without spawning a process; `_sg_refuse_ok` then
+# does the real EXACT comparison. Every existing fixture used a wholly unrelated owner, which the
+# prefix match already rejects — so the exact comparison could be deleted with the whole suite
+# green, and then any session whose id merely STARTS the owner's would act on a build it does not
+# own. This fixture is that exact case: the prefix matches and the identity does not.
+chk "$(_p6fx ownerprefix)" "ALLOW 0 0" "v0.35 rb1: an owner whose id merely starts with this session's id → {} — the prefix pre-filter is a speed-up, not the identity test"
 # `is_mid_build` lost its only hook caller when P2 deleted the gated refusal, and a reviewer replaced
 # it with `return 1` with every suite still green. It is still what `stage-continuable` — and
 # therefore `auto-spawn` — decides on, so it is tested through the command that uses it.
@@ -555,6 +568,22 @@ _p4=0; for _t in contract review-contract plan review-plan build review-build sh
 chk "$_p4" "7" "v0.35 INV-APPROVE-INVOKES: the new text is byte-identical across all seven stage skills"
 _d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED\nbody\n\n' >> "$_d/receipts.md"
 chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a SUPERSEDED last block is not a pass"; rm -rf "$_d"
+# v0.35 rb1 — `stage_pass` decides "which stage are we on" for cockpit, statusline, orient and
+# next-stage, and v0.35's gate tells the model to INVOKE whatever stage that names. It makes three
+# separate refusals; a mutation reviewer deleted TWO of them with the whole suite still green:
+#
+#   * delete the PASS test -> a FAILED stage reads as passed. Nothing ever fed it a FAIL header.
+#     The SUPERSEDED fixture above only failed because the word "SUPERSEDED" happens not to
+#     contain "PASS", so the PASS test was quietly catching it and its own deletion went unseen.
+#   * delete the SUPERSEDED test -> caught by the PASS test for that same accidental reason, so it
+#     was untested too. A real superseded receipt often names the verdict it replaced, and then the
+#     header does contain the word PASS and the PASS test lets it straight through.
+#
+# Each refusal now has a fixture only IT can refuse.
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · FAIL\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 rb1: a FAILED last block is not a pass — the build does not advance past it"; rm -rf "$_d"
+_d="$(_nsfx contract)"; printf '## RECEIPT — contract · fix · SUPERSEDED (replaces the earlier PASS)\nbody\n\n' >> "$_d/receipts.md"
+chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 rb1: SUPERSEDED wins even when the header also carries the word PASS"; rm -rf "$_d"
 _d="$(mktemp -d)"; printf '## RECEIPT — contract · fix · PASS\n- [ ] an unchecked box\n\n' > "$_d/receipts.md"
 chk "$(bash "$SH" next-stage "$_d" 2>/dev/null)" "contract" "v0.35 P3: a PASS carrying an unchecked box is not a pass"; rm -rf "$_d"
 # v0.35 P3b — the three defects an independent reviewer found in the first version.
@@ -4096,6 +4125,17 @@ chk "$(_afx malformed)" "1" "v0.35 INV-AUTOFIX-BOUNDED: a record nobody can read
 chk "$(_afx contract)"  "1" "v0.35 INV-AUTOFIX-BOUNDED: the contract changed since it locked — five of Compass's own sub-gates fail on contract.md, so this is the repair rewriting the spec its gate reads"
 chk "$(grep -c 'autofix-check' "$PLUGIN_ROOT/scripts/mechanical-suite.sh")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the suite NAMES the check"
 chk "$(grep -c 'autofix: <sub-gate>' "$PLUGIN_ROOT/skills/build/SKILL.md")" "1" "v0.35 INV-AUTOFIX-BOUNDED: ...and the build skill states the rule where the model reads it"
+# review-build r1 control: a reviewer INVERTED this rule in build/SKILL.md — "no limit on attempts,
+# may edit the contract" — and every suite stayed green, because the only assertion above greps the
+# RECEIPT SHAPE line, which an inversion leaves untouched. `autofix-check` polices the receipt; the
+# rule the model actually obeys is prose in the skill, and prose needs its load-bearing sentences
+# pinned as required literals. A blacklist of ways to write the opposite was already paraphrased
+# past twice on the gate text this same release, so this is a whitelist: these three claims must be
+# present verbatim, and none of them can survive an inversion of the rule.
+_afxb="$PLUGIN_ROOT/skills/build/SKILL.md"
+chk "$(grep -cF 'you may attempt **exactly one** repair' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: the ONE-repair bound is stated verbatim where the model reads it"
+chk "$(grep -cF 'In **Human-gated** mode: **zero** repairs' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the Human-gated count is zero, stated verbatim"
+chk "$(grep -cF 'A repair may NEVER edit `contract.md`' "$_afxb")" "1" "v0.35 rb1 INV-AUTOFIX-BOUNDED: ...and the ban on a repair rewriting the locked spec is stated verbatim"
 
 # ── v0.35 — INV-BRIEF-DESCRIBES-THIS-BUILD and INV-NO-SELF-ARM ───────────────────────────────────
 # v2's Contract Brief described v1's build: the words "Stop hook" appeared ZERO times in its reader
