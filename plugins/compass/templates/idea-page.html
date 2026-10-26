@@ -18,7 +18,7 @@
   .who { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
   .exists { grid-column:1 / -1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
   .exists > div { border-left:3px solid var(--warn); padding-left:12px; font-size:15.5px; color:var(--ink-2); } .exists b { display:block; font-family:var(--display); font-size:18px; color:var(--ink); }
-  .who div { border-left:3px solid var(--accent); padding-left:12px; font-size:15.5px; color:var(--ink-2); }
+  .who > div:not(.exists) { border-left:3px solid var(--accent); padding-left:12px; font-size:15.5px; color:var(--ink-2); }
   .who b { display:block; font-family:var(--display); font-size:18px; color:var(--ink); }
   section { padding-block:40px; border-bottom:1px solid var(--line); }
   .part { display:grid; grid-template-columns:200px minmax(0,1fr); gap:28px; align-items:start; }
@@ -28,13 +28,13 @@
   .plabel { font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); margin-top:6px; }
   .promises { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
   .promises li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:10px; align-items:start; padding:10px 12px; background:var(--paper); border:1px solid var(--line); border-radius:10px; font-size:15.5px; }
-  .promises .tick { width:22px; height:22px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-size:13px; font-weight:700; margin-top:1px; }
+  .promises .tick { width:22px; height:22px; border-radius:50%; background:var(--bg); color:var(--ink-2); display:grid; place-items:center; font-size:11px; font-family:var(--mono); margin-top:1px; }
   .promises .n { font-family:var(--mono); font-size:12.5px; white-space:nowrap; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:999px; align-self:center; }
   .promises .live { font-family:var(--mono); font-size:12px; color:#fff; background:var(--accent); padding:2px 8px; border-radius:999px; }
   .promises .live.bad { background:var(--bad); }
   .sketch { margin-top:4px; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:14px; overflow-x:auto; }
   .sketch .sk svg { width:100%; max-width:420px; height:auto; display:block; margin-inline:auto; }
-  .shots { display:grid; gap:14px; } .shot-row { display:grid; grid-template-columns:minmax(0,1fr) 160px; gap:12px; align-items:start; } .shot-label { grid-column:1 / -1; font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); } .shots figure { margin:0; } .shots figure.phone { max-width:390px; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:10px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
+  .shots { display:grid; gap:14px; } .shot-row { display:grid; gap:12px; } .shot-label { font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); } .shots figure { margin:0; } .shots figure.phone { max-width:390px; } .shots figure.desk { max-width:100%; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:10px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); } .shots details { border-top:1px solid var(--line); padding-top:10px; } .shots summary { cursor:pointer; font-size:14px; color:var(--accent); }
   .journey { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; padding:4px 0; counter-reset:step; } .journey .step { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; align-content:start; position:relative; } .journey .pic svg { width:100%; height:auto; max-height:90px; display:block; } .journey .cap { font-size:13px; line-height:1.3; } .journey .cap .k { font-family:var(--mono); font-size:11px; color:var(--accent); margin-right:6px; }
   .promises .n.muted { color:var(--ink-2); background:var(--bg); }
   .part figure svg { max-height:220px; }

@@ -110,20 +110,28 @@ check('P6.1', 'going live: gate 4 opens only on an answer, release needs closed 
   if (!fails(['writeback', b, 'P1.1=7 s ✓'], t)) throw new Error('typed live values accepted');
   if (!fails(['receipt', b, 'deploy', 'gate 4', '[ ] ask: go live?'], t)) throw new Error('gate 4 asked before every step was proven');
   closeAll(t, b);
-  run(['receipt', b, 'deploy', 'preflight', 'x'], t); run(['receipt', b, 'deploy', 'rehearsal', 'x'], t);
+  if (!fails(['receipt', b, 'deploy', 'preflight', 'x'], t)) throw new Error('a typed preflight receipt was accepted'); if (!fails(['receipt', b, 'build', 'gates green', 'ran: 4'], t)) throw new Error('a typed gates-green receipt was accepted'); if (!fails(['receipt', b, 'build', 'a note', 'P1.1: live 540 ✓'], t)) throw new Error('a typed live number was accepted');
+  if (!fails(['receipt', b, 'deploy', 'gate 4', '[ ] ask: go?'], t)) throw new Error('gate 4 asked before the safety checks');
+  run(['preflight', b, '--record'], t); run(['receipt', b, 'deploy', 'rehearsal', 'x'], t);
+  const rows = read(path.join(b, 'attacks.md')); fs.writeFileSync(path.join(b, 'attacks.md'), rows.split('\n').slice(0, 7).join('\n') + '\n'); if (!/does not match the chosen set/.test(fails(['receipt', b, 'deploy', 'gate 4', '[ ] ask: go?'], t) || '')) throw new Error('a trimmed attacks.md opened gate 4'); fs.writeFileSync(path.join(b, 'attacks.md'), rows);
   run(['receipt', b, 'deploy', 'gate 4', '[ ] ask: Make Till live for real users now?'], t);
   if (!fails(['receipt', b, 'deploy', 'released', 'cmd → ok'], t)) throw new Error('released accepted while gate 4 is only asked');
   run(['receipt', b, 'deploy', 'gate 4', 'answered: not yet'], t); if (!fails(['receipt', b, 'deploy', 'released', 'cmd → ok'], t)) throw new Error('released accepted after "not yet"');
+  run(['receipt', b, 'deploy', 'gate 4', 'answered: nope, hold off'], t); if (!fails(['receipt', b, 'deploy', 'released', 'cmd → ok'], t)) throw new Error('released accepted after "nope, hold off"');
   run(['receipt', b, 'deploy', 'gate 4', 'answered: go live', 'decision: go live'], t); run(['receipt', b, 'deploy', 'released', 'cmd → ok'], t);
-  const url = run(['writeback', b, '--target=https://shop.example', '--watch-until=2099-01-01'], t); if (!/3 ✓/.test(url)) throw new Error('a URL target broke the measurement: ' + url.trim());
+  const url = run(['writeback', b, '--target=https://shop.example', '--watch-until=2099-01-01'], t); if (!/0 ✓ · 0 ✗ · 3 not measured/.test(url)) throw new Error('a URL target with checks that never read it was counted as measured: ' + url.trim());
+  if (!/not measured \(its check does not read the live address\)/.test(read(path.join(b, 'receipts.md')))) throw new Error('the reason for not measuring is missing');
   fs.writeFileSync(path.join(t, 'tests', 'born.test.js'), 'process.exit(1)');
   const out = fails(['writeback', b, `--target=${t}`, '--watch-until=2099-01-01'], t) || ''; if (!/1 ✗/.test(out)) throw new Error('a red born check did not turn its promise ✗: ' + out.trim());
   const st = JSON.parse(run(['state', b, '--json'], t)); if (st.promises.find(p => p.id === 'P1.1').state !== 'live ✗' || !/✗/.test(st.line)) throw new Error(`P1.1 should be live ✗: ${st.line}`);
   fs.writeFileSync(path.join(t, 'tests', 'born.test.js'), 'console.log("ok")'); fs.appendFileSync(path.join(b, 'receipts.md'), '## RECEIPT — deploy · till · writeback · 2026-10-25T09:00:00Z\n- [x] P1.1: live total 540 ✓\n- [x] P1.2: live ok ✓\n- [x] P2.1: live 1 message ✓\n- [x] watch: until 2026-10-01\n');
   if (!/watch period over/.test(JSON.parse(run(['state', b, '--json'], t)).line)) throw new Error('a passed watch date is not surfaced');
-  run(['writeback', b, `--target=${t}`, '--close-watch'], t); if (!/Live · 3 of 3 promises measured ✓ · done/.test(JSON.parse(run(['state', b, '--json'], t)).line)) throw new Error('close-watch did not finish the build');
+  run(['writeback', b, `--target=${t}`, '--close-watch'], t); if (!/^Done · Till Tally is live and every number held · open it: /.test(JSON.parse(run(['state', b, '--json'], t)).line)) throw new Error('close-watch did not finish the build: ' + JSON.parse(run(['state', b, '--json'], t)).line);
+  // an amend after going live reopens; a re-proven step is re-measured, not marked done
+  run(['receipt', b, 'amend', 'part 1 edited', 'decision: total now excludes voids', 'supersede: S1.1', 'answered: change'], t); if (!/^Building again/.test(run(['state', b], t))) throw new Error('amend after live did not reopen');
+  run(['receipt', b, 'build', 'step S1.1 proven', 'x'], t); const re = run(['state', b], t); if (!/^Rebuilt .* next: I test and measure the changed part again/.test(re)) throw new Error('a re-proven step was not sent back for measurement: ' + re);
   if (!fails(['writeback', b, '--watch-until=2 Nov 2026'], t)) throw new Error('a non-ISO watch date was accepted');
-  return 'gate 4 by answer only; released gated; URL target measured; born check ✗ shown; watch over and closed; bad date refused';
+  return 'typed preflight/gates/live refused; gate 4 after checks, by a yes only; trimmed attacks.md refused; URL target honest; born check ✗; watch closed → Done; amend after live reopens and re-measures';
 });
 
 check('P6.3', 'pre-flight: the restore tag is verified, keys are reported honestly, secrets found', () => {
@@ -184,6 +192,7 @@ check('P2.2', 'interview: 11 questions incl. exists, purpose-changing expand, jo
 
 check('P2.3', 'idea page: limits, exists/because/done required, text sketch refused, journey rendered, version from amends', () => {
   for (const f of ['idea-visual', 'idea-data']) run(['idea-page', F(f), '--check']);
+  const dr = tmpdir('compass-draft-'); fs.writeFileSync(path.join(dr, 'idea.md'), '# Idea — x\ntitle: X\npurpose: p\n\n### Part 1 — A\npicture: box\nText.\n- P1.1 It works. → quickly\n'); if (!/does not pass its check/.test(fails(['receipt', dr, 'idea', 'drafted', '[ ] ask: ok?']) || '')) throw new Error('an Idea page with open problems could be drafted');
   const bad = tmpdir('compass-bad-idea-'); fs.writeFileSync(path.join(bad, 'idea.md'), '# Idea — bad\ntitle: Bad\npurpose: x\n\n### Part 1 — Big\npicture: nope\n' + 'word '.repeat(160) + '\n- P1.1 No number here\nsketch:\n```ascii\nbox\n```\n');
   const out = fails(['idea-page', bad, '--check']) || ''; for (const m of ['no exists: line', 'no done: line', 'words, limit 150', 'unknown picture key', 'no number after', 'fenced text sketch']) if (!out.includes(m)) throw new Error(`lint missed: ${m}`);
   const j = tmpdir('compass-journey-'); run(['idea-page', F('idea-visual'), `--out=${path.join(j, 'p.html')}`]); const html = read(path.join(j, 'p.html')); if ((html.match(/class="step"/g) || []).length !== 4 || !/What you use today/.test(html) || /hero-fig/.test(html)) throw new Error('journey or exists block not rendered, or the icon-row fallback is back');
@@ -214,6 +223,9 @@ check('P5.1', 'attacks: conformance forced for parts with a mock or sketch, load
   const { t, b } = toyRepo();
   for (const bad of [['A3 P1.1 held', 'class: x'], ['A99 P9.9 attempt 1 held', 'class: x'], ['A2 P1.2 attempt 2 held', 'class: x'], ['A2 P1.2 attempt 1 broke', 'class: x']]) if (!fails(['receipt', b, 'attack', ...bad], t)) throw new Error(`attack receipt accepted: ${bad[0]}`);
   if (!fails(['receipt', b, 'attack', 'A2 P1.2 attempt 1 held'], t)) throw new Error('attack receipt without a class accepted');
+  run(['receipt', b, 'attack', 'L1 P1.1 attempt 1 held', 'class: look'], t); if (!fails(['receipt', b, 'attack', 'L2 P2.1 attempt 1 held', 'class: look'], t)) throw new Error('a look receipt for a part with no screen was accepted');
+  const r1 = read(path.join(b, 'attacks.md')).match(/^\|\s*(A\d+)\s*\|\s*P1\.2\s*\|\s*(\S+)/m); run(['receipt', b, 'attack', `${r1[1]} P1.2 attempt 1 broke`, `class: ${r1[2]}`, 'reproduction: node check.js → observed x, expected y'], t); run(['receipt', b, 'build', `fix ${r1[1]}`, 'check added: tests/born.test.js', 'red: node tests/born.test.js → FAIL'], t); run(['receipt', b, 'attack', `${r1[1]} P1.2 attempt 2 broke`, `class: ${r1[2]}`, 'reproduction: node check.js → observed x2, expected y'], t); run(['receipt', b, 'attack', `${r1[1]} P1.2 attempt 2 resolved`, 'answered: move on', 'leftover: broke twice; fixed'], t);
+  const stt = JSON.parse(run(['state', b, '--json'], t)); if (!stt.attacks.find(a => a.key === `${r1[1]} P1.2` && a.resolved)) throw new Error('resolved receipt was refused or ignored');
   return '21 classes; conformance forced on the screen part; load forced on a timed promise; product rows last; idea/plan 4 each; state column; malformed, unknown, out-of-order and class-less attack receipts refused';
 });
 
@@ -271,7 +283,7 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<':
 
 check('P3.1', 'the plan screen fits 40 lines, shows no path and no builder words', () => {
   const card = run(['plan-card', F('plan-full')]); const ls = card.trim().split('\n'); if (ls.length > 40) throw new Error(`${ls.length} lines`);
-  if (/\/Users\//.test(card) || /\bslice\b/i.test(card) || !/Parts, in build order/.test(card) || !/The biggest risks/.test(card)) throw new Error('path, slice, or missing sections');
+  if (/\/Users\//.test(card) || /\bslice\b/i.test(card) || !/Your parts, in build order/.test(card) || !/The biggest risks/.test(card) || !/thin version of the whole thing/.test(card)) throw new Error('path, slice, or missing sections');
   return `${ls.length} lines of 40; parts, risks; no path, no slice`;
 });
 

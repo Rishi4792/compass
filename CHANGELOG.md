@@ -3,6 +3,20 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.3] — 2026-10-26 — the gates are sound
+
+Third review pass (four reviewers over seven lenses): 39 of 46 round-2 items confirmed closed; 26 new, all fixed.
+
+**The record's gates.** A gate opens only on a recognised yes, never on free text or the ask. `preflight`, `gates green`, `writeback` and every live number are written only by their own verbs; a typed one is refused. Gate 4 needs the safety checks and the rehearsal first, every attack row closed, `attacks.md` identical to the set chosen from the page and the spec, and a green suite newer than the last proven step. Every step's verify is re-checked before anything goes live, so a weakened verify after approval is caught. The "Move on" receipt is accepted. Look receipts (`L<n>`) are accepted for screen parts. An Idea page that fails its own check cannot be drafted or approved; `look approved` needs the mock file and a held look panel per screen part; `idea approved` needs the page attacks closed. A changed part after going live is rebuilt, tested and measured again before the build is live again; a finished build ends in "Done … open it: <address>" and offers a new idea.
+
+**Write-back.** On a web address, a check that never reads the address is recorded "not measured", not ✓. Whole-product born checks are counted. The observed value is the line that matched, not the last line.
+
+**The person.** "Nothing needed from you" never appears above a question. Plain state words without inner commas. Promise rows show their number, not a tick, until a live number exists. The plan screen lists your parts by their page names and shows what you decided. README step 3 says literally how to open the folder. Terms the product bans are gone from the README.
+
+**The look.** One theme named everywhere, with a dark block so the bundled gate accepts the tokens. Sketches must use token classes. Screenshot rows in journey order, phone then desktop at full width, extra states behind a fold. Screenshots use a fresh browser profile per run and fail with a sentence, not a stack trace.
+
+**Ids and parsing.** Promise ids are never reused, even across edits. The active build is the one with the newest readable receipt.
+
 ## [1.0.2] — 2026-10-26 — the record runs the proof itself
 
 A second seven-reviewer pass on 1.0.1 closed 61 of 70 earlier findings and raised 38 new ones. All are fixed here.

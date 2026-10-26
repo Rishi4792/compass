@@ -15,7 +15,7 @@ Then ask it yourself with AskUserQuestion: **Build it as written (Recommended)**
 
 ## The step loop
 1. **Resume from the record.** `state <dir>` names the next unproven step. Nothing else is trusted.
-2. **Size.** If the step would not finish in one sitting, split it in `plan.md` first (same promises, each with its own command and expected output), run `plan-check`, record `receipt <dir> plan revised "split S<n> into S<n>.a S<n>.b"`.
+2. **Size.** If the step would not finish in one sitting, split it in `plan.md` first: renumber (`S2.1`, `S2.2`, shift the rest), same promises, each with its own real command and expected output; run `plan-check`; record `receipt <dir> plan revised "split S<n> into S<n> and S<n+1>"`. A verify may never be weakened mid-build; the record re-checks every step's verify before anything goes live.
 3. **Build** exactly what the step says, with the stack and conventions §3 found. For a visual part, compose from the approved mock, `templates/tokens.css` and `design/house-style/SYSTEM.md`; no new styles, no browser-default control; every state the mock shows.
 4. **Prove by running** the step's own command; keep its fresh output. "It compiles" or "it looks right" is not proof.
 5. **Record.** `receipt <dir> build "step S<n> proven" "verify: <the command> → <the output>"`. The record runs the step's own command itself and refuses the receipt unless the output contains the expected text; what it observed is what gets written. Then `card <dir>` and publish it (same file).

@@ -2,15 +2,15 @@
 
 > The reusable 90%. Token STRUCTURE + component recipes + the craft rubric.
 > Identity (the 10%) is set by 4 seeds → `seeds-to-tokens.mjs` → a theme in `themes/`.
-> Default theme = `neutral-indigo`. Gold = `gallery/` + the active theme's tokens.
+> Active theme = `compass-teal` (its CSS form is `templates/tokens.css`). `neutral-indigo` is the generator's reference only. Gold = `gallery/` + the active theme's tokens.
 
 ---
 
 ## Part 1 — Token STRUCTURE (the shape every theme fills)
 
 A theme is ONE `TOKENS` object with these 9 groups — the exact shape `seeds-to-tokens.mjs`
-emits, and the shape the bundled `neutral-indigo` default fills. **Build with token
-references, never raw literals.** (The example hex values below are the `neutral-indigo`
+emits, and the shape `compass-teal` fills. **Build with token
+references, never raw literals.** (The example hex values below are from the reference theme, not the active one; read `compass-teal.json`. They are the `neutral-indigo`
 defaults, for orientation only — read them from the theme JSON, never hard-code them.)
 
 ```ts

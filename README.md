@@ -10,7 +10,7 @@ Compass is one command inside [Claude Code](https://claude.com/claude-code). It 
 
 1. **Get Claude Code** from [claude.com/claude-code](https://claude.com/claude-code). It is the app Compass lives in. Follow its own install page.
 2. **Get Node**, the one free helper Compass needs, from [nodejs.org](https://nodejs.org). One download; click Next until it finishes. If you skip this, Compass tells you in one line and waits.
-3. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea.
+3. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea. In the Claude Code desktop app, use its "Open folder" button. In a terminal: open the Terminal app, type `cd ` (with a space), drag your folder into the window, press Enter, then type `claude` and press Enter.
 4. **Paste these two lines into its chat box**, one at a time, and press Enter after each:
    ```
    /plugin marketplace add Rishi4792/compass
@@ -25,9 +25,9 @@ Type `/compass`. It tells you where your build is in one plain line and asks you
 It reads where your build is, prints one line, and asks one question. You are asked at most four times in a build:
 
 1. **Approve the Idea page** — a picture per part, few words, a number on every promise.
-2. **Approve the plan** — one screen: slices in order, the three biggest risks, any question for you.
-3. **Accept the leftovers** — anything an attack could not close, named in writing.
-4. **Confirm the deploy** — after pre-flight and a rehearsed undo.
+2. **Approve the plan** — one screen: your parts in build order, the three biggest risks, and anything that needs your answer.
+3. **Accept what was set aside** — anything the tests could not close, named in writing.
+4. **Say yes to going live** — after the safety checks pass and the undo has been practised.
 
 Everything else runs for you. You watch one live card: where the build is, one row per promise, every decision you made, and the one question that needs you, if any.
 

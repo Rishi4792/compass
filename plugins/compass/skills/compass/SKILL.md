@@ -26,7 +26,9 @@ The person is asked at most four times in a build: approve the idea, approve the
 | Building again | A part was changed after going live; invoke `compass:build`. |
 | Built · accept what was set aside | Gate 3. Record the ask: `receipt <dir> build "gate 3" "[ ] ask: Accept what was set aside?"` (the flag is set only by the answer, never by the ask). Ask: "These items could not be closed and will ship as they are: <each in plain words>. Accept?" Options: **Accept (Recommended)** → "I go on to the safety checks" · Fix one first → "I ask which, and redo that part" · Pause. On Accept record `receipt <dir> build "gate 3" "answered: accept" "decision: set-aside items accepted: <list>"` and invoke `compass:deploy`. On Fix one first, ask which item; invoke `compass:amend` for its part. |
 | Built · safety checks / Ready to go live / Going live | Invoke `compass:deploy`; it owns gate 4. |
-| Live · watch until / Live · done | Say the line; stop. |
+| Live · watch until | Say the line; stop. |
+| Rebuilt | A changed part is proven again; invoke `compass:build` for its attacks, then `compass:deploy` to measure it again. |
+| Done · … is live and every number held | The build is finished. Ask: "What next?" Options: **Start a new idea (Recommended)** → "a new page and a new card; this one stays as it is" · Open this build's card → "I show the link and stop". On Start, invoke `compass:idea` with a new folder. |
 | Live · watch period over | Invoke `compass:deploy` to re-measure only (`writeback … --close-watch`); a ✗ routes to `compass:amend`. |
 | Live · ✗ / broke after going live | Say which promise in plain words; invoke `compass:amend` for its part. |
 | for you: | Whatever the line, a `for you:` question comes first. Ask exactly it, with its options and consequences, record the answer, then continue. |

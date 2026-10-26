@@ -43,5 +43,19 @@
     "enter": "0.4s cubic-bezier(.22,.61,.36,1)",
     "stagger": 0.05,
     "hover": "120ms"
+  },
+  "dark": {
+    "bg": "#0f1a27",
+    "surface": "#162434",
+    "ink": "#e8eef5",
+    "mut": "#a7b4c4",
+    "line": "#2b3b4f",
+    "accent": "#4fc1bd",
+    "accentWash": "#143a3c",
+    "amberFg": "#e2a84a",
+    "amberBg": "#3d2d12",
+    "redFg": "#e07a7a",
+    "redBg": "#3f1f1f",
+    "grid": "#2b3b4f"
   }
 }

@@ -12,7 +12,7 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <what this build will not do, from ## Never and ## Later>
 
 ## 3. Current state (read, not assumed)
-<what exists today, with real paths: entry points, data shapes, existing tests, how it deploys. Cite at least one path that exists. In an empty folder write "greenfield" and name the chosen stack.>
+<what exists today, with real paths. Cite at least one that exists. Empty folder: write "greenfield" and the chosen stack.>
 
 ## 4. Proposed design
 <the pieces, the data flow, the interfaces between pieces, one diagram in a fenced block>
@@ -21,7 +21,7 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <two or three other designs and why not>
 
 ## 6. Data changes
-<every schema or data change in expand-then-contract form; each reversible; backfills counted against the source; dry-run on a copy first. "None" if none.>
+<every data change, expand then contract, reversible, counted against the source, dry-run on a copy. "None" if none.>
 
 ## 7. Dependencies and blast radius
 <new libraries with exact versions; everything that touches the changed code and could break>
@@ -34,7 +34,7 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 - [ ] S1.1 <what> → P<id>[, P<id>] · verify: <command that proves it> · ≈ <estimate, for information only>
 ### Slice 2 — <Part title>
 - [ ] S2.1 …
-<one slice per part of the Idea page, in the order they deliver value; every step fits one sitting>
+<one slice per part, in value order; every step fits one sitting>
 
 ## 10. Order and parallelism
 <what depends on what; what can run at the same time>
@@ -46,19 +46,19 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <the exact steps to undo, rehearsed on a copy before deploy>
 
 ## 13. Testing strategy
-<the gate suite is the promise checks plus every check born from an attack; interface tests where two pieces meet; test data named; what is deliberately not tested and why>
+<the gate suite is the promise checks plus checks born from attacks; test data named; what is not tested and why>
 
 ## 14. Definition of done
-<per step: the verify ran with fresh output and a receipt exists; per slice: its part's attacks closed; per build: every promise live>
+<step: verify ran, receipt exists; slice: attacks closed; build: every promise live>
 
 ## 15. Observability
-<for each promise, the one metric or log line that proves it in production, and the alert if it stops>
+<per promise: the metric or log line that proves it live, and the alert if it stops>
 
 ## 16. Failure modes
-<for each outside dependency: behaviour when slow, when down, when returning garbage; timeouts and retry limits; safe to run twice; the losing interleaving for any read-modify-write and the guard against it>
+<per outside dependency: slow, down, garbage; timeouts and retry limits; safe to run twice; the losing interleaving and its guard>
 
 ## 17. Security and privacy
-<which data is sensitive; who may see what, as a role × resource table; the three or four likeliest attacks and the guard for each; where secrets live; nothing sensitive in logs>
+<sensitive data; who may see what (role × resource); the likeliest attacks and guards; where secrets live; nothing sensitive in logs>
 
 ## 18. Performance and capacity
 <expected volume, the limit the design handles, the cost at that volume>
@@ -78,13 +78,13 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 ## Kept from Compass 0.35: the data-safety rules and where they live now
 | Rule | 1.0 home |
 |---|---|
-| Migration rehearsed on a copy, row count and checksum equal | §6 Data changes; attack class cannot-undo |
-| Cross-table invariants (child sums to parent, no orphans) enforced in the database | §6 and spec rules; attack classes wrong-output, data-lost |
-| Race analysis: the losing interleaving named and guarded | §16 Failure modes; attack classes duplicate-output, retry |
-| Every outside call has a timeout and a retry limit | §16 Failure modes; attack class silent-failure |
-| Role × resource access table | §17 Security; attack class wrong-person |
-| Sensitive fields named; none in logs | §17 Security; attack class wrong-person |
+| Migration rehearsed on a copy, counts equal | §6; attack cannot-undo |
+| Cross-table invariants enforced in the database | §6, spec rules; attacks wrong-output, data-lost |
+| Race analysis: losing interleaving named and guarded | §16; attacks duplicate-output, retry |
+| Every outside call has a timeout and retry limit | §16; attack silent-failure |
+| Role × resource access table | §17; attack wrong-person |
+| Sensitive fields named; none in logs | §17; attack wrong-person |
 | Secret scan on the release | Deploy pre-flight (slice 6) |
 | Every config key present in production before deploy | Deploy pre-flight (slice 6) |
 | Restore point before deploy | Deploy pre-flight (slice 6) |
-| Numbers reconciled to an independent figure | Attack class wrong-output ("compute it a second way"); deploy write-back |
+| Numbers reconciled to an independent figure | attack wrong-output; write-back |
