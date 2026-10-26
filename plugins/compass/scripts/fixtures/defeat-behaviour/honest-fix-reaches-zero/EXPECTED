@@ -1,4 +1,0 @@
-kind=control
-check=reachable-argument-check.sh
-rule=figure-must-reach-zero
-why=A gold no honest implementation can reach is not a target, it is a wall. This asserts the SHIPPED generator reaches ZERO on every path the check can bind to a row — the real acceptance criterion, run on every corpus run.

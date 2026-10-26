@@ -1,3 +1,0 @@
-- [x] **1 · honest step.**
-- [x] **2 · ticked without any verify.**
-- [ ] **3 · pending.**

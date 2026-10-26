@@ -1,0 +1,85 @@
+{
+  "slug": "fresh",
+  "title": "toy-shop",
+  "page": "https://example.invalid/idea",
+  "stage": "idea",
+  "line": "IDEA · NOT STARTED · SLICE 1 OF 2 · 0 OF 3 STEPS · NEXT: start the interview",
+  "next": "start the interview",
+  "ask": null,
+  "watch": null,
+  "slices": [
+    {
+      "n": 1,
+      "title": "Skeleton",
+      "total": 2,
+      "done": 0
+    },
+    {
+      "n": 2,
+      "title": "Stock",
+      "total": 1,
+      "done": 0
+    }
+  ],
+  "steps": {
+    "total": 3,
+    "proven": 0,
+    "next": "S1.1"
+  },
+  "parts": [
+    {
+      "n": 1,
+      "title": "Daily sales line"
+    },
+    {
+      "n": 2,
+      "title": "Low stock nudge"
+    }
+  ],
+  "promises": [
+    {
+      "id": "P1.1",
+      "part": 1,
+      "text": "See today's sales total on one line.",
+      "number": "1 line",
+      "steps": 1,
+      "done": 0,
+      "state": "planned",
+      "live": null
+    },
+    {
+      "id": "P1.2",
+      "part": 1,
+      "text": "The total matches the till to the rupee.",
+      "number": "0 difference",
+      "steps": 1,
+      "done": 0,
+      "state": "planned",
+      "live": null
+    },
+    {
+      "id": "P2.1",
+      "part": 2,
+      "text": "Get one message when an item drops under 5.",
+      "number": "1 message",
+      "steps": 1,
+      "done": 0,
+      "state": "planned",
+      "live": null
+    }
+  ],
+  "risks": [
+    {
+      "id": "R1",
+      "text": "The till export format may change without notice."
+    },
+    {
+      "id": "R2",
+      "text": "The shop has no internet after 20:00."
+    }
+  ],
+  "decisions": [],
+  "leftovers": [],
+  "attacks": [],
+  "productAttacks": []
+}

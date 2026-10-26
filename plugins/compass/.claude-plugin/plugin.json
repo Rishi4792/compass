@@ -1,10 +1,18 @@
 {
   "name": "compass",
-  "version": "0.35.0",
-  "description": "Build true to spec, zero drift. A contract-first lifecycle: define a locked contract (the invariant), plan against the real codebase, build, and pass three adversarial reviews — enforced by a real gate script, with reconciliation to an independent gold figure, user-driven gates, a human sign-off, and clean cross-session resume. Every step is checked against the contract; any deviation stops and asks.",
-  "author": { "name": "Rishi Kapoor" },
+  "version": "1.0.0",
+  "description": "Describe what you want. Read one page. Say yes four times. Get a product that does what the page says, proven live. One command: /compass. Four stages: Idea, Plan, Build, Deploy. AI attacks its own work inside every stage.",
+  "author": {
+    "name": "Rishi Kapoor"
+  },
   "homepage": "https://github.com/Rishi4792/compass",
   "repository": "https://github.com/Rishi4792/compass",
   "license": "MIT",
-  "keywords": ["contract", "spec", "engineering-plan", "adversarial-review", "zero-drift", "build-test-verify", "reconciliation", "lifecycle"]
+  "keywords": [
+    "build",
+    "idea-to-production",
+    "adversarial",
+    "first-time-right",
+    "lifecycle"
+  ]
 }

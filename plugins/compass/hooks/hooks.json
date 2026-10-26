@@ -1,34 +1,12 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
+    "SessionStart": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/orient-hook.sh\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/compass.sh\" stop-guard"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '{\"systemMessage\":\"Compass: if a build is active, update .claude/builds/<slug>/progress.md now (stage, status, first UNCHECKED step, open ledger items) and print the resume block for /compass:resume. Never leave a plan.md box checked whose verify did not finish.\"}'"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/compass\" line auto"
           }
         ]
       }

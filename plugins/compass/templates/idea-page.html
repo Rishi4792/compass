@@ -1,0 +1,65 @@
+<title>{{TITLE}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root { --bg:#f2f5f8; --paper:#fff; --ink:#142437; --ink-2:#4b5b70; --line:#d5dde6; --accent:#0b7a7c; --accent-soft:#d9efee; --warn:#b9720f; --warn-soft:#f7e8cc; --bad:#b23b3b;
+    --display:"Bricolage Grotesque","Avenir Next","Helvetica Neue",Arial,sans-serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; color-scheme:dark; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--body); line-height:1.5; font-size:17px; }
+  .wrap { max-width:1000px; margin:0 auto; padding-block:40px 64px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); }
+  h1,h2,h3 { font-family:var(--display); text-wrap:balance; margin:0; line-height:1.08; }
+  h1 { font-size:clamp(40px,7vw,68px); font-weight:800; letter-spacing:-.02em; }
+  h2 { font-size:clamp(26px,4vw,36px); font-weight:700; letter-spacing:-.015em; }
+  p { margin:0; max-width:60ch; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); }
+  .lede { font-size:clamp(20px,2.6vw,26px); line-height:1.35; font-family:var(--display); font-weight:500; max-width:30ch; }
+  .hero { display:grid; gap:22px; padding-bottom:40px; border-bottom:1px solid var(--line); }
+  .hero-fig { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px 18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
+  .hero-fig svg { width:100%; height:auto; display:block; }
+  .who { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .who div { border-left:3px solid var(--accent); padding-left:12px; font-size:15.5px; color:var(--ink-2); }
+  .who b { display:block; font-family:var(--display); font-size:18px; color:var(--ink); }
+  section { padding-block:40px; border-bottom:1px solid var(--line); }
+  .part { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:30px; align-items:start; }
+  .part figure { margin:0; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; min-width:0; }
+  .part figure svg { width:100%; height:auto; display:block; }
+  .words { display:grid; gap:12px; min-width:0; }
+  .plabel { font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); margin-top:6px; }
+  .promises { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .promises li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:10px; align-items:start; padding:10px 12px; background:var(--paper); border:1px solid var(--line); border-radius:10px; font-size:15.5px; }
+  .promises .tick { width:22px; height:22px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-size:13px; font-weight:700; margin-top:1px; }
+  .promises .n { font-family:var(--mono); font-size:12.5px; white-space:nowrap; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:999px; align-self:center; }
+  .promises .live { font-family:var(--mono); font-size:12px; color:#fff; background:var(--accent); padding:2px 8px; border-radius:999px; }
+  .promises .live.bad { background:var(--bad); }
+  .sketch { margin-top:4px; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:14px; overflow-x:auto; }
+  .sketch pre { margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.35; color:var(--ink); }
+  .sketch svg { width:100%; height:auto; display:block; }
+  .sketch .plabel { margin:0 0 8px; }
+  .sketch iframe.mock { width:100%; max-width:420px; height:720px; border:1px solid var(--line); border-radius:12px; background:#fff; display:block; }
+  .never { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .never span { border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:14.5px; color:var(--ink-2); }
+  .never.out span { text-decoration:line-through; text-decoration-color:var(--bad); }
+  footer { padding-top:24px; font-size:13.5px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:8px 20px; }
+  .f-ink{fill:var(--ink)} .f-ink2{fill:var(--ink-2)} .f-line{fill:var(--line)} .f-paper{fill:var(--paper)} .f-acc{fill:var(--accent)} .f-accs{fill:var(--accent-soft)} .f-warn{fill:var(--warn)} .f-warns{fill:var(--warn-soft)} .f-bad{fill:var(--bad)}
+  .s-ink{stroke:var(--ink)} .s-ink2{stroke:var(--ink-2)} .s-line{stroke:var(--line)} .s-acc{stroke:var(--accent)} .s-warn{stroke:var(--warn)} .nofill{fill:none}
+  @media (max-width:720px) { body{font-size:16px} .part{grid-template-columns:1fr;gap:16px} .promises li{grid-template-columns:22px minmax(0,1fr)} .promises .n,.promises .live{grid-column:2;justify-self:start} section{padding-block:32px} }
+</style>
+<div class="wrap">
+  <header class="hero">
+    <div style="display:grid;gap:12px">
+      <div class="eyebrow">Idea page · {{VERSION}} · {{DATE}}</div>
+      <h1>{{TITLE}}</h1>
+      <p class="lede">{{PURPOSE}}</p>
+    </div>
+    <div class="hero-fig">{{HERO}}</div>
+    <div class="who">
+      <div><b>Who it is for</b>{{FOR}}</div>
+      <div><b>What hurts today</b>{{HURTS}}</div>
+      <div><b>Done means</b>{{DONE}}</div>
+    </div>
+  </header>
+  {{PARTS}}
+  {{OUT}}
+  <footer><span>{{TITLE}} · Idea page {{VERSION}} · {{DATE}}</span><span>{{NPROMISES}} promises across {{NPARTS}} parts, each with a number</span>{{LIVENOTE}}</footer>
+</div>

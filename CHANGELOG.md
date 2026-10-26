@@ -3,6 +3,18 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.0] — 2026-10-26 — Compass rebuilt around the person using it
+
+**What changed for you.** One command, `/compass`, instead of three menu entries and seven stage names. Four stages: Idea, Plan, Build, Deploy. You are asked at most four times in a build. The contract is now an Idea page: a picture per part, under 150 words per part, a number on every promise. You read it; you never read an engineering document. One live card shows where the build is, one row per promise, every decision, and the one question that needs you.
+
+**What changed underneath.** Review rounds are gone. Inside every stage, fresh reviewers attack each promise from a catalogue of 13 failure classes; an attack ends `held` or `broke` with a reproduction; a break is fixed, becomes a permanent check, and is attacked once more; two attempts, then the person decides. The gate suite is only promise checks and checks born from breaks. Status is computed from an append-only record, never typed. For visual parts the look is judged once, on a real mock, before code; after that only conformance is checked. "Change your mind" re-plans one part and leaves the rest proven.
+
+**Kept from 0.35.** The data-safety rules: migrations rehearsed on a copy, cross-table invariants, race analysis, timeouts, the access table, secret scan, config parity, restore point, reconciliation to an independent figure. Each has a named home in the 21-section plan template, an attack class, or the deploy pre-flight.
+
+**Removed.** `/compass:go`, `/compass:resume`, `/compass:status`; the seven stage skills and `start`; `compass.sh` (6,088 lines) and 59 self-check scripts; the `UserPromptSubmit`, `Stop` and `PreCompact` hooks. Instruction text: 63,372 words → under 10,000, enforced by the gate suite. `v0.35.0` stays installable by tag.
+
+**Evidence.** Built as its own first build: Idea page approved, 21-section plan checked by script, 42 steps recorded, attacks proven on a live reviewer twice. The record is in `.claude/builds/compass-1-0/` of the author's checkout.
+
 ## [0.35.0] — 2026-09-05 — Compass carries itself to the next stage, and says so where it can be tested
 
 **Compass used to stop between stages and wait to be told to carry on.** It stated a prohibition,

@@ -1,0 +1,119 @@
+{
+  "slug": "mid-build",
+  "title": "toy-shop",
+  "page": "https://example.invalid/idea",
+  "stage": "build",
+  "line": "BUILDING · A2 P1.2 ATTEMPT 2 HELD · SLICE 2 OF 2 · 2 OF 3 STEPS · NEXT: build S2.1: Count stock and send one message under 5",
+  "next": "build S2.1: Count stock and send one message under 5",
+  "ask": "Should refunds count as negative sales on the daily line? (suggest yes)",
+  "watch": null,
+  "slices": [
+    {
+      "n": 1,
+      "title": "Skeleton",
+      "total": 2,
+      "done": 2
+    },
+    {
+      "n": 2,
+      "title": "Stock",
+      "total": 1,
+      "done": 0
+    }
+  ],
+  "steps": {
+    "total": 3,
+    "proven": 2,
+    "next": "S2.1"
+  },
+  "parts": [
+    {
+      "n": 1,
+      "title": "Daily sales line"
+    },
+    {
+      "n": 2,
+      "title": "Low stock nudge"
+    }
+  ],
+  "promises": [
+    {
+      "id": "P1.1",
+      "part": 1,
+      "text": "See today's sales total on one line.",
+      "number": "1 line",
+      "steps": 1,
+      "done": 1,
+      "state": "held",
+      "live": null
+    },
+    {
+      "id": "P1.2",
+      "part": 1,
+      "text": "The total matches the till to the rupee.",
+      "number": "0 difference",
+      "steps": 1,
+      "done": 1,
+      "state": "fixed",
+      "live": null
+    },
+    {
+      "id": "P2.1",
+      "part": 2,
+      "text": "Get one message when an item drops under 5.",
+      "number": "1 message",
+      "steps": 1,
+      "done": 0,
+      "state": "planned",
+      "live": null
+    }
+  ],
+  "risks": [
+    {
+      "id": "R1",
+      "text": "The till export format may change without notice."
+    },
+    {
+      "id": "R2",
+      "text": "The shop has no internet after 20:00."
+    }
+  ],
+  "decisions": [
+    {
+      "ts": "2026-10-20T09:00:00Z",
+      "text": "approved by reading the page"
+    },
+    {
+      "ts": "2026-10-20T10:00:00Z",
+      "text": "approved the plan on one screen"
+    }
+  ],
+  "leftovers": [],
+  "attacks": [
+    {
+      "id": "A1",
+      "promise": "P1.1",
+      "attempts": [
+        {
+          "k": 1,
+          "result": "held"
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "promise": "P1.2",
+      "attempts": [
+        {
+          "k": 1,
+          "result": "broke"
+        },
+        {
+          "k": 2,
+          "result": "held"
+        }
+      ]
+    }
+  ],
+  "productAttacks": []
+}

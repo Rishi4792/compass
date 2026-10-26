@@ -1,0 +1,55 @@
+<title>{{TITLE}} · Build Card</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root { --bg:#f2f5f8; --paper:#fff; --ink:#142437; --ink-2:#4b5b70; --line:#d5dde6; --accent:#0b7a7c; --accent-soft:#d9efee; --warn:#b9720f; --warn-soft:#f7e8cc; --bad:#b23b3b;
+    --display:"Bricolage Grotesque","Avenir Next","Helvetica Neue",Arial,sans-serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; color-scheme:dark; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.45; }
+  .wrap { max-width:720px; margin:0 auto; padding-block:24px 56px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); display:grid; gap:18px; }
+  h1 { font-family:var(--display); font-weight:800; font-size:28px; margin:0; letter-spacing:-.01em; }
+  h2 { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); margin:0 0 8px; font-weight:500; }
+  p { margin:0; }
+  .status { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; display:grid; gap:10px; }
+  .line { font-family:var(--mono); font-size:13.5px; word-break:break-word; }
+  .bar { height:10px; background:var(--line); border-radius:5px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--accent); }
+  .sub { font-size:14px; color:var(--ink-2); }
+  .ask { background:var(--warn-soft); border:1px solid var(--warn); border-radius:14px; padding:16px; display:grid; gap:6px; } .ask h2 { color:var(--warn); margin:0; } .ask b { font-family:var(--display); font-size:18px; }
+  .plan { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; display:grid; gap:10px; }
+  .slice { display:grid; grid-template-columns:26px minmax(0,1fr) auto; gap:10px; align-items:center; font-size:15px; padding:3px 0; }
+  .slice .k, .slice .n { font-family:var(--mono); font-size:12px; color:var(--ink-2); } .slice.sk .k { color:var(--accent); font-weight:600; }
+  .risks { display:grid; gap:6px; font-size:14.5px; } .risks div { display:grid; grid-template-columns:18px minmax(0,1fr); gap:8px; }
+  .risks i { width:18px; height:18px; border-radius:50%; background:var(--warn); color:#fff; font-style:normal; font-family:var(--mono); font-size:11px; display:grid; place-items:center; margin-top:2px; }
+  .part { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px 16px; }
+  .part h3 { font-family:var(--display); font-size:16px; font-weight:600; margin:0 0 6px; }
+  .row { display:grid; grid-template-columns:12px minmax(0,1fr) auto; gap:10px; align-items:start; padding:7px 0; border-top:1px solid var(--line); font-size:14.5px; } .row:first-of-type { border-top:0; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--line); margin-top:6px; } .dot.b { background:var(--warn); } .dot.h { background:var(--accent); } .dot.l { background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); } .dot.x { background:var(--bad); }
+  .st { font-family:var(--mono); font-size:12px; color:var(--ink-2); white-space:nowrap; padding-top:2px; } .st.h { color:var(--accent); } .st.x { color:var(--bad); }
+  .list { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px 16px; }
+  .list div { display:grid; grid-template-columns:92px minmax(0,1fr); gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:14.5px; } .list div:first-of-type { border-top:0; }
+  .list time { font-family:var(--mono); font-size:12px; color:var(--ink-2); padding-top:2px; }
+  .links { font-size:14px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px 16px; } a { color:var(--accent); }
+  @media (max-width:420px) { .list div { grid-template-columns:1fr; gap:2px; } }
+</style>
+<div class="wrap">
+  <div><h2>Build card</h2><h1>{{TITLE}}</h1></div>
+  <div class="status">
+    <div class="line">{{LINE}}</div>
+    <div class="bar"><i style="width:{{PCT}}%"></i></div>
+    <p class="sub">Next: {{NEXT}}</p>
+  </div>
+  {{ASK}}
+  <div class="plan">
+    <h2>The plan on one screen</h2>
+    <div>{{SLICES}}</div>
+    {{RISKS}}
+    <p class="links">{{PAGE}}</p>
+  </div>
+  <div>
+    <h2>Promises · {{NPROMISES}} · {{SUMMARY}}</h2>
+    <div style="display:grid;gap:10px">{{PARTS}}</div>
+  </div>
+  <div><h2>Decisions made · {{NDEC}}</h2><div class="list">{{DECISIONS}}</div></div>
+  <div><h2>Leftovers · {{NLEFT}}</h2><div class="list">{{LEFTOVERS}}</div></div>
+</div>

@@ -1,169 +1,36 @@
 ---
 name: plan
 user-invocable: false
-description: Turn a locked CONTRACT into an industry-standard engineering plan. STRICT PREREQUISITE — first scan and deeply understand the existing live codebase (or, greenfield, the chosen stack) before planning. Each step gets a verify command; every INVARIANT a non-deferred bound-asserting check; migrations dry-run on a copy. Trigger after the contract locks, or on "make the plan", "compass plan", or the Compass orchestrator.
+description: The Plan stage. Reads the code first, writes the 21-section engineering plan, shows one screen, asks for approval.
 ---
 
 # compass:plan
 
-Convert `contract.md` into the plan the world's best engineers would deliver right the first time.
+Turn an approved Idea page into the plan the best engineering teams write, then show the person one screen of it. Build to spec: the plan may not contain a step the spec does not call for, and may not leave a spec line without a step.
 
-<!-- DOCTRINE:START -->
-**Read these before you start.** They are the standards this stage is held to, and they
-live in `plugins/compass/shared/` so they are the same for every stage that uses them:
+## 1. Read, then scan
+Read `idea.md` and `spec.md` in the build folder. If `spec.md` is missing, write it first, exactly as `skills/idea/SKILL.md` describes (rules each ending `→ P<id>`, assumptions from the scan, kind), and check it with `scripts/compass spec-check <dir>`. Then read the codebase the way a senior engineer would on day one: `CLAUDE.md` or `README`, how it runs and deploys, the files the parts will touch, existing tests, data shapes. Note every real path you will cite. In an empty folder, choose the stack and say "greenfield".
 
-- **`shared/feynman.md`** — the writing standard for the reader-facing copy this stage produces.
+## 2. Write the plan
+If a `plan.md` already exists and `plan-check` fails on it, it came from an older stage or a placeholder: rewrite it in full. Keep its `## 21. Decision log` lines, if any.
+Copy the 21 headings from `${CLAUDE_PLUGIN_ROOT}/shared/plan-template.md`, in order, and fill every one. Write the whole file in one Bash heredoc to `plan.md` (never the editing tools; the person must not see a diff). Rules the checker enforces:
+- §3 cites at least one path that exists.
+- Slice 1 is the walking skeleton and its heading says so.
+- One slice per part of the Idea page after the skeleton, in value order.
+- Every step: `- [ ] S<slice>.<n> <what> → P<id> · verify: <command> · ≈ <estimate>`. Every promise has at least one step. A step with no promise is deleted, not kept.
+- Every step fits one sitting. Split any that would not.
+- Up to three `- R<n>` risk lines and any `- Q<n> (<who>)` questions in §20.
+Then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/compass" plan-check <dir>` and fix what it names until it passes.
 
-(A standard nobody loads is not a standard. `shared/MANIFEST` declares who reads each file and
-`doctrine-wired-check.sh` proves it — `feynman.md` sat unread for three releases while its own
-first line claimed three stages loaded it.)
-<!-- DOCTRINE:END -->
+## 3. Attack the plan
+`scripts/compass attacks <dir> plan` writes the four fixed plan attacks. Two are mechanical and already answered by `plan-check` (a promise with no step; a step with no promise): record them `held` from its output. For the other two, run the protocol in `skills/attack/SKILL.md` with fresh reviewers whose only inputs are `plan.md`, `idea.md`, `spec.md` and the attack: *a step that cannot be undone and has no rollback line* · *a dependency that does not exist in the registry or the repo*. `broke` means an edit to `plan.md` and a re-check, then one re-attack.
 
-## Step 0 — gate
-Run `compass.sh gate .claude/builds/<slug> review-contract`. **Non-zero → STOP** (contract not LOCKED), offer `compass:review-contract`. Read `contract.md` — the invariant below.
+## 4. Show one screen, then gate 2
+`scripts/compass plan-card <dir>` prints the one screen: slices in order with step counts, the three biggest risks, the questions for the person. Print it unchanged. Re-render and publish the card (`scripts/compass card <dir>`, same file each time). Record `scripts/compass receipt <dir> plan drafted "plan: 21 sections · <n> slices · <m> steps" "trace: <p> of <p> promises have a step" "[ ] ask: Approve the plan?"`.
 
-## ⛔ Phase 0 — understand the codebase FIRST (write findings INTO the plan; cite real paths)
-1. **Repo guidance + tooling** (PREFER existing workflows): `CLAUDE.md`, `.claude/`, architecture/invariants docs, CI, package scripts, Makefile, test/migration/seed/perf/OOM scripts, deploy hooks.
-2. **Real blast radius** — read the *actual* code for every area the contract touches; name files, readers/writers, routes, jobs, DB tables, and the **existing workflows that depend on them** (direct + indirect) that could regress. **Rewrite the INDEX `touches` line with this real file list**, and if it overlaps another in-flight build, surface it and ask.
-3. **Real infra constraints** — DB plan/size, instances, caching, memory ceiling, RBAC, cost invariants. Read, don't assume.
-4. **Confirm reconciliation against reality** — can the reproducing query recompute toward the pinned gold? If not, surface it (the contract may bounce back).
-**Greenfield:** no code → inventory the chosen stack/scaffolding/conventions/tooling and say "greenfield."
+Then ask with AskUserQuestion, the card link in the question text: "The plan is on one screen at <card url>. Approve and build?" Options: **Approve and build (Recommended)** · Revise · Pause. On Approve: `scripts/compass receipt <dir> plan approved "answered: approve" "decision: plan v1 approved on one screen"`, then invoke `compass:build`. On Revise: ask what to change, change it, re-check, re-card, ask again. On Pause: "Paused. Type /compass to continue."
 
-## The plan (`plan.md`)
-1. **Traceability** — every contract requirement → step(s).
-2. **INVARIANT → assertion map** — each INVARIANT → the exact command asserting its bound. **An INVARIANT's assertion may NOT be deferred.**
-3. **Files to change/add** (real paths) · **Workflows touched** + regression risks.
-4. **DB / migration** — changes; **every migration includes a DRY-RUN step: apply forward + roll back on a restored copy/branch DB, assert row-count + checksum identical, BEFORE prod**; reversibility; rolling-deploy compatibility.
-5. **Dependencies** — any install/upgrade/lockfile/version-pin change is its **own explicit step with its own verify** (don't let it be improvised).
-6. **API** — shape, backward compatibility, idempotency. · **Code invariants.**
-   - **Security design — threat-model / RBAC matrix (v0.18.0, for any build adding a view/endpoint):** design the **role×resource matrix** the reviews will assert against — every role × the new view/endpoint's resources+actions, allow/deny per cell, traced to the contract's role×view — plus a STRIDE-lite line per surface and the IDOR expectation (each lower role → 403/empty). This is the design artifact review-plan `[E]` / review-build `[D]` (the RBACSTRIDE method) check the built code against. Wire the `permission-matrix` skill when present; N/A when the build adds no new view/endpoint.
-   - **Concurrency/TOCTOU analysis (v0.19.0, for any build with a read-modify-write):** for every read-modify-write on shared state, name the **losing interleaving** (the concurrent order that corrupts) and the guard that defeats it — a row lock / unique constraint / atomic upsert — and flag any long transaction that holds a lock across I/O. This is the analysis review-plan `[A]` / review-build `[A]` (the EDGERACE method) assert the built code against; also enumerate the boundary/edge checklist (off-by-one · timezone+DST · rollover) for numeric/temporal inputs. N/A when the build has no boundary or read-modify-write surface.
-   - **FMEA / perf design (v0.20.0, for any build with an external dependency or non-trivial scale):** a per-dependency **failure-mode analysis** — for each external dependency (DB / API / cron / queue / third-party), state its behavior when slow and when down + the mitigation (timeout / retry-backoff / fallback); **no dependency called with no timeout**. Plus the anti-patterns to avoid at the contract's row count (N+1 / paginationless / O(n²); the query count + peak memory to hold). This is the design artifact review-plan `[D]` / review-build (the PERFFMEA method) assert the built code against. N/A when the build has no external dependency or data-volume-sensitive loop.
-   - **Cross-table invariant design (v0.21.0, for any build touching ≥2 related tables):** enumerate the invariants that must hold ACROSS the tables — **child-sums-to-parent**, no orphan FK, one active generation — and for each name the **DB-constraint / trigger** (not app-only) that enforces it, plus the zero-violators pre-flight query that returns empty before CLOSED. This is the design artifact review-plan `[B]` / review-build `[B]` (the CROSSTAB method) assert the built code against. N/A when the build has no ≥2-related-table surface.
-   - **Compliance / PII design (v0.21.0, for any build touching customer PII / financial records):** state a `compliance/PII:` line covering what is logged (assert **no raw PII/secret in logs**), retention, residency, and that no regulated field crosses into an out-of-scope view. This is what `compass.sh pii-gate` (plan seam) requires when the contract declares `pii: yes`; N/A when the build touches no PII/financial surface.
-7. **Step checklist** — ordered, atomic. Each: what · which requirement · **VERIFY command** (project-facet rungs) · checkbox. A verify may be **"deferred — proven by step N / post-deploy X"** ONLY for **non-INVARIANT** steps with a named later proof.
-   - **Affected routes (v0.8.0, blast-radius):** if the build adds or changes the data/render path of ANY page/route (direct OR indirect readers), the plan MUST carry a machine-readable **`## Affected routes`** block — one route per line, each starting with its path (e.g. `- /accounts/[branchId] — prospect page`). This is the canonical set `route-coverage` checks. Each such route's step VERIFY must be a **page-load rung** (GET/Playwright → 200-with-content, on the migration-built schema) — **typecheck alone is BANNED for a page/route step** (it proves it compiles, not that it runs; the exact `pg-method-rates` miss). Omitting the block when page/route files change is not allowed — `route-coverage` G-R0 makes declaration mandatory.
-8. **Test plan** — unit/integration/migration/API/UI-or-golden-file/permission/regression/perf + reconciliation + (web) design-token + a11y + an **idempotency test** (run twice → identical end-state).
-9. **Rollout & rollback** (exact revert path) · **Assumptions/open risks** (each with how it's validated).
-
-
-### Write the artefact-data block (v0.31, INV-DECLARED)
-
-Before emitting the receipt, append a `compass-artefact-data` fence to `progress.md` carrying the
-fields THIS STAGE owns. The generator states these verbatim and marks them `declared`; the gate holds
-the page to them. A field you do not write is counted by reading and disclosed to the reader as such,
-which is a worse but honest outcome — so write what you actually know, and nothing you do not.
-
-**Only declare a field with an EXACT, mechanically checkable source.** A plan checkbox and a bolded
-`INV-` id are syntax Compass itself writes, so counting them is not a heuristic. Do NOT declare
-`findings.*`: those come from classifying free text in a ledger, which is precisely the guessing this
-build removed. `compass.sh gold-numbers-gate` cross-checks every declared field against its source
-file and fails on a disagreement, so a wrong number here is caught, not shipped.
-
-```compass-artefact-data
-{
-  "steps.total": <count of `- [ ]` + `- [x]` lines in plan.md, outside code fences>,
-  "steps.done":  <count of `- [x]` lines in plan.md, outside code fences>,
-  "invariants.total": <count of distinct **INV-* ids in contract.md>
-}
-```
-
-## Emit
-`progress.md` = ② Plan draft. **EMIT RECEIPT** (fill honestly):
-```
-**v0.29.0 — regenerate, gate, deliver.** `node skills/compass-visual/gen.mjs <dir> plan-map --out <dir>/plan-map.html` → `compass.sh copy-gate <dir>/contract.md` (the reader-copy block, before it is laid out) → `compass.sh artefact-gate <dir>/plan-map.html --bands --copy --steps <N> --source <dir>/plan.md` (non-zero → STOP) → `compass.sh artefact-publish <dir>/plan-map.html --url <the published URL>` (stores the URL so a republish updates the SAME artefact; with no URL and none stored it exits non-zero and names the local file). The gate proves the header count matches the plan and that every step carries its VERIFY, so a stale or wrong Plan Map cannot reach the user.
-
-**v0.24.0/v0.26.0 milestone — Plan Map (INV-MILESTONE-DELIVERY):** before this receipt, generate the house-styled Plan Map — `node skills/compass-visual/gen.mjs .claude/builds/<slug> plan-map --out .claude/builds/<slug>/plan-map.html` (HTML mandatory, node-only), then the **delivery protocol**: `compass.sh render <dir>/plan-map.html <dir>/plan-map.png` (only `png=N/A — <reason>` after a real failed attempt) → show the PNG inline → publish via the Artifact tool (or `artifact=N/A — <reason>`). Record the `MILESTONE:` line below, then run **`compass.sh milestone-gate <dir> plan-map`** (non-zero → STOP). Leaving the box unchecked also makes the frozen `compass.sh gate` refuse to advance.
-
-## RECEIPT — plan · <slug> · PASS
-- [x] gate: review-contract receipt OK
-- [x] MILESTONE: plan-map render=plan-map.html png=<plan-map.png OR `N/A — <reason>`> artifact=<claude.ai URL OR `N/A — <reason>`>  <!-- v0.26 INV-MILESTONE-DELIVERY: one concrete value per key; bare N/A fails the gate. -->
-- [x] Phase 0 grounded — cited paths: <…> (or greenfield); INDEX touches updated
-- [x] every contract requirement traced to a step
-- [x] every INVARIANT → NON-deferred bound-asserting check
-- [x] every migration has a dry-run-on-copy step; dependency changes are explicit steps
-```
-Self-check: `compass.sh scan-receipt .claude/builds/<slug> plan`.
-
-<!-- FEYNMAN -->
-## In plain words — where we are and what's next
-**What just happened.** I read your live codebase first — real files, real readers and writers — then wrote a step-by-step build plan where every step has a command that proves it works.
-**Why it matters.** Every promise in the contract now maps to a step and a test, so "done" will mean proven, not assumed. It also names what breaks if an outside service is slow, and the exact one-command undo.
-**Your options:**
-- **Approve & continue** — move to review-plan (independent reviewers tear the plan apart before any code).
-- **Revise** — re-run planning with a change you name.
-- **Amend** — a real scope change: bump the contract and re-review just the delta.
-- **Pause** — stop cleanly; you resume exactly here, nothing lost.
-**My recommendation.** Approve & continue — send the plan to an independent review before writing code.
-Progress — ③ plan drafted (grounded in the real codebase) · next: ④ review-plan.
-<!-- CONFIDENCE -->
-**The rigor I'm applying, so you can trust the machine:** "I read your live codebase first — real file paths, real readers and writers — then wrote a build plan where every step has a command that proves it works. Every contract promise maps to a step and a test. I've listed what breaks if each outside service is slow or down, and the exact one-command way to undo this."
-
-<!-- GATE:START -->
-## Stage transition — the gate (fires on EVERY entry path)
-
-This stage owns its own transition gate. Present it whether this stage was invoked on its own
-(the `compass:build` skill) or sequenced by the `compass:start` orchestrator. The orchestrator
-does **not** present a second gate — the stage owns it.
-
-1. First print the one-line **transition footer**, in exactly this shape:
-
-   `✓ <this stage> PASSED — <one-line proof>.  Next: <next stage> · run \`/compass:go\`.`
-
-   That footer line is for the READER: it names where they are and the door they can take if they
-   want to steer. It is not your instruction — yours is the Approve branch at the end of this block.
-
-   `<next stage>` is not guessed. Run `compass.sh next-stage <build-dir>` and branch on its EXIT
-   CODE, never on its output, because two different states both print nothing:
-   **0** → the stage it named · **3** → every stage has passed, so Next is `done — build SHIPPED` ·
-   **anything else** → the build state could not be read; say exactly that and stop, rather than
-   guessing a stage or reporting the build finished.
-
-   Then PUSH the RAIL when this stage produced an artefact — run
-   `compass.sh rail <build-dir> --artefact <view> --url <the published URL>` (or `--local <path>`
-   when nothing could publish it) and show it, so the link is in front of the user beside the
-   buttons rather than described in prose. (v0.30: the rail existed and nothing called it — a
-   surface nobody invokes is not a surface, the same defect this build was raised to fix.)
-
-   Then PUSH the cockpit — run `compass.sh cockpit <build-dir>` and show it — so the user always
-   sees where they are (the 7-stage strip · step k/n · next; plus program phases + contracts when
-   in a program) with **zero typing** (v0.24.0 INV-PUSH-STAGE). Silence between stages is a defect.
-
-   Then RUN the stage-end gate on what you just printed — `compass.sh cockpit-gate <build-dir>`.
-   It checks the four elements a reader needs are actually there (what happened · where you are ·
-   what is next · the options, each naming a real command). v0.32 built it and NOTHING invoked it,
-   so it never ran on a single installation; v0.33.3 wires it here, which is its only correct home
-   because it validates a block the model PRINTS rather than a file on disk. Non-zero → fix the
-   block and print it again before presenting the gate.
-
-2. Then present the gate using **AskUserQuestion** with exactly these **4 options**
-   (AskUserQuestion caps at 4; "Show full artifact" is offered via the auto-provided **Other**,
-   or just print the artifact if the user asks):
-   - **Approve & continue** — advance to the next stage.
-   - **Revise** — re-run this stage with the user's change.
-   - **Amend** — a legitimate scope change (not drift): bump the contract version + changelog,
-     run a mini review-contract on the delta, `supersede` downstream, re-baseline.
-   - **Pause here** — stop cleanly; write the resume pointer to `progress.md`.
-
-Only **Approve** or **Amend** advances — and on **Approve** you CONTINUE, you do not stop to ask a
-second time. Run `compass.sh next-stage <build-dir>` — the build directory is the one this stage has
-been working in — and on exit 0 **invoke the named stage with the Skill tool**, whose skill name is
-`compass:` followed by that stage, exactly the way this stage was invoked. On exit 3 the build is
-finished; on any other code, say the state could not be read and stop. The user has already said
-yes; the silence after that yes is the stall this gate exists to end.
-
-The seven stage skills are hidden from the `/` menu, and that is not an obstacle — it is a division
-of labour. A person types **`/compass:resume`**; a model uses the Skill tool. Both reach the same
-stage. What nobody has is a `/compass:` slash command named after a stage, so never print one: it
-sends the reader to a door that is not there.
-
-On **Revise**, re-run this stage with the change. On **Pause**, stop cleanly. On any detected drift
-from `contract.md`, STOP and surface instead of advancing.
-
-*(Until v0.35 this paragraph forbade invoking the next skill at all. It told the reader what would
-NOT happen and never what would, so an approved stage ended in silence and the build waited for a
-human to remember the next command. The old sentence is not quoted here, because the check that
-proves it is gone greps for it — a note about a banned string that contains the banned string keeps
-the defect alive in the file that fixed it. The gate still ASKS. What changed is that an answer of
-Approve is now acted on rather than described.)*
-<!-- GATE:END -->
+## Never
+- Never ask the person an engineering question. Decide it from the scan and write it in §20 as an assumption.
+- Never show the plan file in the chat. The screen is `plan-card`; the file is a link.
+- Never add a step the Idea page or spec does not call for. If the scan shows the idea needs something the page does not say, that is a `Q` for the person at gate 2, and on their yes it goes through `compass:amend`.

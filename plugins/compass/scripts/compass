@@ -1,0 +1,589 @@
+#!/usr/bin/env node
+'use strict';
+// compass — the one script. No dependencies.
+// Status is a pure function of three files in a build folder: idea.md, plan.md, receipts.md.
+// Nothing else in the folder is read. Verbs: state · line · card · receipt · (others arrive in later slices)
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const PLUGIN_ROOT = path.resolve(__dirname, '..');
+const NOT_YET = {};
+
+function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } }
+
+// ---------- parsing ----------
+function parseIdea(text) {
+  const parts = []; let cur = null; let list = null; const later = [], never = []; const head = {};
+  let inFence = false;
+  for (const line of text.split('\n')) {
+    if (/^```/.test(line)) { if (cur && cur.sketchFence !== undefined) { if (inFence) { inFence = false; } else { inFence = true; cur.sketchFence = cur.sketchFence || ''; } continue; } }
+    if (inFence && cur) { cur.sketchFence += line + '\n'; continue; }
+    const h = line.match(/^###\s+Part\s+(\d+)\s+[—-]\s+(.+)$/);
+    if (h) { cur = { n: +h[1], title: h[2].trim(), picture: '', prose: [], promises: [], sketch: '', sketchFence: undefined }; parts.push(cur); list = null; continue; }
+    if (/^##\s+Later/.test(line)) { list = later; cur = null; continue; }
+    if (/^##\s+Never/.test(line)) { list = never; cur = null; continue; }
+    if (/^##?\s/.test(line) && !/^###/.test(line)) { list = null; cur = null; }
+    const kv = line.match(/^(title|page|for|hurts|purpose|done|approved|look):\s*(.*)$/);
+    if (kv && !cur) { head[kv[1]] = kv[2].trim(); continue; }
+    if (cur) {
+      let m;
+      if ((m = line.match(/^picture:\s*(\S+)/))) { cur.picture = m[1]; continue; }
+      if ((m = line.match(/^sketch:\s*(\S+)?/))) { cur.sketch = m[1] || ''; cur.sketchFence = ''; continue; }
+      if ((m = line.match(/^mock:\s*(\S+)/))) { cur.mock = m[1]; continue; }
+      if ((m = line.match(/^-\s+(P\d+\.\d+)\s+(.+?)\s+→\s+(.+)$/))) { cur.promises.push({ id: m[1], part: cur.n, text: m[2].trim(), number: m[3].trim() }); continue; }
+      if ((m = line.match(/^-\s+(P\d+\.\d+)\s+(.+)$/))) { cur.promises.push({ id: m[1], part: cur.n, text: m[2].trim(), number: '' }); continue; }
+      if (line.trim() && !/^-\s/.test(line)) cur.prose.push(line.trim());
+      continue;
+    }
+    if (list && /^-\s+/.test(line)) list.push(line.replace(/^-\s+/, '').trim());
+  }
+  const slugTitle = (text.match(/^#\s+Idea\s+[—-]\s+(.+)$/m) || [, 'build'])[1].trim();
+  return { title: head.title || slugTitle, slug: slugTitle, page: head.page || '', look: (head.look || '').toLowerCase(), for: head.for || '', hurts: head.hurts || '', purpose: head.purpose || '', done: head.done || '',
+    parts, promises: parts.flatMap(x => x.promises), later, never };
+}
+
+// ---------- idea page ----------
+function lintIdea(dir, idea) {
+  const problems = [];
+  const lib = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'pictures.json')));
+  if (!idea.title) problems.push('no title: line');
+  if (!idea.purpose) problems.push('no purpose: line');
+  if (idea.done && !/\d/.test(idea.done)) problems.push('done: has no number in it');
+  if (idea.done && idea.done.split(/\s+/).length > 25) problems.push(`done: is ${idea.done.split(/\s+/).length} words; one number and a date, under 25 words`);
+  if (!idea.parts.length) problems.push('no ### Part blocks');
+  for (const p of idea.parts) {
+    const words = [...p.prose, ...p.promises.map(x => x.text + ' ' + x.number)].join(' ').split(/\s+/).filter(Boolean).length;
+    if (words > 150) problems.push(`part ${p.n}: ${words} words, limit 150`);
+    if (!p.picture) problems.push(`part ${p.n}: no picture:`);
+    else if (p.picture.startsWith('file:')) { if (!fs.existsSync(path.join(dir, p.picture.slice(5)))) problems.push(`part ${p.n}: picture file missing ${p.picture.slice(5)}`); }
+    else if (!lib[p.picture]) problems.push(`part ${p.n}: unknown picture key "${p.picture}"`);
+    if (!p.promises.length) problems.push(`part ${p.n}: no promises`);
+    for (const x of p.promises) if (!x.number) problems.push(`${x.id}: no number after →`);
+    if (p.sketch && !fs.existsSync(path.join(dir, p.sketch))) problems.push(`part ${p.n}: sketch file missing ${p.sketch}`);
+    if (p.mock && !fs.existsSync(path.join(dir, p.mock))) problems.push(`part ${p.n}: mock file missing ${p.mock}`);
+    if (idea.look === 'premium' && (p.sketch || p.sketchFence) && !p.mock) problems.push(`part ${p.n}: premium look needs a mock: for this visual part`);
+  }
+  return problems;
+}
+
+function renderIdeaPage(dir, idea, live) {
+  const tpl = read(path.join(PLUGIN_ROOT, 'templates', 'idea-page.html'));
+  const lib = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'pictures.json')));
+  const pic = p => p.picture.startsWith('file:') ? read(path.join(dir, p.picture.slice(5))) : `<svg viewBox="0 0 240 160" role="img" aria-label="${esc(p.title)}">${lib[p.picture] || ''}</svg>`;
+  const parts = idea.parts.map(p => {
+    const promises = p.promises.map(x => {
+      const l = live && live[x.id];
+      const badge = l ? `<span class="live${l.ok ? '' : ' bad'}">live: ${esc(l.value)} ${l.ok ? '✓' : '✗'}</span>` : `<span class="n">${esc(x.number)}</span>`;
+      return `<li><span class="tick">✓</span><span>${esc(x.text)}</span>${badge}</li>`;
+    }).join('');
+    let sketch = '';
+    if (p.mock) sketch = `<div class="sketch"><div class="plabel">How it will look · the approved mock</div><iframe class="mock" title="mock of ${esc(p.title)}" srcdoc="${esc(read(path.join(dir, p.mock)))}"></iframe></div>`;
+    else if (p.sketch) sketch = `<div class="sketch"><div class="plabel">How it will look</div>${read(path.join(dir, p.sketch))}</div>`;
+    else if (p.sketchFence) sketch = `<div class="sketch"><div class="plabel">How it will look</div><pre>${esc(p.sketchFence.replace(/\n$/, ''))}</pre></div>`;
+    return `<section id="part-${p.n}"><div class="part"><figure>${pic(p)}</figure><div class="words"><div class="eyebrow">Part ${p.n}</div><h2>${esc(p.title)}</h2>${p.prose.map(t => `<p>${esc(t)}</p>`).join('')}<div class="plabel">What you will be able to do</div><ul class="promises">${promises}</ul></div></div>${sketch}</section>`;
+  }).join('');
+  const out = (idea.later.length || idea.never.length) ? `<section id="out"><div class="eyebrow">Out, for now</div><h2>What this will not do</h2>${idea.later.length ? `<div class="plabel">Later</div><div class="never">${idea.later.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}${idea.never.length ? `<div class="plabel">Never</div><div class="never out">${idea.never.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}</section>` : '';
+  const hero = idea.parts.map(p => `<div>${pic(p)}</div>`).join('');
+  const liveN = live ? Object.keys(live).length : 0;
+  const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => ({
+    TITLE: esc(idea.title), PURPOSE: esc(idea.purpose), FOR: esc(idea.for), HURTS: esc(idea.hurts), DONE: esc(idea.done),
+    VERSION: 'v1', DATE: date, HERO: hero, PARTS: parts, OUT: out, NPROMISES: idea.promises.length, NPARTS: idea.parts.length,
+    LIVENOTE: liveN ? `<span>${liveN} live numbers written back from production</span>` : '',
+  }[k] ?? ''));
+}
+
+// ---------- attacks ----------
+function parseCatalogue() {
+  const text = read(path.join(PLUGIN_ROOT, 'shared', 'failure-catalogue.md'));
+  const classes = []; let cur = null;
+  for (const line of text.split('\n')) {
+    const h = line.match(/^##\s+([a-z-]+)\s*$/); if (h) { cur = { key: h[1], likely: {}, applies: [] }; classes.push(cur); continue; }
+    if (!cur) continue;
+    const kv = line.match(/^(name|scope|damage|applies|likely|attack|break|check):\s*(.+)$/); if (!kv) continue;
+    if (kv[1] === 'damage') cur.damage = +kv[2];
+    else if (kv[1] === 'scope') cur.scope = kv[2].trim();
+    else if (kv[1] === 'applies') cur.applies = kv[2].split(/\s+/);
+    else if (kv[1] === 'likely') for (const pair of kv[2].split(/\s+/)) { const [k, v] = pair.split('='); cur.likely[k] = +v; }
+    else cur[kv[1]] = kv[2].trim();
+  }
+  return classes;
+}
+const KEYWORDS = {
+  'wrong-output': /\b(match|matches|correct|exact|rupee|difference|total|sum|count|number)\b/i,
+  'missing-output': /\b(every|all|100%|none|skipped|appears)\b/i,
+  'duplicate-output': /\b(once|one message|twice|duplicate|single)\b/i,
+  'stale-data': /\b(fresh|latest|today|current|updates?|within)\b/i,
+  'data-lost': /\b(lose|lost|stays|kept|until you delete|saved)\b/i,
+  'wrong-person': /\b(anyone else|other people|private|yours only|another|share)\b/i,
+  'cannot-undo': /\b(undo|revert|roll back|back to)\b/i,
+  'bad-input': /\b(paste|type|typed|input|upload|any link|any file)\b/i,
+  'retry': /\b(again|retry|rerun|re-run|twice|idempotent)\b/i,
+  'load': /\b(under \d+|seconds?|\d+ ?s\b|fast|instant|loads)\b/i,
+  'silent-failure': /\b(error|fails?|cannot|can't|never silently|tells you)\b/i,
+  'regression': /\b(still|keeps? working|existing|as before)\b/i,
+  'picture-mismatch': /\b(screen|tap|list|box|button|page|looks?|layout|one line)\b/i,
+};
+function specKind(dir) {
+  const text = read(path.join(dir, 'spec.md')); const m = text.match(/^##\s+Kind\s*\n-\s*(\w+)/m);
+  return m ? m[1].toLowerCase() : 'mixed';
+}
+function chooseAttacks(dir, stage) {
+  if (stage === 'idea') return [
+    { id: 'A1', promise: 'page', key: 'contradiction', name: 'Two parts contradict each other' },
+    { id: 'A2', promise: 'page', key: 'uncheckable', name: 'A promise cannot be checked by anyone' },
+    { id: 'A3', promise: 'page', key: 'already-exists', name: 'Something that already exists does this for this person' },
+    { id: 'A4', promise: 'page', key: 'not-needed', name: 'The stated person does not need this part' }];
+  if (stage === 'plan') return [
+    { id: 'A1', promise: 'plan', key: 'promise-no-step', name: 'A promise with no step' },
+    { id: 'A2', promise: 'plan', key: 'step-no-promise', name: 'A step that serves no promise' },
+    { id: 'A3', promise: 'plan', key: 'no-rollback', name: 'A step that cannot be undone and has no rollback line' },
+    { id: 'A4', promise: 'plan', key: 'missing-dependency', name: 'A dependency that does not exist' }];
+  const idea = parseIdea(read(path.join(dir, 'idea.md'))); const classes = parseCatalogue(); const kind = specKind(dir);
+  const kinds = kind === 'mixed' ? ['visual', 'data', 'service'] : [kind];
+  const fits = c => kinds.some(k => c.applies.includes(k));
+  const likely = c => Math.max(...kinds.map(k => c.likely[k] || 0));
+  const rows = []; let n = 1;
+  // product-wide classes: once per build, ordered by damage × likelihood
+  for (const c of classes.filter(c => c.scope === 'product' && fits(c)).sort((a, b) => b.damage * likely(b) - a.damage * likely(a)))
+    rows.push({ id: `A${n++}`, promise: 'all', key: c.key, name: c.name, score: c.damage * likely(c) });
+  // per-promise classes: the promise's own words outrank the generic likelihood
+  for (const p of idea.promises) {
+    const scored = classes.filter(c => c.scope !== 'product' && fits(c)).map((c, i) => {
+      const bonus = KEYWORDS[c.key] && KEYWORDS[c.key].test(p.text + ' ' + p.number) ? 12 : 0;
+      return { c, i, score: c.damage * likely(c) + bonus };
+    }).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, 2);
+    for (const s of scored) rows.push({ id: `A${n++}`, promise: p.id, key: s.c.key, name: s.c.name, score: s.score });
+  }
+  return rows;
+}
+function writeAttacks(dir, stage, rows) {
+  const lines = [`# Attacks — ${path.basename(dir)} · stage ${stage}`, '', 'Chosen by scripts/compass attacks from idea.md, spec.md and shared/failure-catalogue.md. Do not edit by hand. State lives in receipts.md.', '',
+    '| Attack | Promise | Class | What it tries |', '|---|---|---|---|', ...rows.map(r => `| ${r.id} | ${r.promise} | ${r.key} | ${r.name} |`), ''];
+  fs.writeFileSync(path.join(dir, 'attacks.md'), lines.join('\n'));
+}
+const RECEIPT_SHAPE = /^(held|broke:\s.+?\s(→|->)\sobserved\s.+?,\sexpected\s.+)$/s;
+
+function specCheck(dir) {
+  const text = read(path.join(dir, 'spec.md'));
+  if (!text) return ['spec.md missing'];
+  const problems = []; let section = '';
+  for (const line of text.split('\n')) {
+    const h = line.match(/^##\s+(.+)$/); if (h) { section = h[1].trim(); continue; }
+    if (/^-\s+/.test(line) && /^Rules/i.test(section) && !/→\s*P\d+\.\d+\s*$/.test(line)) problems.push(`rule without a promise pointer: ${line.slice(0, 60)}`);
+  }
+  if (!/^##\s+Rules/m.test(text)) problems.push('no ## Rules section');
+  if (!/^##\s+Assumptions/m.test(text)) problems.push('no ## Assumptions section');
+  return problems;
+}
+
+function parsePlan(text) {
+  const slices = []; let cur = null; const risks = [];
+  for (const line of text.split('\n')) {
+    const h = line.match(/^###\s+Slice\s+(\d+)\s+[—-]\s+(.+)$/);
+    if (h) { cur = { n: +h[1], title: h[2].replace(/\s*\(.*\)\s*$/, '').trim(), steps: [] }; slices.push(cur); continue; }
+    const s = line.match(/^-\s+\[[ xX]\]\s+(S\d+\.\d+)\s+(.+)$/);
+    if (s && cur) {
+      const rest = s[2];
+      const arrow = rest.indexOf('→');
+      const text_ = (arrow >= 0 ? rest.slice(0, arrow) : rest).trim().replace(/\.$/, '');
+      const tail = arrow >= 0 ? rest.slice(arrow + 1) : '';
+      const promises = (tail.split('·')[0].match(/P\d+\.\d+/g)) || [];
+      const verify = (tail.match(/verify:\s*(.+?)(?:\s+·\s+≈|$)/) || [, ''])[1].trim();
+      const em = tail.match(/≈\s*(\d+(?:\.\d+)?)\s*(h|hr|hours?|min|minutes?|d|days?)/); let estimate = null; if (em) { const v = +em[1]; estimate = /^d/.test(em[2]) ? v * 8 : /^min/.test(em[2]) ? v / 60 : v; }
+      cur.steps.push({ id: s[1], slice: cur.n, text: text_, promises, verify, estimate });
+    }
+    const r = line.match(/^-\s+(R\d+)\s+(.+)$/);
+    if (r) risks.push({ id: r[1], text: r[2].trim() });
+  }
+  return { slices, steps: slices.flatMap(x => x.steps), risks };
+}
+
+function parseReceipts(text) {
+  const receipts = []; let cur = null;
+  for (const line of text.split('\n')) {
+    const h = line.match(/^##\s+RECEIPT\s+[—-]\s+(\S+)\s+·\s+(\S+)\s+·\s+(.+?)\s+·\s+(\S+)\s*$/);
+    if (h) { cur = { stage: h[1], slug: h[2], result: h[3].trim(), ts: h[4], lines: [] }; receipts.push(cur); continue; }
+    const l = line.match(/^-\s+\[([ xX])\]\s+(.+)$/);
+    if (l && cur) cur.lines.push({ done: l[1] !== ' ', text: l[2].trim() });
+  }
+  return receipts;
+}
+
+// ---------- state ----------
+function computeState(dir) {
+  const idea = parseIdea(read(path.join(dir, 'idea.md')));
+  const plan = parsePlan(read(path.join(dir, 'plan.md')));
+  const receipts = parseReceipts(read(path.join(dir, 'receipts.md')));
+  const slug = path.basename(dir);
+
+  const proven = new Set();
+  const attacks = {}; // key A-id → { promise, attempts: [{k, result}] }
+  const live = {};    // P-id → { value, ok }
+  const decisions = [], leftovers = []; let ask = null; let watch = null;
+
+  for (const r of receipts) {
+    let m;
+    if (r.stage === 'build' && (m = r.result.match(/^step\s+(S\d+\.\d+)\s+proven$/))) proven.add(m[1]);
+    for (const l of r.lines) { const s = l.text.match(/^supersede:\s*(.+)$/); if (s) for (const id of s[1].split(/[\s,]+/)) proven.delete(id); const w = l.text.match(/^watch:\s*until\s+(\S+)/); if (w) watch = w[1]; }
+    if (r.stage === 'attack' && (m = r.result.match(/^(A\d+)\s+(P\d+\.\d+|all)\s+attempt\s+(\d)\s+(held|broke)$/))) {
+      (attacks[m[1]] = attacks[m[1]] || { promise: m[2], attempts: [] }).attempts.push({ k: +m[3], result: m[4] });
+    }
+    for (const l of r.lines) {
+      if ((m = l.text.match(/^decision:\s*(.+)$/))) decisions.push({ ts: r.ts, text: m[1] });
+      if ((m = l.text.match(/^leftover:\s*(.+)$/))) leftovers.push({ ts: r.ts, text: m[1] });
+      if ((m = l.text.match(/^(P\d+\.\d+):\s*live\s+(.+?)\s*(✓|✗)$/))) live[m[1]] = { value: m[2], ok: m[3] === '✓' };
+    }
+  }
+  // An `ask:` stays open across later receipts until a line `answered: …` closes it.
+  for (const r of receipts) for (const l of r.lines) {
+    const a = !l.done && l.text.match(/^ask:\s*(.+)$/); if (a) ask = a[1];
+    if (/^answered:/.test(l.text)) ask = null;
+  }
+  const last = receipts[receipts.length - 1];
+
+  const promises = idea.promises.map(p => {
+    const steps = plan.steps.filter(s => s.promises.includes(p.id));
+    const done = steps.filter(s => proven.has(s.id)).length;
+    const mine = Object.values(attacks).filter(a => a.promise === p.id);
+    let state = 'planned';
+    if (done > 0) state = 'building';
+    if (steps.length && done === steps.length) state = 'built';
+    if (mine.length) {
+      const lastResults = mine.map(a => a.attempts[a.attempts.length - 1]);
+      const anyBroke = mine.some(a => a.attempts.some(x => x.result === 'broke'));
+      const unresolved = lastResults.some(x => x.result === 'broke');
+      if (unresolved) state = lastResults.some(x => x.result === 'broke' && x.k >= 2) ? 'needs you' : 'broke';
+      else state = anyBroke ? 'fixed' : 'held';
+    }
+    if (live[p.id]) state = live[p.id].ok ? 'live' : 'live ✗';
+    return { ...p, steps: steps.length, done, state, live: live[p.id] || null };
+  });
+
+  const total = plan.steps.length, provenCount = plan.steps.filter(s => proven.has(s.id)).length;
+  const nextStep = plan.steps.find(s => !proven.has(s.id)) || null;
+  const curSlice = nextStep ? nextStep.slice : plan.slices.length;
+
+  let stage = 'idea', next = 'start the interview';
+  if (last) {
+    const key = `${last.stage} ${last.result}`;
+    if (last.stage === 'idea') { stage = 'idea'; next = /approved/.test(key) ? 'draft the plan' : 'approve the idea'; }
+    else if (last.stage === 'plan') { stage = 'plan'; next = /approved/.test(key) ? (nextStep ? `build ${nextStep.id}: ${nextStep.text}` : 'deploy') : 'approve the plan'; }
+    else if (last.stage === 'build' || last.stage === 'attack' || last.stage === 'amend') { stage = 'build'; next = nextStep ? `build ${nextStep.id}: ${nextStep.text}` : 'deploy'; }
+    else if (last.stage === 'deploy') { stage = 'deploy'; next = /writeback/.test(key) ? (watch ? `done — watch period until ${watch}` : 'done — watch period running') : /released/.test(key) ? 'write back the live numbers' : 'deploy to production (gate 4)'; }
+  }
+  const stageWord = { idea: 'IDEA', plan: 'PLAN', build: 'BUILDING', deploy: 'DEPLOY' }[stage];
+  const detail = last ? last.result.toUpperCase() : 'NOT STARTED';
+  const line = total
+    ? `${stageWord} · ${detail} · SLICE ${curSlice} OF ${plan.slices.length} · ${provenCount} OF ${total} STEPS · NEXT: ${next}`
+    : `${stageWord} · ${detail} · NEXT: ${next}`;
+
+  return { slug, title: idea.title, page: idea.page, stage, line, next, ask, watch,
+    slices: plan.slices.map(s => ({ n: s.n, title: s.title, total: s.steps.length, done: s.steps.filter(x => proven.has(x.id)).length })),
+    steps: { total, proven: provenCount, next: nextStep && nextStep.id },
+    parts: idea.parts.map(p => ({ n: p.n, title: p.title })), promises, risks: plan.risks, decisions, leftovers,
+    attacks: Object.entries(attacks).map(([id, a]) => ({ id, ...a })),
+    productAttacks: Object.entries(attacks).filter(([, a]) => a.promise === 'all').map(([id, a]) => ({ id, last: a.attempts[a.attempts.length - 1] })) };
+}
+
+// ---------- card ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const day = ts => { const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
+
+function renderCard(st) {
+  const tpl = read(path.join(PLUGIN_ROOT, 'templates', 'card.html'));
+  const pct = st.steps.total ? Math.round(100 * st.steps.proven / st.steps.total) : 0;
+  const dot = { planned: '', building: 'b', built: 'b', held: 'h', fixed: 'h', live: 'l', broke: 'x', 'needs you': 'x', 'live ✗': 'x' };
+  const parts = st.parts.map(p => {
+    const rows = st.promises.filter(x => x.part === p.n).map(x =>
+      `<div class="row"><i class="dot ${dot[x.state] || ''}"></i><span>${esc(x.text)}</span><span class="st ${/held|fixed|live$/.test(x.state) ? 'h' : ''}${/broke|needs|✗/.test(x.state) ? ' x' : ''}">${esc(x.live ? `live ${x.live.value}` : x.state)}</span></div>`).join('');
+    return `<div class="part"><h3>Part ${p.n} · ${esc(p.title)}</h3>${rows}</div>`;
+  }).join('') + (st.productAttacks.length ? `<div class="part"><h3>Whole product</h3>${st.productAttacks.map(a => `<div class="row"><i class="dot ${a.last.result === 'held' ? 'h' : 'x'}"></i><span>${esc(a.id)} · attempt ${a.last.k}</span><span class="st ${a.last.result === 'held' ? 'h' : 'x'}">${esc(a.last.result)}</span></div>`).join('')}</div>` : '');
+  const slices = st.slices.map(s =>
+    `<div class="slice${s.n === 1 ? ' sk' : ''}"><span class="k">${s.n}</span><span>${esc(s.title)}</span><span class="n">${s.done}/${s.total}</span></div>`).join('');
+  const risks = st.risks.slice(0, 3).map((r, i) => `<div><i>${i + 1}</i><span>${esc(r.text)}</span></div>`).join('');
+  const decisions = st.decisions.length ? st.decisions.map(d => `<div><time>${esc(day(d.ts))}</time><span>${esc(d.text)}</span></div>`).join('') : '<div><time>—</time><span>None yet.</span></div>';
+  const leftovers = st.leftovers.length ? st.leftovers.map(d => `<div><time>${esc(day(d.ts))}</time><span>${esc(d.text)}</span></div>`).join('') : '<div><time>—</time><span>Nothing deferred. Leftovers appear here when an attack ends in "accept in writing".</span></div>';
+  const counts = st.promises.reduce((a, p) => (a[p.state] = (a[p.state] || 0) + 1, a), {});
+  const summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(' · ');
+  const ask = st.ask ? `<div class="ask"><h2>For you</h2><b>${esc(st.ask)}</b></div>` : '';
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => ({
+    TITLE: esc(st.title), LINE: esc(st.line), PCT: pct, NEXT: esc(st.next + (st.watch ? ` · watch until ${st.watch}` : '')), ASK: ask, SLICES: slices,
+    RISKS: risks ? `<h2 style="margin-top:6px">The biggest risks</h2><div class="risks">${risks}</div>` : '',
+    PAGE: st.page ? `<a href="${esc(st.page)}">Idea page</a>` : '', PARTS: parts, SUMMARY: esc(summary),
+    NPROMISES: st.promises.length, DECISIONS: decisions, NDEC: st.decisions.length, LEFTOVERS: leftovers, NLEFT: st.leftovers.length,
+  }[k] ?? ''));
+}
+
+// ---------- receipt ----------
+function appendReceipt(dir, stage, result, lines) {
+  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const slug = path.basename(dir);
+  const body = lines.map(l => (l.startsWith('[ ]') ? `- ${l}` : `- [x] ${l.replace(/^\[x\]\s*/, '')}`)).join('\n');
+  fs.appendFileSync(path.join(dir, 'receipts.md'), `\n## RECEIPT — ${stage} · ${slug} · ${result} · ${ts}\n${body}\n`);
+  return ts;
+}
+
+// ---------- find the active build ----------
+function findBuild(cwd) {
+  const root = path.join(cwd, '.claude', 'builds');
+  let best = null, bestT = -1;
+  for (const name of (fs.existsSync(root) ? fs.readdirSync(root) : [])) {
+    const d = path.join(root, name);
+    if (!fs.existsSync(path.join(d, 'idea.md'))) continue;
+    const t = Math.max(...['receipts.md', 'idea.md', 'plan.md'].map(f => { try { return fs.statSync(path.join(d, f)).mtimeMs; } catch { return 0; } }));
+    if (t > bestT) { bestT = t; best = d; }
+  }
+  return best;
+}
+
+
+// ---------- the look: screenshots and the rubric bar ----------
+function chromePath() {
+  const c = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+  return c.find(p => fs.existsSync(p)) || null;
+}
+function shots(target, outDir, name) {
+  const chrome = chromePath(); if (!chrome) return { error: 'no Chrome or Chromium found; screenshots skipped' };
+  const { execFileSync } = require('child_process');
+  fs.mkdirSync(outDir, { recursive: true });
+  const isUrl = /^https?:\/\//.test(target);
+  const url = isUrl ? target : 'file://' + path.resolve(target);
+  const profile = path.join(os.tmpdir(), 'compass-chrome-profile');
+  const common = ['--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars', '--allow-file-access-from-files', `--user-data-dir=${profile}`];
+  const out = {};
+  // desktop: straight shot at 1200 wide
+  out.desktop = path.join(outDir, `${name}-desktop.png`);
+  execFileSync(chrome, [...common, '--window-size=1200,2200', `--screenshot=${out.desktop}`, url], { stdio: 'ignore' });
+  // phone: headless Chrome will not go under 500 px, so frame the page in a 390 px iframe
+  const wrap = path.join(outDir, `${name}-phone-frame.html`);
+  fs.writeFileSync(wrap, `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#e9edf1}iframe{display:block;width:390px;height:2400px;border:0;margin:0 auto;background:#fff}</style></head><body><iframe src="${url}"></iframe></body></html>`);
+  out.phone = path.join(outDir, `${name}-phone.png`);
+  execFileSync(chrome, [...common, '--window-size=500,2400', `--screenshot=${out.phone}`, 'file://' + wrap], { stdio: 'ignore' });
+  return out;
+}
+const LOOK_ITEMS = ['hierarchy', 'spacing', 'type', 'color', 'components', 'states', 'alignment', 'polish', 'responsive', 'copy'];
+const LOOK_SHAPE = /^scores:\s*((?:[a-z]+=[1-5]\s*){10})(?:\|\s*low:\s*(.*))?$/;
+function parseLookLine(line) {
+  const m = LOOK_SHAPE.exec(line.trim()); if (!m) return null;
+  const scores = {}; for (const pair of m[1].trim().split(/\s+/)) { const [k, v] = pair.split('='); scores[k] = +v; }
+  if (LOOK_ITEMS.some(k => !(k in scores))) return null;
+  const low = {}; if (m[2]) for (const part of m[2].split(';')) { const mm = part.trim().match(/^([a-z]+)@"(.+)"$/); if (mm) low[mm[1]] = mm[2]; }
+  return { scores, low };
+}
+function lookScore(level, lines) {
+  const bars = { premium: { min: 4, none: 2 }, clean: { min: 3, none: 1 } };
+  if (level === 'match') return { result: 'held', note: 'match level: no rubric; conformance only' };
+  const bar = bars[level]; if (!bar) return { error: `unknown level ${level}` };
+  const parsed = lines.map(parseLookLine); if (parsed.some(p => !p)) return { error: 'a reviewer line is not in the required shape' };
+  const medians = {}, regions = {};
+  for (const k of LOOK_ITEMS) {
+    const v = parsed.map(p => p.scores[k]).sort((a, b) => a - b); medians[k] = v[1];
+    regions[k] = parsed.map(p => p.low[k]).filter(Boolean);
+  }
+  const failing = LOOK_ITEMS.filter(k => medians[k] < bar.min || medians[k] <= bar.none);
+  if (!failing.length) return { result: 'held', medians };
+  const detail = failing.map(k => `${k}=${medians[k]}${regions[k].length ? ` (${regions[k].join(' / ')})` : ''}`).join('; ');
+  return { result: `broke: look below the ${level} bar → observed ${detail}, expected every median ≥ ${bar.min}`, medians, failing };
+}
+function rubricLint() {
+  const text = read(path.join(PLUGIN_ROOT, 'shared', 'look-rubric.md')); const problems = [];
+  for (const k of LOOK_ITEMS) {
+    const block = text.split(`\n## ${k}\n`)[1]; if (!block) { problems.push(`item ${k} missing`); continue; }
+    const head = block.split('\n## ')[0];
+    for (const f of ['name:', 'ask:', '5:', '3:', '1:']) if (!head.includes(`\n${f} `) && !head.startsWith(`${f} `)) problems.push(`${k}: ${f} missing`);
+  }
+  if (!/^premium:/m.test(text) || !/^clean:/m.test(text) || !/^match:/m.test(text)) problems.push('bars missing');
+  return problems;
+}
+
+
+// ---------- plan check and plan card ----------
+const PLAN_SECTIONS = ['Goal and promises','Non-goals','Current state','Proposed design','Alternatives considered','Data changes','Dependencies and blast radius','Walking skeleton','Slices and steps','Order and parallelism','Rollout','Rollback','Testing strategy','Definition of done','Observability','Failure modes','Security and privacy','Performance and capacity','Runbook','Assumptions and open questions','Decision log'];
+function planCheck(dir, repoRoot) {
+  const text = read(path.join(dir, 'plan.md')); if (!text) return ['plan.md missing'];
+  const problems = [];
+  const heads = {}; for (const m of text.matchAll(/^##\s+(\d+)\.\s+(.+)$/gm)) heads[+m[1]] = m[2].trim();
+  PLAN_SECTIONS.forEach((name, i) => { const h = heads[i + 1]; if (!h) problems.push(`section ${i + 1} (${name}) missing`); else if (!h.toLowerCase().startsWith(name.toLowerCase().split(' ')[0])) problems.push(`section ${i + 1} is "${h}", expected "${name}"`); });
+  // §3 must cite at least one existing path
+  const s3 = (text.split(/^##\s+3\.\s/m)[1] || '').split(/^##\s+4\.\s/m)[0];
+  const cited = [...s3.matchAll(/`([^`\s]+\/[^`\s]*|[^`\s]+\.(?:md|js|mjs|ts|py|json|sh|html|css|sql|yml|yaml|toml))`/g)].map(m => m[1]);
+  const roots = [repoRoot, process.cwd(), path.resolve(dir, '..', '..', '..')];
+  const exists = cited.filter(c => roots.some(r => fs.existsSync(path.join(r, c.replace(/^\.\//, '')))));
+  if (!/greenfield/i.test(s3) && !exists.length) problems.push(`§3 cites no path that exists (${cited.length} cited)`);
+  const plan = parsePlan(text); const idea = parseIdea(read(path.join(dir, 'idea.md')));
+  if (!plan.slices.length) problems.push('no ### Slice blocks');
+  else if (!/skeleton/i.test(plan.slices[0].title)) problems.push(`slice 1 is "${plan.slices[0].title}", must be the walking skeleton`);
+  const served = new Set(plan.steps.flatMap(s => s.promises));
+  for (const p of idea.promises) if (!served.has(p.id)) problems.push(`${p.id} has no step`);
+  for (const s of plan.steps) { if (!s.promises.length) problems.push(`${s.id} serves no promise`); const est = s.estimate; if (est && est > 6) problems.push(`${s.id} is estimated at ${est} h; a step fits one sitting (≤ 6 h), split it`); if (!s.verify) problems.push(`${s.id} has no verify`); for (const pid of s.promises) if (!idea.promises.find(p => p.id === pid)) problems.push(`${s.id} cites ${pid}, which is not on the Idea page`); }
+  return problems;
+}
+function planCard(dir) {
+  const st = computeState(dir); const text = read(path.join(dir, 'plan.md'));
+  const qs = [...text.matchAll(/^-\s+(Q\d+)\s+(.+)$/gm)].map(m => `${m[1]} ${m[2]}`);
+  const lines = [];
+  lines.push(`${st.title} · plan v1 · ${st.slices.length} slices · ${st.steps.total} steps · ${st.promises.length} promises, all traced`);
+  lines.push('');
+  lines.push('Slices, in order');
+  for (const s of st.slices) lines.push(`  ${String(s.n).padStart(2)}  ${s.title}${s.n === 1 ? ' (skeleton)' : ''}  · ${s.total} steps`);
+  if (st.risks.length) { lines.push(''); lines.push('The biggest risks'); st.risks.slice(0, 3).forEach((r, i) => lines.push(`  ${i + 1}. ${r.text}`)); }
+  if (qs.length) { lines.push(''); lines.push('Questions for you'); for (const q of qs) lines.push(`  · ${q}`); }
+  lines.push(''); lines.push(`Full plan: ${path.join(dir, 'plan.md')}`);
+  return lines;
+}
+
+
+// ---------- the gate suite, pre-flight, write-back, release note ----------
+function gateSuite(dir) {
+  const idea = parseIdea(read(path.join(dir, 'idea.md'))); const plan = parsePlan(read(path.join(dir, 'plan.md'))); const receipts = parseReceipts(read(path.join(dir, 'receipts.md')));
+  const promiseChecks = [];
+  for (const p of idea.promises) for (const s of plan.steps.filter(s => s.promises.includes(p.id))) for (const m of s.verify.matchAll(/`([^`]+)`/g)) promiseChecks.push({ promise: p.id, step: s.id, cmd: m[1] });
+  const breakChecks = [];
+  for (const r of receipts) if (r.stage === 'build' && /^fix A\d+/.test(r.result)) for (const l of r.lines) { const m = l.text.match(/^check added:\s*(\S+)/); if (m) breakChecks.push({ attack: r.result.replace(/^fix /, ''), file: m[1] }); }
+  return { promiseChecks, breakChecks };
+}
+function runGates(dir, cwd) {
+  const { execSync } = require('child_process'); const { promiseChecks, breakChecks } = gateSuite(dir); const results = [];
+  const seen = new Set();
+  for (const c of promiseChecks) { if (seen.has(c.cmd)) continue; seen.add(c.cmd); try { const out = execSync(c.cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 }); results.push({ kind: 'promise', id: `${c.promise} ← ${c.step}`, cmd: c.cmd, ok: true, out: out.trim().split('\n').pop() }); } catch (e) { results.push({ kind: 'promise', id: `${c.promise} ← ${c.step}`, cmd: c.cmd, ok: false, out: (e.stdout || e.message || '').toString().trim().split('\n').pop() }); } }
+  for (const c of breakChecks) { const f = path.resolve(cwd, c.file); const cmd = /\.(js|mjs|cjs)$/.test(f) ? `node "${f}"` : /\.py$/.test(f) ? `python3 -I "${f}"` : `sh "${f}"`; try { const out = execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 }); results.push({ kind: 'break', id: c.attack, cmd: c.file, ok: true, out: out.trim().split('\n').pop() }); } catch (e) { results.push({ kind: 'break', id: c.attack, cmd: c.file, ok: false, out: (e.stdout || e.message || '').toString().trim().split('\n').pop() }); } }
+  return results;
+}
+const SECRET_PATTERNS = [/AKIA[0-9A-Z]{16}/, /\bsk-[A-Za-z0-9_-]{20,}/, /\bghp_[A-Za-z0-9]{36}\b/, /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/, /\b(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*["'][^"'\s]{8,}["']/i];
+function preflight(dir, cwd) {
+  const { execSync } = require('child_process'); const lines = []; let ok = true;
+  const sh = c => { try { return execSync(c, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
+  const slug = path.basename(dir);
+  // restore point
+  if (sh('git rev-parse --is-inside-work-tree') === 'true') {
+    const dirty = sh('git status --porcelain'); const tag = `compass-restore-${slug}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`;
+    if (dirty) { lines.push(`restore point: NOT taken; the tree has uncommitted changes (${dirty.split('\n').length} files). Commit or stash first.`); ok = false; }
+    else { sh(`git tag ${tag}`); lines.push(`restore point: tag ${tag} at ${sh('git rev-parse --short HEAD')} (undo: git reset --hard ${tag})`); }
+  } else { lines.push('restore point: NOT taken; not a git repository. Make a copy of the deploy target by hand and record its path.'); ok = false; }
+  // config parity
+  const example = ['.env.example', '.env.sample', '.env.template'].map(f => path.join(cwd, f)).find(f => fs.existsSync(f));
+  if (example) {
+    const keys = read(example).split('\n').map(l => l.match(/^\s*([A-Z][A-Z0-9_]+)\s*=/)).filter(Boolean).map(m => m[1]);
+    const envFile = fs.existsSync(path.join(cwd, '.env')) ? read(path.join(cwd, '.env')) : '';
+    const present = new Set([...Object.keys(process.env), ...envFile.split('\n').map(l => (l.match(/^\s*([A-Z][A-Z0-9_]+)\s*=/) || [])[1]).filter(Boolean)]);
+    const missing = keys.filter(k => !present.has(k));
+    if (missing.length) { lines.push(`config keys: ${missing.length} of ${keys.length} declared in ${path.basename(example)} are missing here: ${missing.join(', ')}`); ok = false; }
+    else lines.push(`config keys: ${keys.length} of ${keys.length} declared in ${path.basename(example)} are present`);
+  } else lines.push('config keys: none declared (no .env.example); nothing to check');
+  // secret scan over tracked text files
+  const files = (sh('git ls-files') || '').split('\n').filter(f => f && /\.(js|mjs|ts|py|sh|json|md|yml|yaml|toml|env|txt|html|css|sql)$/.test(f) && !/\.env\.example$/.test(f));
+  const hits = [];
+  for (const f of files) { let text = ''; try { text = fs.readFileSync(path.join(cwd, f), 'utf8'); } catch { continue; } text.split('\n').forEach((l, i) => { if (SECRET_PATTERNS.some(p => p.test(l))) hits.push(`${f}:${i + 1}`); }); }
+  if (hits.length) { lines.push(`secret scan: ${hits.length} hit(s): ${hits.slice(0, 5).join(', ')}${hits.length > 5 ? ', …' : ''}`); ok = false; } else lines.push(`secret scan: 0 hits across ${files.length} tracked text files`);
+  return { ok, lines };
+}
+function releaseNote(dir) {
+  const st = computeState(dir); const idea = parseIdea(read(path.join(dir, 'idea.md')));
+  const out = [`# ${idea.title} — release note`, '', idea.purpose, '', 'What you can now do:'];
+  for (const p of st.promises) out.push(`- ${p.text}${p.live ? ` (live: ${p.live.value} ${p.live.ok ? '✓' : '✗'})` : ''}`);
+  if (st.leftovers.length) { out.push('', 'Known leftovers, accepted in writing:'); for (const l of st.leftovers) out.push(`- ${l.text}`); }
+  if (idea.never.length) out.push('', `Not included, by design: ${idea.never.join('; ')}.`);
+  if (st.watch) out.push('', `Watch period until ${st.watch}. If a number turns ✗ on the Idea page, Compass reopens the part.`);
+  return out.join('\n');
+}
+
+// ---------- main ----------
+const [verb, ...args] = process.argv.slice(2);
+const dirArg = args[0] && !args[0].startsWith('--') ? args[0] : null;
+const resolveDir = () => dirArg && dirArg !== 'auto' ? path.resolve(dirArg) : findBuild(process.cwd());
+
+if (verb === 'state') {
+  const dir = resolveDir(); if (!dir) { console.log('No build here. Type /compass to start one.'); process.exit(0); }
+  const st = computeState(dir);
+  if (args.includes('--json')) console.log(JSON.stringify(st, null, 2)); else console.log(st.line + (st.ask ? `\nFOR YOU: ${st.ask}` : ''));
+} else if (verb === 'line') {
+  const dir = resolveDir(); if (dir) console.log(computeState(dir).line);
+} else if (verb === 'card') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const out = (args.find(a => a.startsWith('--out=')) || '').slice(6) || path.join(dir, 'card.html');
+  let html = renderCard(computeState(dir));
+  // --full wraps the fragment for a local browser; the Artifact tool wraps the bare fragment itself.
+  if (args.includes('--full')) html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${html.replace(/<\/style>/, '</style></head><body>')}</body></html>`;
+  fs.writeFileSync(out, html);
+  console.log(out);
+} else if (verb === 'receipt') {
+  const [dir, stage, result, ...rest] = args;
+  if (!dir || !stage || !result) { console.error('usage: compass receipt <dir> <stage> <result> [line ...]'); process.exit(1); }
+  console.log(appendReceipt(path.resolve(dir), stage, result, rest));
+} else if (verb === 'idea-page') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const idea = parseIdea(read(path.join(dir, 'idea.md')));
+  const problems = lintIdea(dir, idea);
+  if (args.includes('--check')) { for (const p of problems) console.log('✗ ' + p); console.log(problems.length ? `${problems.length} problems` : '✓ idea.md is within limits'); process.exit(problems.length ? 1 : 0); }
+  if (problems.length) { for (const p of problems) console.error('✗ ' + p); process.exit(1); }
+  const live = {}; const st = computeState(dir); for (const p of st.promises) if (p.live) live[p.id] = p.live;
+  const out = (args.find(a => a.startsWith('--out=')) || '').slice(6) || path.join(dir, 'idea-page.html');
+  let html = renderIdeaPage(dir, idea, Object.keys(live).length ? live : null);
+  if (args.includes('--full')) html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${html.replace(/<\/style>/, '</style></head><body>')}</body></html>`;
+  fs.writeFileSync(out, html); console.log(out);
+} else if (verb === 'attacks') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const stage = args[1] && !args[1].startsWith('--') ? args[1] : 'build';
+  const rows = chooseAttacks(dir, stage); writeAttacks(dir, stage, rows);
+  const per = {}; for (const r of rows) per[r.promise] = (per[r.promise] || 0) + 1;
+  console.log(`${rows.length} attacks for stage ${stage} → ${path.join(dir, 'attacks.md')}`);
+  if (args.includes('--json')) console.log(JSON.stringify(rows, null, 2));
+} else if (verb === 'gates') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  if (args.includes('--run')) { const rs = runGates(dir, process.cwd()); for (const r of rs) console.log(`${r.ok ? '✓' : '✗'} ${r.kind === 'promise' ? 'promise' : 'break  '} ${r.id} · ${r.cmd} → ${r.out}`); const red = rs.filter(r => !r.ok).length; console.log(`\n${rs.length - red} of ${rs.length} gate checks green`); process.exit(red ? 1 : 0); }
+  const { promiseChecks, breakChecks } = gateSuite(dir);
+  console.log(`Gate suite for ${path.basename(dir)}: ${promiseChecks.length} promise checks + ${breakChecks.length} checks born from breaks. Nothing else gates progress.`);
+  for (const c of promiseChecks) console.log(`  promise ${c.promise} ← ${c.step}: ${c.cmd}`);
+  for (const c of breakChecks) console.log(`  break   ${c.attack}: ${c.file}`);
+} else if (verb === 'preflight') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const r = preflight(dir, process.cwd()); for (const l of r.lines) console.log((r.ok ? '✓ ' : '• ') + l); console.log(r.ok ? '✓ pre-flight passed' : '✗ pre-flight failed; nothing deployed'); process.exit(r.ok ? 0 : 1);
+} else if (verb === 'writeback') {
+  const [dir, ...pairs] = args; if (!dir || !pairs.length) { console.error('usage: compass writeback <dir> P1.1="<value> ✓|✗" … [--watch-until=YYYY-MM-DD]'); process.exit(1); }
+  const watch = (pairs.find(a => a.startsWith('--watch-until=')) || '').slice(14);
+  const lines = pairs.filter(a => !a.startsWith('--')).map(a => { const m = a.match(/^(P\d+\.\d+)=(.+?)\s*(✓|✗)$/); if (!m) { console.error(`bad pair: ${a}`); process.exit(1); } return `${m[1]}: live ${m[2].trim()} ${m[3]}`; });
+  if (watch) lines.push(`watch: until ${watch}`);
+  appendReceipt(path.resolve(dir), 'deploy', 'writeback', lines);
+  const idea = parseIdea(read(path.join(path.resolve(dir), 'idea.md'))); const st = computeState(path.resolve(dir)); const live = {}; for (const p of st.promises) if (p.live) live[p.id] = p.live;
+  fs.writeFileSync(path.join(path.resolve(dir), 'idea-page.html'), renderIdeaPage(path.resolve(dir), idea, live));
+  console.log(`${lines.length} live numbers written back; idea-page.html re-rendered with live badges`);
+} else if (verb === 'release-note') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const note = releaseNote(dir); fs.writeFileSync(path.join(dir, 'release-note.md'), note); console.log(note); const words = note.split(/\s+/).length; if (words > 200) { console.error(`release note is ${words} words; keep it under 200`); process.exit(3); }
+} else if (verb === 'plan-check') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const p = planCheck(dir, process.cwd()); for (const x of p) console.log('✗ ' + x);
+  console.log(p.length ? `${p.length} problems` : '✓ plan: 21 sections, scan cited, skeleton first, every promise has a step, every step serves a promise and has a verify'); process.exit(p.length ? 1 : 0);
+} else if (verb === 'plan-card') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const lines = planCard(dir); console.log(lines.join('\n')); if (lines.length > 40) { console.error(`plan-card is ${lines.length} lines; the screen is 40`); process.exit(3); }
+} else if (verb === 'shots') {
+  const target = args[0]; const outDir = (args.find(a => a.startsWith('--out=')) || '').slice(6) || path.join(process.cwd(), 'shots');
+  const name = (args.find(a => a.startsWith('--name=')) || '').slice(7) || path.basename(target).replace(/\.\w+$/, '') || 'page';
+  if (!target) { console.error('usage: compass shots <file.html|url> [--out=dir] [--name=x]'); process.exit(1); }
+  const r = shots(target, outDir, name); if (r.error) { console.error(r.error); process.exit(2); }
+  console.log(r.phone); console.log(r.desktop);
+} else if (verb === 'look-score') {
+  const [level, ...lines] = args; if (!level || lines.length !== 3) { console.error('usage: compass look-score <premium|clean|match> "<line>" "<line>" "<line>"'); process.exit(1); }
+  const r = lookScore(level, lines); if (r.error) { console.error(r.error); process.exit(2); }
+  console.log(r.result); process.exit(r.result === 'held' ? 0 : 3);
+} else if (verb === 'rubric-check') {
+  const p = rubricLint(); for (const x of p) console.log('✗ ' + x); console.log(p.length ? `${p.length} problems` : '✓ rubric: 10 items with anchors, 3 bars'); process.exit(p.length ? 1 : 0);
+} else if (verb === 'attack-receipt-check' && args[0] === '--look') {
+  console.log(parseLookLine(args.slice(1).join(' ')) ? 'ok' : 'rejected: a look reviewer\'s last line must be `scores: <10 items>=<1-5> | low: item@"region"; …`'); process.exit(parseLookLine(args.slice(1).join(' ')) ? 0 : 1);
+} else if (verb === 'attack-receipt-check') {
+  const line = args.join(' ').trim();
+  if (RECEIPT_SHAPE.test(line) && !/\n/.test(line)) { console.log('ok'); process.exit(0); }
+  console.log('rejected: a reviewer\'s last line must be exactly `held` or `broke: <reproduction> → observed <x>, expected <y>`'); process.exit(1);
+} else if (verb === 'spec-check') {
+  const dir = resolveDir(); if (!dir) { console.error('no build folder'); process.exit(1); }
+  const problems = specCheck(dir); for (const p of problems) console.log('✗ ' + p);
+  console.log(problems.length ? `${problems.length} problems` : '✓ every rule points at a promise'); process.exit(problems.length ? 1 : 0);
+} else if (verb in NOT_YET) {
+  console.error(`compass ${verb}: not built yet (arrives in slice ${NOT_YET[verb]})`); process.exit(2);
+} else {
+  console.log('usage: compass state|line|card|receipt ...'); process.exit(verb ? 1 : 0);
+}

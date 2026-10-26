@@ -1,150 +1,10 @@
-# 🧭 Compass
+# 🧭 Compass 1.0
 
-**Write the contract. Walk away. It builds to spec.**
+**Describe what you want. Read one page. Say yes four times. Get a product that does what the page says, proven live.**
 
-An autonomous **engineering team in one plugin** for [Claude Code](https://claude.com/claude-code) — Engineering Manager, coder, QA, DevOps. You finalize one super-contract; it does the rest: **plan → code → tests → ship**, following the engineering best-practices a real team would, and it doesn't stop until the work is *proven* against your spec.
+Compass is one command inside [Claude Code](https://claude.com/claude-code). It interviews you like a product head, draws an Idea page you can read in a minute, writes the engineering plan the best teams write, builds part by part, attacks its own work the way a red team would, deploys, and writes the real numbers back onto your page.
 
-![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
-![version](https://img.shields.io/badge/version-0.24.0-1f6feb)
-![license](https://img.shields.io/badge/license-MIT-3fb950)
-
-Built on the architecture serious builders are converging on — an explicit **graph** of stages with hard gates as edges, and adversarial **loops** that make every output top-notch. *(That's the whole trick — [see below](#how-it-works-loops-and-graphs-with-real-edges).)*
-
-> **You choose how hands-off.** By default Compass stops for you at **every** stage (approve / revise / amend). Flip on autonomous mode and it stops at only **two** — you approve the contract up front, and it wakes you only for a genuine judgment call (ship-despite-a-miss, an infeasible invariant, a budget ceiling). Everything from "review every step" to "wake me only if it needs me" is a setting. Your call, your risk tolerance.
-
-![Compass hero: write the contract and walk away → an autonomous team (EM · Coder · QA · DevOps) runs a gated pipeline → it catches a Critical in its own code (exit 1) → fixed, re-proven, and shipped to spec](docs/compass-demo.gif)
-
-<!-- film-link -->
-**▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)** — the whole story in one minute.
-
----
-
-### Always know where you are (v0.28.0)
-
-Compass prints an orientation block the moment you type a front door — the mental model when nothing is running, a where-you-are block when a build is in flight — and an itemised planned-vs-done card at **every** build step. Both are rendered by a script and recorded on the receipt, and a gate refuses the next step if the card is missing.
-
-Optional, **opt-in** status line (Compass never edits your settings by itself). Run:
-
-```
-compass.sh statusline-install          # backs up ~/.claude/settings.json first
-compass.sh statusline-install --dry-run  # see exactly what it would change
-```
-
-Or add it yourself to `~/.claude/settings.json`:
-
-```json
-{ "statusLine": { "type": "command", "command": "bash /path/to/compass/plugins/compass/scripts/compass.sh statusline" } }
-```
-
-It shows `slug · stage · step k/n · mode · next` and prints nothing when no build is running.
-
-## Just three commands
-
-You never have to remember a pipeline. The whole tool is three commands:
-
-- **`/compass:go`** — start a new build, or pick up exactly where you left off. This is the front door; it drives everything.
-- **`/compass:status`** — see where you are, any time.
-- **`/compass:resume`** — jump back in from a fresh terminal.
-
-Progress **pushes itself** — after every stage (and on resume) Compass prints a cockpit showing the pipeline, your step, and what's next; for a multi-phase program it shows every phase and the contracts inside it, done / current / left, at a glance. (Power users: the nine per-stage commands still exist as advanced entries.)
-
-## Meet the team
-
-Compass isn't a prompt or a checklist — it's a **full engineering org, autonomous**, with every role a real team has, and one contract as the single source of truth they all answer to:
-
-- 🧭 **Engineering Manager** — sits with you to lock the **contract**, scans the live codebase, and turns it into a real **engineering plan**: every step with a verify command, every invariant with a check, every migration with a dry-run.
-- ⌨️ **Coder** — builds it **one step at a time**, and a step isn't "done" until its verify command passes. No big-bang commits, no "trust me."
-- 🔍 **QA** — **three adversarial review passes** (on the contract, the plan, and the built code) whose only job is to *break* each output — and they **loop until they can't**. Then a **post-ship critique loop** checks the live system with its own eyes.
-- 🚀 **DevOps** — **ships** via the repo's own deploy path, re-runs the number check against **prod** data, and confirms the monitoring signal actually fires — or it stays un-shipped.
-
-The reason each role's output is top-notch is the **adversarial review loop**: nothing advances on a claim of "done" — it advances only after an independent reviewer has tried to break it and failed, twice.
-
-## The one thing you do: the contract
-
-You write **one super-contract** — the single source of truth for what's being built: the goal, the data, the scale, the acceptance criteria, and (crucially) **a number to reconcile against** so "correct" is measurable, not a matter of opinion. And Compass's contract interview doesn't just transcribe you — it **expands your thinking** (pre-mortem / 10x / adjacent-use-case menus, with a hard "something must be rejected" gate) and **sketches what you're describing as you decide it** (a throwaway UI wireframe that becomes the binding spec, or a Mermaid logic map otherwise).
-
-Once the contract locks, the team runs. **That's the deal: finalize the spec, then do nothing — and it builds to spec.**
-
-## Why you can trust it unattended — proof, not vibes
-
-An autonomous team is only useful if you can trust it *while you're not watching*. Compass's answer: **every "done" is a recorded command with an exit code an agent can't argue with.**
-
-```
-$ compass.sh gate .claude/builds/my-feature review-plan
-COMPASS-GATE: FAIL — 'review-plan' receipt has an UNCHECKED box — its work is incomplete:
-- [ ] migration dry-run-on-copy present
-# (exit 1 — the build cannot proceed)
-```
-
-Correctness is arithmetic, not opinion — if the number's wrong, the build **can't close**:
-
-```
-$ compass.sh reconcile 1208 1155 1%
-RECONCILE: actual=1208 gold=1155 tol=1% diff=53 FAIL   # exit 1 — build cannot close
-```
-
-Every guardrail you've tried before was *prose the agent could talk past* — a rule it rationalizes around, a checklist it marks complete. Compass makes "done" a **script with an exit code.** The agent doesn't get to be the judge.
-
-## It catches its own bugs
-
-Every release since v0.5.0 is built *by running Compass on Compass* — the full lifecycle, on itself. And its own reviews keep catching the exact failures the project exists to kill, **before** `main`:
-
-- **The most recent release** — QA caught a **Critical in Compass's own gate**: a status parser that would have let Compass authorize `SHIPPED` over an *unresolved open bug*. Its own adversarial review found it across five rounds of re-attack; it was fixed and re-proven with ~80 regression tests before it shipped. The tool caught itself trying to ship a bug.
-- **v0.10.0** — the reviews killed a *token* budget that can't be measured from a shell (→ a measurable ceiling), caught that JSON can't be parsed in POSIX shell (→ line-oriented state), and found **7 real defects** in the built code before any reached `main`.
-- **v0.5.0** — an invariant "proven" by grepping prose, and a missing design ledger that would have counted as a pass. Both stopped at the gates.
-
-If a tool's own discipline can't survive its own reviews, it doesn't work. Compass's does — on itself, every release. *(Receipts in [CHANGELOG.md](CHANGELOG.md).)*
-
-## How it works: loops and graphs, with real edges
-
-This is the whole trick, and it's the architecture the best builders are reaching for right now — Compass is one you can install today.
-
-**It's a graph.** The stages are nodes; the **edges are exit-code scripts, never model-chosen.** The build advances from one node to the next *only* when a gate script returns zero — never because an LLM decided the previous step "looked done." That single property is what separates Compass from an orchestration DAG (and rebuts "it's just a state machine"): a state machine doesn't verify.
-
-**And it's loops.** Inside the graph are the verifier loops that make each role's output excellent — the adversarial reviews that repeat until **two consecutive clean rounds**, and the post-ship critique loop that runs on the live system until it finds nothing. Every loop is bounded: a cap, a convergence rule, stall detection, and — when it runs autonomously — a budget ceiling **proven to hold across real spawned processes**, so it can't run away.
-
-Loops *and* graphs, both bounded and enforced: an explicit stage-graph whose edges a script guards, with convergence loops that keep hammering each output until it's provably done. That's how you get a team you can leave alone.
-
-```
-① contract ─▶ ② review-contract ─▶ [contract-LOCKED]
-                                     │
-        ┌────────────────────────────┘
-        ▼
-③ plan ─▶ ④ review-plan ─▶ [plan-LOCKED]
-                            │
-        ┌───────────────────┘
-        ▼
-⑤ build ─▶ ⑥ review-build ─(sign-off)▶ [CLOSED] ─▶ ⑦ ship ─▶ ⑧ post-ship review ─(loop to convergence)▶ [SHIPPED]
-                                                       │
-                     SHIPPED is not the finish line ───┘  it critiques the LIVE system until it converges
-```
-
-## The stages — who does what
-
-| # | Stage | Role · what it does |
-|---|-------|--------------|
-| ① | **Contract** | **EM** — interviews you into an airtight, locked spec; expands your thinking + sketches the UI/logic; for a web/dashboard build **asks which design aesthetic and binds it** (a bundled design system, so the prototype is high-craft by default); pins the facets (`web` / `pipeline` / `library`), the acceptance INVARIANTs, and **reconciliation to an *independent* gold figure**. Won't finish with gaps. |
-| ② | **Review-contract** | **QA (light)** — pressure-tests completeness, ambiguity, testability, and that reconciliation is pinned, independent, exact. One clean pass; cap 2. |
-| ③ | **Plan** | **EM** — scans the live codebase first, then writes the step-by-step plan: each step a verify command, every INVARIANT a non-deferred check, every migration a dry-run-on-a-copy. |
-| ④ | **Review-plan** | **QA (full)** — traceability, invariant coverage, migration, dependencies, blast radius, rollback, tests, perf, security, secret-leak. Two clean rounds; cap 3. |
-| ⑤ | **Build** | **Coder** — Build-Test-Verify, one step at a time; a box is checked only after its verify passes; page builds get a real page-load proof (typecheck-only is rejected). |
-| ⑥ | **Review-build** | **QA (full)** — feature/regression/RBAC/perf + reconciliation, design+a11y, exercised rollback, wired monitoring, secret-scan, blast-radius re-load. Ends with your sign-off. Two clean rounds; cap 5. |
-| ⑦ | **Ship** | **DevOps** — deploys via the repo's own path, re-runs the number check on **prod**, confirms monitoring fires. Prod-verify is a hard stop — unreachable prod stays CLOSED, never a soft "shipped." |
-| ⑧ | *post-ship critique loop* | **QA, on the live system** — critiques what actually deployed against the contract (screenshots for UI, re-run numbers for data), loops back to fix on any material finding. `SHIPPED` is *unwritable* until it converges. |
-
-### Under the teeth
-- **Verify ladder** — cheapest real proof first, by facet: typecheck → DB query → page HTML → API → Playwright (assert DOM + computed CSS, plus a screenshot read-back vs the design you captured) for web; exit code → golden-file → asserts → numeric reconciliation → determinism for data. Never correctness on agent agreement.
-- **The teeth = a real script.** Each stage emits a receipt of actual commands + outputs; the next stage runs `compass.sh gate`, which **exits non-zero** if the prior receipt is absent, FAIL, unchecked, or superseded. `reconcile` and `secret-scan` are deterministic `PASS/FAIL` gates that block close.
-- **Parallel builds** — a repo can run N builds at once (incl. one unattended), each in its own git worktree so one build's `git add` can't sweep another's; a sibling that merges first blocks the others until they re-verify. (See [docs/PARALLEL-BUILDS-KEYSTONE.md](docs/PARALLEL-BUILDS-KEYSTONE.md).)
-
-## You decide how hands-off
-
-Compass runs on a spectrum, and it's a setting — from a checkpoint at every stage down to nearly none:
-- **Fully gated (default):** it stops at **every** stage for Approve / Revise / **Amend the contract** / Pause — you review each hop.
-- **Autonomous (`--auto`):** it stops at only **two** — you approve the contract + intent up front, and it wakes you only for a genuine judgment call (ship-despite-a-miss, an infeasible invariant, a budget ceiling). Everything else auto-advances, and the adversarial reviews still self-correct exactly as when gated.
-- **Anywhere in between:** run a single stage, resume across sessions, or drive it interactively and hand off. It's your risk tolerance, not ours.
-
-Autonomous mode refuses to start without a **measurable budget** (wall-clock + max-sessions + max-stages); that ceiling is proven to hold across real spawned processes, so a walk-away build can't run up your bill.
+▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)
 
 ## Install
 
@@ -153,31 +13,34 @@ Autonomous mode refuses to start without a **measurable budget** (wall-clock + m
 /plugin install compass@compass
 ```
 
-Or, once it's listed in the Anthropic community marketplace:
+Needs Claude Code and Node 18 or newer. Nothing else.
 
-```
-/plugin marketplace add anthropics/claude-plugins-community
-/plugin install compass@claude-community
-```
+## Use
 
-**The simplest way in is `/compass:go`.** It reads where your build is and asks what to do next, then routes you into the right stage — you never have to remember a command. Add `--auto` on a new build to run the lifecycle autonomously.
+Type `/compass`. That is the whole manual.
 
-> **Three doors, everything else driven for you.** The `/` menu is just `/compass:go`, `/compass:status`, and `/compass:resume`. Every stage — contract, review, plan, build, ship — runs as a skill Compass invokes for you (hidden from the menu, but each still auto-triggers on natural language like "build it" and presents its 4-button next-step gate at each transition). `/compass:go` reads your state and routes into the right one; `/compass:resume` picks up where you left off.
+It reads where your build is, prints one line, and asks one question. You are asked at most four times in a build:
 
-> **High-craft prototypes by default (v0.14.0).** Compass ships a bundled design system — `rk-house-style` (dashboards, tables, forms, charts, with a pinned neutral theme, component recipes, and drift gates) and `cinematic-hero` (hero/launch motion + stills). For any web/dashboard build, the contract asks which aesthetic you want and binds it, so the prototype comes out looking world-class. It installs with the plugin — nothing extra to add.
+1. **Approve the Idea page** — a picture per part, few words, a number on every promise.
+2. **Approve the plan** — one screen: slices in order, the three biggest risks, any question for you.
+3. **Accept the leftovers** — anything an attack could not close, named in writing.
+4. **Confirm the deploy** — after pre-flight and a rehearsed undo.
 
-> **Trust made real, and shown (v0.15.0).** The review gate is no longer gameable — a calibrated Critical/Major/Minor bug-bar, a self-refutation rule (a finding only counts if it's reachable and unguarded), and dedupe with a top-blocker footer. The prod cutover gains two HARD STOPs (`restore-point`, `config-parity`) that refuse honestly rather than soft-pass. The contract now pins a kill-switch and a data-sensitivity block. And it's legible: `/compass:go` welcomes and teaches, a bundled `compass-visual` skill renders a visual **Contract Brief** you explicitly lock and a progress **Cockpit**, every stage ends with a plain-English "here's what happened and what's next," and an on-demand **explain** skill teaches how it all works.
+Everything else runs for you. You watch one live card: where the build is, one row per promise, every decision you made, and the one question that needs you, if any.
 
-> **Survive the cutover (v0.16.0 — Phase 2).** A production cutover is where a bad ship becomes an outage, so v0.16 adds a five-gate safety net at ship: a **canary** that promotes only on *independent* green (never a number the code computes about itself), a **bake window** that fails closed if a signal — especially memory — has no ceiling or no reading, a **burn-rate auto-abort** that fires the rehearsed rollback with no human wait, a **named-watcher** check (a real on-call, or a proven-armed rollback in `--auto`), and a mid-flight **`compass.sh abort`** that halts an autonomous build *before* its next mutation. Each is a real script, fail-closed, and invisible to any build that doesn't opt in.
+## What runs underneath, which you never read
 
-## State & resumability
-Each build's state lives in `.claude/builds/<slug>/` — `contract.md`, `plan.md`, `review-ledger.md`, `progress.md`, `receipts.md` — so closing the terminal loses nothing; `/compass:resume` picks up exactly where it left off.
+- **Attacks, not review rounds.** Inside every stage, fresh reviewers try to make each promise false, choosing from Compass's catalogue of the 13 ways software fails. An attack ends `held` or `broke` with a reproduction. A break is fixed, becomes a permanent check, and is attacked once more. Two attempts, then you decide. No rounds, no findings lists, no tests the AI chose on its own.
+- **Build to spec.** Nothing is built that the Idea page does not say. A change goes through "Change your mind" first, which re-plans one part and leaves the rest proven.
+- **One record.** Status is computed from an append-only record of passed steps. No status file can disagree with another, because there is only one.
+- **The look, judged once.** For visual parts you approve a real mock before code. After that the build is checked for conformance to it, element for element.
 
-## Versioning & updates
-Semantic versioning; every change is in **[CHANGELOG.md](CHANGELOG.md)**. What's shipped and what's planned next is in **[ROADMAP.md](ROADMAP.md)**. See **[RELEASING.md](RELEASING.md)** for the release process. Update via `/plugin marketplace update compass`.
+## Coming from 0.35
 
-## Why "Compass"
-A compass keeps you pointed true no matter the terrain. Same idea: the contract is your true north, and every stage checks the bearing.
+The seven stages, three review loops and 59 self-check scripts are gone. 1.0 is four stages and one script. Builds started under 0.35 are shown as legacy and finished by pinning the old version: `git checkout v0.35.0` in a clone of this repo and load it with `claude --plugin-dir ./plugins/compass`.
 
-## License
-[MIT](LICENSE) © 2026 Rishi Kapoor.
+## For contributors
+
+`node plugins/compass/scripts/check` runs the gate suite: one check per promise on the Idea page that has a step, plus every check born from a break. It also refuses a core over 10,000 words of instructions. Open [`plugins/compass/`](plugins/compass/) and read `skills/compass/SKILL.md` first; it is the one door.
+
+MIT © Rishi Kapoor
