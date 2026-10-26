@@ -9,7 +9,7 @@ match: no rubric; conformance to the person's existing screens only
 
 ## Reviewer output
 One line, nothing else:
-`scores: hierarchy=4 spacing=3 type=4 color=5 components=4 states=3 alignment=4 polish=3 responsive=4 copy=4 | low: spacing@"gap between the paste box and the list is 8px where the rest uses 24px"; states@"an empty list shows a blank area"`
+`scores: hierarchy=4 spacing=3 type=4 color=5 components=4 states=3 alignment=4 polish=3 responsive=4 copy=4 depth=4 structure=4 controls=5 | low: spacing@"gap between the paste box and the list is 8px where the rest uses 24px"; states@"an empty list shows a blank area"`
 The `| low:` part lists every item under 4 with its region in quotes. `scripts/compass look-score <level> <line> <line> <line>` turns three such lines into `held` or `broke`.
 
 ## Items
@@ -30,7 +30,7 @@ ask: Do gaps come from one scale, and do related things sit closer than unrelate
 
 ## type
 name: Type
-ask: At most two families, a clear size scale, readable sizes, and lines of running text under about 75 characters?
+ask: At most two families, a clear size scale, readable sizes, lines of running text under about 75 characters, and deliberate accents (one display weight or style used sparingly for emphasis)?
 5: All four hold; headings and body are visibly different roles.
 3: One of the four slips, such as a line too long or a third size that is not on the scale.
 1: Sizes and weights are mixed without a scale; text is hard to read.
@@ -83,3 +83,24 @@ ask: Are labels plain and specific, in the person's words, with no placeholder t
 5: Every label says exactly what happens; a stranger understands it.
 3: One vague or system-worded label.
 1: Placeholder text or internal names visible.
+
+## depth
+name: Depth
+ask: Do surfaces sit in clear layers: a ground, cards on it, and raised elements, told apart by tint, hairline and a quiet shadow, never by heavy borders?
+5: Three planes read at a glance; shadows are soft and consistent; nothing floats without a reason.
+3: Cards sit on a ground but one element uses a heavy border or a shadow that does not match the rest.
+1: Everything is flat on one plane, or shadows and borders are mixed at random.
+
+## structure
+name: Page structure
+ask: Does the page have a clear top-to-bottom order: a header that says where you are, one primary region, supporting regions after it, and consistent section rhythm?
+5: The order is obvious; sections have the same rhythm; the primary region is first.
+3: The order holds but one section is out of place or breaks the rhythm.
+1: Regions compete; the eye does not know where to start.
+
+## controls
+name: Controls
+ask: Is every button, field, select, toggle and link styled from the design system, with no browser-default control and no two controls of the same role looking different?
+5: All controls are the system's; identical roles look identical; focus and disabled states are designed.
+3: One browser-default control or one odd-one-out.
+1: Native selects, default buttons or mixed control styles throughout.

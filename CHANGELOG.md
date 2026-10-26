@@ -3,6 +3,26 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.1] — 2026-10-26 — the proof underneath is now proof
+
+A seven-reviewer audit of 1.0.0 against the owner's user-experience standard found 70 defects in 9 themes. All are fixed here.
+
+**Proof.** A step's verify is one command and its expected output; the gate suite asserts the output, not the exit code. The record refuses a proven step without a matching verify line, a step not in the plan, a step out of gate order, a fix without its red run, and a release before every step is proven. `writeback` measures every promise itself against a named live target and refuses typed values; "not measured" is said out loud.
+
+**The person.** The status line is in plain words with no ids. Answers are written by one `answer` command, so no file ever shows. Each interview question is recorded, so a stopped interview resumes at the right question. Gates 3 and 4 record their question and answer. Every question wording carries one consequence per option.
+
+**The look.** The conformance attack is forced for every promise of a part with a mock, with the mock path, states and a tolerance in its recipe. Clean needs a mock too. The rubric gains depth, structure and controls. Screenshots size to the page. The design system and one tokens file are bound in the interview and the build.
+
+**Change your mind.** The drift stop asks first, with "Build it as written" recommended. Supersede is bounded to the part and resets its attacks. "Leave this promise out" goes through amend. The page version rises on every amend.
+
+**The record.** Stage by furthest gate reached, never the last receipt. Restore tags are created signed and verified at HEAD. Parsers accept any dash, Windows line endings, an arrow inside a sentence; a build folder with a space is refused; the active build is the one with the newest receipt. `released` is recorded. The watch date surfaces when it passes.
+
+**The Idea stage.** "What do you use for this today, and where does it let you down?" with exists and because on the page. The expand step must offer an option that changes the purpose. The journey is a storyboard. Clarify always writes its list to the spec. A done line is required. Text sketches are refused.
+
+**Production.** The release note refuses without a runbook and appends it; unmeasured promises are labelled in every form; config keys are checked on the target or said to be local only; a data restore point is demanded when the plan changes data.
+
+**Reviewers.** The whole message must be one line; "also found" is rejected; forks are forbidden; whole-product attacks run at the last part; races are re-run five times.
+
 ## [1.0.0] — 2026-10-26 — Compass rebuilt around the person using it
 
 **What changed for you.** One command, `/compass`, instead of three menu entries and seven stage names. Four stages: Idea, Plan, Build, Deploy. You are asked at most four times in a build. The contract is now an Idea page: a picture per part, under 150 words per part, a number on every promise. You read it; you never read an engineering document. One live card shows where the build is, one row per promise, every decision, and the one question that needs you.

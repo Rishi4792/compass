@@ -1,7 +1,7 @@
 ---
 name: build
 user-invocable: false
-description: The Build stage. Part by part; each step is built, proven by running, and recorded; the card updates after every step; attacks run at each part boundary; a step that would drift from the spec stops.
+description: The Build stage. Part by part; each step is built, proven by its own command and expected output, and recorded; one plain line per step; the card updates; attacks at each part boundary and whole-product attacks at the last; a step that would drift from the page stops and asks.
 ---
 
 # compass:build
@@ -9,24 +9,26 @@ description: The Build stage. Part by part; each step is built, proven by runnin
 Execute the approved plan one step at a time, in order. Build to spec: nothing is built that the Idea page and `spec.md` do not say, and nothing they say is left unbuilt.
 
 ## Before every step: the drift stop
-Read the step's line in `plan.md` and the spec lines of the promises it serves (`grep "→ P<id>" spec.md`). If doing the step would change what the Idea page or a spec line says, even to improve it, do not start it. Say in one line which spec line it would change, record `scripts/compass receipt <dir> build "drift stop at S<n>" "spec line: <quote>" "[ ] ask: <the change in plain words>. Change the idea, or build it as written?"`, and invoke `compass:amend`. Never a silent improvement.
+Read the step and the spec lines of its promises (`grep "→ P<id>" spec.md`). If doing the step would change what the page or a spec line says, even to improve it, do not start. Record the question first:
+`receipt <dir> build "drift stop at S<n>" "spec line: <quote>" "better way: <one line>" "[ ] ask: Part <k>: <the better way in plain words>. Build it as written (Recommended), or change the page?"`
+Then ask it yourself with AskUserQuestion: **Build it as written (Recommended)** → "nothing on your page changes" · Change the page → "that part is re-planned and rebuilt". On "as written": `receipt <dir> build "drift answered" "answered: build as written" "decision: kept the page as approved at S<n>"` and continue. On "change": invoke `compass:amend` for that part. Never a silent improvement.
 
 ## The step loop
-1. **Resume from the record.** `scripts/compass state <dir>` names the next unproven step. Nothing else is trusted: not a checkbox, not a note, not memory.
-2. **Size.** If the step would not finish in one sitting, split it in `plan.md` first (same promise IDs, same verify), then continue. `plan-check` refuses any step over 6 hours.
-3. **Build** exactly what the step says, with the stack and conventions the plan's §3 found. For a visual part, compose from the approved mock and the bundled design system; no new styles.
-4. **Prove by running.** Run the step's verify command and keep its fresh output. "It compiles" or "it looks right" is not proof. For a screen, load it with real data.
-5. **Record.** Only after the verify passes: `scripts/compass receipt <dir> build "step S<n> proven" "verify: <command> → <output>"`. Then `scripts/compass card <dir>` and publish it (same file, same URL). Never write a receipt for a step whose verify did not pass.
-6. **Say one line.** "S2.3 proven: <what the output showed>." Nothing else in the chat.
+1. **Resume from the record.** `state <dir>` names the next unproven step. Nothing else is trusted.
+2. **Size.** If the step would not finish in one sitting, split it in `plan.md` first (same promises, each with its own command and expected output), run `plan-check`, record `receipt <dir> plan revised "split S<n> into S<n>.a S<n>.b"`.
+3. **Build** exactly what the step says, with the stack and conventions §3 found. For a visual part, compose from the approved mock, `templates/tokens.css` and `design/house-style/SYSTEM.md`; no new styles, no browser-default control; every state the mock shows.
+4. **Prove by running** the step's own command; keep its fresh output. "It compiles" or "it looks right" is not proof.
+5. **Record.** `receipt <dir> build "step S<n> proven" "verify: <the command> → <the output>"`. The record refuses a receipt whose command or output does not match the plan. Then `card <dir>` and publish it (same file).
+6. **One line to the person, in plain words:** "Part 2, step 3 of 4 done: the list now shows every saved link." Nothing else in the chat.
 
 ## When a part's steps are all proven: attack it
-Run `skills/attack/SKILL.md` for that part's promises (`scripts/compass attacks <dir> build` chooses them; run the rows whose promise belongs to this part, plus the product-wide rows once, at the first part). For a visual part the conformance attack compares the built screen at both widths to the approved mock. Then one line: "Part 2: 6 attacks, 5 held, 1 broke and fixed."
+Run `skills/attack/SKILL.md` for the rows whose `When` is this part (`attacks <dir> build` writes them with their state). For a part with a mock, the conformance row runs against the approved mock at both widths and every state. At the last part, also run the rows marked `last part` (the whole-product attacks). Then one line: "Part 2 checked: 6 attempts to break it, 5 held, 1 broke and was fixed."
 
 ## The gate suite
-`scripts/compass gates <dir>` lists what gates progress: each promise's verify commands and every check born from a break. `scripts/compass gates <dir> --run` runs them. No other test runs at a part boundary; the builder's own scratch tests are not gates.
+`gates <dir>` lists what gates progress: each promise's command and expected output, and every check born from a break. `gates <dir> --run` runs them and fails on zero checks or any miss. No other test gates progress.
 
 ## When every step is proven
-For a visual build, take the final screenshots (`scripts/compass shots`) and put them on the card. If `state` shows leftovers, gate 3 belongs to the door. Otherwise invoke `compass:deploy`. Do not ask anything here.
+For a visual build, take the final screenshots (`shots <built screen> --out=<dir>/shots --name=final-part-<n>`) so the card shows them. Then hand back to `/compass`: it asks gate 3 if anything is set aside, otherwise invokes `compass:deploy`. Do not ask anything here.
 
 ## If a step cannot pass
-Diagnose the cause; fix it; re-run. If the plan itself is wrong (the step cannot be done as written), do not improvise: record `[ ] ask:` with the plan line and the reason, and invoke `compass:plan` to revise that slice. Leave the tree in a working state before you stop.
+Diagnose and fix; re-run. If the plan itself is wrong, record `[ ] ask:` with the plan line and the reason in plain words, and invoke `compass:plan` to revise that slice. Leave the tree working before you stop.

@@ -12,6 +12,7 @@
 - [x] reproduction: `node check.js --date 2026-10-19` → exit 1 (refund rows ignored)
 ## RECEIPT — build · toy-shop · fix A2 · 2026-10-21T12:00:00Z
 - [x] check added: tests/refunds.test.js
+- [x] red: node tests/refunds.test.js → FAIL total 500 expected 460
 ## RECEIPT — attack · toy-shop · A2 P1.2 attempt 2 held · 2026-10-21T12:30:00Z
 - [x] reproduction re-run: `node check.js --date 2026-10-19` → exit 0
 - [ ] ask: Should refunds count as negative sales on the daily line? (suggest yes)

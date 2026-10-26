@@ -1,27 +1,27 @@
 ---
 name: amend
 user-invocable: false
-description: Change your mind. Edit one part of the Idea page; only that part is re-planned, rebuilt and attacked again. No new build is created. The change is a dated decision on the card.
+description: Change your mind. The only door for a change: the drift question is asked first; one part of the Idea page is edited; only that part is re-planned, rebuilt and attacked again; proven parts stay proven; the page version goes up.
 ---
 
 # compass:amend
 
-Ideas change while you build. This is the only door for a change. It keeps build to spec true in both directions: the spec changes first, then the build follows.
+The spec changes first, then the build follows. Nothing else may change the page.
 
-## 1. Which part
-If the state carries an `ask:` from a drift stop, the part is the one its promise belongs to. Otherwise ask one question: "Which part changes?" with the parts as options, plus "Add a new part".
+## 1. Ask before anything changes
+If you arrived from a drift stop or a ✗ and the question has not been answered yet, ask it now with AskUserQuestion: "Part <k>: <the change in plain words>. Build it as written (Recommended), or change the page?" with the two consequence lines. On "as written": record `answered:` and `decision:` and return to `compass:build`; nothing is superseded. Otherwise, if no part is named, ask "Which part changes?" with the parts as options plus "Add a new part".
 
 ## 2. Re-interview only that part
-Run the interview questions that touch it, from `shared/interview.md`: the part's promises (question 6, for this part only), its done-number if it changes (7), its look if it has a screen (8). Nothing else is asked. Rewrite the part's block in `idea.md` with one Bash heredoc of the whole file; every other part's text must be byte-identical. Bump the eyebrow version in the page by re-rendering (`scripts/compass idea-page <dir> --check`, then render and publish, same URL). For a new part, append it as the next number.
+Run only the interview questions that touch it: the part's moments and promises (question 7, this part only), its done-number if it changes (8), its look if it has a screen (9 and the look section). Every edit goes through `answer <dir> part <n> …`; other parts are not touched, and the page version shown in the eyebrow goes up by itself. For a removed promise, rewrite the part's `--promise=` list without it. For a removed part, `answer <dir> part <n> --remove`. Re-render and publish the page, same URL.
 
 ## 3. Spec and plan, that part only
-Regenerate the spec lines whose pointer is a promise of this part; leave the rest. Rewrite that part's slice in `plan.md`; leave the other slices. Run `scripts/compass plan-check <dir>`. Run the plan attacks (`attacks <dir> plan`) as `skills/plan/SKILL.md` §3 describes.
+Regenerate the spec rules whose pointer is a promise of this part; remove rules for removed promises. Rewrite that part's slice in `plan.md`; leave the other slices. Run `plan-check`. Run the plan attacks as `skills/plan/SKILL.md` §3 describes.
 
 ## 4. Record, un-prove, continue
-`scripts/compass receipt <dir> amend "part <n> edited" "decision: <what changed and why, in the person's words>" "supersede: S<n>.1 S<n>.2 …" "answered: <their answer>"`
-The `supersede:` line un-proves exactly the steps of that part's slice; `state` then names the first of them as next. Promises of other parts keep their state. Re-render the card and invoke `compass:build`.
+`receipt <dir> amend "part <n> edited" "decision: <what changed and why, in the person's words>" "supersede: S<x>.<y> …" "answered: <their answer>"`.
+The record refuses a `supersede:` that names a step not serving a promise of part n. Superseded steps become unproven, and that part's attack results are reset, so its rows run again; other parts keep their state. Re-render the card and invoke `compass:build`.
 
 ## Never
 - Never start a new build folder for a change of mind.
-- Never touch a part the person did not change. A diff of `idea.md` shows one block changed.
+- Never touch a part the person did not change.
 - Never carry a change through without the receipt; an unrecorded change is drift.

@@ -1,10 +1,10 @@
-# Attacks — idea-data · stage idea
+# Attacks — idea-data · stage plan
 
-Chosen by scripts/compass attacks from idea.md, spec.md and shared/failure-catalogue.md. Do not edit by hand. State lives in receipts.md.
+Chosen by scripts/compass attacks. Do not edit by hand. The state column is read from receipts.md.
 
-| Attack | Promise | Class | What it tries |
-|---|---|---|---|
-| A1 | page | contradiction | Two parts contradict each other |
-| A2 | page | uncheckable | A promise cannot be checked by anyone |
-| A3 | page | already-exists | Something that already exists does this for this person |
-| A4 | page | not-needed | The stated person does not need this part |
+| Attack | Promise | Class | What it tries | When | State |
+|---|---|---|---|---|---|
+| A1 | plan | plan-promise-no-step | A promise with no step | plan | planned |
+| A2 | plan | plan-step-no-promise | A step that serves no promise | plan | planned |
+| A3 | plan | plan-no-rollback | A step that cannot be undone and has no rollback line | plan | planned |
+| A4 | plan | plan-missing-dependency | A dependency that does not exist | plan | planned |

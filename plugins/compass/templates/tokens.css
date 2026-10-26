@@ -1,0 +1,7 @@
+/* Compass design tokens — the one source for every page, card and mock.
+   A mock inlines this block unchanged; the bundled design system's component recipes build on these names. */
+:root { --bg:#f2f5f8; --paper:#fff; --ink:#142437; --ink-2:#4b5b70; --line:#d5dde6; --accent:#0b7a7c; --accent-soft:#d9efee; --warn:#b9720f; --warn-soft:#f7e8cc; --bad:#b23b3b; --bad-soft:#f5dede;
+  --display:"Bricolage Grotesque","Avenir Next","Helvetica Neue",Arial,sans-serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+  --radius:12px; --radius-lg:14px; --shadow:0 1px 2px rgba(20,36,55,.06), 0 8px 24px rgba(20,36,55,.06); --gap:16px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; --bad-soft:#3f1f1f; --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); color-scheme:dark; } }
+:root[data-theme="dark"] { --bg:#0f1a27; --paper:#162434; --ink:#e8eef5; --ink-2:#a7b4c4; --line:#2b3b4f; --accent:#4fc1bd; --accent-soft:#143a3c; --warn:#e2a84a; --warn-soft:#3d2d12; --bad:#e07a7a; --bad-soft:#3f1f1f; --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); color-scheme:dark; }

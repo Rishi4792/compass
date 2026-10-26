@@ -1,230 +1,230 @@
 #!/usr/bin/env node
 'use strict';
-// check — the gate suite for Compass's own build. One check per promise that has a step proven so far,
-// plus every check born from a break. Exit 0 = all green. Run: node scripts/check
-const { execFileSync } = require('child_process');
+// check — the gate suite for Compass's own build. One check per promise on the Idea page, plus checks born from breaks
+// and from the 26 Oct review. Exit 0 = all green. Run: node scripts/check [--only <id>]
+const { execFileSync, execSync } = require('child_process');
 const fs = require('fs'); const os = require('os'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
-const run = (args, cwd = ROOT) => execFileSync('node', [path.join(ROOT, 'scripts', 'compass'), ...args], { cwd, encoding: 'utf8' });
+const only = (() => { const i = process.argv.indexOf('--only'); return i > 0 ? process.argv[i + 1] : null; })();
+const run = (args, cwd = ROOT, env) => execFileSync('node', [path.join(ROOT, 'scripts', 'compass'), ...args], { cwd, encoding: 'utf8', env: env || process.env });
+const fails = (args, cwd) => { try { run(args, cwd); return null; } catch (e) { return (e.stdout || '') + (e.stderr || ''); } };
 const results = [];
-const check = (id, name, fn) => { try { const d = fn(); results.push([id, name, 'green', d || '']); } catch (e) { results.push([id, name, 'RED', e.message.split('\n')[0]]); } };
+const check = (id, name, fn) => { if (only && id !== only) return; try { const d = fn(); results.push([id, name, 'green', d || '']); } catch (e) { results.push([id, name, 'RED', (e.message || '').split('\n')[0]]); } };
+const tmpdir = p => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const F = n => path.join(ROOT, 'fixtures', n);
 const fixtures = ['fresh', 'plan-approved', 'mid-build', 'live'];
+const read = p => fs.readFileSync(p, 'utf8');
 
-check('P7.4', 'state reads only idea.md, plan.md, receipts.md', () => {
-  for (const f of fixtures) {
-    const dir = path.join(ROOT, 'fixtures', f);
-    const full = run(['state', dir, '--json']);
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-')); const copy = path.join(tmp, f); fs.mkdirSync(copy);
-    for (const n of ['idea.md', 'plan.md', 'receipts.md']) if (fs.existsSync(path.join(dir, n))) fs.copyFileSync(path.join(dir, n), path.join(copy, n));
-    const bare = run(['state', copy, '--json']);
-    if (full !== bare) throw new Error(`${f}: state differs when decoy files are removed`);
-    const exp = path.join(ROOT, 'fixtures', 'expected', f + '.json');
-    if (fs.existsSync(exp) && fs.readFileSync(exp, 'utf8') !== full) throw new Error(`${f}: state differs from expected.json`);
-  }
-  return `${fixtures.length} fixtures, decoy files ignored, expected.json matched`;
-});
-
-check('P4.1', 'promise states come from receipts alone', () => {
-  const st = JSON.parse(run(['state', path.join(ROOT, 'fixtures', 'mid-build'), '--json']));
-  const want = { 'P1.1': 'held', 'P1.2': 'fixed', 'P2.1': 'planned' };
-  for (const p of st.promises) if (want[p.id] !== p.state) throw new Error(`${p.id}: ${p.state}, wanted ${want[p.id]}`);
-  if (st.ask !== 'Should refunds count as negative sales on the daily line? (suggest yes)') throw new Error('ask not surfaced');
-  const live = JSON.parse(run(['state', path.join(ROOT, 'fixtures', 'live'), '--json']));
-  if (!live.promises.every(p => p.state === 'live')) throw new Error('live fixture: not all promises live');
-  if (live.leftovers.length !== 1 || live.decisions.length !== 3) throw new Error(`live fixture: ${live.leftovers.length} leftovers, ${live.decisions.length} decisions`);
-  // an attack that still breaks on attempt 2 must surface as "needs you"
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-needs-'));
-  for (const n of ['idea.md', 'plan.md']) fs.copyFileSync(path.join(ROOT, 'fixtures', 'mid-build', n), path.join(tmp, n));
-  fs.writeFileSync(path.join(tmp, 'receipts.md'), fs.readFileSync(path.join(ROOT, 'fixtures', 'plan-approved', 'receipts.md'), 'utf8') +
-    '## RECEIPT — attack · x · A2 P1.2 attempt 1 broke · 2026-10-21T11:20:00Z\n- [x] reproduction: r\n## RECEIPT — attack · x · A2 P1.2 attempt 2 broke · 2026-10-21T12:30:00Z\n- [x] reproduction: r\n- [ ] ask: Promise P1.2 still breaks. What now?\n');
-  const ny = JSON.parse(run(['state', tmp, '--json']));
-  if (ny.promises.find(p => p.id === 'P1.2').state !== 'needs you') throw new Error('attempt-2 break not shown as needs you');
-  return 'held / fixed / planned / live / needs you / ask / decisions / leftovers all as expected';
-});
-
-check('P7.1', 'card renders the status line and one row per promise', () => {
-  const dir = path.join(ROOT, 'fixtures', 'mid-build');
-  const out = path.join(os.tmpdir(), 'compass-card-check.html');
-  run(['card', dir, `--out=${out}`]);
-  const html = fs.readFileSync(out, 'utf8');
-  const st = JSON.parse(run(['state', dir, '--json']));
-  if (!html.includes(st.line.replace(/&/g, '&amp;'))) throw new Error('status line missing');
-  const rows = (html.match(/class="row"/g) || []).length;
-  if (rows !== st.promises.length) throw new Error(`${rows} rows for ${st.promises.length} promises`);
-  if (!html.includes('For you')) throw new Error('the question for the person is missing');
-  return `${rows} rows, status line, question present`;
-});
-
-check('P1.1', 'one door: exactly one user-visible entry', () => {
-  const skills = fs.readdirSync(path.join(ROOT, 'skills'));
-  const visible = skills.filter(s => !/user-invocable:\s*false/.test(fs.readFileSync(path.join(ROOT, 'skills', s, 'SKILL.md'), 'utf8')));
-  if (fs.existsSync(path.join(ROOT, 'commands'))) throw new Error('a commands/ folder exists; the door is a skill');
-  if (visible.length !== 1 || visible[0] !== 'compass') throw new Error(`visible skills: ${visible.join(', ')}`);
-  return `skills: ${skills.length}, visible: compass`;
-});
-
-check('P2.3', 'idea page: ≤150 words per part, a number on every promise, a picture per part', () => {
-  for (const f of ['idea-visual', 'idea-data']) run(['idea-page', path.join(ROOT, 'fixtures', f), '--check']);
-  const bad = path.join(os.tmpdir(), 'compass-bad-idea'); fs.rmSync(bad, { recursive: true, force: true }); fs.mkdirSync(bad);
-  fs.writeFileSync(path.join(bad, 'idea.md'), '# Idea — bad\ntitle: Bad\npurpose: x\n\n### Part 1 — Big\npicture: nope\n' + 'word '.repeat(160) + '\n- P1.1 No number here\n');
-  let failed = false; try { run(['idea-page', bad, '--check']); } catch { failed = true; }
-  if (!failed) throw new Error('a 160-word part with no number and an unknown picture passed the lint');
-  return '2 samples within limits; an over-limit sample is refused';
-});
-
-check('P2.5', 'sketch shown for visual parts only', () => {
-  const v = path.join(os.tmpdir(), 'compass-idea-v.html'), d = path.join(os.tmpdir(), 'compass-idea-d.html');
-  run(['idea-page', path.join(ROOT, 'fixtures', 'idea-visual'), `--out=${v}`]); run(['idea-page', path.join(ROOT, 'fixtures', 'idea-data'), `--out=${d}`]);
-  const nv = (fs.readFileSync(v, 'utf8').match(/How it will look/g) || []).length, nd = (fs.readFileSync(d, 'utf8').match(/How it will look/g) || []).length;
-  if (nv !== 1 || nd !== 0) throw new Error(`visual sample has ${nv} sketches, data sample has ${nd}`);
-  return 'visual sample: 1 sketch · data sample: 0';
-});
-
-check('P2.2', 'spec: every rule points at a promise; no engineering words in the interview questions', () => {
-  run(['spec-check', path.join(ROOT, 'fixtures', 'idea-data')]);
-  const banned = /\b(rollback|flag|schema|migration|idempotent|environment|env|RBAC|invariant|endpoint|API|database|table|cache|queue|latency|token)\b/i;
-  const text = fs.readFileSync(path.join(ROOT, 'shared', 'interview.md'), 'utf8');
-  const qs = text.split('\n').filter(l => /^\d+\.\s+\*\*/.test(l));
-  const hits = qs.filter(l => banned.test(l.replace(/^\d+\.\s+\*\*[^*]+\*\*/, m => m)));
-  if (qs.length !== 10) throw new Error(`${qs.length} questions in interview.md, expected 10`);
-  if (!/\*\*Clarify/.test(text) || !/\*\*Expand/.test(text) || !/10x/.test(text)) throw new Error('clarify or expand step missing');
-  const hitQ = qs.filter(l => banned.test(l.match(/\*\*([^*]+)\*\*/)[1]));
-  if (hitQ.length) throw new Error(`banned word in question: ${hitQ[0].slice(0, 50)}`);
-  return `10 questions incl. clarify + expand, 0 banned words in any question; spec sample: every rule → P`;
-});
-
-check('P5.1', 'attacks: chosen by script, ≤3 per promise, product classes once, deterministic', () => {
-  const cat = fs.readFileSync(path.join(ROOT, 'shared', 'failure-catalogue.md'), 'utf8');
-  const n = (cat.match(/^## [a-z-]+$/gm) || []).length;
-  if (n !== 13) throw new Error(`${n} classes in the catalogue, expected 13`);
-  for (const f of ['name', 'scope', 'damage', 'applies', 'likely', 'attack', 'break', 'check']) if ((cat.match(new RegExp(`^${f}: `, 'gm')) || []).length !== 13) throw new Error(`field ${f} missing on some class`);
-  for (const f of ['idea-visual', 'idea-data']) {
-    const dir = path.join(ROOT, 'fixtures', f);
-    const a = run(['attacks', dir, 'build', '--json']); const b = run(['attacks', dir, 'build', '--json']);
-    if (a !== b) throw new Error(`${f}: not deterministic`);
-    const rows = JSON.parse(a.slice(a.indexOf('[')));
-    const per = {}; for (const r of rows) { if (!/^(P\d+\.\d+|all)$/.test(r.promise)) throw new Error(`${f}: row without a promise`); per[r.promise] = (per[r.promise] || 0) + 1; }
-    for (const [p, c] of Object.entries(per)) if (p !== 'all' && c > 3) throw new Error(`${f}: ${c} attacks on ${p}`);
-    const prodKeys = rows.filter(r => r.promise === 'all').map(r => r.key); if (new Set(prodKeys).size !== prodKeys.length) throw new Error(`${f}: a product class repeated`);
-  }
-  const ideaRows = JSON.parse((s => s.slice(s.indexOf('[')))(run(['attacks', path.join(ROOT, 'fixtures', 'idea-data'), 'idea', '--json'])));
-  if (ideaRows.length !== 4) throw new Error('idea stage should have 4 fixed attacks');
-  return '13 classes × 8 fields; 2 samples deterministic; ≤3 per promise; product classes once; idea stage 4 fixed';
-});
-
-check('P5.3', 'a reviewer may only say held or broke with a reproduction', () => {
-  run(['attack-receipt-check', 'held']);
-  run(['attack-receipt-check', 'broke: node check.js → observed exit 1, expected exit 0']);
-  for (const bad of ['I found three issues', 'broke: it is wrong', 'held, but note that', 'HELD']) { let rejected = false; try { run(['attack-receipt-check', bad]); } catch { rejected = true; } if (!rejected) throw new Error(`accepted: ${bad}`); }
-  return '2 valid shapes accepted, 4 prose shapes rejected';
-});
-
-check('S3.7', 'the look: rubric, bar, screenshots', () => {
-  run(['rubric-check']);
-  const good = 'scores: hierarchy=4 spacing=4 type=5 color=4 components=4 states=4 alignment=4 polish=4 responsive=4 copy=5';
-  run(['look-score', 'premium', good, good, good]);
-  let out = ''; try { run(['look-score', 'premium', good, good, 'scores: hierarchy=4 spacing=2 type=5 color=4 components=4 states=2 alignment=4 polish=4 responsive=4 copy=5 | low: spacing@"x"; states@"y"']); } catch (e) { out = e.stdout || ''; }
-  // one low reviewer out of three does not move the median: still held
-  if (!/held/.test(out) && out !== '') throw new Error('one low reviewer moved the median');
-  try { run(['look-score', 'premium', good, 'scores: hierarchy=4 spacing=3 type=5 color=4 components=4 states=2 alignment=4 polish=4 responsive=4 copy=5 | low: states@"empty list is blank"', 'scores: hierarchy=4 spacing=3 type=4 color=4 components=4 states=2 alignment=4 polish=4 responsive=4 copy=4 | low: states@"no empty state"']); throw new Error('two low reviewers should break'); } catch (e) { if (!/broke: look below the premium bar/.test(e.stdout || '')) throw e; if (!/states=2 \(empty list is blank \/ no empty state\)/.test(e.stdout)) throw new Error('broke line did not name item and regions'); }
-  let rejected = false; try { run(['attack-receipt-check', '--look', 'the hierarchy is fine']); } catch { rejected = true; } if (!rejected) throw new Error('prose accepted as a look line');
-  let shotsNote = 'screenshots: skipped (no Chrome)';
-  try { const page = path.join(os.tmpdir(), 'compass-look-page.html'); run(['idea-page', path.join(ROOT, 'fixtures', 'idea-visual'), '--full', `--out=${page}`]); const o = run(['shots', page, `--out=${path.join(os.tmpdir(), 'compass-shots')}`, '--name=tt']).trim().split('\n'); if (o.length !== 2 || !o.every(f => fs.existsSync(f) && fs.statSync(f).size > 20000)) throw new Error('shots did not produce 2 PNGs'); shotsNote = 'screenshots: phone + desktop PNGs'; } catch (e) { if (!/no Chrome/.test(e.stderr || '')) throw e; }
-  if (!fs.existsSync(path.join(ROOT, 'design', 'house-style', 'SYSTEM.md'))) throw new Error('bundled design system missing');
-  return `rubric 10×anchors; median holds against one low reviewer; two low → broke with regions; prose rejected; ${shotsNote}; design system bundled`;
-});
-
-check('P3.2', 'plan check: 21 sections, scan cited, skeleton first, two-way trace, verify per step', () => {
-  const full = path.join(ROOT, 'fixtures', 'plan-full'); run(['plan-check', full]);
-  const variants = {
-    'a promise with no step': t => t.replace(/\bP1\.3\b/g, 'P1.1'),
-    'a step with no promise': t => t.replace(/(S2\.3 [^\n]*?)→ P2\.5/, '$1→'),
-    'a fake path in §3': t => { const [a, rest] = t.split(/^## 3\. /m); const [s3, ...after] = rest.split(/^## 4\. /m); return a + '## 3. ' + s3.replace(/`[^`]+`/g, '`nowhere/does-not-exist.js`') + '## 4. ' + after.join('## 4. '); },
-    'slice 1 not the skeleton': t => t.replace('### Slice 1 — Skeleton', '### Slice 1 — Setup'),
-    'a step with no verify': t => t.replace(/(S1\.2 [^\n]*?)· verify: [^·\n]*/, '$1'),
-    'a missing section': t => t.replace(/^## 19\. Runbook[\s\S]*?(?=^## 20\.)/m, ''),
-  };
-  for (const [name, mutate] of Object.entries(variants)) {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-plan-')); fs.copyFileSync(path.join(full, 'idea.md'), path.join(tmp, 'idea.md'));
-    const mutated = mutate(fs.readFileSync(path.join(full, 'plan.md'), 'utf8')); if (mutated === fs.readFileSync(path.join(full, 'plan.md'), 'utf8')) throw new Error(`variant "${name}" did not change the plan`);
-    fs.writeFileSync(path.join(tmp, 'plan.md'), mutated);
-    let failed = false; try { run(['plan-check', tmp]); } catch { failed = true; } if (!failed) throw new Error(`plan-check accepted ${name}`);
-  }
-  return `full plan passes; 6 broken variants refused`;
-});
-
-check('P3.1', 'plan card fits one screen and names slices, risks, questions', () => {
-  const out = run(['plan-card', path.join(ROOT, 'fixtures', 'plan-full')]); const lines = out.trim().split('\n');
-  if (lines.length > 40) throw new Error(`${lines.length} lines`);
-  for (const must of ['Slices, in order', 'The biggest risks', 'Questions for you', 'Full plan:']) if (!out.includes(must)) throw new Error(`missing "${must}"`);
-  return `${lines.length} lines of 40; slices, risks, questions, link`;
-});
-
-const { execSync } = require('child_process');
 function toyRepo() {
-  const t = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-toy-')); const b = path.join(t, '.claude', 'builds', 'till'); fs.mkdirSync(b, { recursive: true }); fs.mkdirSync(path.join(t, 'tests'));
-  fs.copyFileSync(path.join(ROOT, 'fixtures', 'idea-visual', 'idea.md'), path.join(b, 'idea.md'));
-  fs.writeFileSync(path.join(b, 'plan.md'), '# Plan\n\n### Slice 1 — Skeleton\n- [ ] S1.1 Print the total. → P1.1, P1.2 · verify: `node sales.js` prints total · ≈ 1 h\n- [ ] S1.2 Stock message. → P2.1 · verify: `node stock.js` prints 1 · ≈ 1 h\n');
-  fs.writeFileSync(path.join(t, 'sales.js'), 'console.log("total 540")'); fs.writeFileSync(path.join(t, 'stock.js'), 'console.log(1)');
+  const t = tmpdir('compass-toy-'); const b = path.join(t, '.claude', 'builds', 'till'); fs.mkdirSync(b, { recursive: true }); fs.mkdirSync(path.join(t, 'tests'));
+  fs.copyFileSync(F('idea-visual/idea.md'), path.join(b, 'idea.md')); fs.copyFileSync(F('idea-visual/spec.md'), path.join(b, 'spec.md'));
+  fs.writeFileSync(path.join(b, 'plan.md'), read(F('plan-approved/plan.md')).replace('`node sales.js till.csv` → total', '`node sales.js` → total 540').replace('`node check.js` → ok', '`node check.js` → ok').replace('`node stock.js --dry` → 1 message', '`node stock.js` → 1 message') + '\n## 19. Runbook\nRun: node sales.js\nTotal missing → check till.csv exists\n');
+  fs.writeFileSync(path.join(t, 'sales.js'), 'console.log("total 540")'); fs.writeFileSync(path.join(t, 'check.js'), 'console.log("ok")'); fs.writeFileSync(path.join(t, 'stock.js'), 'console.log("1 message")');
   fs.writeFileSync(path.join(t, 'tests', 'born.test.js'), 'console.log("ok")'); fs.writeFileSync(path.join(t, 'tests', 'stray.test.js'), 'console.log("stray")');
-  fs.writeFileSync(path.join(b, 'receipts.md'), '## RECEIPT — idea · till · approved · 2026-10-20T09:00:00Z\n- [x] decision: ok\n## RECEIPT — plan · till · approved · 2026-10-20T10:00:00Z\n- [x] decision: ok\n## RECEIPT — build · till · step S1.1 proven · 2026-10-21T09:00:00Z\n- [x] verify: `node sales.js` → total 540\n## RECEIPT — build · till · fix A1 · 2026-10-21T10:00:00Z\n- [x] check added: tests/born.test.js\n');
-  const git = c => execSync(`git -c user.email=t@t -c user.name=t ${c}`, { cwd: t, stdio: 'ignore' });
+  fs.writeFileSync(path.join(b, 'receipts.md'), '## RECEIPT — idea · till · drafted · 2026-10-20T08:00:00Z\n- [ ] ask: Approve the Idea page?\n## RECEIPT — idea · till · approved · 2026-10-20T09:00:00Z\n- [x] answered: approve\n- [x] decision: ok\n## RECEIPT — plan · till · drafted · 2026-10-20T09:30:00Z\n- [ ] ask: Approve the plan?\n## RECEIPT — plan · till · approved · 2026-10-20T10:00:00Z\n- [x] answered: approve\n- [x] decision: ok\n## RECEIPT — build · till · step S1.1 proven · 2026-10-21T09:00:00Z\n- [x] verify: node sales.js → total 540\n## RECEIPT — build · till · fix A1 · 2026-10-21T10:00:00Z\n- [x] check added: tests/born.test.js\n- [x] red: node tests/born.test.js → FAIL\n');
+  const git = c => execSync(`git -c user.email=t@t -c user.name=t -c tag.gpgsign=false ${c}`, { cwd: t, stdio: 'ignore' });
   git('init -q'); git('add -A'); git('commit -qm toy');
   return { t, b, git };
 }
 
-check('P4.3', 'gate suite = promise checks + checks born from breaks, nothing else', () => {
-  const { t, b } = toyRepo();
-  const list = run(['gates', b], t);
-  if (!/promise P1\.1 ← S1\.1/.test(list) || !/break   A1: tests\/born\.test\.js/.test(list)) throw new Error('gate list incomplete');
-  if (/stray/.test(list)) throw new Error('a stray test was listed as a gate');
-  const out = run(['gates', b, '--run'], t); if (!/3 of 3 gate checks green/.test(out)) throw new Error(out.trim().split('\n').pop());
-  return '2 promise checks + 1 break check listed and run; the stray test is not a gate';
+check('P7.4', 'state reads only idea.md, plan.md, receipts.md', () => {
+  for (const f of fixtures) {
+    const full = run(['state', F(f), '--json']); const copy = path.join(tmpdir('compass-'), f); fs.mkdirSync(copy);
+    for (const n of ['idea.md', 'plan.md', 'receipts.md']) if (fs.existsSync(path.join(F(f), n))) fs.copyFileSync(path.join(F(f), n), path.join(copy, n));
+    fs.writeFileSync(path.join(copy, 'progress.md'), 'status: SHIPPED'); if (run(['state', copy, '--json']) !== full) throw new Error(`${f}: state differs when decoy files are added or removed`);
+  }
+  return `${fixtures.length} fixtures identical with decoy files present or absent`;
 });
 
-check('P8.1', 'amend: a supersede line un-proves only that part\'s steps', () => {
-  const { t, b } = toyRepo();
-  fs.appendFileSync(path.join(b, 'receipts.md'), '## RECEIPT — build · till · step S1.2 proven · 2026-10-21T11:00:00Z\n- [x] verify: ok\n## RECEIPT — amend · till · part 1 edited · 2026-10-22T09:00:00Z\n- [x] decision: total now excludes voids\n- [x] supersede: S1.1\n');
-  const st = JSON.parse(run(['state', b, '--json'], t));
-  if (st.steps.next !== 'S1.1' || st.steps.proven !== 1) throw new Error(`next ${st.steps.next}, proven ${st.steps.proven}`);
-  if (st.promises.find(p => p.id === 'P2.1').state !== 'built') throw new Error('the other part lost its state');
-  return 'S1.1 un-proved and next; S1.2 and part 2 untouched';
+check('P4.1', 'promise states and the stage come from the record, by furthest gate', () => {
+  const st = JSON.parse(run(['state', F('mid-build'), '--json']));
+  const want = { 'P1.1': 'held', 'P1.2': 'fixed', 'P2.1': 'planned' }; for (const p of st.promises) if (want[p.id] !== p.state) throw new Error(`${p.id}: ${p.state}, wanted ${want[p.id]}`);
+  if (!st.ask) throw new Error('ask not surfaced'); if (!/^Building · Part 2 of 2, Low stock nudge · 2 of 3 steps done/.test(st.line)) throw new Error(`line: ${st.line}`);
+  const live = JSON.parse(run(['state', F('live'), '--json'])); if (!live.promises.every(p => p.state === 'live') || live.stage !== 'live') throw new Error('live fixture not live');
+  // a late note receipt must not move the stage backwards
+  const t = tmpdir('compass-late-'); for (const n of ['idea.md', 'plan.md']) fs.copyFileSync(F(`live/${n}`), path.join(t, n)); fs.writeFileSync(path.join(t, 'receipts.md'), read(F('live/receipts.md')) + '## RECEIPT — build · toy-shop · a late note · 2026-10-30T09:00:00Z\n- [x] note: nothing\n## RECEIPT — attack · toy-shop · A9 page attempt 1 held · 2026-10-30T09:10:00Z\n- [x] class: idea-exists\n');
+  const late = JSON.parse(run(['state', t, '--json'])); if (late.stage !== 'live' || !/^Live/.test(late.line)) throw new Error(`a late receipt moved the stage to ${late.stage}: ${late.line}`);
+  // attempt-2 break → needs you; resolved → fixed
+  const u = tmpdir('compass-needs-'); for (const n of ['idea.md', 'plan.md']) fs.copyFileSync(F(`mid-build/${n}`), path.join(u, n));
+  const base = read(F('plan-approved/receipts.md')) + '## RECEIPT — build · toy-shop · step S1.1 proven · 2026-10-21T09:00:00Z\n- [x] verify: node sales.js till.csv → total 540\n## RECEIPT — build · toy-shop · step S1.2 proven · 2026-10-21T09:30:00Z\n- [x] verify: node check.js → ok\n';
+  fs.writeFileSync(path.join(u, 'receipts.md'), base + '## RECEIPT — attack · x · A2 P1.2 attempt 1 broke · 2026-10-21T11:20:00Z\n- [x] reproduction: r\n## RECEIPT — attack · x · A2 P1.2 attempt 2 broke · 2026-10-21T12:30:00Z\n- [x] reproduction: r\n- [ ] ask: still breaks?\n');
+  if (JSON.parse(run(['state', u, '--json'])).promises.find(p => p.id === 'P1.2').state !== 'needs you') throw new Error('attempt-2 break not needs you');
+  fs.appendFileSync(path.join(u, 'receipts.md'), '## RECEIPT — attack · x · A2 P1.2 attempt 2 resolved · 2026-10-21T13:00:00Z\n- [x] answered: move on\n- [x] leftover: broke twice; fixed\n');
+  if (JSON.parse(run(['state', u, '--json'])).promises.find(p => p.id === 'P1.2').state !== 'fixed') throw new Error('resolved not shown as fixed');
+  return 'held / fixed / planned / live / needs you / resolved; stage by furthest gate; plain-words line';
 });
 
-check('P6.3', 'pre-flight: restore point, config keys, secret scan', () => {
-  const { t, b, git } = toyRepo();
-  fs.writeFileSync(path.join(t, '.env.example'), 'TILL_PATH=\nSHOP_TOKEN=\n'); fs.writeFileSync(path.join(t, 'leak.js'), 'const token = "sk-abcdefghijklmnopqrstuvwxyz0123";\n'); git('add -A'); git('commit -qm leak');
-  let out = ''; try { run(['preflight', b], t); throw new Error('pre-flight passed with a planted secret and a missing key'); } catch (e) { out = e.stdout || ''; if (!/secret scan: 1 hit/.test(out) || !/missing here: TILL_PATH, SHOP_TOKEN|missing here: SHOP_TOKEN, TILL_PATH/.test(out) && !/are missing here/.test(out)) throw new Error('pre-flight did not name the secret and the keys: ' + out.trim().split('\n').join(' | ')); }
+check('P4.1b', 'parsing survives dashes, CRLF, → in text, a slug with spaces is refused, active build by newest receipt', () => {
+  const src = read(F('mid-build/receipts.md')); const t = tmpdir('compass-parse-');
+  fs.writeFileSync(path.join(t, 'idea.md'), read(F('mid-build/idea.md')).replace(/ — /g, ' – ').replace('See today\'s sales total on one line.', 'Tap the icon → see the total on one line.').replace(/\n/g, '\r\n'));
+  fs.writeFileSync(path.join(t, 'plan.md'), read(F('mid-build/plan.md')).replace(/ — /g, ' – ').replace(/\n/g, '\r\n')); fs.writeFileSync(path.join(t, 'receipts.md'), src.replace(/ — /g, ' – ').replace(/\n/g, '\r\n'));
+  const st = JSON.parse(run(['state', t, '--json'])); if (st.steps.total !== 3 || st.promises.length !== 3 || !st.ask) throw new Error(`CRLF/en-dash: ${st.steps.total} steps, ${st.promises.length} promises`);
+  const p = st.promises.find(x => x.id === 'P1.1'); if (p.text !== 'Tap the icon → see the total on one line.' || p.number !== '1 line') throw new Error(`→ in text: "${p.text}" / "${p.number}"`);
+  const sp = path.join(tmpdir('compass-space-'), 'toy shop'); fs.mkdirSync(sp); fs.copyFileSync(F('fresh/idea.md'), path.join(sp, 'idea.md')); if (!fails(['receipt', sp, 'idea', 'drafted', '[ ] ask: x'])) throw new Error('a slug with a space was accepted');
+  const r = tmpdir('compass-find-'); for (const [n, src2] of [['aaa-old', 'plan-approved'], ['zzz-new', 'live']]) { const d = path.join(r, '.claude', 'builds', n); fs.mkdirSync(d, { recursive: true }); for (const f of ['idea.md', 'plan.md', 'receipts.md']) fs.copyFileSync(F(`${src2}/${f}`), path.join(d, f)); }
+  const old = new Date('2026-10-26T09:00:00Z'); for (const n of ['aaa-old', 'zzz-new']) for (const f of ['idea.md', 'plan.md', 'receipts.md']) fs.utimesSync(path.join(r, '.claude', 'builds', n, f), old, old);
+  if (!/^Live/.test(run(['state'], r))) throw new Error('active build chosen alphabetically, not by newest receipt');
+  return 'en dash, CRLF, arrow in text, space-slug refused, newest receipt wins';
+});
+
+check('P5.3', 'proof is proof: receipts are validated, gates assert outputs, a verify of true is refused', () => {
+  const { t, b } = toyRepo();
+  if (!fails(['receipt', b, 'build', 'step S9.9 proven', 'verify: x → y'], t)) throw new Error('unknown step accepted');
+  if (!fails(['receipt', b, 'build', 'step S1.2 proven', 'done'], t)) throw new Error('proven without a verify line accepted');
+  if (!fails(['receipt', b, 'build', 'step S1.2 proven', 'verify: node other.js → ok'], t)) throw new Error('verify with the wrong command accepted');
+  if (!fails(['receipt', b, 'build', 'step S1.2 proven', 'verify: node check.js → nope'], t)) throw new Error('verify with the wrong output accepted');
+  run(['receipt', b, 'build', 'step S1.2 proven', 'verify: node check.js → ok'], t);
+  if (!fails(['receipt', b, 'build', 'fix A2', 'check added: tests/x.js'], t)) throw new Error('fix without a red line accepted');
+  if (!fails(['receipt', b, 'deploy', 'released', 'x'], t)) throw new Error('released before all steps proven accepted');
+  const e = tmpdir('compass-early-'); fs.copyFileSync(F('fresh/idea.md'), path.join(e, 'idea.md')); fs.copyFileSync(F('fresh/plan.md'), path.join(e, 'plan.md'));
+  if (!fails(['receipt', e, 'build', 'step S1.1 proven', 'verify: node sales.js till.csv → total'], e)) throw new Error('a step proven before any approval was accepted');
+  const g = tmpdir('compass-true-'); const gb = path.join(g, '.claude', 'builds', 'x'); fs.mkdirSync(gb, { recursive: true }); fs.copyFileSync(F('fresh/idea.md'), path.join(gb, 'idea.md'));
+  fs.writeFileSync(path.join(gb, 'plan.md'), '# Plan\n\n### Slice 1 — Skeleton\n- [ ] S1.1 Do it. → P1.1 · verify: `true` it looks right · ≈ 1 h\n- [ ] S1.2 Do more. → P1.2, P2.1 · verify: `echo hello` → bye · ≈ 1 h\n');
+  const out = fails(['gates', gb, '--run'], g); if (!out || !/✗ promise P1\.2/.test(out)) throw new Error('an output mismatch passed the gate');
+  if (!/no check for: P1\.1/.test(out)) throw new Error('a verify without "→ expected" counted as a check');
+  const pc = fails(['plan-check', gb]); if (!pc || !/S1\.1: verify needs/.test(pc)) throw new Error('plan-check accepted a verify without an expected output');
+  return 'unknown step, missing/wrong verify, fix without red, early receipts, output mismatch: all refused';
+});
+
+check('P4.3', 'gate suite = promise checks + break checks; stray tests are not gates; zero checks fails', () => {
+  const { t, b } = toyRepo(); const list = run(['gates', b], t);
+  if (!/promise P1\.1 ← S1\.1: node sales\.js → total 540/.test(list) || !/break   A1: tests\/born\.test\.js/.test(list) || /stray/.test(list)) throw new Error('gate list wrong');
+  if (!/4 of 4 gate checks green/.test(run(['gates', b, '--run'], t))) throw new Error('gates did not run green');
+  const z = tmpdir('compass-zero-'); fs.copyFileSync(F('fresh/idea.md'), path.join(z, 'idea.md')); fs.writeFileSync(path.join(z, 'plan.md'), '# Plan\n\n### Slice 1 — Skeleton\n- [ ] S1.1 Do. → P1.1 · verify: it looks right · ≈ 1 h\n');
+  if (!/no gate checks found/.test(fails(['gates', z, '--run'], z) || '')) throw new Error('zero checks passed');
+  return '3 promise + 1 break check run; stray excluded; zero checks is a failure';
+});
+
+check('P6.1', 'write-back measures; typed values are refused; ✗ shown; watch and re-measure state', () => {
+  const { t, b } = toyRepo(); run(['receipt', b, 'build', 'step S1.2 proven', 'verify: node check.js → ok'], t); run(['receipt', b, 'build', 'step S2.1 proven', 'verify: node stock.js → 1 message'], t);
+  if (!fails(['writeback', b, 'P1.1=7 s ✓'], t)) throw new Error('typed live values accepted');
+  if (!fails(['writeback', b, '--target=' + t], t)) throw new Error('writeback before released accepted');
+  for (const r of [['deploy', 'preflight', 'x'], ['deploy', 'rehearsal', 'x'], ['deploy', 'gate 4', 'answered: go', 'decision: go live']]) run(['receipt', b, ...r], t); run(['receipt', b, 'deploy', 'released', 'cmd → ok'], t);
+  fs.writeFileSync(path.join(t, 'stock.js'), 'console.log("2 messages")');
+  const out = fails(['writeback', b, `--target=${t}`, '--watch-until=2026-11-02'], t) || ''; if (!/1 ✗/.test(out)) throw new Error('a failing live check was not ✗: ' + out.trim());
+  const page = read(path.join(b, 'idea-page.html')); if (!/live: 2 messages ✗/.test(page) || (page.match(/class="live/g) || []).length !== 3) throw new Error('badges wrong');
+  const st = JSON.parse(run(['state', b, '--json'], t)); if (st.watch !== '2026-11-02' || !/✗ part/.test(st.line)) throw new Error(`state: ${st.line}`);
+  fs.appendFileSync(path.join(b, 'receipts.md'), '## RECEIPT — deploy · till · writeback · 2026-10-25T09:00:00Z\n- [x] P1.1: live total 540 ✓\n- [x] P1.2: live ok ✓\n- [x] P2.1: live 1 message ✓\n- [x] watch: until 2026-10-01\n');
+  if (!/watch period over/.test(JSON.parse(run(['state', b, '--json'], t)).line)) throw new Error('a passed watch date is not surfaced');
+  return 'measured by command; typed values refused; ✗ visible on page and line; watch over surfaces';
+});
+
+check('P6.3', 'pre-flight: the restore tag is verified, keys are reported honestly, secrets found', () => {
+  const { t, b, git } = toyRepo(); fs.writeFileSync(path.join(t, '.env.example'), 'TILL_PATH=\n'); fs.writeFileSync(path.join(t, 'leak.js'), 'const token = "sk-abcdefghijklmnopqrstuvwxyz0123";\n'); git('add -A'); git('commit -qm leak');
+  const out = fails(['preflight', b], t) || ''; if (!/secret scan: 1 hit/.test(out) || !/checked on this machine only/.test(out)) throw new Error('pre-flight did not name the secret and the local-only key check');
   fs.unlinkSync(path.join(t, 'leak.js')); git('add -A'); git('commit -qm clean');
-  const env = { ...process.env, TILL_PATH: '/tmp', SHOP_TOKEN: 'x' };
-  const ok = execFileSync('node', [path.join(ROOT, 'scripts', 'compass'), 'preflight', b], { cwd: t, encoding: 'utf8', env });
-  if (!/restore point: tag compass-restore-/.test(ok) || !/pre-flight passed/.test(ok)) throw new Error('clean pre-flight did not pass with a restore tag');
-  return 'fails naming the secret and the 2 missing keys; passes clean with a restore tag';
+  const ok = run(['preflight', b, '--env-from=echo TILL_PATH'], t); if (!/restore point: tag compass-restore-/.test(ok) || !/pre-flight passed/.test(ok)) throw new Error('clean pre-flight failed');
+  const tags = execSync('git tag -l "compass-restore-*"', { cwd: t, encoding: 'utf8' }).trim(); if (!tags) throw new Error('pre-flight printed a tag that does not exist');
+  execSync('git config tag.gpgsign true && git config gpg.program /usr/bin/false && git config gpg.ssh.program /usr/bin/false && git tag -l | xargs git tag -d >/dev/null', { cwd: t }); const bad = fails(['preflight', b, '--env-from=echo TILL_PATH'], t) || ''; if (!/git tag failed/.test(bad)) throw new Error('a failed tag was reported as taken');
+  return 'tag verified in git; failed tag reported; local-only keys named; --env-from honoured; secret found';
 });
 
-check('P6.1', 'write-back puts a live badge beside every promise and the watch date on the card', () => {
-  const { t, b } = toyRepo();
-  run(['writeback', b, 'P1.1=7 s ✓', 'P1.2=₹0 ✓', 'P2.1=2 messages ✗', '--watch-until=2026-11-02'], t);
-  const page = fs.readFileSync(path.join(b, 'idea-page.html'), 'utf8');
-  if ((page.match(/class="live/g) || []).length !== 3 || !/live: 2 messages ✗/.test(page)) throw new Error('live badges missing or ✗ hidden');
-  const st = JSON.parse(run(['state', b, '--json'], t)); if (st.watch !== '2026-11-02' || !/watch period until 2026-11-02/.test(st.line)) throw new Error('watch date not in state');
-  const note = run(['release-note', b], t); if (note.split(/\s+/).length > 200 || !/live: ₹0 ✓/.test(note) || !/Watch period until 2026-11-02/.test(note)) throw new Error('release note wrong');
-  return '3 badges incl. one ✗; watch date in state and note; note under 200 words';
+check('P6.4', 'release note needs a runbook, labels unmeasured promises, stays short', () => {
+  const { t, b } = toyRepo(); fs.writeFileSync(path.join(b, 'plan.md'), read(path.join(b, 'plan.md')).replace(/## 19\. Runbook[\s\S]*$/, '## 19. Runbook\nNot applicable, because reasons.\n'));
+  if (!fails(['release-note', b], t)) throw new Error('release note accepted a missing runbook');
+  fs.writeFileSync(path.join(b, 'plan.md'), read(path.join(b, 'plan.md')).replace(/## 19\. Runbook[\s\S]*$/, '## 19. Runbook\nRun: node sales.js\nTotal missing → check till.csv exists\n'));
+  const note = run(['release-note', b], t); if (!/not yet measured live/.test(note) || !/## How to run it/.test(note) || note.split(/\s+/).length > 260) throw new Error('note wrong');
+  return 'refused without runbook; unmeasured labelled; runbook appended; short';
 });
 
-check('P4.4', 'plan check refuses a step over one sitting', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-est-')); fs.copyFileSync(path.join(ROOT, 'fixtures', 'plan-full', 'idea.md'), path.join(tmp, 'idea.md'));
-  fs.writeFileSync(path.join(tmp, 'plan.md'), fs.readFileSync(path.join(ROOT, 'fixtures', 'plan-full', 'plan.md'), 'utf8').replace(/(S1\.2 [^\n]*?)≈ 2 h/, '$1≈ 9 h'));
-  let out = ''; try { run(['plan-check', tmp]); throw new Error('a 9 h step passed'); } catch (e) { out = e.stdout || ''; if (!/S1\.2 is estimated at 9 h/.test(out)) throw e; }
-  return 'a 9 h step is refused with the split instruction';
+check('P8.1', 'amend: supersede is bounded to the part, resets its attacks, bumps the version', () => {
+  const { t, b } = toyRepo(); run(['receipt', b, 'build', 'step S1.2 proven', 'verify: node check.js → ok'], t); run(['receipt', b, 'build', 'step S2.1 proven', 'verify: node stock.js → 1 message'], t);
+  run(['receipt', b, 'attack', 'A3 P1.1 attempt 1 held', 'class: x'], t);
+  if (!fails(['receipt', b, 'amend', 'part 2 edited', 'decision: x', 'supersede: S1.1'], t)) throw new Error('an amend of part 2 superseded a part-1 step');
+  if (!fails(['receipt', b, 'amend', 'part 1 edited', 'supersede: S1.1'], t)) throw new Error('an amend without a decision was accepted');
+  run(['receipt', b, 'amend', 'part 1 edited', 'decision: total excludes voids', 'supersede: S1.1', 'answered: change'], t);
+  const st = JSON.parse(run(['state', b, '--json'], t)); const p11 = st.promises.find(p => p.id === 'P1.1');
+  if (st.steps.next !== 'S1.1' || p11.state !== 'planned' || st.promises.find(p => p.id === 'P2.1').state !== 'built' || st.version !== 2) throw new Error(`next ${st.steps.next}, P1.1 ${p11.state}, v${st.version}`);
+  return 'cross-part supersede refused; decision required; P1.1 reset to planned, its held attack dropped; part 2 untouched; v2';
+});
+
+check('P1.1', 'one door, one line in plain words, no codes', () => {
+  const skills = fs.readdirSync(path.join(ROOT, 'skills')); const visible = skills.filter(s => !/user-invocable:\s*false/.test(read(path.join(ROOT, 'skills', s, 'SKILL.md'))));
+  if (fs.existsSync(path.join(ROOT, 'commands')) || visible.length !== 1 || visible[0] !== 'compass') throw new Error(`visible: ${visible.join(', ')}`);
+  for (const f of fixtures) { const line = run(['state', F(f)]).trim(); if (/\b(S\d+\.\d+|A\d+|P\d+\.\d+|SLICE|RECEIPT)\b/.test(line)) throw new Error(`${f}: codes in the line: ${line}`); }
+  return 'one visible skill; four fixture lines free of ids';
+});
+
+check('P2.2', 'interview: 11 questions incl. exists, purpose-changing expand, journey; no banned words; recorded per question', () => {
+  const text = read(path.join(ROOT, 'shared', 'interview.md')); const qs = text.split('\n').filter(l => /^\d+\.\s+\*\*/.test(l));
+  if (qs.length !== 11) throw new Error(`${qs.length} questions, expected 11`);
+  const banned = /\b(rollback|flag|schema|migration|idempotent|environment|env|RBAC|permissions?|invariant|endpoint|API|database|table|cache|queue|latency|token|deploy|server|config)\b/;
+  for (const q of qs) { const title = q.match(/\*\*([^*]+)\*\*/)[1]; if (banned.test(title)) throw new Error(`banned word in question: ${title}`); }
+  for (const must of ['What do you use for this today', 'changes the purpose', 'from the moment it starts to the moment it ends', 'answer <dir> question', 'A tick always means yes', 'Never use the `preview` field']) if (!text.includes(must)) throw new Error(`interview missing: ${must}`);
+  run(['spec-check', F('idea-data')]); const bad = tmpdir('compass-spec-'); fs.copyFileSync(F('idea-data/idea.md'), path.join(bad, 'idea.md')); fs.writeFileSync(path.join(bad, 'spec.md'), '# Spec\n## Rules\n- Sends a weekly digest. → P9.9\n## Assumptions (x)\n- a\n');
+  if (!/not on the Idea page/.test(fails(['spec-check', bad]) || '')) throw new Error('spec-check accepted a pointer to a promise not on the page');
+  return '11 questions, 0 banned words, exists/expand/journey/per-question receipts present; spec pointer to a missing promise refused';
+});
+
+check('P2.3', 'idea page: limits, exists/because/done required, text sketch refused, journey rendered, version from amends', () => {
+  for (const f of ['idea-visual', 'idea-data']) run(['idea-page', F(f), '--check']);
+  const bad = tmpdir('compass-bad-idea-'); fs.writeFileSync(path.join(bad, 'idea.md'), '# Idea — bad\ntitle: Bad\npurpose: x\n\n### Part 1 — Big\npicture: nope\n' + 'word '.repeat(160) + '\n- P1.1 No number here\nsketch:\n```ascii\nbox\n```\n');
+  const out = fails(['idea-page', bad, '--check']) || ''; for (const m of ['no exists: line', 'no done: line', 'words, limit 150', 'unknown picture key', 'no number after', 'fenced text sketch']) if (!out.includes(m)) throw new Error(`lint missed: ${m}`);
+  const j = tmpdir('compass-journey-'); fs.mkdirSync(path.join(j, 'pictures')); fs.copyFileSync(F('idea-visual/pictures/sketch-1.svg'), path.join(j, 'pictures', 'sketch-1.svg')); fs.writeFileSync(path.join(j, 'idea.md'), read(F('idea-visual/idea.md')).replace('### Part 1', '## Journey\n- phone: Opens the app at closing time\n- money: Sees the total\n- bell: Goes home\n\n### Part 1'));
+  run(['idea-page', j, `--out=${path.join(j, 'p.html')}`]); const html = read(path.join(j, 'p.html')); if ((html.match(/class="step"/g) || []).length !== 3 || !/What you use today/.test(html)) throw new Error('journey or exists block not rendered');
+  return '2 samples within limits; 6 lint failures named; journey of 3 moments and the exists block render';
+});
+
+check('P2.5', 'the look: mock required for premium and clean; sketch only for match', () => {
+  const v = tmpdir('compass-look-'); fs.writeFileSync(path.join(v, 'idea.md'), read(F('idea-visual/idea.md')).replace('done:', 'look: clean\ndone:'));
+  fs.mkdirSync(path.join(v, 'pictures')); fs.copyFileSync(F('idea-visual/pictures/sketch-1.svg'), path.join(v, 'pictures', 'sketch-1.svg'));
+  if (!/needs a mock:/.test(fails(['idea-page', v, '--check']) || '')) throw new Error('a clean look with only a sketch passed');
+  const d = run(['idea-page', F('idea-data'), `--out=${path.join(v, 'd.html')}`]); if (/How it will look/.test(read(path.join(v, 'd.html')))) throw new Error('data sample shows a sketch');
+  return 'clean without mock refused; data sample has no sketch';
+});
+
+check('P5.1', 'attacks: conformance forced for parts with a mock or sketch, load for timed promises, product classes at the last part, ids by promise', () => {
+  const cat = read(path.join(ROOT, 'shared', 'failure-catalogue.md')); const n = (cat.match(/^## [a-z-]+$/gm) || []).length; if (n !== 21) throw new Error(`${n} classes, expected 21 (13 build + 4 idea + 4 plan)`);
+  if (!/mocks\/part-<n>\.html/.test(cat) || !/Tolerance:/.test(cat)) throw new Error('conformance recipe lacks the mock path or tolerance');
+  const a = run(['attacks', F('idea-visual'), 'build', '--json']); const rows = JSON.parse(a.slice(a.indexOf('[')));
+  if (a !== run(['attacks', F('idea-visual'), 'build', '--json'])) throw new Error('not deterministic');
+  const pm = rows.filter(r => r.key === 'picture-mismatch'); if (pm.length !== 2 || !pm.every(r => /^P1\./.test(r.promise))) throw new Error(`picture-mismatch rows: ${pm.map(r => r.promise).join(',')}`);
+  if (!rows.some(r => r.key === 'load' && r.promise === 'P1.1')) throw new Error('no load row for "within 10 seconds"');
+  if (!rows.filter(r => r.promise === 'all').every(r => r.when === 'last part')) throw new Error('product rows not at the last part');
+  for (const st of ['idea', 'plan']) { const o = run(['attacks', F('idea-data'), st, '--json']); if (JSON.parse(o.slice(o.indexOf('['))).length !== 4) throw new Error(`${st}: not 4 fixed attacks`); }
+  const md = read(F('idea-visual/attacks.md')); if (!/\| State \|/.test(md)) throw new Error('no state column');
+  return '21 classes; conformance forced on the mocked part; load forced on a timed promise; product rows last; idea/plan 4 each; state column';
+});
+
+check('P5.3b', 'a reviewer may only say held or broke, in one line, with no smuggled list', () => {
+  run(['attack-receipt-check', 'held']); run(['attack-receipt-check', 'broke: node check.js → observed exit 1, expected exit 0']);
+  for (const bad of ['I found three issues', 'broke: it is wrong', 'held, but note that', 'HELD', 'broke: x → observed 1, expected 0. Also found: (1) y (2) z', 'first line\nheld']) if (!fails(['attack-receipt-check', bad])) throw new Error(`accepted: ${bad}`);
+  return '2 shapes accepted; prose, trailing notes, "also found", multi-line all rejected';
+});
+
+check('S3.7', 'the look rubric has 13 items incl. depth, structure, controls; median and bar hold; shots size to content', () => {
+  run(['rubric-check']); const good = 'scores: hierarchy=4 spacing=4 type=5 color=4 components=4 states=4 alignment=4 polish=4 responsive=4 copy=5 depth=4 structure=4 controls=4';
+  run(['look-score', 'premium', good, good, good]);
+  const two = fails(['look-score', 'premium', good, good.replace('controls=4', 'controls=2 | low: controls@"native select"'), good.replace('controls=4', 'controls=2 | low: controls@"default button"')]) || ''; if (!/controls=2 \(native select \/ default button\)/.test(two)) throw new Error('two low reviewers on controls did not break with regions');
+  if (!fails(['attack-receipt-check', '--look', 'scores: hierarchy=4 spacing=4'])) throw new Error('a short look line accepted');
+  let note = 'screenshots: skipped (no Chrome)';
+  try { const page = path.join(os.tmpdir(), 'compass-look-page.html'); run(['idea-page', F('idea-visual'), '--full', `--out=${page}`]); const o = run(['shots', page, `--out=${path.join(os.tmpdir(), 'compass-shots')}`, '--name=tt']).trim().split('\n'); if (o.length !== 2 || !o.every(f => fs.existsSync(f) && fs.statSync(f).size > 20000)) throw new Error('shots did not produce 2 PNGs'); note = 'screenshots: phone + desktop sized to the page'; } catch (e) { if (!/no Chrome/.test(e.stderr || '')) throw e; }
+  if (!fs.existsSync(path.join(ROOT, 'design', 'house-style', 'SYSTEM.md')) || !fs.existsSync(path.join(ROOT, 'templates', 'tokens.css'))) throw new Error('design system or tokens missing');
+  for (const f of ['shared/interview.md', 'skills/build/SKILL.md']) if (!/design\/house-style\/SYSTEM\.md/.test(read(path.join(ROOT, f))) || !/tokens\.css/.test(read(path.join(ROOT, f)))) throw new Error(`${f} does not bind the design system and tokens`);
+  return `13 items; median bar; ${note}; system and tokens bound in interview and build`;
+});
+
+check('P3.2', 'plan check: 21 sections, real path, skeleton, two-way trace, command + expected per step, spec and runbook, ≤6 h', () => {
+  const full = F('plan-full'); run(['plan-check', full]);
+  const variants = { 'a promise with no step': t => t.replace(/\bP1\.3\b/g, 'P1.1'), 'a step with no promise': t => t.replace(/(S2\.3 [^\n]*?)→ P2\.5/, '$1→'), 'a fake path in §3': t => { const [a, rest] = t.split(/^## 3\. /m); const [s3, ...after] = rest.split(/^## 4\. /m); return a + '## 3. ' + s3.replace(/`[^`]+`/g, '`nowhere/none.js`') + '## 4. ' + after.join('## 4. '); }, 'slice 1 not the skeleton': t => t.replace('### Slice 1 — Skeleton', '### Slice 1 — Setup'), 'a verify without expected': t => t.replace(/(S1\.2 [^\n]*?)` → [^·\n]*/, '$1`'), 'a missing section': t => t.replace(/^## 19\. Runbook[\s\S]*?(?=^## 20\.)/m, ''), 'a 9 h step': t => t.replace(/(S1\.2 [^\n]*?)≈ 2 h/, '$1≈ 9 h') };
+  for (const [name, mutate] of Object.entries(variants)) { const tmp = tmpdir('compass-plan-'); for (const n of ['idea.md', 'spec.md']) fs.copyFileSync(path.join(full, n), path.join(tmp, n)); const m = mutate(read(path.join(full, 'plan.md'))); if (m === read(path.join(full, 'plan.md'))) throw new Error(`variant "${name}" changed nothing`); fs.writeFileSync(path.join(tmp, 'plan.md'), m); if (!fails(['plan-check', tmp])) throw new Error(`plan-check accepted ${name}`); }
+  const card = run(['plan-card', full]); if (card.split('\n').length > 40 || /\/Users\//.test(card) || !/Questions for you|The biggest risks/.test(card)) throw new Error('plan card too long, or shows a path');
+  return 'full plan passes; 7 broken variants refused; card ≤40 lines with no path';
+});
+
+check('P7.2', 'the door and the stages ask only at gates, record asks and answers, define every option', () => {
+  const door = read(path.join(ROOT, 'skills', 'compass', 'SKILL.md'));
+  for (const must of ['Gate 3', '"gate 3"', 'for you:', 'Look at a past build', 'print each past build', 'Fix one first, ask which item']) if (!door.includes(must)) throw new Error(`door missing: ${must}`);
+  const deploy = read(path.join(ROOT, 'skills', 'deploy', 'SKILL.md')); if (!/"gate 4"/.test(deploy) || !/Make <title> live for real users now\?/.test(deploy) || /Deploy now \(Recommended\)/.test(deploy)) throw new Error('gate 4 not recorded or not in plain words');
+  const build = read(path.join(ROOT, 'skills', 'build', 'SKILL.md')); if (!/Build it as written \(Recommended\)/.test(build) || !/drift stop at S<n>/.test(build)) throw new Error('drift stop does not ask with a recommended answer');
+  const amend = read(path.join(ROOT, 'skills', 'amend', 'SKILL.md')); if (!/Ask before anything changes/.test(amend)) throw new Error('amend does not ask first');
+  const attack = read(path.join(ROOT, 'skills', 'attack', 'SKILL.md')); if (!/Move on, note it on the card \(Recommended\)/.test(attack) || !/never `fork`/.test(attack) || !/entire final message/.test(attack) || !/five times/.test(attack)) throw new Error('attack protocol missing a fix');
+  return 'gates 3 and 4 recorded; drift stop and amend ask first; attack protocol tightened';
 });
 
 check('S8.1', 'core instruction text under 10,000 words', () => {
-  let words = 0;
-  const walk = d => { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); if (fs.statSync(p).isDirectory()) walk(p); else if (p.endsWith('.md')) words += fs.readFileSync(p, 'utf8').split(/\s+/).filter(Boolean).length; } };
-  for (const d of ['skills', 'shared']) if (fs.existsSync(path.join(ROOT, d))) walk(path.join(ROOT, d));
-  if (words > 10000) throw new Error(`${words} words`);
-  return `${words} words of 10,000`;
+  let words = 0; const walk = d => { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); if (fs.statSync(p).isDirectory()) walk(p); else if (p.endsWith('.md')) words += read(p).split(/\s+/).filter(Boolean).length; } };
+  for (const d of ['skills', 'shared']) walk(path.join(ROOT, d)); if (words > 10000) throw new Error(`${words} words`); return `${words} words of 10,000`;
 });
 
 for (const [id, name, r, d] of results) console.log(`${r === 'green' ? '✓' : '✗'} ${id.padEnd(5)} ${name} — ${d}`);

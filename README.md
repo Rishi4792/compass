@@ -6,18 +6,20 @@ Compass is one command inside [Claude Code](https://claude.com/claude-code). It 
 
 ▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)
 
-## Install
+## First time, step by step
 
-```
-/plugin marketplace add Rishi4792/compass
-/plugin install compass@compass
-```
-
-Needs Claude Code and Node 18 or newer. Nothing else.
+1. **Get Claude Code** from [claude.com/claude-code](https://claude.com/claude-code). It is the app Compass lives in. Follow its own install page; it also installs the one helper Compass needs (Node).
+2. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea.
+3. **Paste these two lines into its chat box**, one at a time, and press Enter after each:
+   ```
+   /plugin marketplace add Rishi4792/compass
+   /plugin install compass@compass
+   ```
+4. **Type `/compass`** and press Enter. That is the whole manual. From here you only answer questions.
 
 ## Use
 
-Type `/compass`. That is the whole manual.
+Type `/compass`. It tells you where your build is in one plain line and asks you one question only when the answer is yours.
 
 It reads where your build is, prints one line, and asks one question. You are asked at most four times in a build:
 
@@ -35,12 +37,10 @@ Everything else runs for you. You watch one live card: where the build is, one r
 - **One record.** Status is computed from an append-only record of passed steps. No status file can disagree with another, because there is only one.
 - **The look, judged once.** For visual parts you approve a real mock before code. After that the build is checked for conformance to it, element for element.
 
-## Coming from 0.35
-
-The seven stages, three review loops and 59 self-check scripts are gone. 1.0 is four stages and one script. Builds started under 0.35 are shown as legacy and finished by pinning the old version: `git checkout v0.35.0` in a clone of this repo and load it with `claude --plugin-dir ./plugins/compass`.
-
 ## For contributors
 
 `node plugins/compass/scripts/check` runs the gate suite: one check per promise on the Idea page that has a step, plus every check born from a break. It also refuses a core over 10,000 words of instructions. Open [`plugins/compass/`](plugins/compass/) and read `skills/compass/SKILL.md` first; it is the one door.
+
+Coming from 0.35: the seven stages, three review loops and 59 self-check scripts are gone; 1.0 is four stages and one script. A build started under 0.35 is finished with the old version: `git checkout v0.35.0` in a clone of this repo, then `claude --plugin-dir ./plugins/compass`.
 
 MIT © Rishi Kapoor

@@ -123,11 +123,99 @@ break: A check that passed before this part now fails, or an existing path behav
 check: The existing check stays; a new one covers the path that broke.
 
 ## picture-mismatch
-name: Does not match the approved picture
+name: Does not match the approved mock
 scope: promise
-damage: 3
+damage: 4
 applies: visual
 likely: visual=5 data=1 service=1
-attack: Open the built screen at phone and desktop width with real data. Compare against the approved sketch: what is on the screen, in what order, what is one tap away, what is hidden.
-break: An element the sketch shows is missing or moved, or an element the sketch does not show demands attention.
-check: A screenshot test at both widths, compared to the approved sketch's element list.
+attack: Open the built screen for this part at 390 px and 1200 px, and in each state the mock exposes (?state=empty, loading, error, long, first). Next to it open the approved mock file named in your prompt (mocks/part-<n>.html) at the same widths and states. Compare element by element: what is on the screen, in what order, what is one tap away, what is hidden; then token by token against the tokens.css block in the mock: colours, type sizes, spacing steps, radius. Tolerance: a colour may differ by at most 4 in any RGB channel; a spacing or size by at most 2 px; nothing may be missing, added or reordered.
+break: An element the mock shows is missing, added or moved; a state is undesigned; or a token drifts beyond the tolerance.
+check: A screenshot comparison at both widths and every state against the approved mock, with the element list and token values asserted.
+
+## idea-contradiction
+name: Two parts contradict each other
+stage: idea
+scope: page
+damage: 4
+applies: visual data service
+likely: visual=3 data=3 service=3
+attack: Read every promise on the Idea page and the Never list. Find two statements that cannot both be true for the same person at the same time, or a Never line that forbids something a promise needs.
+break: Quote the two lines and the person who would be caught between them.
+check: An edit to idea.md that removes the contradiction, re-rendered and shown to the person.
+
+## idea-uncheckable
+name: A promise cannot be checked by anyone
+stage: idea
+scope: page
+damage: 4
+applies: visual data service
+likely: visual=4 data=4 service=4
+attack: For each promise, say in one line the exact command, measurement or observation that would prove it, and who could do it. A promise with no such line, or whose number has no unit, breaks.
+break: The promise quoted and the reason nobody could check it.
+check: The promise rewritten with a checkable number, or moved to Later.
+
+## idea-exists
+name: Something that already exists does this for this person
+stage: idea
+scope: page
+damage: 3
+applies: visual data service
+likely: visual=3 data=3 service=3
+attack: Name the two or three closest existing products or workarounds for the person on the page and test the `because:` line against them: does it name a concrete thing they fail at for this person?
+break: An existing tool does what the purpose line says and the because line does not say why it is not enough.
+check: The exists and because lines rewritten so a reader can tell why this is worth building.
+
+## idea-not-needed
+name: The stated person does not need this part
+stage: idea
+scope: page
+damage: 3
+applies: visual data service
+likely: visual=3 data=3 service=3
+attack: For each part, trace it back to the hurts line and the journey. A part that no moment of the journey uses, or that serves someone other than the stated person, breaks.
+break: The part named and the journey moment it would need but lacks.
+check: The part moved to Later, or the journey corrected.
+
+## plan-promise-no-step
+name: A promise with no step
+stage: plan
+scope: plan
+damage: 5
+applies: visual data service
+likely: visual=4 data=4 service=4
+attack: Run scripts/compass plan-check. Every promise on the Idea page must appear in at least one step's → list.
+break: The promise id named by plan-check.
+check: plan-check green.
+
+## plan-step-no-promise
+name: A step that serves no promise
+stage: plan
+scope: plan
+damage: 4
+applies: visual data service
+likely: visual=4 data=4 service=4
+attack: Run scripts/compass plan-check. A step with no → promise, or whose promise is not on the page, breaks.
+break: The step id named by plan-check.
+check: plan-check green.
+
+## plan-no-rollback
+name: A step that cannot be undone and has no rollback line
+stage: plan
+scope: plan
+damage: 5
+applies: visual data service
+likely: visual=3 data=5 service=4
+attack: For each step that deletes, migrates, overwrites or sends something outside the repo, find the §12 line or the step's own note that says exactly how it is undone. None found breaks.
+break: The step quoted and the thing it would make irreversible.
+check: A rollback line added to §12 or the step split so the irreversible part is last and guarded.
+
+## plan-missing-dependency
+name: A dependency that does not exist
+stage: plan
+scope: plan
+damage: 4
+applies: visual data service
+likely: visual=3 data=4 service=4
+attack: For every library, service, file, table or command the plan names in §3, §7 and the steps, confirm it exists: in the registry, in the repo, or at the named address. Run the lookups.
+break: The name quoted and the lookup that failed.
+check: The dependency added, pinned, or the step rewritten without it.
