@@ -14,7 +14,7 @@ Rebuild Compass as a 1.0 plugin for Claude Code with user experience at its core
 
 ## 3. Current state (read, not assumed)
 Checked in this checkout: `compass/scripts/compass`, `compass/templates/card.html`.
-- Repo `Rishi4792/compass`, public, MIT. Plugin at `plugins/compass/`. Marketplace manifest `.claude-plugin/marketplace.json` and plugin manifest `scripts/compass` and `templates/card.html`, both version `0.35.0`. Latest tag `v0.35.0`. Install path in `README.md` lines 149 to 160: `/plugin marketplace add Rishi4792/compass` then `/plugin install compass@compass`.
+- Repo `Rishi4792/compass`, public, MIT. Plugin at `plugins/compass/`. Marketplace manifest `.claude-plugin/marketplace.json` and plugin manifest `plugins/compass/.claude-plugin/plugin.json`, both version `0.35.0`. Latest tag `v0.35.0`. Install path in `README.md` lines 149 to 160: `/plugin marketplace add Rishi4792/compass` then `/plugin install compass@compass`.
 - Surfaces today: 3 commands (`commands/go.md`, `resume.md`, `status.md`); 12 skills under `skills/` (7 stage skills, `start`, and 4 bundled design or visual skills: `rk-house-style`, `cinematic-hero`, `compass-visual`, `explain`); 6 shared doctrine files under `shared/` (feynman, engine, gate, enforcement, review-core, verify-ladder, walkthrough; 4,924 words).
 - Machinery: `scripts/compass.sh` is 6,088 lines; 59 files under `scripts/`, most of them checks that test Compass itself. Instruction text totals 63,372 words.
 - Hooks (`hooks/hooks.json`): `UserPromptSubmit` runs `hooks/orient-hook.sh`; `Stop` runs `compass.sh stop-guard`; `PreCompact` prints a reminder to update `progress.md`.
@@ -154,6 +154,7 @@ Build state may contain file paths and command output. `secret-scan` from 0.35 i
 Instruction text loaded per stage drops from up to 5,401 words (contract skill) to a target of ≤ 1,500 words per stage skill. `scripts/compass state` on a 500-receipt record must return in under 1 second.
 
 ## 19. Runbook
+Run it: type /compass inside Claude Code in the project folder; the record is .claude/builds/<slug>/receipts.md and the card is card.html beside it.
 - "Where am I?" → type `/compass`.
 - Card not updating → `scripts/compass card .claude/builds/<slug>`; if the Artifact URL is lost, the local file is at `.claude/builds/<slug>/card.html`.
 - A stage will not advance → the card names the unmet promise and the last receipt; nothing else to read.
@@ -162,7 +163,7 @@ Instruction text loaded per stage drops from up to 5,401 words (contract skill) 
 - A1 The Artifact tool is available to Rishi; public users may lack it (handled in §16).
 - A2 Subagents (the Agent tool) are available for attacks; without them, attacks run in-session with a fresh-context prompt.
 - Q1 (Rishi) Same plugin name and repo, version 1.0.0, upgrade in place? Recommended yes.
-- Q2 (Rishi) Who are the two novices for S8.4, and by when? Needed before slice 8.
+- Q2 (Rishi) Who runs the first-time test, and by when? Needed before the final part.
 - R1 You could be shown a list of review opinions instead of a yes or no. Guard: a reviewer may only answer held or broke with a reproduction; anything else is thrown away by a script.
 - R2 Someone without the page tool could never see the card. Guard: the card opens as a local page in the browser, and the one status line is always printed.
 - R3 A safety rule from the old version could be lost in the cut. Guard: a table maps all 10 rules to their new home before anything is deleted, and the suite checks the table.

@@ -8,14 +8,15 @@ Compass is one command inside [Claude Code](https://claude.com/claude-code). It 
 
 ## First time, step by step
 
-1. **Get Claude Code** from [claude.com/claude-code](https://claude.com/claude-code). It is the app Compass lives in. Follow its own install page; it also installs the one helper Compass needs (Node).
-2. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea.
-3. **Paste these two lines into its chat box**, one at a time, and press Enter after each:
+1. **Get Claude Code** from [claude.com/claude-code](https://claude.com/claude-code). It is the app Compass lives in. Follow its own install page.
+2. **Get Node**, the one free helper Compass needs, from [nodejs.org](https://nodejs.org). One download; click Next until it finishes. If you skip this, Compass tells you in one line and waits.
+3. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea.
+4. **Paste these two lines into its chat box**, one at a time, and press Enter after each:
    ```
    /plugin marketplace add Rishi4792/compass
    /plugin install compass@compass
    ```
-4. **Type `/compass`** and press Enter. That is the whole manual. From here you only answer questions.
+5. **Type `/compass`** and press Enter. That is the whole manual. From here you only answer questions.
 
 ## Use
 

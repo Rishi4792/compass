@@ -30,8 +30,9 @@
   .list div { display:grid; grid-template-columns:92px minmax(0,1fr); gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:14.5px; } .list div:first-of-type { border-top:0; }
   .list time { font-family:var(--mono); font-size:12px; color:var(--ink-2); padding-top:2px; }
   .links { font-size:14px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px 16px; } a { color:var(--accent); }
-  .shots { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; } .shots figure { margin:0; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:8px; } .shots img { width:100%; height:auto; display:block; border-radius:6px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
-  @media (max-width:420px) { .list div { grid-template-columns:1fr; gap:2px; } }
+  .shots { display:grid; gap:14px; } .shot-row { display:grid; grid-template-columns:minmax(0,1fr) 140px; gap:12px; align-items:start; } .shot-label { grid-column:1 / -1; font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); } .shots figure { margin:0; } .shots figure.phone { max-width:360px; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:8px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
+  .slice small { color:var(--ink-2); font-weight:400; }
+  @media (max-width:420px) { .list div { grid-template-columns:1fr; gap:2px; } .shot-row { grid-template-columns:1fr; } }
 </style>
 <div class="wrap">
   <div><h2>Build card · {{VERSION}}</h2><h1>{{TITLE}}</h1></div>
@@ -49,7 +50,7 @@
   </div>
   {{SHOTS}}
   <div>
-    <h2>Promises · {{NPROMISES}} · {{SUMMARY}}</h2>
+    <h2>{{SUMMARY}}</h2>
     <div style="display:grid;gap:10px">{{PARTS}}</div>
   </div>
   <div><h2>Decisions made · {{NDEC}}</h2><div class="list">{{DECISIONS}}</div></div>

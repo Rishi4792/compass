@@ -18,14 +18,14 @@ Then ask it yourself with AskUserQuestion: **Build it as written (Recommended)**
 2. **Size.** If the step would not finish in one sitting, split it in `plan.md` first (same promises, each with its own command and expected output), run `plan-check`, record `receipt <dir> plan revised "split S<n> into S<n>.a S<n>.b"`.
 3. **Build** exactly what the step says, with the stack and conventions §3 found. For a visual part, compose from the approved mock, `templates/tokens.css` and `design/house-style/SYSTEM.md`; no new styles, no browser-default control; every state the mock shows.
 4. **Prove by running** the step's own command; keep its fresh output. "It compiles" or "it looks right" is not proof.
-5. **Record.** `receipt <dir> build "step S<n> proven" "verify: <the command> → <the output>"`. The record refuses a receipt whose command or output does not match the plan. Then `card <dir>` and publish it (same file).
+5. **Record.** `receipt <dir> build "step S<n> proven" "verify: <the command> → <the output>"`. The record runs the step's own command itself and refuses the receipt unless the output contains the expected text; what it observed is what gets written. Then `card <dir>` and publish it (same file).
 6. **One line to the person, in plain words:** "Part 2, step 3 of 4 done: the list now shows every saved link." Nothing else in the chat.
 
 ## When a part's steps are all proven: attack it
-Run `skills/attack/SKILL.md` for the rows whose `When` is this part (`attacks <dir> build` writes them with their state). For a part with a mock, the conformance row runs against the approved mock at both widths and every state. At the last part, also run the rows marked `last part` (the whole-product attacks). Then one line: "Part 2 checked: 6 attempts to break it, 5 held, 1 broke and was fixed."
+Run `skills/attack/SKILL.md` for the rows whose `When` is this part (`attacks <dir> build` writes them with their state). For a part with a mock, the conformance row runs against the approved mock at both widths and every state; for a sketch-only part, against the sketch's elements and order. At the last part, also run the rows marked `last part` (the whole-product attacks). Then run `gates <dir> --run --record` and print exactly the line `part-line <dir> <n>` gives you; never compose it by hand.
 
 ## The gate suite
-`gates <dir>` lists what gates progress: each promise's command and expected output, and every check born from a break. `gates <dir> --run` runs them and fails on zero checks or any miss. No other test gates progress.
+`gates <dir>` lists what gates progress: each promise's command and expected output, and every check born from a break. `gates <dir> --run --record` runs them, records `gates green` or `gates red`, and fails on zero checks, any miss, or a promise with no check. Nothing can go live without a green record newer than the last proven step. No other test gates progress.
 
 ## When every step is proven
 For a visual build, take the final screenshots (`shots <built screen> --out=<dir>/shots --name=final-part-<n>`) so the card shows them. Then hand back to `/compass`: it asks gate 3 if anything is set aside, otherwise invokes `compass:deploy`. Do not ask anything here.

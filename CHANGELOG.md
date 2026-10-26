@@ -3,6 +3,20 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.2] — 2026-10-26 — the record runs the proof itself
+
+A second seven-reviewer pass on 1.0.1 closed 61 of 70 earlier findings and raised 38 new ones. All are fixed here.
+
+**The record runs the proof.** A "step proven" receipt now runs the step's own command and writes what it observed; a typed verify line counts for nothing. Attack receipts must name a row in `attacks.md`, carry their class, come in order (attempt 1 broke → a fix → attempt 2), and a `broke` must carry its reproduction. Gates 3 and 4 open only on an answer, never on the ask. Nothing is released while an attack row is open or the gate suite has not run green since the last proven step; `gates --run --record` writes that receipt. Write-back routes through the same validation, measures born checks against their promise, works with a URL target, and closes the watch with `--close-watch`. A `true`, `echo` or `exit 0` verify is refused by the plan check.
+
+**The person.** The status line, card and plan screen use plain state words ("tested, passed", "broke once, now fixed", "not built yet") and never say slice. The card does not repeat the question. Pre-flight ignores Compass's own record files when judging a dirty tree and creates the restore tag last. A first run without Node gets one plain line. The README says where Node comes from. Every plan question is asked before gate 2.
+
+**The Idea stage.** A journey of at least two moments is required and is the hero; the part-icon strip is gone. "What you use today" needs two named things. Promise numbers need a digit. Promise ids never change. Screen parts are marked and need a mock (premium, clean) or a sketch (match). Idea attacks run before gate 1. A resume after approval goes to the look step, not past it.
+
+**The look.** One theme, `compass-teal`, in the bundled system's own shape, with `tokens.css` as its CSS form. Mock screenshots show one row per state, phone large and desktop as a thumbnail. Screenshots wait for fonts and a stable height. Sketches cap at phone width.
+
+**Change your mind.** An amend after going live drops that part's live numbers and reopens the build ("Building again"); `attacks.md` shows superseded rows as planned again; prose lines beginning with a dash survive.
+
 ## [1.0.1] — 2026-10-26 — the proof underneath is now proof
 
 A seven-reviewer audit of 1.0.0 against the owner's user-experience standard found 70 defects in 9 themes. All are fixed here.

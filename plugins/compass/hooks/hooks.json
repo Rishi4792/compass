@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/compass\" line auto"
+            "command": "if command -v node >/dev/null 2>&1; then node \"${CLAUDE_PLUGIN_ROOT}/scripts/compass\" line auto; else echo \"Compass needs one free helper called Node. Download it at nodejs.org (one download, click Next), then type /compass again.\"; fi"
           }
         ]
       }

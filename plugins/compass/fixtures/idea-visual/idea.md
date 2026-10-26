@@ -3,13 +3,21 @@ title: Till Tally
 page: local
 for: a small shop owner at closing time, on a phone
 hurts: Every evening you add up the day's sales by hand. Last Tuesday it took 25 minutes and was wrong by ₹400.
-exists: A paper notebook and a calculator at the counter.
+exists: A paper notebook: wrong once a week · A calculator at the counter: keeps no record
 because: The notebook is wrong once a week and takes 25 minutes; nothing else reads the till file.
 purpose: See today's sales total the moment you close, without adding anything up.
 done: 0 wrong totals in 14 days, and under 10 seconds from opening the app to the number.
+look: match
+
+## Journey
+- phone: Closing time; the owner opens the app
+- money: The total is already there
+- bell: A low-stock message, if any
+- box: Shutters down, nothing to add up
 
 ### Part 1 — Today's total
 picture: money
+screen: yes
 Open the app and the day's total is already there. One big number, nothing to tap.
 - P1.1 See today's total within 10 seconds of opening. → under 10 s
 - P1.2 The total matches the till to the rupee. → ₹0 difference

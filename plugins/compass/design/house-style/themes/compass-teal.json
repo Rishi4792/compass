@@ -1,0 +1,47 @@
+{
+  "_name": "compass-teal",
+  "_note": "The active theme for Compass 1.0 pages, cards and mocks. Same key shape as neutral-indigo; its CSS form is templates/tokens.css. Mocks inline tokens.css; the bundled gates read this file.",
+  "ink": "#142437",
+  "mut": "#4b5b70",
+  "mut2": "#4b5b70",
+  "kicker": "#4b5b70",
+  "accent": "#0b7a7c",
+  "accentDark": "#085c5e",
+  "accentWash": "rgba(11,122,124,0.07)",
+  "greenFg": "#0b7a7c",
+  "greenBg": "#d9efee",
+  "amberFg": "#b9720f",
+  "amberBg": "#f7e8cc",
+  "amberBorder": "#e9d3a3",
+  "redFg": "#b23b3b",
+  "redBg": "#f5dede",
+  "chipFg": "#4b5b70",
+  "chipBg": "#e6ebf0",
+  "bg": "#f2f5f8",
+  "surface": "#ffffff",
+  "headBg": "#f7f9fb",
+  "line": "#d5dde6",
+  "grid": "#e6ebf0",
+  "fontSans": "'IBM Plex Sans','Helvetica Neue',Arial,sans-serif",
+  "fontDisplay": "'Bricolage Grotesque','Avenir Next','Helvetica Neue',Arial,sans-serif",
+  "fontMono": "'IBM Plex Mono',Menlo,Consolas,monospace",
+  "spacing": {
+    "cardPad": "16px 18px",
+    "grid": 4
+  },
+  "radii": {
+    "card": 14,
+    "chip": 6,
+    "pill": 999,
+    "inset": 10,
+    "control": 10
+  },
+  "shadow": {
+    "card": "0 1px 2px rgba(20,36,55,0.06), 0 8px 24px rgba(20,36,55,0.06)"
+  },
+  "motion": {
+    "enter": "0.4s cubic-bezier(.22,.61,.36,1)",
+    "stagger": 0.05,
+    "hover": "120ms"
+  }
+}

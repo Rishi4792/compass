@@ -1,6 +1,6 @@
 # Plan template — the 21 sections the best engineering teams write
 
-Copy the headings exactly, numbered, in this order. Fill every section or write "Not applicable, because …". `scripts/compass plan-check <dir>` refuses a plan with a missing heading, a current-state section that cites no real file, a promise with no step, a step with no promise, a first slice that is not the skeleton, or a step without a verify command. The person reads one screen of this (`plan-card`); the file is for the machine and for whoever comes after.
+Copy the headings exactly, in this order. Fill every section or write "Not applicable, because …". `plan-check` refuses a missing heading, a §3 with no real path, a promise with no step, a step with no promise or no real verify, a first slice that is not the skeleton, a missing runbook. The person reads one screen (`plan-card`).
 
 ```
 # Engineering Plan — <slug> · v1 · <date>

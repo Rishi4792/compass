@@ -15,13 +15,13 @@
   .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); }
   .lede { font-size:clamp(20px,2.6vw,26px); line-height:1.35; font-family:var(--display); font-weight:500; max-width:30ch; }
   .hero { display:grid; gap:22px; padding-bottom:40px; border-bottom:1px solid var(--line); }
-  .hero-fig { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px 18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
-  .hero-fig svg { width:100%; height:auto; display:block; }
-  .who { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .who { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .exists { grid-column:1 / -1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .exists > div { border-left:3px solid var(--warn); padding-left:12px; font-size:15.5px; color:var(--ink-2); } .exists b { display:block; font-family:var(--display); font-size:18px; color:var(--ink); }
   .who div { border-left:3px solid var(--accent); padding-left:12px; font-size:15.5px; color:var(--ink-2); }
   .who b { display:block; font-family:var(--display); font-size:18px; color:var(--ink); }
   section { padding-block:40px; border-bottom:1px solid var(--line); }
-  .part { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:30px; align-items:start; }
+  .part { display:grid; grid-template-columns:200px minmax(0,1fr); gap:28px; align-items:start; }
   .part figure { margin:0; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; min-width:0; }
   .part figure svg { width:100%; height:auto; display:block; }
   .words { display:grid; gap:12px; min-width:0; }
@@ -33,9 +33,9 @@
   .promises .live { font-family:var(--mono); font-size:12px; color:#fff; background:var(--accent); padding:2px 8px; border-radius:999px; }
   .promises .live.bad { background:var(--bad); }
   .sketch { margin-top:4px; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:14px; overflow-x:auto; }
-  .sketch svg { width:100%; height:auto; display:block; }
-  .shots { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; } .shots figure { margin:0; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:10px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
-  .journey { display:flex; align-items:stretch; gap:6px; overflow-x:auto; padding:6px 2px; } .journey .step { flex:0 0 150px; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; align-content:start; } .journey .pic svg { width:100%; height:auto; max-height:90px; display:block; } .journey .cap { font-size:13px; line-height:1.3; } .journey .cap .k { font-family:var(--mono); font-size:11px; color:var(--accent); margin-right:6px; } .journey .arrow { align-self:center; color:var(--ink-2); font-size:20px; flex:0 0 auto; }
+  .sketch .sk svg { width:100%; max-width:420px; height:auto; display:block; margin-inline:auto; }
+  .shots { display:grid; gap:14px; } .shot-row { display:grid; grid-template-columns:minmax(0,1fr) 160px; gap:12px; align-items:start; } .shot-label { grid-column:1 / -1; font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); } .shots figure { margin:0; } .shots figure.phone { max-width:390px; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:10px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
+  .journey { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; padding:4px 0; counter-reset:step; } .journey .step { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; align-content:start; position:relative; } .journey .pic svg { width:100%; height:auto; max-height:90px; display:block; } .journey .cap { font-size:13px; line-height:1.3; } .journey .cap .k { font-family:var(--mono); font-size:11px; color:var(--accent); margin-right:6px; }
   .promises .n.muted { color:var(--ink-2); background:var(--bg); }
   .part figure svg { max-height:220px; }
   .sketch .plabel { margin:0 0 8px; }
@@ -46,7 +46,7 @@
   footer { padding-top:24px; font-size:13.5px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:8px 20px; }
   .f-ink{fill:var(--ink)} .f-ink2{fill:var(--ink-2)} .f-line{fill:var(--line)} .f-paper{fill:var(--paper)} .f-acc{fill:var(--accent)} .f-accs{fill:var(--accent-soft)} .f-warn{fill:var(--warn)} .f-warns{fill:var(--warn-soft)} .f-bad{fill:var(--bad)}
   .s-ink{stroke:var(--ink)} .s-ink2{stroke:var(--ink-2)} .s-line{stroke:var(--line)} .s-acc{stroke:var(--accent)} .s-warn{stroke:var(--warn)} .nofill{fill:none}
-  @media (max-width:720px) { body{font-size:16px} .part{grid-template-columns:1fr;gap:16px} .promises li{grid-template-columns:22px minmax(0,1fr)} .promises .n,.promises .live{grid-column:2;justify-self:start} section{padding-block:32px} }
+  @media (max-width:720px) { body{font-size:16px} .part{grid-template-columns:1fr;gap:16px} .who{grid-template-columns:1fr} .exists{grid-template-columns:1fr} .shot-row{grid-template-columns:1fr} .part figure{max-width:220px} .promises li{grid-template-columns:22px minmax(0,1fr)} .promises .n,.promises .live{grid-column:2;justify-self:start} section{padding-block:32px} }
 </style>
 <div class="wrap">
   <header class="hero">
@@ -55,7 +55,7 @@
       <h1>{{TITLE}}</h1>
       <p class="lede">{{PURPOSE}}</p>
     </div>
-    <div class="hero-fig">{{HERO}}</div>
+    {{HERO}}
     <div class="who">
       <div><b>Who it is for</b>{{FOR}}</div>
       <div><b>What hurts today</b>{{HURTS}}</div>
