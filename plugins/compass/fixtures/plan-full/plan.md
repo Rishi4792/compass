@@ -162,8 +162,8 @@ Run it: type /compass inside Claude Code in the project folder; the record is .c
 ## 20. Assumptions and open questions
 - A1 The Artifact tool is available to Rishi; public users may lack it (handled in §16).
 - A2 Subagents (the Agent tool) are available for attacks; without them, attacks run in-session with a fresh-context prompt.
-- Q1 (Rishi) Same plugin name and repo, version 1.0.0, upgrade in place? Recommended yes.
-- Q2 (Rishi) Who runs the first-time test, and by when? Needed before the final part.
+- Q1 (answered) Same plugin name and repo, version 1.0.0, upgrade in place? Recommended yes.
+- Q2 (answered) Who runs the first-time test, and by when? Needed before the final part.
 - R1 You could be shown a list of review opinions instead of a yes or no. Guard: a reviewer may only answer held or broke with a reproduction; anything else is thrown away by a script.
 - R2 Someone without the page tool could never see the card. Guard: the card opens as a local page in the browser, and the one status line is always printed.
 - R3 A safety rule from the old version could be lost in the cut. Guard: a table maps all 10 rules to their new home before anything is deleted, and the suite checks the table.

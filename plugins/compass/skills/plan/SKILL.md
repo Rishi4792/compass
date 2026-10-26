@@ -9,7 +9,7 @@ description: The Plan stage. Reads the code first, writes the 21-section enginee
 Turn an approved Idea page into the plan the best engineering teams write, then show the person one screen. Build to spec: no step the page and `spec.md` do not call for; no spec line without a step.
 
 ## 1. Read, then scan
-Read `idea.md` and `spec.md`. If `spec.md` is missing, write it as `skills/idea/SKILL.md` describes and run `spec-check`. Then read the codebase as a senior engineer would on day one: `CLAUDE.md` or `README`, how it runs and deploys, the files the parts touch, existing tests, data shapes. Note every real path you will cite. In an empty folder, choose the stack and write "greenfield" at the start of §3.
+Read `idea.md` and `spec.md`. If `spec.md` is missing, write it as `skills/idea/SKILL.md` describes and run `spec-check`. Then read the codebase as a senior engineer would on day one: `CLAUDE.md` or `README`, how it runs and deploys, the files the parts touch, existing tests, data shapes. In an empty folder, choose the stack and write "greenfield" at the start of §3.
 
 ## 2. Write the plan
 If a `plan.md` exists and `plan-check` fails on it, rewrite it in full, keeping any `## 21. Decision log` lines. Copy the 21 headings from `${CLAUDE_PLUGIN_ROOT}/shared/plan-template.md`, fill every one, and write the file with one Bash heredoc (never the editing tools). Rules the checker enforces:

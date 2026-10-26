@@ -2,7 +2,7 @@
 
 **Describe what you want. Read one page. Say yes four times. Get a product that does what the page says, proven live.**
 
-Compass is one command inside [Claude Code](https://claude.com/claude-code). It interviews you like a product head, draws an Idea page you can read in a minute, writes the engineering plan the best teams write, builds part by part, attacks its own work the way a red team would, deploys, and writes the real numbers back onto your page.
+Compass is one command inside [Claude Code](https://claude.com/claude-code). It interviews you like a product head, draws an Idea page you can read in a minute, writes the engineering plan the best teams write, builds part by part, attacks its own work the way a red team would, puts it live, and writes the real numbers back onto your page.
 
 ▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)
 

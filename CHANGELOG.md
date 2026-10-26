@@ -3,6 +3,20 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.4] — 2026-10-26 — nothing passes without the person
+
+Fourth review pass. Two reviewers: one tried to reach "Done" without a real yes, a real measurement or a real watch period, and found eight ways; one read every surface as a first-time user and found six. All fourteen are closed.
+
+**The person's yes.** An approval (idea, screens, plan, set-aside items, going live) counts only when the receipt holds one `answered:` line that is a whole-line yes, and only after the question itself was recorded. "Yes, but not yet" is not a yes. An Idea page cannot be drafted before all eleven questions are answered, nor approved before its four page attacks are closed; a plan cannot be approved before its four plan attacks are closed. "Move on" after a second break needs the person's answer and a written leftover, and the promise then reads "broke twice and was set aside". Nothing goes live while set-aside items await the person.
+
+**What they saw is what gets built.** The page and the plan are pinned when the person sees them. A silent edit to either stops every step, attack, gate and measurement until it is recorded: a plan revision after approval may only add steps; a page change goes through amend. Only an amend receipt may supersede a step.
+
+**Honest measurement.** `writeback` needs a target; the build folder itself is refused (say `local` when the product runs on this machine). On a web address, every check is run twice, once against a dead address; a check that answers the same both times is "not measured". The check-again date must be in the future, and the watch cannot be closed before it. A command that prints its own answer (`echo`, `cat`, `node -e`, `sh -c`, a marker after `;` or `||`) is refused everywhere. Pre-flight runs at the project root wherever it is called from.
+
+**The surfaces.** The card's plan box names parts by their page names. "Open it:" appears only for a web address. "Nothing needed from you" never sits above a question; the line then says "next: your answer, below". Empty lists read as one sentence. The menu entry, the plugin blurb and the README say "Go live", not "Deploy".
+
+**The record of Compass's own build** was corrected to hold the four questions Rishi was actually asked and his four answers in the new form; the gate suite (23 checks) and Compass's own gates (55 of 59; the four red are the first-time test only Rishi can run) are green.
+
 ## [1.0.3] — 2026-10-26 — the gates are sound
 
 Third review pass (four reviewers over seven lenses): 39 of 46 round-2 items confirmed closed; 26 new, all fixed.
