@@ -482,10 +482,16 @@ function preflight(dir, cwd) {
 }
 function releaseNote(dir) {
   const st = computeState(dir); const idea = parseIdea(read(path.join(dir, 'idea.md')));
-  const out = [`# ${idea.title} — release note`, '', idea.purpose, '', 'What you can now do:'];
-  for (const p of st.promises) out.push(`- ${p.text}${p.live ? ` (live: ${p.live.value} ${p.live.ok ? '✓' : '✗'})` : ''}`);
-  if (st.leftovers.length) { out.push('', 'Known leftovers, accepted in writing:'); for (const l of st.leftovers) out.push(`- ${l.text}`); }
-  if (idea.never.length) out.push('', `Not included, by design: ${idea.never.join('; ')}.`);
+  const out = [`# ${idea.title} — release note`, '', idea.purpose, ''];
+  const live = st.promises.filter(p => p.live && p.live.ok), bad = st.promises.filter(p => p.live && !p.live.ok), unmeasured = st.promises.filter(p => !p.live);
+  if (st.promises.length <= 12) { out.push('What you can now do:'); for (const p of st.promises) out.push(`- ${p.text}${p.live ? ` (live: ${p.live.value} ${p.live.ok ? '✓' : '✗'})` : ''}`); }
+  else { // a long build: one line per part, then only what is not ✓
+    out.push(`${live.length} of ${st.promises.length} promises show their live number. By part: ${st.parts.map(part => { const ps = st.promises.filter(p => p.part === part.n); return `${ps.filter(p => p.live && p.live.ok).length}/${ps.length}`; }).join(' · ')}.`);
+    if (bad.length) { out.push('', 'Not met yet:'); for (const p of bad) out.push(`- ${p.text} (live: ${p.live.value} ✗)`); }
+    if (unmeasured.length) out.push('', `${unmeasured.length} promises are not yet measured live; they are marked on the Idea page.`);
+  }
+  if (st.leftovers.length) { out.push('', st.leftovers.length <= 5 ? 'Known leftovers, accepted in writing:' : `${st.leftovers.length} leftovers accepted in writing; the first three:`); for (const l of st.leftovers.slice(0, st.leftovers.length <= 5 ? 5 : 3)) out.push(`- ${l.text.replace(/\s+—.*$/, '')}`); if (st.leftovers.length > 5) out.push('- the rest are on the build card'); }
+  if (idea.never.length) out.push('', `Not included, by design: ${idea.never.slice(0, 4).join('; ')}${idea.never.length > 4 ? '; and more on the Idea page' : ''}.`);
   if (st.watch) out.push('', `Watch period until ${st.watch}. If a number turns ✗ on the Idea page, Compass reopens the part.`);
   return out.join('\n');
 }
