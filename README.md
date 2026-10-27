@@ -1,17 +1,15 @@
 # 🧭 Compass 1.0
 
-**Describe what you want. Read one page. Say yes four times. Get a product that does what the page says, proven live.**
+**Describe what you want. Read one page. Approve four times. Get a product that does what the page says, proven live.**
 
-Compass is one command inside [Claude Code](https://claude.com/claude-code). It interviews you like a product head, draws an Idea page you can read in a minute, writes the engineering plan the best teams write, builds part by part, attacks its own work the way a red team would, puts it live, and writes the real numbers back onto your page.
-
-▶ [Watch the 59-second film](https://rishi4792.github.io/compass/)
+Compass is one command inside [Claude Code](https://claude.com/claude-code). It interviews you like a product head, draws an Idea page you can read in a minute, writes the engineering plan the best teams write, builds part by part, tries to break its own work before you see it, puts it live, and writes the real numbers back onto your page.
 
 ## First time, step by step
 
 1. **Get Claude Code** from [claude.com/claude-code](https://claude.com/claude-code). It is the app Compass lives in. Follow its own install page.
 2. **Get Node**, the one free helper Compass needs, from [nodejs.org](https://nodejs.org). One download; click Next until it finishes. If you skip this, Compass tells you in one line and waits.
 3. **Open Claude Code in the folder of your project.** An empty folder is fine for a new idea. In the Claude Code desktop app, use its "Open folder" button. In a terminal: open the Terminal app, type `cd ` (with a space), drag your folder into the window, press Enter, then type `claude` and press Enter.
-4. **Paste these two lines into its chat box**, one at a time, and press Enter after each:
+4. **Paste these two lines into its chat box**, one at a time, and press Enter after each. Claude Code needs both. Besides opening Claude Code, these two lines and `/compass` are all you will ever type.
    ```
    /plugin marketplace add Rishi4792/compass
    /plugin install compass@compass
@@ -22,7 +20,7 @@ Compass is one command inside [Claude Code](https://claude.com/claude-code). It 
 
 Type `/compass`. It tells you where your build is in one plain line and asks you one question only when the answer is yours.
 
-It reads where your build is, prints one line, and asks one question. You are asked at most four times in a build:
+Shaping the idea takes about a dozen short questions (12 at most), each with choices to pick from. After that you approve four things, plus the screens if there are any, and settle the rare question the plan cannot answer alone:
 
 1. **Approve the Idea page** — a picture per part, few words, a number on every promise.
 2. **Approve the plan** — one screen: your parts in build order, the three biggest risks, and anything that needs your answer.

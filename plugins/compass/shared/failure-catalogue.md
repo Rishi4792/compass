@@ -1,6 +1,6 @@
 # The failure catalogue — the ways software fails
 
-Compass brings this list. The person never writes failure modes. Each class has: what it means, the kinds of product it applies to, how likely it is per kind (1 to 5), how much damage a break does (1 to 5), the attack recipe, what a demonstrated break looks like, the shape of the permanent check that is added when it breaks, and its scope: `promise` classes are attacked per promise, `product` classes once per build. `scripts/compass attacks` reads the `key:` lines; reviewers read the prose.
+Compass brings this list; the person never writes failure modes. Each class gives its scope (`promise` classes are attacked per promise, `product` classes once per build), the products it applies to, likelihood per kind and damage (1 to 5), the attack recipe, what a break looks like, and the permanent check added when it breaks. `scripts/compass attacks` reads the fields; reviewers read the prose.
 
 ## wrong-output
 name: Wrong output
@@ -128,7 +128,7 @@ scope: promise
 damage: 4
 applies: visual
 likely: visual=5 data=1 service=1
-attack: Open the built screen for this part at 390 px and 1200 px, and in each state the mock exposes (?state=empty, loading, error, long, first). Next to it open the approved mock file named in your prompt (mocks/part-<n>.html) at the same widths and states. Compare element by element: what is on the screen, in what order, what is one tap away, what is hidden; then token by token against the tokens.css block in the mock: colours, type sizes, spacing steps, radius. Tolerance: a colour may differ by at most 4 in any RGB channel; a spacing or size by at most 2 px; nothing may be missing, added or reordered.
+attack: Open the built screen for this part at 390 px and 1200 px, and in each state the mock exposes (?state=empty, loading, error, long, first). Next to it open the approved mock file named in your prompt (mocks/part-<n>.html) at the same widths and states. When the built page holds several parts, compare only this part's region. Compare element by element: what is on the screen, in what order, what is one tap away, what is hidden; then token by token against the tokens.css block in the mock: colours, type sizes, spacing steps, radius. Tolerance: a colour may differ by at most 4 in any RGB channel; a spacing or size by at most 2 px; nothing may be missing, added or reordered.
 break: An element the mock shows is missing, added or moved; a state is undesigned; or a token drifts beyond the tolerance.
 check: A screenshot comparison at both widths and every state against the approved mock, with the element list and token values asserted.
 

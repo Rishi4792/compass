@@ -1,6 +1,6 @@
 # Plan template — the 21 sections the best engineering teams write
 
-Copy the headings exactly, in this order. Fill every section or write "Not applicable, because …". `plan-check` refuses a missing heading, a §3 with no real path, a promise with no step, a step with no promise or no real verify, a first slice that is not the skeleton, a missing runbook. The person reads one screen (`plan-card`).
+Copy the headings exactly, in this order. Fill every section or write "Not applicable, because …". `skills/plan/SKILL.md` §2 lists what `plan-check` refuses.
 
 ```
 # Engineering Plan — <slug> · v1 · <date>
@@ -21,10 +21,10 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <two or three other designs and why not>
 
 ## 6. Data changes
-<every data change, expand then contract, reversible, counted against the source, dry-run on a copy. "None" if none.>
+<every data change, expand then contract, reversible, counted against the source, dry-run on a copy; a rule spanning tables enforced by the database itself. "None" if none.>
 
 ## 7. Dependencies and blast radius
-<new libraries with exact versions; everything that touches the changed code and could break>
+<new libraries with exact versions; everything touching the changed code that could break>
 
 ## 8. Walking skeleton (slice 1)
 <the thinnest version that runs end to end through every layer named in §4>
@@ -46,7 +46,7 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <the exact steps to undo, rehearsed on a copy before deploy>
 
 ## 13. Testing strategy
-<the gate suite is the promise checks plus checks born from attacks; test data named; what is not tested and why>
+<the gate suite is the promise checks plus checks born from attacks; every number checked against one computed independently; test data named; what is not tested and why>
 
 ## 14. Definition of done
 <step: verify ran, receipt exists; slice: attacks closed; build: every promise live>
@@ -74,17 +74,3 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 ## 21. Decision log
 - <date> <what changed, why, what it affects>
 ```
-
-## Kept from Compass 0.35: the data-safety rules and where they live now
-| Rule | 1.0 home |
-|---|---|
-| Migration rehearsed on a copy, counts equal | §6; attack cannot-undo |
-| Cross-table invariants enforced in the database | §6, spec rules; attacks wrong-output, data-lost |
-| Race analysis: losing interleaving named and guarded | §16; attacks duplicate-output, retry |
-| Every outside call has a timeout and retry limit | §16; attack silent-failure |
-| Role × resource access table | §17; attack wrong-person |
-| Sensitive fields named; none in logs | §17; attack wrong-person |
-| Secret scan on the release | Deploy pre-flight (slice 6) |
-| Every config key present in production before deploy | Deploy pre-flight (slice 6) |
-| Restore point before deploy | Deploy pre-flight (slice 6) |
-| Numbers reconciled to an independent figure | attack wrong-output; write-back |

@@ -1,6 +1,6 @@
 # The look rubric — how a screen is judged, once, before code
 
-Compass owns this list the way it owns the failure catalogue. It is applied to the **mock** at Idea time by three fresh reviewers who see only the screenshots, the sketch and this file. Each scores every item 1 to 5 and names the exact region for anything under 4. The median decides against the bar for the design level the person chose. After the person approves the mock, no taste call happens again; the build is checked for conformance to the mock only.
+Compass owns this list. It is applied to the **mock** at Idea time by three fresh reviewers who see only the screenshots, the sketch and this file. Each scores every item 1 to 5 and names the exact region for anything under 4. The median decides against the bar for the design level the person chose.
 
 ## Bars
 premium: every median ≥ 4, no median ≤ 2
@@ -8,9 +8,7 @@ clean: every median ≥ 3, no median ≤ 1
 match: no rubric; conformance to the person's existing screens only
 
 ## Reviewer output
-One line, nothing else:
-`scores: hierarchy=4 spacing=3 type=4 color=5 components=4 states=3 alignment=4 polish=3 responsive=4 copy=4 depth=4 structure=4 controls=5 | low: spacing@"gap between the paste box and the list is 8px where the rest uses 24px"; states@"an empty list shows a blank area"`
-The `| low:` part lists every item under 4 with its region in quotes. `scripts/compass look-score <level> <line> <line> <line>` turns three such lines into `held` or `broke`.
+One line, nothing else, in the shape your prompt quotes: every item scored, then `| low:` listing every item under 4 with its exact region in quotes, such as `spacing@"gap between the paste box and the list is 8px where the rest uses 24px"`.
 
 ## Items
 
