@@ -3,6 +3,14 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.5] — 2026-10-27 — every question carries its choices
+
+Fifth review pass. The surface reviewer confirmed all fourteen round-4 items closed and found six more; all six are fixed here. The record reviewer (131 rule cases, 130 passed) found 8 further ways past the checks; all 8 are fixed here and each has a test.
+
+**The surfaces.** The plan box and the plan screen count each step once, under the part it belongs to, so the rows add up to the header. The part line counts tests, not attempts, and a part with no tests says only that it is done. Every recorded question now carries its options and what each one causes (`[ ] ask: <question> · <label> (Recommended) → <what happens> · …`); the record refuses a question without two options, and the card shows them under the question, so a person reading the card on a phone can decide there. The card's own web link is kept on the page (`card:`) and printed on the status line at every gate and in the Idea page footer, so a new session or a phone can find it. The fold-out for extra screen states draws its own chevron; no browser-default control shows. The skeleton row in the plan box no longer carries a stray mark. A product with no web address is announced as "It runs on this machine; the release note says how to start it", never as a command.
+
+**The record.** A receipt argument with a line break is refused, and every argument is trimmed before it is checked, so a stray space no longer skips the checks. A verify command is run a second time in an empty folder; if it still passes, it proves nothing and is refused (`/bin/echo ok`, `echo ok | grep ok`, `node -pe` and the like); a bare `| cat` is allowed. The interview counts every question 1 to 11, not the highest number, and a typed interview answer is refused. Each proven step is pinned; a plan revision may not change a proven step's promises, command or expected output. `plan drafted` after approval, `look ready` after the screens are approved, and any amend result other than `part <n> edited` are refused; an amend needs the person's words. Every question line in a receipt is checked, one per receipt, with real labels and consequences. A link to the build folder is refused as a live target. A set-aside item recorded after gate 3 reopens gate 3. A watch date must be a real date. Gate 3 and the page and plan attacks also stop when the page or plan has changed.
+
 ## [1.0.4] — 2026-10-26 — nothing passes without the person
 
 Fourth review pass. Two reviewers: one tried to reach "Done" without a real yes, a real measurement or a real watch period, and found eight ways; one read every surface as a first-time user and found six. All fourteen are closed.

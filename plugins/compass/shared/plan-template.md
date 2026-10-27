@@ -12,7 +12,7 @@ Copy the headings exactly, in this order. Fill every section or write "Not appli
 <what this build will not do, from ## Never and ## Later>
 
 ## 3. Current state (read, not assumed)
-<what exists today, with real paths. Cite at least one that exists. Empty folder: write "greenfield" and the chosen stack.>
+<what exists today, with real paths; cite one that exists. Empty folder: "greenfield" and the chosen stack.>
 
 ## 4. Proposed design
 <the pieces, the data flow, the interfaces between pieces, one diagram in a fenced block>

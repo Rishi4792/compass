@@ -10,8 +10,8 @@ Execute the approved plan one step at a time, in order. Build to spec: nothing i
 
 ## Before every step: the drift stop
 Read the step and the spec lines of its promises (`grep "→ P<id>" spec.md`). If doing the step would change what the page or a spec line says, even to improve it, do not start. Record the question first:
-`receipt <dir> build "drift stop at S<n>" "spec line: <quote>" "better way: <one line>" "[ ] ask: Part <k>: <the better way in plain words>. Build it as written (Recommended), or change the page?"`
-Then ask it yourself with AskUserQuestion: **Build it as written (Recommended)** → "nothing on your page changes" · Change the page → "that part is re-planned and rebuilt". On "as written": `receipt <dir> build "drift answered" "answered: build as written" "decision: kept the page as approved at S<n>"` and continue. On "change": invoke `compass:amend` for that part. Never a silent improvement.
+`receipt <dir> build "drift stop at S<n>" "spec line: <quote>" "better way: <one line>" "[ ] ask: Part <k>: <the better way in plain words>. Build it as written, or change the page? · Build it as written (Recommended) → nothing on your page changes · Change the page → that part is re-planned and rebuilt"`
+Then ask exactly that with AskUserQuestion. On "as written": `receipt <dir> build "drift answered" "answered: build as written" "decision: kept the page as approved at S<n>"` and continue. On "change": invoke `compass:amend` for that part. Never a silent improvement.
 
 ## The step loop
 1. **Resume from the record.** `state <dir>` names the next unproven step. Nothing else is trusted.

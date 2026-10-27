@@ -33,6 +33,9 @@
   .links { font-size:14px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px 16px; } a { color:var(--accent); }
   .shots { display:grid; gap:14px; } .shot-row { display:grid; gap:12px; } .shot-label { grid-column:1 / -1; font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); } .shots figure { margin:0; } .shots figure.phone { max-width:360px; } .shots img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:8px; } .shots figcaption { font-size:12px; color:var(--ink-2); margin-top:6px; font-family:var(--mono); }
   .slice small { color:var(--ink-2); font-weight:400; }
+  .slice.sk { grid-template-columns:minmax(0,1fr) auto; }
+  .ask .opt { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr); gap:4px 12px; font-size:14.5px; padding-top:4px; } .ask .opt span:first-child { font-weight:600; } .ask .opt span:last-child { color:var(--ink-2); }
+  details > summary { list-style:none; cursor:pointer; color:var(--accent); font-size:14px; } summary::-webkit-details-marker { display:none; } details > summary::before { content:""; display:inline-block; width:7px; height:7px; border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(-45deg); margin:0 10px 2px 2px; transition:transform .15s; } details[open] > summary::before { transform:rotate(45deg); } details > summary:hover, details > summary:focus-visible { text-decoration:underline; outline:none; }
   @media (max-width:480px) { .list div { grid-template-columns:1fr; gap:2px; } .shot-row { grid-template-columns:1fr; } .row { grid-template-columns:12px minmax(0,1fr); } .row .st { grid-column:2; white-space:normal; padding-top:0; } }
 </style>
 <div class="wrap">

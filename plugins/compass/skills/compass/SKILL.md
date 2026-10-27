@@ -11,7 +11,7 @@ You are the front door. The person may never have typed a command before. Never 
 Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/compass" state auto` from the project root and print its one line unchanged as your first line. It is computed from the build record and is the only truth.
 
 ## 2. Act on the state
-The person is asked at most four times in a build: approve the idea, approve the plan, accept what was set aside, confirm going live. Every other state continues without a question. An approval is the yes for everything up to the next gate. Every gate records its question before asking (`receipt … "[ ] ask: …"`) and its answer after (`"answered: …" "decision: …"`), so the card shows both.
+The person is asked at most four times in a build: approve the idea, approve the plan, accept what was set aside, confirm going live. Every other state continues without a question. An approval is the yes for everything up to the next gate. Every question records itself before it is asked (`receipt … "[ ] ask: <question> · <label> (Recommended) → <what happens> · <label> → <what happens>"`; the record refuses an ask without two options) and its answer after (`"answered: …" "decision: …"`), so the card shows both.
 
 | The line begins | What you do |
 |---|---|
@@ -24,14 +24,14 @@ The person is asked at most four times in a build: approve the idea, approve the
 | Plan ready | Run `plan-check <dir>` first; if it fails, invoke `compass:plan` (it rewrites). If it passes, gate 2 belongs to `compass:plan`; invoke it. |
 | Building | Invoke `compass:build`; it continues from the next unproven step. Also run `plan-check`; a failing plan during a build is a drift and routes to `compass:amend`. |
 | Building again | A part was changed after going live; invoke `compass:build`. |
-| Built · accept what was set aside | Gate 3. Record the ask: `receipt <dir> build "gate 3" "[ ] ask: Accept what was set aside?"` (the flag is set only by the answer, never by the ask). Ask: "These items could not be closed and will ship as they are: <each in plain words>. Accept?" Options: **Accept (Recommended)** → "I go on to the safety checks" · Fix one first → "I ask which, and redo that part" · Pause. On Accept record `receipt <dir> build "gate 3" "answered: accept" "decision: set-aside items accepted: <list>"` and invoke `compass:deploy`. On Fix one first, ask which item; invoke `compass:amend` for its part. |
+| Built · accept what was set aside | Gate 3. Record the ask: `receipt <dir> build "gate 3" "[ ] ask: These items could not be closed and will ship as they are: <each in plain words>. Accept? · Accept (Recommended) → I go on to the safety checks · Fix one first → I ask which, and redo that part · Pause → nothing happens until you type /compass again"` (the flag is set only by the answer). Ask exactly that, with those options. On Accept record `receipt <dir> build "gate 3" "answered: accept" "decision: set-aside items accepted: <list>"` and invoke `compass:deploy`. On Fix one first, ask which item; invoke `compass:amend` for its part. |
 | Built · safety checks / Ready to go live / Going live | Invoke `compass:deploy`; it owns gate 4. |
-| Live · watch until | Say the line; stop. |
+| Live · I check again on | Say the line; stop. |
 | Rebuilt | A changed part is proven again; invoke `compass:build` for its attacks, then `compass:deploy` to measure it again. |
 | Done · … is live and every number held | The build is finished. Ask: "What next?" Options: **Start a new idea (Recommended)** → "a new page and a new card; this one stays as it is" · Open this build's card → "I show the link and stop". On Start, invoke `compass:idea` with a new folder. |
 | Live · watch period over | Invoke `compass:deploy` to re-measure only (`writeback … --close-watch`); a ✗ routes to `compass:amend`. |
 | Live · ✗ / broke after going live | Say which promise in plain words; invoke `compass:amend` for its part. |
-| for you: | Whatever the line, a `for you:` question comes first. Ask exactly it, with its options and consequences, record the answer, then continue. |
+| for you: | A `for you:` question comes first. Ask exactly it with the options `state <dir> --json` lists, record the answer, continue. |
 
 ## Rules
 - One line, then either one question or the next stage. No preamble.

@@ -25,11 +25,11 @@ const YES = /^answered:\s*(yes|accept|accepted|approve|approved|go|go live|ship|
 const ASK_FOR = { 'idea approved': ['drafted'], 'idea look approved': ['look ready'], 'plan approved': ['drafted', 'revised'], 'build gate 3': ['gate 3'], 'deploy gate 4': ['gate 4'] };
 const askedBefore = (receipts, before, stage, results) => receipts.some(q => q.idx < before && q.stage === stage && results.includes(q.result) && q.lines.some(l => !l.done && /^ask:/.test(l.text)));
 const approvedBy = (receipts, r) => { const asks = ASK_FOR[`${r.stage} ${r.result}`]; return !!asks && r.lines.filter(l => /^answered:/.test(l.text)).length === 1 && answeredYes(r) && askedBefore(receipts, r.idx, r.stage, asks); };
-const sha = s => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12);
+const sha = s => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12); const stepPin = s => sha([s.id, s.promises.join(','), s.verify.cmd, s.verify.expected].join('|'));
 const pinOf = (dir, what) => { if (what === 'plan') return sha(parsePlan(read(path.join(dir, 'plan.md'))).steps.map(s => [s.id, s.promises.join(','), s.verify.cmd, s.verify.expected].join('|')).join('\n')); const i = parseIdea(read(path.join(dir, 'idea.md'))); return sha([i.look || '', ...i.promises.map(p => [p.id, p.text, p.number].join('|'))].join('\n')); };
 
 // ---------- idea.md ----------
-const HEAD_KEYS = ['title', 'page', 'for', 'hurts', 'exists', 'because', 'purpose', 'done', 'look', 'approved'];
+const HEAD_KEYS = ['title', 'page', 'card', 'for', 'hurts', 'exists', 'because', 'purpose', 'done', 'look', 'approved'];
 function parseIdea(text) {
   const parts = []; const journey = []; const later = [], never = []; const head = {};
   let cur = null, list = null, inJourney = false, inFence = false;
@@ -61,12 +61,12 @@ function parseIdea(text) {
     if (list && /^-\s+/.test(line)) list.push(line.replace(/^-\s+/, '').trim());
   }
   const slug = (text.match(new RegExp(`^#\\s+Idea\\s+${D}\\s+(.+)$`, 'm')) || [, 'build'])[1].trim();
-  return { title: head.title || slug, slug, page: head.page || '', for: head.for || '', hurts: head.hurts || '', exists: head.exists || '', because: head.because || '',
+  return { title: head.title || slug, slug, page: head.page || '', card: head.card || '', for: head.for || '', hurts: head.hurts || '', exists: head.exists || '', because: head.because || '',
     purpose: head.purpose || '', done: head.done || '', look: (head.look || '').toLowerCase(), journey, parts, promises: parts.flatMap(p => p.promises), later, never };
 }
 function serializeIdea(i) {
   const out = [`# Idea — ${i.slug}`];
-  for (const k of ['title', 'page', 'for', 'hurts', 'exists', 'because', 'purpose', 'done', 'look']) if (i[k]) out.push(`${k}: ${i[k]}`);
+  for (const k of ['title', 'page', 'card', 'for', 'hurts', 'exists', 'because', 'purpose', 'done', 'look']) if (i[k]) out.push(`${k}: ${i[k]}`);
   if (i.journey.length) { out.push('', '## Journey'); for (const j of i.journey) out.push(`- ${j.picture}: ${j.caption}`); }
   for (const p of i.parts) {
     out.push('', `### Part ${p.n} — ${p.title}`); if (p.picture) out.push(`picture: ${p.picture}`); if (p.screen) out.push('screen: yes');
@@ -109,13 +109,18 @@ function lintIdea(dir, idea) {
 
 // ---------- plan.md ----------
 function trivialCmd(cmd) {
-  const parts = String(cmd).split(/(\|\||&&|\||;)/).map(s => s.trim()).filter(Boolean); const segs = parts.filter((_, i) => i % 2 === 0), seps = parts.filter((_, i) => i % 2 === 1);
-  const first = s => (s.match(/^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(\S+)/) || [])[1] || ''; const printer = s => /^(echo|printf|cat|yes)$/.test(first(s));
+  const parts = String(cmd).split(/(\|\||&&|\||;|&)/).map(s => s.trim()).filter(Boolean); const segs = parts.filter((_, i) => i % 2 === 0), seps = parts.filter((_, i) => i % 2 === 1);
+  const first = s => { const toks = s.replace(/^[(\s]+/, '').split(/\s+/).filter(x => !/^[A-Z_][A-Z0-9_]*=/.test(x) && !/^(env|command|exec|nice|time|builtin)$/.test(x)); return (toks[0] || '').replace(/^.*\//, ''); };
+  const printer = s => /^(echo|printf|cat|yes)$/.test(first(s)); const passThrough = s => /^\(?\s*cat(\s+-)?\s*\)?$/.test(s);
   if (!segs.length || segs.some(s => /^(true|false|:|exit)$/.test(first(s)))) return 'proves nothing';
-  if (segs.every(printer)) return 'prints its own answer';
-  if (segs.length > 1 && printer(segs[segs.length - 1]) && seps[segs.length - 2] !== '&&') return 'prints its own answer whatever ran before it';
-  if (/\b(node|deno|bun)\s+(-e|--eval|-p|--print)\b|\b(sh|bash|zsh|dash|python3?|perl|ruby|php)\s+-[ce]\b/.test(cmd)) return 'runs code typed into the command instead of the product';
+  if (segs.every(s => printer(s) && !passThrough(s))) return 'prints its own answer';
+  const L = segs.length - 1; if (segs.length > 1 && printer(segs[L]) && !(passThrough(segs[L]) && seps[L - 1] === '|') && seps[L - 1] !== '&&') return 'prints its own answer whatever ran before it';
+  if (/\b(node|deno|bun)\s+-{1,2}[a-z]*[ep][a-z]*\b|\b(sh|bash|zsh|dash|python3?|perl|ruby|php)\s+-[a-z]*[ce][a-z]*\b/.test(cmd)) return 'runs code typed into the command instead of the product';
   return null;
+}
+function provesNothing(cmd, expected) {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'compass-empty-')); const run = runOne(cmd, empty, { ...process.env, COMPASS_TARGET: 'http://127.0.0.1:9' }); try { fs.rmSync(empty, { recursive: true, force: true }); } catch {}
+  return passes(run, expected) ? `\`${cmd}\` passes in an empty folder, so it proves nothing about this project` : null;
 }
 function parsePlan(text) {
   const slices = []; let cur = null; const risks = [], questions = []; const sections = {};
@@ -153,6 +158,7 @@ function parseReceipts(text) {
   return receipts;
 }
 function appendReceipt(dir, stage, result, body) {
+  result = String(result).trim(); body = body.map(l => String(l).trim()).filter(Boolean);
   const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'); const slug = path.basename(dir);
   const text = body.map(l => (l.startsWith('[ ]') ? `- ${l}` : `- [x] ${l.replace(/^\[x\]\s*/, '')}`)).join('\n');
   fs.appendFileSync(path.join(dir, 'receipts.md'), `\n## RECEIPT — ${stage} · ${slug} · ${result} · ${ts}\n${text}\n`);
@@ -166,13 +172,13 @@ function computeState(dir) {
   const slug = path.basename(dir);
   const flags = { planPin: '', ideaPin: '', planSteps: 0, questions: 0, questionsOf: 0, ideaDrafted: false, ideaApproved: false, lookApproved: false, planDrafted: false, planApproved: false, released: false, writeback: false, gate3: false, gate4: false, preflight: false, rehearsal: false, gatesGreenAt: -1, lastProvenAt: -1, writebackAt: -1 };
   const proven = new Map(); const attacks = {}; const supersededAt = {}; const live = {}; const liveAt = {}; const unmeasured = new Set(); const decisions = [], leftovers = []; let productBad = 0, target = '';
-  let ask = null, watch = null, watchClosed = false, amends = 0;
+  const asked = new Set(); let ask = null, askOptions = [], watch = null, watchClosed = false, amends = 0;
   for (const r of receipts) {
     let m;
-    if (r.stage === 'idea') { if ((m = r.result.match(/^question\s+(\d+)\s+of\s+(\d+)/))) { flags.questions = Math.max(flags.questions, +m[1]); flags.questionsOf = flags.questionsOf || +m[2]; } if (/^drafted$/.test(r.result)) flags.ideaDrafted = true; if (/^approved$/.test(r.result) && approvedBy(receipts, r)) flags.ideaApproved = true; if (/^look approved$/.test(r.result) && approvedBy(receipts, r)) flags.lookApproved = true; }
+    if (r.stage === 'idea') { if ((m = r.result.match(/^question\s+(\d+)\s+of\s+(\d+)/))) { asked.add(+m[1]); flags.questionsOf = flags.questionsOf || +m[2]; flags.questions = asked.size; flags.questionsMissing = [...Array(flags.questionsOf)].map((_, i) => i + 1).filter(k => !asked.has(k)); } if (/^drafted$/.test(r.result)) flags.ideaDrafted = true; if (/^approved$/.test(r.result) && approvedBy(receipts, r)) flags.ideaApproved = true; if (/^look approved$/.test(r.result) && approvedBy(receipts, r)) flags.lookApproved = true; }
     if (r.stage === 'plan') { if (/^drafted$|^revised$/.test(r.result)) flags.planDrafted = true; if (/^approved$/.test(r.result) && approvedBy(receipts, r)) flags.planApproved = true; }
     if (r.stage === 'build' && (m = r.result.match(new RegExp(`^step\\s+(${STEP})\\s+proven$`)))) { proven.set(m[1], r.idx); flags.lastProvenAt = r.idx; }
-    if (r.stage === 'build' && /^gate 3$/.test(r.result) && approvedBy(receipts, r)) flags.gate3 = true;
+    if (r.stage === 'build' && /^gate 3$/.test(r.result) && approvedBy(receipts, r)) { flags.gate3 = true; flags.gate3At = r.idx; }
     if ((r.stage === 'build' || r.stage === 'deploy') && /^gates green$/.test(r.result)) flags.gatesGreenAt = r.idx;
     if (r.stage === 'attack' && (m = r.result.match(/^((?:A|L)\d+)\s+(P\d+\.\d+|all|page|plan)\s+attempt\s+(\d)\s+(held|broke|resolved)$/))) {
       const key = `${m[1]} ${m[2]}`; const a = (attacks[key] = attacks[key] || { id: m[1], promise: m[2], attempts: [], resolved: false, klass: '' });
@@ -184,17 +190,17 @@ function computeState(dir) {
     if (r.stage === 'amend' && /edited$/.test(r.result)) amends++;
     for (const l of r.lines) {
       if ((m = l.text.match(/^decision:\s*(.+)$/))) decisions.push({ ts: r.ts, text: m[1] });
-      if ((m = l.text.match(/^leftover:\s*(.+)$/))) leftovers.push({ ts: r.ts, text: m[1] });
+      if ((m = l.text.match(/^leftover:\s*(.+)$/))) { leftovers.push({ ts: r.ts, text: m[1] }); if (flags.gate3 && r.idx > (flags.gate3At ?? -1)) flags.gate3 = false; }
       if ((m = l.text.match(/^(P\d+\.\d+):\s*live\s+(.+?)\s*(✓|✗)$/))) { live[m[1]] = { value: m[2], ok: m[3] === '✓' }; liveAt[m[1]] = r.idx; unmeasured.delete(m[1]); }
       if ((m = l.text.match(/^(P\d+\.\d+):\s*not measured/))) unmeasured.add(m[1]);
-      if ((m = l.text.match(/^plan-pin:\s*(\S+)/))) flags.planPin = m[1]; if ((m = l.text.match(/^idea-pin:\s*(\S+)/))) flags.ideaPin = m[1]; if ((m = l.text.match(/^plan-steps:\s*(\d+)/))) flags.planSteps = +m[1];
+      if ((m = l.text.match(/^step-pin:\s*(\S+)/)) && r.stage === 'build') (flags.stepPins = flags.stepPins || {})[r.result.split(/\s+/)[1]] = m[1]; if ((m = l.text.match(/^plan-pin:\s*(\S+)/))) flags.planPin = m[1]; if ((m = l.text.match(/^idea-pin:\s*(\S+)/))) flags.ideaPin = m[1]; if ((m = l.text.match(/^plan-steps:\s*(\d+)/))) flags.planSteps = +m[1];
       if (r.stage === 'deploy' && /^writeback$/.test(r.result)) { if ((m = l.text.match(/^all:\s*check\s+\S+\s+(✓|✗)$/)) && m[1] === '✗') productBad++; if ((m = l.text.match(/^target:\s*(.+)$/))) target = m[1]; }
       if (r.stage === 'amend' && (m = l.text.match(/^supersede:\s*(.+)$/))) { supersededAt.all = r.idx; for (const id of m[1].split(/[\s,]+/).filter(Boolean)) { proven.delete(id); const st = plan.steps.find(s => s.id === id); if (st) for (const pid of st.promises) { supersededAt[pid] = r.idx; if (liveAt[pid] !== undefined && liveAt[pid] < r.idx) { delete live[pid]; } } } }
       if ((m = l.text.match(/^watch:\s*until\s+(\S+)/))) { watch = m[1]; watchClosed = false; }
       if (/^watch:\s*closed/.test(l.text)) watchClosed = true;
       if (/^retract:\s*writeback/.test(l.text)) { for (const k of Object.keys(live)) delete live[k]; unmeasured.clear(); flags.writeback = false; watch = null; }
-      const a = !l.done && l.text.match(/^ask:\s*(.+)$/); if (a) ask = a[1];
-      if (/^answered:/.test(l.text)) ask = null;
+      const a = !l.done && l.text.match(/^ask:\s*(.+)$/); if (a) { const segs = a[1].split(' · '); ask = segs[0].trim(); askOptions = segs.slice(1).map(s => { const at = s.indexOf('→'); return at < 0 ? null : { label: s.slice(0, at).trim(), consequence: s.slice(at + 1).trim() }; }).filter(Boolean); }
+      if (/^answered:/.test(l.text)) { ask = null; askOptions = []; }
     }
   }
   const attackList = Object.values(attacks).map(a => { const cut = supersededAt[a.promise] ?? -1; return { key: `${a.id} ${a.promise}`, ...a, attempts: a.attempts.filter(x => x.idx > cut) }; }).filter(a => a.attempts.length || a.resolved);
@@ -233,21 +239,28 @@ function computeState(dir) {
   else if (flags.questions > 0) { stage = 'idea'; next = `question ${flags.questions + 1} of ${qOf}`; line = `Idea · question ${flags.questions} of ${qOf} answered · next: question ${flags.questions + 1}`; }
   else { stage = 'idea'; next = 'start the interview'; line = 'Not started · next: a short interview about your idea'; }
   if (ask) line = line.replace(/; nothing needed from you/, '').replace(/next: [^·]+$/, 'next: your answer, below').replace(/next: I keep building$/, 'next: your answer, below');
+  if (idea.card && /^(Plan ready|Built|Ready to go live|Going live|Live|Done|Rebuilt)/.test(line)) line += ` · your card: ${idea.card}`;
   const lineWithAsk = ask ? `${line} · for you: ${ask}` : line;
-  return { slug, title: idea.title, page: idea.page, version: 1 + amends, stage, line: lineWithAsk, lineBare: line, next, ask, watch, watchOver, watchClosed, target, productBad, flags,
+  return { slug, title: idea.title, page: idea.page, version: 1 + amends, stage, line: lineWithAsk, lineBare: line, next, ask, askOptions, card: idea.card || '', watch, watchOver, watchClosed, target, productBad, flags,
     slices: plan.slices.map(s => ({ n: s.n, title: s.title, total: s.steps.length, done: s.steps.filter(x => proven.has(x.id)).length })),
     steps: { total, proven: provenCount, next: nextStep && nextStep.id, nextText: nextStep && nextStep.text },
     parts: idea.parts.map(p => ({ n: p.n, title: p.title })), promises, risks: plan.risks, questions: plan.questions, decisions, leftovers, attacks: attackList,
     productAttacks: attackList.filter(a => a.promise === 'all').map(a => ({ id: a.id, klass: a.klass, last: a.attempts[a.attempts.length - 1] })) };
 }
 function className(key) { const c = parseCatalogue().find(c => c.key === key); return c ? c.name : key; }
+function stepsByPart(plan, idea) {
+  const partOf = id => { const p = idea.promises.find(x => x.id === id); return p ? p.part : null; }; const sk = plan.slices[0]; const skIds = new Set(sk ? sk.steps.map(s => s.id) : []); const m = { 0: [] }; for (const part of idea.parts) m[part.n] = [];
+  for (const s of plan.steps) { if (skIds.has(s.id)) { m[0].push(s); continue; } const parts = s.promises.map(partOf).filter(x => x !== null); const n = parts.length ? Math.min(...parts) : 0; (m[n] = m[n] || []).push(s); }
+  return m;
+}
 function partLine(dir, n) {
   const st = computeState(dir); const ids = st.promises.filter(p => p.part === n).map(p => p.id);
-  const mine = st.attacks.filter(a => ids.includes(a.promise)); const attempts = mine.reduce((s, a) => s + a.attempts.length, 0);
+  const mine = st.attacks.filter(a => ids.includes(a.promise));
   const held = mine.filter(a => !a.resolved && a.attempts.length && a.attempts.every(x => x.result === 'held')).length;
   const fixed = mine.filter(a => a.resolved || (a.attempts.some(x => x.result === 'broke') && a.attempts[a.attempts.length - 1].result === 'held')).length;
-  const open = mine.length - held - fixed;
-  const part = st.parts.find(p => p.n === n); return `Part ${n}${part ? `, ${part.title}` : ''} checked: ${attempts} attempts to break it, ${held} held, ${fixed} broke and ${fixed === 1 ? 'was' : 'were'} fixed${open ? `, ${open} still open` : ''}.`;
+  const open = mine.length - held - fixed; const part = st.parts.find(p => p.n === n); const head = `Part ${n}${part ? `, ${part.title}` : ''}`;
+  if (!mine.length) return `${head} done.`;
+  return `${head} checked with ${mine.length} test${mine.length === 1 ? '' : 's'}: ${held} held${fixed ? `, ${fixed} broke and ${fixed === 1 ? 'was' : 'were'} fixed` : ''}${open ? `, ${open} still open` : ''}.`;
 }
 
 // ---------- receipt validation ----------
@@ -257,12 +270,14 @@ const observedLine = (run, expected) => (expected && run.out.split('\n').find(l 
 const verifyProblem = s => { if (!s.verify.cmd) return 'no command'; if (!s.verify.expected) return 'no expected output'; if (/^exit\s*0$/i.test(s.verify.expected)) return 'the expected output must be text, not an exit code'; const tr = trivialCmd(s.verify.cmd, s.verify.expected); return tr ? `\`${s.verify.cmd}\` ${tr}` : null; };
 function attackRows(dir) { const t = read(path.join(dir, 'attacks.md')); return [...t.matchAll(/^\|\s*((?:A|L)\d+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|/gm)].map(m => ({ id: m[1], promise: m[2], key: m[3] })); }
 function validateReceipt(dir, stage, result, body, opts = {}) {
+  if ([result, ...body].some(l => /[\r\n]/.test(String(l)))) return 'a receipt argument holds a line break; one line per argument'; result = String(result).trim(); body = body.map(l => String(l).trim()).filter(Boolean);
   const base = path.basename(dir); if (/\s/.test(base)) return `the build folder name "${base}" has a space; use kebab-case`;
   if (!['idea', 'plan', 'build', 'attack', 'deploy', 'amend'].includes(stage)) return `unknown stage "${stage}"`;
   const st = computeState(dir); const plan = parsePlan(read(path.join(dir, 'plan.md'))); const idea = parseIdea(read(path.join(dir, 'idea.md'))); const receipts = parseReceipts(read(path.join(dir, 'receipts.md')));
   const clean = body.map(l => l.replace(/^\[[ x]\]\s*/, '')); const has = re => clean.some(l => re.test(l));
   let m;
-  if (!opts.internal) { if (/^(gates green|gates red|preflight|writeback)$/.test(result)) return `"${result}" is written only by its own verb (gates --run --record, preflight --record, writeback)`; if (clean.some(l => /^(P\d+\.\d+:\s*(live|not measured)|all:\s*check|watch:|target:)/.test(l))) return 'live numbers, watch and target lines are written only by writeback'; if (clean.some(l => /^(plan-pin|idea-pin|plan-steps):/.test(l))) return 'pin lines are written by the record itself'; }
+  if (!opts.internal) { if (/^question\s+\d+\s+of\s+\d+/.test(result)) return 'interview answers are recorded by `answer <dir> question <k> <n>`, not typed'; const askLines = body.filter(l => /^\[ \]\s*ask:/.test(l)); if (askLines.length > 1) return 'one question per receipt'; for (const askLine of askLines) { const segs = askLine.split(' · '); const opts = segs.slice(1).map(s => s.split('→')).filter(x => x.length === 2 && x[0].trim() && x[1].trim()); if (!segs[0].replace(/^\[ \]\s*ask:\s*/, '').trim() || opts.length < 2 || opts.length !== segs.length - 1) return 'a question for the person carries its options: "[ ] ask: <question> · <label> (Recommended) → <what happens> · <label> → <what happens>"'; } }
+  if (!opts.internal) { if (/^(gates green|gates red|preflight|writeback)$/.test(result)) return `"${result}" is written only by its own verb (gates --run --record, preflight --record, writeback)`; if (clean.some(l => /^(P\d+\.\d+:\s*(live|not measured)|all:\s*check|watch:|target:)/.test(l))) return 'live numbers, watch and target lines are written only by writeback'; if (clean.some(l => /^(plan-pin|idea-pin|plan-steps|step-pin):/.test(l))) return 'pin lines are written by the record itself'; }
   if (stage !== 'amend' && clean.some(l => /^supersede:/.test(l))) return 'only an amend receipt may supersede a step';
   const askKey = `${stage} ${result}`; if (ASK_FOR[askKey]) { const ans = clean.filter(l => /^answered:/.test(l)); const asks = ASK_FOR[askKey];
     if (ans.length > 1) return 'one answered: line per receipt';
@@ -271,25 +286,27 @@ function validateReceipt(dir, stage, result, body, opts = {}) {
   const drift = () => { if (st.flags.planPin && pinOf(dir, 'plan') !== st.flags.planPin) return 'plan.md changed since the person saw it; record "plan revised" after plan-check (a revision may only add steps), or go through amend'; if (st.flags.ideaPin && pinOf(dir, 'idea') !== st.flags.ideaPin) return 'the Idea page changed since it was approved; changes go through amend'; return null; };
   if (stage === 'idea' && /^(drafted|approved|look approved)$/.test(result)) { const p = lintIdea(dir, idea); if (p.length) return `the Idea page does not pass its check (${p.length}): ${p[0]}`; }
   const rowsOpen = kind => chooseAttacks(dir, kind).filter(r => { const a = st.attacks.find(x => x.key === `${r.id} ${r.promise}`); const last = a && a.attempts[a.attempts.length - 1]; return !a || (!a.resolved && (!last || last.result === 'broke')); });
-  if (stage === 'idea' && /^drafted$/.test(result)) { const qOf = st.flags.questionsOf || 11; if (!(st.flags.questions > 0 && st.flags.questions >= qOf)) return `the interview is not finished: ${st.flags.questions} of ${qOf} questions answered`; }
+  if (stage === 'idea' && /^drafted$/.test(result)) { const qOf = st.flags.questionsOf || 11; const missing = st.flags.questionsMissing || [...Array(qOf)].map((_, i) => i + 1); if (missing.length) return `the interview is not finished: ${qOf - missing.length} of ${qOf} questions answered (missing ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''})`; if (st.flags.ideaApproved) return 'the page is already approved; changes go through amend'; }
+  if (stage === 'idea' && /^look ready$/.test(result) && st.flags.lookApproved) return 'the screens are already approved; changes go through amend';
+  if (stage === 'plan' && /^drafted$/.test(result) && st.flags.planApproved) return 'the plan is already approved; record "plan revised" (steps may only be added)';
   if (stage === 'idea' && /^approved$/.test(result)) { const open = rowsOpen('idea'); if (open.length) return `idea approved while ${open.length} of ${chooseAttacks(dir, 'idea').length} page attacks are not closed (${open.map(r => r.id).join(', ')})`; if (st.flags.ideaPin && pinOf(dir, 'idea') !== st.flags.ideaPin) return 'the Idea page changed after the person saw it; draft it again'; }
   if (stage === 'idea' && /^look approved$/.test(result) && (idea.look === 'premium' || idea.look === 'clean')) { for (const part of idea.parts) { if (!(part.screen || part.mock || part.sketch)) continue; if (!part.mock || !fs.existsSync(path.join(dir, part.mock))) return `look approved: part ${part.n} has no mock file`; const ids = part.promises.map(x => x.id); if (!st.attacks.some(a => /^L/.test(a.id) && ids.includes(a.promise) && a.attempts.length && a.attempts[a.attempts.length - 1].result === 'held')) return `look approved: part ${part.n} has no held look-panel receipt (L<n> P<id> attempt <k> held)`; } }
   if (stage === 'idea' && /^approved$/.test(result) && !st.flags.ideaDrafted) return 'idea approved before idea drafted';
   if (stage === 'plan' && /^(drafted|revised)$/.test(result)) { const openQ = plan.questions.filter(q => !/\(answered/i.test(q.text)); if (openQ.length) return `${openQ.length} question${openQ.length > 1 ? 's' : ''} for the person not yet asked (mark each "- Q<n> (answered) …" after asking): ${openQ[0].text.slice(0, 60)}`; if (!st.flags.ideaApproved) return 'plan drafted before the idea was approved'; if (idea.look && !st.flags.lookApproved) return 'plan drafted before the screens were approved (look approved)'; const p = planCheck(dir); if (p.length) return `the plan does not pass plan-check (${p.length}): ${p[0]}`; }
   if (stage === 'plan' && /^approved$/.test(result)) { if (!st.flags.planDrafted) return 'plan approved before plan drafted'; if (!plan.steps.length) return 'the plan has no step lines'; const p = planCheck(dir); if (p.length) return `the plan does not pass plan-check (${p.length}): ${p[0]}`; const open = rowsOpen('plan'); if (open.length) return `plan approved while ${open.length} of ${chooseAttacks(dir, 'plan').length} plan attacks are not closed (${open.map(r => r.id).join(', ')})`; if (st.flags.planPin && pinOf(dir, 'plan') !== st.flags.planPin) return 'the plan changed after the person saw it; record "plan revised" and show the screen again'; }
-  if (stage === 'plan' && /^revised$/.test(result) && st.flags.planApproved) { for (const s of plan.steps) { const vp = verifyProblem(s); if (vp) return `${s.id}: ${vp}`; } const lost = idea.promises.filter(p => !plan.steps.some(s => s.promises.includes(p.id))); if (lost.length) return `the revised plan drops ${lost.map(p => p.id).join(', ')}; removing a promise goes through amend`; if (plan.steps.length < st.flags.planSteps) return `a revision after approval may only add steps (${plan.steps.length} < ${st.flags.planSteps}); removing work goes through amend`; const d = drift(); if (d && /Idea page/.test(d)) return d; }
+  if (stage === 'plan' && /^revised$/.test(result) && st.flags.planApproved) { if (!has(/^decision:/)) return 'a revision after approval needs a "decision:" line saying what changed and why'; for (const s of plan.steps) { const vp = verifyProblem(s); if (vp) return `${s.id}: ${vp}`; } for (const [id, pin] of Object.entries(st.flags.stepPins || {})) { const now = plan.steps.find(s => s.id === id); if (!now || stepPin(now) !== pin) return `${id} is already proven and may not change (promises, command or expected output); a different step gets a new number`; } const lost = idea.promises.filter(p => !plan.steps.some(s => s.promises.includes(p.id))); if (lost.length) return `the revised plan drops ${lost.map(p => p.id).join(', ')}; removing a promise goes through amend`; if (plan.steps.length < st.flags.planSteps) return `a revision after approval may only add steps (${plan.steps.length} < ${st.flags.planSteps}); removing work goes through amend`; const d = drift(); if (d && /Idea page/.test(d)) return d; }
   if (stage === 'build' && (m = result.match(new RegExp(`^step\\s+(${STEP})\\s+proven$`)))) {
     const step = plan.steps.find(s => s.id === m[1]); if (!step) return `${m[1]} is not a step in plan.md`;
     if (!st.flags.planApproved) return 'a step cannot be proven before the plan is approved'; { const d = drift(); if (d) return d; }
-    const vp = verifyProblem(step); if (vp) return `${step.id}: ${vp}; fix the plan first`;
+    const vp = verifyProblem(step) || provesNothing(step.verify.cmd, step.verify.expected); if (vp) return `${step.id}: ${vp}; fix the plan first`;
     const run = runOne(step.verify.cmd, opts.cwd || repoOf(dir)); if (!passes(run, step.verify.expected)) return `${step.id}: ran \`${step.verify.cmd}\` → "${run.ok ? run.out.split('\n').pop() : (run.out.split('\n').find(l => /error|fail|not found|cannot/i.test(l)) || run.out.split('\n')[0])}"; expected "${step.verify.expected}"${run.ok ? '' : ' (and it did not exit 0)'}`;
-    opts.observed = observedLine(run, step.verify.expected); opts.cmd = step.verify.cmd;
+    opts.observed = observedLine(run, step.verify.expected); opts.cmd = step.verify.cmd; opts.stepPin = stepPin(step);
   }
   if (stage === 'build' && /^fix (A|L)\d+/.test(result)) { if (!has(/^check added:/)) return 'a fix needs "check added: <path>"'; if (!has(/^red:/)) return 'a fix needs "red: <command> → <output on the old code>"'; }
   if (stage === 'attack') {
     const am = result.match(/^((?:A|L)\d+)\s+(P\d+\.\d+|all|page|plan)\s+attempt\s+([12])\s+(held|broke|resolved)$/); if (!am) return 'an attack receipt reads "A<n> <P<id>|all|page|plan> attempt <1|2> <held|broke|resolved>"';
     const [, id, promise, k, res] = am; if (/^P/.test(promise) && !idea.promises.find(p => p.id === promise)) return `${promise} is not on the Idea page`;
-    const rows = /^(page|plan)$/.test(promise) ? chooseAttacks(dir, promise === 'page' ? 'idea' : 'plan') : attackRows(dir); if (!/^L/.test(id) && rows.length && !rows.find(r => r.id === id && r.promise === promise)) return `${id} ${promise} is not a chosen attack`; if (/^(P|all)/.test(promise)) { const d = drift(); if (d) return d; }
+    const rows = /^(page|plan)$/.test(promise) ? chooseAttacks(dir, promise === 'page' ? 'idea' : 'plan') : attackRows(dir); if (!/^L/.test(id) && rows.length && !rows.find(r => r.id === id && r.promise === promise)) return `${id} ${promise} is not a chosen attack`; { const d = drift(); if (d) return d; }
     if (/^L/.test(id)) { const part = idea.parts.find(pt => pt.promises.some(x => x.id === promise)); if (!part || !(part.screen || part.mock || part.sketch)) return `${promise} is not a promise of a screen part; look receipts are for screens only`; }
     if (res === 'broke' && !has(/^reproduction:/)) return 'a broke receipt needs "reproduction: <command> → observed <x>, expected <y>"';
     if (res !== 'resolved' && !has(/^class:/)) return 'an attack receipt needs "class: <catalogue key>"';
@@ -298,6 +315,7 @@ function validateReceipt(dir, stage, result, body, opts = {}) {
     else if (+k === 2) { if (!(last && last.k === 1 && last.result === 'broke')) return 'attempt 2 needs attempt 1 broke first'; if (!receipts.some(r => r.stage === 'build' && r.result === `fix ${id}` && r.idx > last.idx)) return `attempt 2 needs a "fix ${id}" receipt after attempt 1`; }
     if (+k === 1 && last) return 'attempt 1 was already recorded for this attack';
   }
+  if (stage === 'build' && /^gate 3$/.test(result)) { const d = drift(); if (d) return d; }
   if (stage === 'deploy' && /^(gate 4|released|writeback)$/.test(result)) {
     if (!(st.steps.total && st.steps.proven === st.steps.total)) return `cannot ${result}: ${st.steps.proven} of ${st.steps.total} steps proven`;
     for (const s of plan.steps) { const vp = verifyProblem(s); if (vp) return `cannot ${result}: ${s.id}: ${vp}`; } { const d = drift(); if (d) return `cannot ${result}: ${d}`; }
@@ -311,8 +329,9 @@ function validateReceipt(dir, stage, result, body, opts = {}) {
   }
   if (stage === 'deploy' && /^released$/.test(result) && !(st.flags.preflight && st.flags.rehearsal && st.flags.gate4)) return 'released needs preflight, rehearsal and an answered gate 4 first';
   if (stage === 'deploy' && /^writeback$/.test(result) && !st.flags.released) return 'writeback before released';
+  if (stage === 'amend' && !/^part\s+\d+\s+edited$/.test(result)) return 'an amend receipt reads "part <n> edited"';
   if (stage === 'amend' && (m = result.match(/^part\s+(\d+)\s+edited$/))) {
-    if (!has(/^decision:/)) return 'an amend needs a "decision:" line';
+    if (!has(/^decision:/)) return 'an amend needs a "decision:" line'; if (!has(/^answered:/)) return 'an amend needs the person\'s words on an "answered:" line';
     const sup = clean.find(l => /^supersede:/.test(l));
     if (sup) for (const id of sup.replace(/^supersede:\s*/, '').split(/[\s,]+/).filter(Boolean)) { const step = plan.steps.find(s => s.id === id); if (!step) return `supersede names ${id}, not a step in plan.md`; if (!step.promises.some(p => (idea.promises.find(x => x.id === p) || {}).part === +m[1])) return `supersede names ${id}, which serves no promise of part ${m[1]}`; }
   }
@@ -337,12 +356,13 @@ function renderCard(st, dir) {
   const plan = parsePlan(read(path.join(dir || '', 'plan.md'))); const sk = plan.slices[0]; const provenIds = new Set(); for (const s of plan.steps) { /* mark proven via state counts */ }
   const stepDone = id => st.slices.some(sl => sl.n === (plan.steps.find(x => x.id === id) || {}).slice && false);
   const doneSteps = new Set(parseReceipts(read(path.join(dir || '', 'receipts.md'))).filter(r => r.stage === 'build' && /^step\s+\S+\s+proven$/.test(r.result)).map(r => r.result.split(/\s+/)[1]));
-  const slices = (sk ? `<div class="slice sk"><span class="k">·</span><span>A thin version of the whole thing first, so problems show early</span><span class="n">${sk.steps.filter(x => doneSteps.has(x.id)).length}/${sk.steps.length}</span></div>` : '') + st.parts.map(p => { const ids = st.promises.filter(x => x.part === p.n).map(x => x.id); const steps = plan.steps.filter(s => s.promises.some(id => ids.includes(id))); return `<div class="slice"><span class="k">${p.n}</span><span>${esc(p.title)}</span><span class="n">${steps.filter(x => doneSteps.has(x.id)).length}/${steps.length}</span></div>`; }).join('');
+  const ideaX = parseIdea(read(path.join(dir || '', 'idea.md'))); const byPart = stepsByPart(plan, ideaX); const cnt = steps => `${steps.filter(x => doneSteps.has(x.id)).length}/${steps.length}`;
+  const slices = (byPart[0].length ? `<div class="slice sk"><span>A thin version of the whole thing first, so problems show early</span><span class="n">${cnt(byPart[0])}</span></div>` : '') + st.parts.map(p => `<div class="slice"><span class="k">${p.n}</span><span>${esc(p.title)}</span><span class="n">${cnt(byPart[p.n] || [])}</span></div>`).join('');
   const risks = st.risks.slice(0, 3).map((r, i) => `<div><i>${i + 1}</i><span>${esc(r.text)}</span></div>`).join('');
   const decisions = st.decisions.length ? st.decisions.map(d => `<div><time>${esc(day(d.ts))}</time><span>${esc(d.text)}</span></div>`).join('') : '<p class="empty">None yet.</p>';
   const leftovers = st.leftovers.length ? st.leftovers.map(d => `<div><time>${esc(day(d.ts))}</time><span>${esc(d.text)}</span></div>`).join('') : '<p class="empty">Nothing set aside. Items appear here when a problem is accepted in writing.</p>';
   const counts = {}; for (const p of st.promises) counts[p.plain] = (counts[p.plain] || 0) + 1; const summary = `${st.promises.length} promises: ${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')}`;
-  const ask = st.ask ? `<div class="ask"><h2>For you</h2><b>${esc(st.ask)}</b></div>` : '';
+  const ask = st.ask ? `<div class="ask"><h2>For you</h2><b>${esc(st.ask)}</b>${(st.askOptions || []).map(o => `<div class="opt"><span>${esc(o.label)}</span><span>${esc(o.consequence)}</span></div>`).join('')}</div>` : '';
   const shots = dir ? shotsFor(dir, 'final-') : []; const shotsHtml = shots.length ? `<div><h2>Screens as built</h2><div class="shots">${shotRows(shots, 'final-')}</div></div>` : '';
   return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => ({ TITLE: esc(st.title), LINE: esc(st.lineBare), PCT: pct, ASK: ask, SLICES: slices, RISKS: risks ? `<h2 style="margin-top:6px">The biggest risks, and what I do about each</h2><div class="risks">${risks}</div>` : '', PAGE: st.page && /^https?:/.test(st.page) ? `<a href="${esc(st.page)}">Idea page</a>` : '', PARTS: parts, SUMMARY: esc(summary), DECISIONS: decisions, NDEC: st.decisions.length, LEFTOVERS: leftovers, NLEFT: st.leftovers.length, SHOTS: shotsHtml, VERSION: `v${st.version}` }[k] ?? ''));
 }
@@ -364,7 +384,7 @@ function renderIdeaPage(dir, idea, st) {
   const hero = idea.journey.length ? `<div class="journey">${idea.journey.map((j, i) => `<div class="step"><div class="pic">${pic(j.picture, j.caption)}</div><div class="cap"><span class="k">${i + 1}</span>${esc(j.caption)}</div></div>`).join('')}</div>` : '';
   const exists = idea.exists ? `<div class="exists"><div><b>What you use today</b>${esc(idea.exists)}</div><div><b>Why build this anyway</b>${esc(idea.because)}</div></div>` : '';
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => ({ TITLE: esc(idea.title), PURPOSE: esc(idea.purpose), FOR: esc(idea.for), HURTS: esc(idea.hurts), DONE: esc(idea.done), EXISTS: exists, VERSION: `v${st ? st.version : 1}`, DATE: date, HERO: hero, PARTS: parts, OUT: out, NPROMISES: idea.promises.length, NPARTS: idea.parts.length, LIVENOTE: anyLive ? `<span>${Object.values(live).filter(l => l.ok).length} of ${idea.promises.length} promises measured on the live system</span>` : '' }[k] ?? ''));
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => ({ TITLE: esc(idea.title), PURPOSE: esc(idea.purpose), FOR: esc(idea.for), HURTS: esc(idea.hurts), DONE: esc(idea.done), EXISTS: exists, VERSION: `v${st ? st.version : 1}`, DATE: date, HERO: hero, PARTS: parts, OUT: out, NPROMISES: idea.promises.length, NPARTS: idea.parts.length, CARDLINK: idea.card ? `<span><a href="${esc(idea.card)}">Your live card</a></span>` : '', LIVENOTE: anyLive ? `<span>${Object.values(live).filter(l => l.ok).length} of ${idea.promises.length} promises measured on the live system</span>` : '' }[k] ?? ''));
 }
 
 // ---------- spec ----------
@@ -460,7 +480,7 @@ function gateSuite(dir) {
 function runGates(dir, target) {
   const isUrl = /^https?:\/\//.test(target || ''); const cwd = isUrl ? repoOf(dir) : (target || repoOf(dir)); const env = isUrl ? { ...process.env, COMPASS_TARGET: target } : process.env;
   const { promiseChecks, breakChecks } = gateSuite(dir); const results = []; const seen = new Map();
-  for (const c of promiseChecks) { const key = c.cmd + '→' + c.expected; let r = seen.get(key); if (!r) { const run = runOne(c.cmd, cwd, env); const bad = verifyProblem({ verify: { cmd: c.cmd, expected: c.expected } }); r = { ok: !bad && passes(run, c.expected), out: bad ? bad : observedLine(run, c.expected), expected: c.expected }; seen.set(key, r); } results.push({ kind: 'promise', id: `${c.promise} ← ${c.step}`, promise: c.promise, cmd: c.cmd, ...r }); }
+  for (const c of promiseChecks) { const key = c.cmd + '→' + c.expected; let r = seen.get(key); if (!r) { const run = runOne(c.cmd, cwd, env); const bad = verifyProblem({ verify: { cmd: c.cmd, expected: c.expected } }) || (passes(run, c.expected) ? provesNothing(c.cmd, c.expected) : null); r = { ok: !bad && passes(run, c.expected), out: bad ? bad : observedLine(run, c.expected), expected: c.expected }; seen.set(key, r); } results.push({ kind: 'promise', id: `${c.promise} ← ${c.step}`, promise: c.promise, cmd: c.cmd, ...r }); }
   for (const c of breakChecks) { const f = path.resolve(cwd, c.file); const cmd = /\.(js|mjs|cjs)$/.test(f) ? `node "${f}"` : /\.py$/.test(f) ? `python3 -I "${f}"` : `sh "${f}"`; const run = runOne(cmd, cwd, env); results.push({ kind: 'break', id: c.attack, promise: c.promise, cmd: c.file, ok: run.ok, out: run.out.split('\n').pop() || '', expected: 'exit 0' }); }
   return results;
 }
@@ -512,8 +532,8 @@ function planCheck(dir) {
 function planCard(dir) {
   const st = computeState(dir); const plan = parsePlan(read(path.join(dir, 'plan.md'))); const idea = parseIdea(read(path.join(dir, 'idea.md')));
   const out = [`${st.title} · plan v${st.version} · ${idea.parts.length} parts · ${st.steps.total} steps · every one of the ${st.promises.length} promises has a step`, '', 'Your parts, in build order'];
-  const skeleton = plan.slices[0]; out.push(`  First, a thin version of the whole thing that runs end to end (${skeleton ? skeleton.steps.length : 0} steps), so problems show early.`);
-  for (const part of idea.parts) { const ids = part.promises.map(x => x.id); const n = plan.steps.filter(s => s.promises.some(id => ids.includes(id))).length; out.push(`  ${String(part.n).padStart(2)}  ${part.title}  · ${n} step${n === 1 ? '' : 's'}`); }
+  const skN = stepsByPart(plan, idea)[0].length; if (skN) out.push(`  First, a thin version of the whole thing that runs end to end (${skN} step${skN === 1 ? '' : 's'}), so problems show early.`);
+  const byPart = stepsByPart(plan, idea); for (const part of idea.parts) { const n = (byPart[part.n] || []).length; out.push(`  ${String(part.n).padStart(2)}  ${part.title}  · ${n} step${n === 1 ? '' : 's'}`); }
   if (st.risks.length) { out.push('', 'The biggest risks, and what I do about each'); st.risks.slice(0, 3).forEach((r, i) => out.push(`  ${i + 1}. ${r.text}`)); }
   const answered = st.decisions.filter(d => /^you decided/i.test(d.text)); const openQs = st.questions.filter(q => !/\(answered/i.test(q.text));
   if (answered.length) { out.push('', 'You decided'); for (const d of answered) out.push(`  · ${d.text.replace(/^you decided[:\s]*/i, '')}`); }
@@ -532,7 +552,7 @@ const wrapFull = html => `<!doctype html><html><head><meta charset="utf-8"><meta
 if (verb === 'state') { const d = resolveDir(); if (!d) { console.log('No build here yet.'); process.exit(0); } const st = computeState(d); console.log(args.includes('--json') ? JSON.stringify(st, null, 2) : st.line); }
 else if (verb === 'line') { const d = resolveDir(); if (d) console.log(computeState(d).line); }
 else if (verb === 'card') { const dir = needDir(); const out = flag('out', path.join(dir, 'card.html')); let html = renderCard(computeState(dir), dir); if (args.includes('--full')) html = wrapFull(html); fs.writeFileSync(out, html); console.log(out); }
-else if (verb === 'receipt') { const [dir, stage, result, ...rest] = args; if (!dir || !stage || !result) die('usage: compass receipt <dir> <stage> <result> [line ...]'); const opts = {}; const err = validateReceipt(path.resolve(dir), stage, result, rest, opts); if (err) die(`receipt refused: ${err}`, 2); let body = rest; if (opts.observed !== undefined) { body = rest.filter(l => !/^(\[x\]\s*)?verify:/.test(l)); body.unshift(`verify: ${opts.cmd} → ${opts.observed}`); } const d = path.resolve(dir); if ((stage === 'plan' && /^(drafted|revised|approved)$/.test(result)) || stage === 'amend') body = [...body, `plan-pin: ${pinOf(d, 'plan')}`, `plan-steps: ${parsePlan(read(path.join(d, 'plan.md'))).steps.length}`]; if ((stage === 'idea' && /^(drafted|approved|look ready|look approved)$/.test(result)) || stage === 'amend') body = [...body, `idea-pin: ${pinOf(d, 'idea')}`]; console.log(appendReceipt(d, stage, result, body)); }
+else if (verb === 'receipt') { const [dir, stage, result, ...rest] = args; if (!dir || !stage || !result) die('usage: compass receipt <dir> <stage> <result> [line ...]'); const opts = {}; const err = validateReceipt(path.resolve(dir), stage, result, rest, opts); if (err) die(`receipt refused: ${err}`, 2); let body = rest; if (opts.observed !== undefined) { body = rest.filter(l => !/^(\[x\]\s*)?verify:/.test(l)); body.unshift(`verify: ${opts.cmd} → ${opts.observed}`); body.push(`step-pin: ${opts.stepPin}`); } const d = path.resolve(dir); const amendEdit = stage === 'amend' && /^part\s+\d+\s+edited$/.test(result); if ((stage === 'plan' && /^(drafted|revised|approved)$/.test(result)) || amendEdit) body = [...body, `plan-pin: ${pinOf(d, 'plan')}`, `plan-steps: ${parsePlan(read(path.join(d, 'plan.md'))).steps.length}`]; if ((stage === 'idea' && /^(drafted|approved|look ready|look approved)$/.test(result)) || amendEdit) body = [...body, `idea-pin: ${pinOf(d, 'idea')}`]; console.log(appendReceipt(d, stage, result, body)); }
 else if (verb === 'part-line') { const dir = needDir(); const n = +args[1]; if (!n) die('usage: compass part-line <dir> <part number>'); console.log(partLine(dir, n)); }
 else if (verb === 'answer') {
   const dir = path.resolve(args[0] || ''); const sub = args[1]; const rest = args.slice(2).filter(x => !['--verbose'].includes(x)); if (!args[0] || !sub) die('usage: compass answer <dir> set <key> "<value>" | part <n> --title= --picture= --prose= --screen --promise=… | journey "<key>: <caption>"… | later "…"… | never "…"… | question <k> <n>');
@@ -572,8 +592,8 @@ else if (verb === 'gates') {
 else if (verb === 'preflight') { const dir = needDir(); const r = preflight(dir, repoOf(dir), { envFrom: flag('env-from', null), dataRestore: flag('data-restore', null), health: flag('health', null) }); for (const l of r.lines) console.log(l); console.log(r.ok ? '✓ pre-flight passed' : '✗ pre-flight failed; nothing deployed'); if (r.ok && args.includes('--record')) appendReceipt(dir, 'deploy', 'preflight', r.lines.map(l => l.replace(/^✓\s*/, ''))); process.exit(r.ok ? 0 : 1); }
 else if (verb === 'writeback') {
   const dir = needDir(); if (args.some(a => /^P\d+\.\d+=/.test(a))) die('writeback measures; it does not take values. Run it with --target=<path or url> and it runs every promise\'s check itself.');
-  let target = flag('target', ''); if (!target) die('writeback needs --target=<web address, or the folder where the product now runs>; say --target=local when it runs on this machine'); const isLocal = target === 'local'; if (isLocal) target = repoOf(dir); else if (!/^https?:\/\//.test(target) && path.resolve(target) === path.resolve(repoOf(dir))) die('that is the build folder itself; say --target=local if the product runs on this machine');
-  const watch = flag('watch-until', ''); if (watch && !/^\d{4}-\d{2}-\d{2}$/.test(watch)) die('--watch-until must be YYYY-MM-DD'); if (watch && watch <= today()) die(`the check-again date must be after today (${today()})`); if (!watch && !args.includes('--close-watch')) die('writeback needs --watch-until=YYYY-MM-DD (the check-again date), or --close-watch after that date');
+  let target = flag('target', ''); if (!target) die('writeback needs --target=<web address, or the folder where the product now runs>; say --target=local when it runs on this machine'); const isLocal = target === 'local'; if (isLocal) target = repoOf(dir); else if (!/^https?:\/\//.test(target) && (() => { try { return fs.realpathSync(target) === fs.realpathSync(repoOf(dir)); } catch { return path.resolve(target) === path.resolve(repoOf(dir)); } })()) die('that is the build folder itself; say --target=local if the product runs on this machine');
+  const watch = flag('watch-until', ''); if (watch && !(/^\d{4}-\d{2}-\d{2}$/.test(watch) && new Date(watch + 'T00:00:00Z').toISOString().slice(0, 10) === watch)) die('--watch-until must be a real date, YYYY-MM-DD'); if (watch && watch <= today()) die(`the check-again date must be after today (${today()})`); if (!watch && !args.includes('--close-watch')) die('writeback needs --watch-until=YYYY-MM-DD (the check-again date), or --close-watch after that date');
   if (args.includes('--close-watch')) { const s = computeState(dir); if (!s.watch) die('no watch to close: the live numbers were never written with a check-again date'); if (s.watchClosed) die('the watch is already closed'); if (!s.watchOver) die(`the watch runs until ${s.watch}; run --close-watch after that date`); }
   const err = validateReceipt(dir, 'deploy', 'writeback', [], { internal: true }); if (err) die(`writeback refused: ${err}`, 2);
   const st0 = computeState(dir); const rs = runGates(dir, target); const { noCheck } = gateSuite(dir); const body = [];
