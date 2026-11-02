@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+'use strict';
+// PreToolUse hook: allow Compass's own record commands without a permission stop.
+// A command that records the person's words (answered: or decision:) is NOT allowed here; it keeps the normal check,
+// because only the person can give those words. Anything chained to another command is left alone too.
+let raw = ''; process.stdin.on('data', d => { raw += d; }); process.stdin.on('end', () => {
+  let cmd = ''; try { cmd = (JSON.parse(raw).tool_input || {}).command || ''; } catch { return; }
+  const own = /^node\s+"?[^"\s]*\/scripts\/compass"?\s+(receipt|answer|attacks|shots|look-score|attack-receipt-check|state|line|card|spec-check|plan-check|plan-card|idea-page|part-line|rubric-check)\s/.test(cmd.trim());
+  const chained = /[;&|`$<>]|\n/.test(cmd.replace(/"[^"]*"/g, '""')); const personsWords = /\b(answered|decision):/.test(cmd);
+  if (own && !chained && !personsWords) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Compass record command' } }));
+});

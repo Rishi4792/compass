@@ -3,6 +3,22 @@
 All notable changes to Compass are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [1.0.7] — 2026-11-02 — the design review ends
+
+Found on a real build (a five-screen loan dashboard). Compass ran 78 design reviewers, each reading up to 60 screenshots, and the build never left the Idea stage. Compass offered "Move on" after a second failed design review, then refused that answer, so the only way forward was another review with no limit.
+
+**Move on approves the screens.** A Move on answer at a second design break now counts for that screen. A third round runs only when the person asks for one.
+
+**One reviewer, two pictures, a pass mark that can be met.** One reviewer per screen sees the phone and desktop pictures of the normal state. A screen passes when no score is 2 or lower (Premium) or 1 (Clean); lower scores above that go on the card as notes. `shots --check` finds cut-off text and pages wider than the screen in every state, so no reviewer has to read those pictures. The main session opens at most one picture per screen per round.
+
+**The cost is shown before it is spent.** The look question gives a rough token cost per screen for each option.
+
+**Fewer surprises later.** The script that draws the mocks must be kept in the build folder (`mock-source:`). A data or mixed build measures how full each field a screen uses is before the screens are drawn (`fields measured`). `spec.md` states its personal data, where it is kept and how it is protected, and the plan carries a step for it. A new page attack checks that every number on a screen says what date its data is from. Going live records only the build's own files, never `git add -A`. The interview offers a new folder when the current one is not a repository and holds other files.
+
+**Blocked commands.** A hook allows Compass's own record commands without a permission stop, except a command that records the person's answer; that one keeps the normal check. When a command is blocked, Compass prints the exact line for the person to run.
+
+Gate suite: 29 of 29 green (new: S10.1). Instruction text: 9,997 of 10,000 words.
+
 ## [1.0.6] — 2026-10-27 — the proof is exact, the flow runs end to end
 
 Sixth review pass, three fresh reviewers: one drove the record validator (84 cases; 43 ways through), one read every surface a person sees (43 items), one dry-ran the whole flow as a first-timer, from an empty folder to Done and one change (40 items). All 126 are closed here; every validator item has its own test.

@@ -36,5 +36,7 @@
 - Claude Code loads a plugin skill named compass as bare /compass (docs: skills.md).
 - Headless Chrome will not open narrower than 500 px; phone shots use a 390 px frame.
 - git tag may be configured to sign; tags are created with -a -m and verified.
+## Personal data
+- none
 ## Kind
 - mixed

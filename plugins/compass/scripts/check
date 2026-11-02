@@ -217,7 +217,7 @@ check('P2.5', 'the look: mock required for premium and clean; sketch only for ma
 });
 
 check('P5.1', 'attacks: conformance forced for parts with a mock or sketch, load for timed promises, product classes at the last part, ids by promise', () => {
-  const cat = read(path.join(ROOT, 'shared', 'failure-catalogue.md')); const n = (cat.match(/^## [a-z-]+$/gm) || []).length; if (n !== 21) throw new Error(`${n} classes, expected 21 (13 build + 4 idea + 4 plan)`);
+  const cat = read(path.join(ROOT, 'shared', 'failure-catalogue.md')); const n = (cat.match(/^## [a-z-]+$/gm) || []).length; if (n !== 22) throw new Error(`${n} classes, expected 22 (13 build + 5 idea + 4 plan)`);
   if (!/mocks\/part-<n>\.html/.test(cat) || !/Tolerance:/.test(cat)) throw new Error('conformance recipe lacks the mock path or tolerance');
   const av = tmpdir('compass-attacks-'); for (const f of ['idea.md', 'spec.md', 'attacks.md']) fs.copyFileSync(F('idea-visual/' + f), path.join(av, f));
   const a = run(['attacks', av, 'build', '--json']); const rows = JSON.parse(a.slice(a.indexOf('[')));
@@ -225,7 +225,7 @@ check('P5.1', 'attacks: conformance forced for parts with a mock or sketch, load
   const pm = rows.filter(r => r.key === 'picture-mismatch'); if (pm.length !== 1 || !pm.every(r => /^P1\./.test(r.promise))) throw new Error(`picture-mismatch rows: ${pm.map(r => r.promise).join(',')}`);
   if (rows.some(r => r.key === 'load' && r.promise === 'P1.1')) throw new Error('a time phrase alone ("within 10 seconds") forced a load row; only a named volume does');
   if (!rows.filter(r => r.promise === 'all').every(r => r.when === 'last part')) throw new Error('product rows not at the last part');
-  for (const st of ['idea', 'plan']) { const o = run(['attacks', F('idea-data'), st, '--json']); if (JSON.parse(o.slice(o.indexOf('['))).length !== 4) throw new Error(`${st}: not 4 fixed attacks`); }
+  for (const st of ['idea', 'plan']) { const o = run(['attacks', F('idea-data'), st, '--json']); if (JSON.parse(o.slice(o.indexOf('['))).length !== (st === 'idea' ? 5 : 4)) throw new Error(`${st}: not ${st === 'idea' ? 5 : 4} fixed attacks`); }
   const md = read(F('idea-visual/attacks.md')); if (!/\| State \|/.test(md)) throw new Error('no state column');
   const { t, b } = toyRepo();
   for (const bad of [['A3 P1.1 held', 'class: x'], ['A99 P9.9 attempt 1 held', 'class: x'], ['A2 P1.2 attempt 2 held', 'class: x'], ['A2 P1.2 attempt 1 broke', 'class: x']]) if (!fails(['receipt', b, 'attack', ...bad], t)) throw new Error(`attack receipt accepted: ${bad[0]}`);
@@ -555,6 +555,36 @@ check('S9.6', 'round 8: the confirmation QA findings (V1–V31): the last gate r
   { const o = clone(APP); accept('V30', R(o.b, 'build', 'change asked', "[ ] ask: Your page says: 'A paper notebook: wrong once a week · A calculator at the counter: keeps no record'. You also use a spreadsheet. Build it as written, or change the page? · Build it as written (Recommended) → nothing on your page changes · Change the page → I redo that part of the page with you, then rebuild it"));
     const s = JSON.parse(run(['state', o.b, '--json'], o.t)); if (!/keeps no record'\. You also use a spreadsheet/.test(s.ask || '') || s.askOptions.length !== 2) throw new Error(`V30: the card shows "${s.ask}" with ${s.askOptions.length} options`); }
   return '31 findings: V1–V4, V22, V23 going live; V5, V11, V20, V29, V31 the answer verb; V6, V8, V18, V24 attack rows and old proofs; V7, V19 proofs; V9, V10, V13–V17 questions used up; V12, V21, V25, V26 second breaks and gate 3; V27 plain lines; V28 a split; V30 quoted questions';
+});
+
+check('S10.1', 'the loan-dashboard review (2 Nov): Move on approves the screens, one reviewer and no score of 2, clipping found by script, the mock script kept, data measured, personal data stated, record commands allowed', () => {
+  const said = [];
+  // one reviewer line; a 3 is a note, a 2 breaks
+  const line = v => `scores: ${['hierarchy', 'spacing', 'type', 'color', 'components', 'states', 'alignment', 'polish', 'responsive', 'copy', 'depth', 'structure', 'controls'].map(k => `${k}=${k === 'alignment' ? v : 4}`).join(' ')}${v < 4 ? ' | low: alignment@"filter row"' : ''}`;
+  const held = run(['look-score', 'premium', line(3)]); if (!/^held/.test(held) || !/note: alignment=3/.test(held)) throw new Error('a 3 should pass as a note'); if (!fails(['look-score', 'premium', line(2)])) throw new Error('a 2 should break'); said.push('a 3 is a note, a 2 breaks');
+  // a premium screen: two breaks, then Move on approves it; the mock script must be inside the build folder
+  const make = kind => { const t = tmpdir('compass-look-'); const b = path.join(t, '.claude', 'builds', 'till'); fs.mkdirSync(path.join(b, 'mocks'), { recursive: true });
+    fs.writeFileSync(path.join(b, 'idea.md'), read(F('idea-visual/idea.md')).replace('look: match', 'look: premium').replace('sketch: pictures/sketch-1.svg', 'mock: mocks/part-1.html'));
+    fs.writeFileSync(path.join(b, 'spec.md'), read(F('idea-visual/spec.md')).replace('- visual', `- ${kind}`)); fs.writeFileSync(path.join(b, 'mocks', 'part-1.html'), '<!doctype html><p>540</p>'); fs.writeFileSync(path.join(b, 'mocks', 'draw.py'), 'print(1)');
+    const R = (r, ...l) => `## RECEIPT — ${r} · 2026-11-02T09:00:00Z\n${l.map(x => `- [${/^\[ \]/.test(x) ? ' ' : 'x'}] ${x.replace(/^\[ \]\s*/, '')}`).join('\n')}\n`;
+    fs.writeFileSync(path.join(b, 'receipts.md'), [R('idea · till · drafted', '[ ] ask: Approve the Idea page?'), R('idea · till · approved', 'answered: approve', 'decision: ok'), R('attack · till · L1 P1.1 attempt 1 broke', 'class: look', 'reproduction: look-score premium → observed alignment=2, expected held'), R('build · till · fix L1', 'edit: the filter row lines up'), R('attack · till · L1 P1.1 attempt 2 broke', 'class: look', 'reproduction: look-score premium → observed alignment=2, expected held'), R('build · till · second break at L1', '[ ] ask: The screen broke twice. What now? · Move on, note it (Recommended) → it ships · Try once more and show me → one more review')].join('\n'));
+    return { t, b }; };
+  const ASK = '[ ] ask: The screens are on your Idea page: local. Do they look right? · Looks right (Recommended) → I plan the build · Simpler → I strip each screen back and show it again';
+  { const { t, b } = make('visual'); run(['receipt', b, 'attack', 'L1 P1.1 attempt 2 resolved', 'answered: move on', 'decision: Part 1: ships with a note on the card', 'leftover: Part 1, the total: tested twice for the look, fixed twice, not tested a third time'], t);
+    run(['receipt', b, 'idea', 'look ready', ASK], t); const e = fails(['receipt', b, 'idea', 'look approved', 'answered: looks right', 'decision: the screens you approved are what gets built'], t) || ''; if (!/mock-source/.test(e)) throw new Error('look approved without mock-source should be refused');
+    run(['receipt', b, 'idea', 'look ready', 'mock-source: ../../../../x.py', ASK], t); if (!/not a file inside the build folder/.test(fails(['receipt', b, 'idea', 'look approved', 'answered: looks right', 'decision: the screens you approved are what gets built'], t) || '')) throw new Error('a script outside the build folder should be refused');
+    run(['receipt', b, 'idea', 'look ready', 'mock-source: mocks/draw.py', ASK], t); run(['receipt', b, 'idea', 'look approved', 'answered: looks right', 'decision: the screens you approved are what gets built'], t); said.push('Move on approves; mock script checked'); }
+  { const { t, b } = make('data'); if (!/measure the data first/.test(fails(['receipt', b, 'idea', 'look ready', 'mock-source: hand', ASK], t) || '')) throw new Error('a data build should measure its fields first'); run(['receipt', b, 'idea', 'fields measured', 'field: lender name filled in 41% of 500 sampled'], t); run(['receipt', b, 'idea', 'look ready', 'mock-source: hand', ASK], t); said.push('fields measured first'); }
+  // personal data is stated, with where and how it is protected
+  { const t = tmpdir('compass-pd-'); fs.writeFileSync(path.join(t, 'idea.md'), read(F('idea-visual/idea.md'))); const spec = x => fs.writeFileSync(path.join(t, 'spec.md'), read(F('idea-visual/spec.md')).replace('## Personal data\n- none\n', x));
+    spec(''); if (!/no ## Personal data/.test(fails(['spec-check', t]) || '')) throw new Error('missing personal data section not caught'); spec('## Personal data\n- names and PAN numbers\n'); if (!/where it is kept and how it is protected/.test(fails(['spec-check', t]) || '')) throw new Error('unprotected personal data not caught'); spec('## Personal data\n- names and PAN numbers, stored in one file on this Mac, encrypted with a password\n'); run(['spec-check', t]); said.push('personal data stated'); }
+  // the hook allows Compass's own record commands, never the person's words, never a chained command
+  { const hook = c => execFileSync('node', [path.join(ROOT, 'hooks', 'allow-record')], { input: JSON.stringify({ tool_input: { command: c } }), encoding: 'utf8' }); const C = 'node "/p/scripts/compass" receipt d';
+    if (!/"allow"/.test(hook(`${C} build "fix L1" "edit: x"`))) throw new Error('a record command should be allowed'); if (hook(`${C} attack "L1 P1.1 attempt 2 resolved" "answered: move on"`) || hook(`${C} build "x"; rm -rf ~`)) throw new Error('the person\'s words or a chained command must keep the normal check'); said.push('hook allows only record commands'); }
+  // shots --check finds cut-off text (needs Chrome)
+  { const t = tmpdir('compass-clip-'); const f = path.join(t, 'm.html'); fs.writeFileSync(f, '<!doctype html><meta name="viewport" content="width=device-width"><div style="width:120px;overflow:hidden;white-space:nowrap">New or repeat parents this year</div>');
+    const e = fails(['shots', f, `--out=${t}`, '--name=m', '--check'], t); if (e === null) throw new Error('shots --check passed a cut-off line'); if (/no Chrome/.test(e)) said.push('clipping check skipped: no Chrome'); else if (!/clip: normal (phone|desktop): text is cut off at "New or repeat/.test(e)) throw new Error('clip line missing: ' + e.split('\n').slice(-2).join(' ')); else said.push('cut-off text found'); }
+  return said.join('; ');
 });
 
 check('S8.1', 'core instruction text under 10,000 words', () => {

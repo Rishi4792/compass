@@ -1,10 +1,10 @@
 # The look rubric — how a screen is judged, once, before code
 
-Compass owns this list. It is applied to the **mock** at Idea time by three fresh reviewers who see only the screenshots, the sketch and this file. Each scores every item 1 to 5 and names the exact region for anything under 4. The median decides against the bar for the design level the person chose.
+Compass owns this list. One fresh reviewer per screen applies it to the **mock** at Idea time, seeing only the phone and desktop screenshots, the sketch and this file, and scores every item 1 to 5, naming the exact region for anything under 4. `shots --check` covers the other states.
 
 ## Bars
-premium: every median ≥ 4, no median ≤ 2
-clean: every median ≥ 3, no median ≤ 1
+premium: no score of 2 or lower; a 3 is a note on the card
+clean: no score of 1; a 2 is a note on the card
 match: no rubric; conformance to the person's existing screens only
 
 ## Reviewer output

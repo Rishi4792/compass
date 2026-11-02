@@ -1,6 +1,6 @@
 # The failure catalogue — the ways software fails
 
-Compass brings this list; the person never writes failure modes. Each class gives its scope (`promise` classes are attacked per promise, `product` classes once per build), the products it applies to, likelihood per kind and damage (1 to 5), the attack recipe, what a break looks like, and the permanent check added when it breaks. `scripts/compass attacks` reads the fields; reviewers read the prose.
+Compass brings this list. Each class gives its scope (`promise`: per promise; `product`: once per build), where it applies, likelihood per kind, damage (1 to 5), the attack, a break, and the check added when it breaks. `scripts/compass attacks` reads the fields; reviewers read the prose.
 
 ## wrong-output
 name: Wrong output
@@ -175,6 +175,17 @@ likely: visual=3 data=3 service=3
 attack: For each part, trace it back to the hurts line and the journey. A part that no moment of the journey uses, or that serves someone other than the stated person, breaks.
 break: The part named and the journey moment it would need but lacks.
 check: The part moved to Later, or the journey corrected.
+
+## idea-undated
+name: A number on a screen does not say when its data is from
+stage: idea
+scope: page
+damage: 3
+applies: visual data service
+likely: visual=1 data=4 service=2
+attack: For each screen part showing a number, find where the page says what date its data is from. A number from older data with no date said breaks; no number on a screen holds.
+break: The number and the date its data is really from.
+check: The part says the date, such as "as of the day each parent applied".
 
 ## plan-promise-no-step
 name: A promise with no step

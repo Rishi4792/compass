@@ -6,5 +6,7 @@
 ## Assumptions (from the scan, not from the person)
 - PDFs have a text layer (checked 3 of 14 with pdftotext); scanned pages would need OCR.
 - Output is CSV; the analyst opens it in Excel.
+## Personal data
+- none
 ## Kind
 - data

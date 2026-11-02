@@ -5,5 +5,7 @@
 - One low-stock message per item per day, deduplicated by item and date. → P2.1
 ## Assumptions (from the scan, not from the person)
 - Till export is a CSV written nightly.
+## Personal data
+- none
 ## Kind
 - visual
